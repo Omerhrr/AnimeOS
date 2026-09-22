@@ -10,6 +10,10 @@ import {
   type ComicFormat, type PanelPlacement, type ComicPage,
 } from "@/lib/comic/layout";
 import { parseDialogue, serializeDialogue, stampStateArc } from "@/lib/comic/dialogue";
+import {
+  arcSpansForShot, computeArcSpans, describeArcPosition, formatArcRange,
+  type ArcSpan,
+} from "@/lib/comic/arcs";
 import { exportWebtoonSlices } from "@/lib/comic/export-slices";
 import { PanelArt } from "@/components/views/comic-panel-art";
 import { SpeechBubbles, DialogueEditor } from "@/components/views/comic-bubbles";
@@ -48,6 +52,46 @@ interface PanelActions {
   onSound: (shot: ShotRow) => void;
   genStatus: Record<string, "loading" | "error">;
   selectMode: boolean;
+}
+
+export type ArcChips = Array<ArcSpan & { startsHere: boolean; endsHere: boolean }>;
+
+/** Violet arc chips stacked under the shot-number chip: a state span lives on this card. */
+function ArcChips({ spans, rtl }: { spans?: ArcChips; rtl: boolean }) {
+  if (!spans || spans.length === 0) return null;
+  return (
+    <span
+      className={cn("absolute top-[46px] z-10 flex flex-col items-start gap-1 print:hidden", rtl ? "right-1 items-end" : "left-1")}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {spans.slice(0, 2).map((a) => (
+        <span
+          key={`${a.speakerKey}:${a.state}:${a.startShotId}`}
+          title={`State arc "${a.state}" - ${a.speaker} - ${formatArcRange(a)}${a.crossesScene ? " (crosses scenes)" : ""} - ${describeArcPosition(a.startsHere, a.endsHere)}`}
+          className="flex max-w-[92px] items-center gap-1 px-1 py-[1px] text-[8px] font-bold leading-tight tracking-wider"
+          style={{
+            border: "1px solid rgba(139,92,246,0.6)",
+            borderRadius: 3,
+            background: a.startsHere ? "rgba(124,58,237,0.92)" : "rgba(255,255,255,0.9)",
+            color: a.startsHere ? "#ffffff" : "#6d28d9",
+          }}
+        >
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full"
+            style={a.startsHere
+              ? { background: "#ffffff" }
+              : { boxShadow: "inset 0 0 0 1.5px currentColor" }}
+          />
+          <span className="truncate">{a.state}</span>
+        </span>
+      ))}
+      {spans.length > 2 && (
+        <span className="px-1 text-[7px] font-bold tracking-wider text-violet-700" style={{ background: "rgba(255,255,255,0.85)", borderRadius: 3 }}>
+          +{spans.length - 2} arc{spans.length - 2 === 1 ? "" : "s"}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function PanelToolbar({
@@ -139,7 +183,7 @@ function PanelToolbar({
 }
 
 function PanelFrame({
-  panel, format, rtl, scene, actions, dimmed, selected, onToggleSelect,
+  panel, format, rtl, scene, actions, dimmed, selected, onToggleSelect, arcChips,
 }: {
   panel: PanelPlacement<ShotRow>;
   format: ComicFormat;
@@ -149,6 +193,7 @@ function PanelFrame({
   dimmed: boolean;
   selected: boolean;
   onToggleSelect: (shotId: string) => void;
+  arcChips?: ArcChips;
 }) {
   const cfg = COMIC_FORMATS[format];
   const shot = panel.shot;
@@ -207,6 +252,9 @@ function PanelFrame({
         {String(shot.number).padStart(3, "0")}
       </span>
 
+      {/* state arc chips: which spans live on this card */}
+      <ArcChips spans={arcChips} rtl={rtl} />
+
       {/* status dot */}
       <span className={cn("absolute bottom-1.5 h-2 w-2 rounded-full z-10", rtl ? "left-1.5" : "right-1.5", STATUS_DOT[shot.status] ?? "bg-neutral-400")} title={shot.status} />
 
@@ -232,7 +280,7 @@ function PanelFrame({
 }
 
 function WebtoonPanel({
-  shot, scene, format, actions, dimmed, selected, onToggleSelect,
+  shot, scene, format, actions, dimmed, selected, onToggleSelect, arcChips,
 }: {
   shot: ShotRow;
   scene: SceneWithShots;
@@ -241,6 +289,7 @@ function WebtoonPanel({
   dimmed: boolean;
   selected: boolean;
   onToggleSelect: (shotId: string) => void;
+  arcChips?: ArcChips;
 }) {
   const cfg = COMIC_FORMATS[format];
   const dynamic = shot.movement && ["PAN", "TRACKING", "DOLLY_IN", "ORBIT", "CRANE"].includes(shot.movement);
@@ -276,6 +325,7 @@ function WebtoonPanel({
       <span className="absolute top-7 left-1 z-10 px-1.5 py-[1px] text-[9px] font-mono font-bold tracking-wider" style={{ background: cfg.ink, color: cfg.paper }}>
         {String(shot.number).padStart(3, "0")}
       </span>
+      <ArcChips spans={arcChips} rtl={false} />
       {dynamic && (
         <span className="absolute bottom-1 right-1 z-10 px-1 py-[1px] text-[8px] font-mono tracking-wider" style={{ border: `1px solid ${cfg.ink}`, color: cfg.ink, background: "rgba(255,255,255,0.75)" }}>
           {shot.movement}
@@ -494,14 +544,39 @@ export function ComicView({ project }: { project: StudioProject }) {
     return map;
   }, [project.characters]);
 
-  // state arc: stamp a line's picked state (or clear) onto the speaker's every following line in this scene
-  const extendStateArc = async (shot: ShotRow, lineIndex: number, state: string | null) => {
+  // episode-ordered shots (scene number, then shot number) feed the arc-span computation
+  const orderedShots = useMemo(() => {
+    if (!episode) return [];
+    return [...episode.scenes]
+      .sort((a, b) => a.number - b.number)
+      .flatMap((sc) =>
+        [...sc.shots]
+          .sort((a, b) => a.number - b.number)
+          .map((sh) => ({ id: sh.id, sceneId: sc.id, sceneNumber: sc.number, number: sh.number, dialogue: sh.dialogue ?? null }))
+      );
+  }, [episode]);
+  const arcSpans = useMemo(() => computeArcSpans(orderedShots), [orderedShots]);
+  const arcChipsByShot = useMemo(() => {
+    const map: Record<string, ArcChips> = {};
+    for (const span of arcSpans) {
+      for (const shotId of span.shotIds) {
+        (map[shotId] ??= []).push({ ...span, startsHere: span.startShotId === shotId, endsHere: span.endShotId === shotId });
+      }
+    }
+    return map;
+  }, [arcSpans]);
+
+  // state arc: stamp a line's picked state (or clear) onto the speaker's following lines,
+  // within the scene (default) or across scene boundaries through the end of the episode
+  const extendStateArc = async (shot: ShotRow, lineIndex: number, state: string | null, scope: "scene" | "episode" = "scene") => {
     const speaker = parseDialogue(shot.dialogue)[lineIndex]?.speaker?.trim();
     if (!speaker) throw new Error("The arc needs a speaker on that line");
-    const sceneShots = allShots.filter((s) => s.sceneId === shot.sceneId).sort((a, b) => a.number - b.number);
+    const ordered = scope === "episode"
+      ? [...(episode?.scenes ?? [])].sort((a, b) => a.number - b.number).flatMap((sc) => [...sc.shots].sort((a, b) => a.number - b.number))
+      : allShots.filter((s) => s.sceneId === shot.sceneId).sort((a, b) => a.number - b.number);
     let stamping = false;
     let stamped = 0;
-    for (const s of sceneShots) {
+    for (const s of ordered) {
       if (s.id === shot.id) stamping = true;
       if (!stamping) continue;
       const [next, n] = stampStateArc(parseDialogue(s.dialogue), speaker, s.id === shot.id ? lineIndex : 0, state);
@@ -779,6 +854,7 @@ export function ComicView({ project }: { project: StudioProject }) {
                           dimmed={isDimmed(p.shot)}
                           selected={selectedIds.has(p.shot.id)}
                           onToggleSelect={toggleSelect}
+                          arcChips={arcChipsByShot[p.shot.id]}
                         />
                       </div>
                     ))
@@ -803,6 +879,7 @@ export function ComicView({ project }: { project: StudioProject }) {
                             dimmed={isDimmed(p.shot)}
                             selected={selectedIds.has(p.shot.id)}
                             onToggleSelect={toggleSelect}
+                            arcChips={arcChipsByShot[p.shot.id]}
                           />
                         ))}
                       </div>
@@ -837,7 +914,8 @@ export function ComicView({ project }: { project: StudioProject }) {
           open
           onClose={() => setEditingShot(null)}
           onSaved={invalidate}
-          onExtendArc={(lineIndex, state) => extendStateArc(editingShot, lineIndex, state)}
+          onExtendArc={(lineIndex, state) => extendStateArc(editingShot, lineIndex, state, "scene")}
+          onExtendEpisodeArc={(lineIndex, state) => extendStateArc(editingShot, lineIndex, state, "episode")}
         />
       )}
 
@@ -846,6 +924,7 @@ export function ComicView({ project }: { project: StudioProject }) {
           shot={inspectingShot}
           artists={project.artists}
           loras={project.loras}
+          episodeScenes={episode?.scenes}
           open
           onClose={() => setInspectingShot(null)}
           onSaved={invalidate}

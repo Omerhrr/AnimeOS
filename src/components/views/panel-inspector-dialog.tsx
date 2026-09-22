@@ -4,9 +4,13 @@
 // fine-tuning. The compiled LoRA directive shown here is the client
 // mirror of src/lib/ai/art.ts → shotLoraDirective().
 
-import { useEffect, useState } from "react";
-import { Loader2, SlidersHorizontal, Users, Zap } from "lucide-react";
-import { api, type ArtistRow, type ShotRow, type StyleLoraRow } from "@/lib/api-client";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Route, SlidersHorizontal, Users, Zap } from "lucide-react";
+import { api, type ArtistRow, type SceneWithShots, type ShotRow, type StyleLoraRow } from "@/lib/api-client";
+import { parseDialogue } from "@/lib/comic/dialogue";
+import {
+  arcSpansForShot, computeArcSpans, describeArcPosition, formatArcRange,
+} from "@/lib/comic/arcs";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -24,11 +28,13 @@ function compileLoraDirective(lora: StyleLoraRow | null, strength: number | null
 }
 
 export function PanelInspectorDialog({
-  shot, artists, loras, open, onClose, onSaved,
+  shot, artists, loras, episodeScenes, open, onClose, onSaved,
 }: {
   shot: ShotRow;
   artists: ArtistRow[];
   loras: StyleLoraRow[];
+  /** ordered scenes of the inspected shot's episode: enables the state-arc span section */
+  episodeScenes?: SceneWithShots[];
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -50,6 +56,19 @@ export function PanelInspectorDialog({
 
   const selectedLora = loras.find((l) => l.id === loraId) ?? null;
   const directive = compileLoraDirective(selectedLora, loraId ? strength : null);
+
+  // state arc spans across the episode; which of them touch THIS shot
+  const shotArcs = useMemo(() => {
+    if (!episodeScenes || episodeScenes.length === 0) return [];
+    const ordered = [...episodeScenes]
+      .sort((a, b) => a.number - b.number)
+      .flatMap((sc) =>
+        [...sc.shots]
+          .sort((a, b) => a.number - b.number)
+          .map((sh) => ({ id: sh.id, sceneId: sc.id, sceneNumber: sc.number, number: sh.number, dialogue: sh.dialogue ?? null }))
+      );
+    return arcSpansForShot(computeArcSpans(ordered), shot.id);
+  }, [episodeScenes, shot.id]);
 
   async function save() {
     setSaving(true);
@@ -83,6 +102,49 @@ export function PanelInspectorDialog({
         </DialogHeader>
 
         <div className="space-y-5">
+          {/* ── State arcs (span view across the episode) ── */}
+          {episodeScenes && (
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5 text-xs">
+                <Route className="h-3.5 w-3.5 text-primary" /> State arcs
+              </Label>
+              {shotArcs.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  No state arc touches this shot. Stamp one from the dialogue editor (the State row&apos;s arrow buttons) or ask DSH for set_state_arc; arcs force the state&apos;s variant voice, speed/pitch hints and register on every line they cover.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {shotArcs.map((a) => {
+                    const arcLines = parseDialogue(shot.dialogue).filter(
+                      (l) => l.speaker.trim().toLowerCase() === a.speakerKey && (l.state ?? null) === a.state
+                    );
+                    return (
+                      <div key={`${a.speakerKey}:${a.state}:${a.startShotId}`} className="rounded-lg border border-violet-400/25 bg-violet-400/[0.07] p-2.5 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] font-semibold text-violet-200 truncate max-w-[230px]">{a.state}</span>
+                          <span className="text-[10px] text-muted-foreground">{a.speaker}</span>
+                          {a.crossesScene && (
+                            <span className="px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase bg-violet-400/25 text-violet-200">cross-scene</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] font-mono text-muted-foreground">
+                          {formatArcRange(a)} · {a.lineCount} line{a.lineCount === 1 ? "" : "s"} across {a.shotCount} shot{a.shotCount === 1 ? "" : "s"} · {describeArcPosition(a.startsHere, a.endsHere)}
+                        </div>
+                        {arcLines.length > 0 && (
+                          <div className="space-y-0.5">
+                            {arcLines.map((l, i) => (
+                              <p key={i} className="text-[10px] text-foreground/80 truncate">&quot;{l.text}&quot;</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Artist assignment ── */}
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-xs">

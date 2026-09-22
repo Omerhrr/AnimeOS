@@ -3,7 +3,7 @@
 // Speech bubbles and the dialogue editor for Comic Mode panels.
 
 import { useEffect, useState } from "react";
-import { ArrowDownToLine, MessageSquarePlus, Plus, Trash2, Loader2 } from "lucide-react";
+import { ArrowDownToLine, ChevronsDown, MessageSquarePlus, Plus, Trash2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import {
   BUBBLE_KINDS, bubbleSpots, serializeDialogue,
@@ -106,6 +106,7 @@ export function DialogueEditor({
   onClose,
   onSaved,
   onExtendArc,
+  onExtendEpisodeArc,
 }: {
   shot: { id: string; number: number; dialogue?: string | null; artworkUrl?: string | null };
   characterNames: string[];
@@ -116,10 +117,12 @@ export function DialogueEditor({
   onSaved: () => void;
   /** state arc: stamp this line's state onto the speaker's following lines across the scene (omit to hide the control) */
   onExtendArc?: (lineIndex: number, state: string | null) => Promise<void>;
+  /** cross-scene arc: stamp through the end of the episode, across scene boundaries (omit to hide the control) */
+  onExtendEpisodeArc?: (lineIndex: number, state: string | null) => Promise<void>;
 }) {
   const [lines, setLines] = useState<DialogueLine[]>([]);
   const [saving, setSaving] = useState(false);
-  const [arcBusy, setArcBusy] = useState<number | null>(null);
+  const [arcBusy, setArcBusy] = useState<{ i: number; mode: "scene" | "episode" } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -157,13 +160,15 @@ export function DialogueEditor({
     }
   };
 
-  /** State arc: extend this line's picked state (or Auto = clear) to the speaker's last line in the scene. */
-  const extendArc = async (i: number) => {
-    if (!onExtendArc) return;
-    setArcBusy(i);
+  /** State arc: extend this line's picked state (or Auto = clear) to the speaker's last line
+   *  in the scene (mode "scene") or through the end of the episode, across scenes ("episode"). */
+  const extendArc = async (i: number, mode: "scene" | "episode") => {
+    const onRun = mode === "scene" ? onExtendArc : onExtendEpisodeArc;
+    if (!onRun) return;
+    setArcBusy({ i, mode });
     setError(null);
     try {
-      await onExtendArc(i, lines[i].state ?? null);
+      await onRun(i, lines[i].state ?? null);
       onSaved();
       onClose();
     } catch (err) {
@@ -194,7 +199,7 @@ export function DialogueEditor({
             Dialogue - Shot {String(shot.number).padStart(3, "0")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Bubbles render on every comic format. Order = reading order; 8 lines max. Per-line delivery directs voice takes line by line inside the shot (auto = state-aware), and a per-line State forces one of the speaker&apos;s development states (its variant voice + speed/pitch hints) to perform just that line. The arrow button turns a state into an arc: it stamps the picked state onto the speaker&apos;s every following line across the scene.
+            Bubbles render on every comic format. Order = reading order; 8 lines max. Per-line delivery directs voice takes line by line inside the shot (auto = state-aware), and a per-line State forces one of the speaker&apos;s development states (its variant voice + speed/pitch hints) to perform just that line. The arrow button turns a state into an arc across the scene; the double-arrow button extends it across scene boundaries through the end of the episode.
           </DialogDescription>
         </DialogHeader>
 
@@ -275,14 +280,26 @@ export function DialogueEditor({
                 </Select>
                 {onExtendArc && (
                   <button
-                    onClick={() => void extendArc(i)}
+                    onClick={() => void extendArc(i, "scene")}
                     disabled={arcBusy !== null}
                     title={`State arc: apply ${line.state ? `"${line.state}"` : "Auto (clear)"} to this line and every following line of ${line.speaker.trim() || "this speaker"} in this scene`}
                     className="h-7 w-7 flex items-center justify-center rounded-md border border-violet-400/25 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20 transition-colors shrink-0"
                   >
-                    {arcBusy === i
+                    {arcBusy?.i === i && arcBusy.mode === "scene"
                       ? <Loader2 className="h-3 w-3 animate-spin" />
                       : <ArrowDownToLine className="h-3 w-3" />}
+                  </button>
+                )}
+                {onExtendEpisodeArc && (
+                  <button
+                    onClick={() => void extendArc(i, "episode")}
+                    disabled={arcBusy !== null}
+                    title={`Cross-scene arc: apply ${line.state ? `"${line.state}"` : "Auto (clear)"} to this line and every following line of ${line.speaker.trim() || "this speaker"} through the end of this episode (crosses scene boundaries)`}
+                    className="h-7 w-7 flex items-center justify-center rounded-md border border-violet-400/40 bg-violet-400/20 text-violet-200 hover:bg-violet-400/30 transition-colors shrink-0"
+                  >
+                    {arcBusy?.i === i && arcBusy.mode === "episode"
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <ChevronsDown className="h-3 w-3" />}
                   </button>
                 )}
               </div>
