@@ -23,6 +23,14 @@ Every step writes to a persistent production universe: projects, seasons, episod
 | **3D cinematic preview** | Three.js procedural MVP scene driven by live scene parameters and shot camera presets (movement-aware), with auto shot advance. |
 | **Studio UI** | Dashboard, Productions, Characters (states / relationships / derivatives), Story & Scenes, Comic Mode, Timeline, Render Queue, Continuity, Terminology, History. |
 
+## Screenshots
+
+**Comic Mode** — the same episode re-composed as manhua (LTR, colour), manga (RTL, monochrome + screentone) and manhwa/webtoon (vertical scroll) pages:
+
+| Manhua | Manga (RTL) | Webtoon |
+|--------|-------------|---------|
+| ![Manhua mode](docs/screenshots/comic-mode-manhua.png) | ![Manga mode](docs/screenshots/comic-mode-manga.png) | ![Webtoon mode](docs/screenshots/comic-mode-webtoon.png) |
+
 ## Native format support
 
 | Format | Pipeline posture |
