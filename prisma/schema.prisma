@@ -116,6 +116,8 @@ model Shot {
   duration    Float    @default(4.0)
   lighting    String?
   status      String   @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED
+  artworkUrl  String?  // AI-generated panel art (served from /panels/)
+  dialogue    String?  // JSON: Array<{ speaker, text, kind: SPEECH | THOUGHT | SFX }>
   createdAt   DateTime @default(now())
   scene       Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   renderJobs  RenderJob[]

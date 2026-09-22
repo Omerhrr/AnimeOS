@@ -19,7 +19,7 @@ Every step writes to a persistent production universe: projects, seasons, episod
 | **DSH Director** | 15-tool production API behind a 4-round INTENT → PLAN → EXECUTE → OBSERVE orchestrator. Mid-turn project switching, full execution trace rendered in the console. |
 | **Render pipeline** | Staged engine pipeline (validate → build → light → simulate → render → composite → encode), LLM render evaluator that proposes *bounded* parameter fixes, apply-fixes → auto re-render (attempt 2), approve → FINAL. |
 | **Continuity engine** | Universe-level conflict detection (e.g. destroyed artefact reappearing in Ep 29) with proposed resolutions, plus missing-capability analysis per scene. |
-| **Comic Mode** | Shot breakdowns re-composed as sequential art — **manhua** pages, **manhwa/webtoon** vertical scroll, **manga** right-to-left pages. Deterministic panel-layout engine, procedural panel sketches, print/PDF export. |
+| **Comic Mode** | Shot breakdowns re-composed as sequential art — **manhua** pages, **manhwa/webtoon** vertical scroll, **manga** right-to-left pages. Deterministic panel-layout engine, **AI-generated panel artwork** (style-aware prompts seeded with shot type, environment, weather and character states), **speech-bubble authoring** (speech / thought / SFX, RTL-aware placement), print/PDF export. |
 | **3D cinematic preview** | Three.js procedural MVP scene driven by live scene parameters and shot camera presets (movement-aware), with auto shot advance. |
 | **Studio UI** | Dashboard, Productions, Characters (states / relationships / derivatives), Story & Scenes, Comic Mode, Timeline, Render Queue, Continuity, Terminology, History. |
 
@@ -80,8 +80,9 @@ The database auto-seeds on first request with the **Immortal Path** demo product
 1. Open **Render Queue**, trigger a render on any shot.
 2. Watch the evaluation come back `NEEDS_REVISION` with bounded parameter fixes → **Apply fixes** auto-queues attempt 2.
 3. Open **DSH Director** and talk to the studio: *"Create a new wuxia production called Azure Sky with a sword forge environment"* — watch the 15-tool execution trace.
-4. Open **Comic Mode** and flip the same episode between manhua / webtoon / manga layouts.
+4. Open **Comic Mode** and flip the same episode between manhua / webtoon / manga layouts. Hit **Generate art** to produce AI panel artwork in the active style (prompts are built from shot grammar, environment, weather and the characters' current development states), and the ✎ tool to author speech bubbles — panel 001 ships with a demo line.
+5. **Print / PDF** exports the pages with chrome hidden and page breaks kept inside panels.
 
 ## Status
 
-MVP — the thesis is proven end-to-end with a simulated engine. Next horizons: live engine driver (Blender bridge), image-generation-backed panel art, dialogue/speech-bubble authoring, multi-episode batch rendering.
+MVP — the thesis is proven end-to-end with a simulated engine, and Comic Mode already produces AI-illustrated, dialogue-authored pages. Next horizons: live engine driver (Blender bridge), per-character model-sheet reference images for consistent casting, DSH tool access to panel art + dialogue authoring, multi-episode batch rendering.

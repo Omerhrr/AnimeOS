@@ -84,6 +84,8 @@ export interface ShotRow {
   duration: number;
   lighting: string | null;
   status: string;
+  artworkUrl?: string | null;
+  dialogue?: string | null;
 }
 
 export interface CharacterFull {
@@ -225,6 +227,9 @@ export const api = {
   createEpisode: (body: Record<string, unknown>) => j<{ id: string }>("/api/episodes", { method: "POST", body: JSON.stringify(body) }),
   createScene: (body: Record<string, unknown>) => j<{ id: string }>("/api/scenes", { method: "POST", body: JSON.stringify(body) }),
   createShot: (body: Record<string, unknown>) => j<{ id: string }>("/api/shots", { method: "POST", body: JSON.stringify(body) }),
+  patchShot: (body: Record<string, unknown>) => j<{ id: string }>("/api/shots", { method: "PATCH", body: JSON.stringify(body) }),
+  generatePanelArt: (shotId: string, format: string) =>
+    j<{ artworkUrl: string; prompt: string }>("/api/panel-art", { method: "POST", body: JSON.stringify({ shotId, format }) }),
   createCharacter: (body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "POST", body: JSON.stringify(body) }),
   createEnvironment: (body: Record<string, unknown>) => j<{ id: string }>("/api/environments", { method: "POST", body: JSON.stringify(body) }),
   createAsset: (body: Record<string, unknown>) => j<{ id: string }>("/api/assets", { method: "POST", body: JSON.stringify(body) }),

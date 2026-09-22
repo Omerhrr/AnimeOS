@@ -30,6 +30,27 @@ export async function PATCH(req: Request) {
   }
   if (rest.duration !== undefined) data.duration = Number(rest.duration);
   if (rest.number !== undefined) data.number = Number(rest.number);
+  if (rest.dialogue !== undefined) {
+    if (rest.dialogue === null || rest.dialogue === "") {
+      data.dialogue = null;
+    } else {
+      try {
+        const parsed = JSON.parse(String(rest.dialogue));
+        if (!Array.isArray(parsed)) throw new Error("dialogue must be an array");
+        if (parsed.length > 8) throw new Error("at most 8 lines per shot");
+        for (const line of parsed) {
+          if (typeof line !== "object" || line === null || typeof line.text !== "string" || !line.text.trim()) {
+            throw new Error("each line needs non-empty text");
+          }
+        }
+        data.dialogue = String(rest.dialogue);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Invalid dialogue JSON";
+        return NextResponse.json({ error: message }, { status: 400 });
+      }
+    }
+  }
+  if (rest.artworkUrl !== undefined) data.artworkUrl = rest.artworkUrl ? String(rest.artworkUrl) : null;
   const shot = await db.shot.update({ where: { id: String(id) }, data });
   return NextResponse.json({ id: shot.id });
 }

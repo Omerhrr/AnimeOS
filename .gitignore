@@ -63,3 +63,6 @@ db/*
 # Local delivery artifacts
 download/
 upload/
+
+# Generated panel art (regenerable)
+public/panels/*.png

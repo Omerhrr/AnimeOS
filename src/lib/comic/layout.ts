@@ -78,20 +78,20 @@ export function panelWeight(shotType: string): number {
   return WEIGHTS[shotType] ?? DEFAULT_WEIGHT;
 }
 
-export interface PanelPlacement {
-  shot: ShotLike;
+export interface PanelPlacement<T extends ShotLike = ShotLike> {
+  shot: T;
   colStart: number; // 1-indexed, 6-col grid
   colSpan: number;
   rowSpan: number; // 1 or 2 (tall/dramatic panels)
   emphasis: boolean; // splash treatment
 }
 
-export interface ComicPage {
+export interface ComicPage<T extends ShotLike = ShotLike> {
   sceneId: string;
   sceneNumber: number;
   sceneTitle: string;
   indexInScene: number;
-  panels: PanelPlacement[];
+  panels: PanelPlacement<T>[];
 }
 
 const PAGE_CAPACITY = 1.12;
@@ -198,10 +198,10 @@ function templateFor(weights: number[], variant: number): Array<{ colStart: numb
  * then assigns each page a deterministic template (variant rotates per page).
  * Dramatic establishing shots get their own splash page.
  */
-export function layoutScene(scene: { id: string; number: number; title: string }, shots: ShotLike[]): ComicPage[] {
+export function layoutScene<T extends ShotLike>(scene: { id: string; number: number; title: string }, shots: T[]): ComicPage<T>[] {
   const sorted = [...shots].sort((a, b) => a.number - b.number);
-  const pages: Array<ShotLike[]> = [];
-  let current: ShotLike[] = [];
+  const pages: Array<T[]> = [];
+  let current: T[] = [];
   let used = 0;
 
   const flush = () => {
