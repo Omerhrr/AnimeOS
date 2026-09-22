@@ -64,6 +64,7 @@ export interface RenderTakeResult {
     artistName: string | null;
     voiceId: string;
     source: string;
+    variant: { voiceId: string; stateLabel: string } | null; // state voice variant that overrode the cast voice, if any
   };
   direction: {
     note: string | null;
@@ -98,7 +99,7 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
     const zai = await ZAI.create();
     const res = await zai.audio.tts.create({
       input: plan.spoken,
-      voice: plan.cast.voiceId,
+      voice: plan.voiceId, // state voice variant when active, else the cast voice
       speed: plan.speed,
       response_format: "wav",
       stream: false,
@@ -126,12 +127,12 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
     where: { id: cueId },
     data: {
       voiceUrl: `/voices/${file}?v=${Date.now()}`,
-      voiceActor: plan.cast.voiceId,
+      voiceActor: plan.voiceId, // the voice actually performed (variant or cast)
       voiceCast: plan.cast.artistName,
       voiceSpeed: plan.baseSpeed, // base only; effective speed = base x delivery multiplier
       voiceDurationMs: actualMs,
       voiceState: plan.delivery.id,
-      voiceStateLabel: plan.delivery.stateLabel,
+      voiceStateLabel: plan.variant ? `${plan.variant.stateLabel} (voice variant)` : plan.delivery.stateLabel,
       voiceSig: JSON.stringify(plan.sig), // snapshot for the direction diff
       durationMs,
     },
@@ -150,8 +151,9 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
     },
     cast: {
       artistName: plan.cast.artistName,
-      voiceId: plan.cast.voiceId,
+      voiceId: plan.voiceId,
       source: plan.cast.source,
+      variant: plan.variant ? { voiceId: plan.variant.voiceId, stateLabel: plan.variant.stateLabel } : null,
     },
     direction: {
       note: cue.voiceNote,

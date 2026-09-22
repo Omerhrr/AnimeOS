@@ -252,6 +252,7 @@ export interface CharacterFull {
     weapon: string | null;
     clothing: string | null;
     abilities: string | null;
+    voiceVariant?: string | null; // state voice variant: TTS voice while this state is episode-effective
   }>;
   relationsFrom: Array<{ id: string; type: string; to: { id: string; name: string } }>;
   relationsTo: Array<{ id: string; type: string; from: { id: string; name: string } }>;
@@ -378,6 +379,10 @@ export const api = {
     j<{ modelSheetUrl: string; prompt: string; anchor: string }>("/api/character-sheet", { method: "POST", body: JSON.stringify({ characterId }) }),
   createCharacter: (body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "POST", body: JSON.stringify(body) }),
   patchCharacter: (id: string, body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "PATCH", body: JSON.stringify({ id, ...body }) }),
+  // state voice variant: bind (or clear, empty string) the TTS voice that
+  // performs a character's lines while that development state is effective
+  patchCharacterState: (id: string, voiceVariant: string) =>
+    j<{ id: string; voiceVariant: string | null }>("/api/character-states", { method: "PATCH", body: JSON.stringify({ id, voiceVariant }) }),
   createEnvironment: (body: Record<string, unknown>) => j<{ id: string }>("/api/environments", { method: "POST", body: JSON.stringify(body) }),
 
   // style LoRA registry

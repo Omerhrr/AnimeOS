@@ -20,6 +20,7 @@
 import { labelHash, noiseBuffer } from "@/lib/comic/audio";
 
 export interface StemCue {
+  cueId?: string | null; // AudioCue id: keys direction-currency tagging in the export manifest
   kind: string;
   label: string;
   startMs: number;

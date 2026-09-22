@@ -22,6 +22,7 @@ import { parseDialogue, bubbleSpots } from "@/lib/comic/dialogue";
 import { renderStemWav, decodeVoiceClips, type StemCue } from "@/lib/comic/stems";
 
 export interface SliceAudioCue {
+  cueId?: string;          // AudioCue id: keys the direction-currency lookup
   kind: string;
   label: string;
   startMs: number;
@@ -58,6 +59,9 @@ export interface SliceExportOptions {
   episodeNumber: number;
   episodeTitle: string;
   shots: SliceShot[];
+  // per-cue direction currency (from /api/voice-diffs): which takes are
+  // fresh vs stale against the current direction, tagged into the manifest
+  voiceStatus?: Record<string, { status: "fresh" | "stale" | "unrendered" | "blocked"; changed: string[] }>;
   onProgress?: (msg: string) => void;
 }
 
@@ -306,7 +310,7 @@ function drawPanel(ctx: CanvasRenderingContext2D, shot: SliceShot, geo: PanelGeo
 }
 
 export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<number> {
-  const { projectName, episodeNumber, episodeTitle, shots, onProgress } = opts;
+  const { projectName, episodeNumber, episodeTitle, shots, voiceStatus, onProgress } = opts;
   if (shots.length === 0) throw new Error("No panels to export");
 
   const cfg = COMIC_FORMATS.MANHWA;
@@ -352,7 +356,7 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
   if (current.length) packed.push(current);
 
   // 3. rasterize slices
-  const blobs: Array<{ index: number; file: string; blob: Blob; shotIds: Array<{ id: string; number: number; description: string }> }> = [];
+  const blobs: Array<ManifestBlob & { blob: Blob }> = [];
   for (let s = 0; s < packed.length; s++) {
     onProgress?.(`Rendering slice ${s + 1}/${packed.length}…`);
     const sliceBlocks = packed[s];
@@ -407,7 +411,7 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
   const voiceClips = await decodeVoiceClips(
     allSliceCues.filter((c) => c.kind === "VOICE").map((c) => c.voiceUrl ?? ""),
   );
-  const stems: Array<{ index: number; file: string; blob: Blob; durationMs: number; cueCount: number; cues: StemCue[] }> = [];
+  const stems: Array<ManifestStem & { blob: Blob }> = [];
   const slicesWithCues = packed.filter((blocks) => blocks.some((b) => (b.shot.audioCues ?? []).length > 0)).length;
   if (slicesWithCues > 0) {
     for (let s = 0; s < packed.length; s++) {
@@ -418,6 +422,7 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
         const panelMs = Math.max(500, Math.round((block.shot.duration ?? 4) * 1000));
         for (const cue of block.shot.audioCues ?? []) {
           sliceCues.push({
+            cueId: cue.cueId ?? null,
             kind: cue.kind,
             label: cue.label,
             startMs: offsetMs + cue.startMs,
@@ -451,11 +456,97 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
   // 5. zip + download
   onProgress?.("Packaging ZIP…");
   const allCues = shots.flatMap((s) => (s.audioCues ?? []).map((c) => ({ ...c, shotId: s.id })));
-  const voiceTakes = allCues.filter((c) => c.kind === "VOICE" && c.voiceUrl);
   const zip = new JSZip();
   for (const s of blobs) zip.file(s.file, s.blob);
   for (const st of stems) zip.file(st.file, st.blob);
-  zip.file("manifest.json", JSON.stringify({
+  zip.file("manifest.json", JSON.stringify(buildSliceManifest({
+    projectName, episodeNumber, episodeTitle, allCues, blobs, stems, voiceStatus,
+  }), null, 2));
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${slug(projectName)}-ep${String(episodeNumber).padStart(2, "0")}-webtoon-slices.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+  return blobs.length;
+}
+
+// ─────────────────────────────────────────────────────────────
+// MANIFEST BUILDER (pure, testable)
+//
+// Assembles manifest.json. Every VOICE cue is tagged with its
+// direction currency (fresh / stale / unrendered / blocked vs the
+// current direction, from the per-episode diff), so downstream
+// motion-comic tooling can tell which speech in the stems is
+// current and which needs a re-render before a final export.
+// ─────────────────────────────────────────────────────────────
+
+type DirectionStatus = "fresh" | "stale" | "unrendered" | "blocked";
+
+type CueWithShot = SliceAudioCue & { shotId: string };
+
+type ManifestCue = SliceAudioCue & { directionStatus: DirectionStatus | null; changed: string[] | null };
+
+interface ManifestBlob {
+  index: number;
+  file: string;
+  shotIds: Array<{ id: string; number: number; description: string; artist: string | null; styleLora: string | null; audioCues: SliceAudioCue[] }>;
+}
+
+interface ManifestStem {
+  index: number;
+  file: string;
+  durationMs: number;
+  cueCount: number;
+  cues: Array<StemCue & { panel: number }>;
+}
+
+function cueStatus(
+  cue: { cueId?: string | null },
+  voiceStatus?: SliceExportOptions["voiceStatus"],
+): DirectionStatus | "unknown" {
+  const hit = cue.cueId ? voiceStatus?.[cue.cueId] : undefined;
+  return hit ? hit.status : "unknown";
+}
+
+function tallyCurrency(
+  cues: Array<{ cueId?: string | null; kind: string }>,
+  voiceStatus?: SliceExportOptions["voiceStatus"],
+) {
+  const tally = { total: 0, fresh: 0, stale: 0, unrendered: 0, blocked: 0, unknown: 0 };
+  for (const cue of cues) {
+    if (cue.kind !== "VOICE") continue;
+    tally.total += 1;
+    const s = cueStatus(cue, voiceStatus);
+    if (s === "unknown") tally.unknown += 1;
+    else tally[s] += 1;
+  }
+  return tally;
+}
+
+export function buildSliceManifest(args: {
+  projectName: string;
+  episodeNumber: number;
+  episodeTitle: string;
+  allCues: CueWithShot[];
+  blobs: ManifestBlob[];
+  stems: ManifestStem[];
+  voiceStatus?: SliceExportOptions["voiceStatus"];
+}): Record<string, unknown> {
+  const { projectName, episodeNumber, episodeTitle, allCues, blobs, stems, voiceStatus } = args;
+  const voiceTakes = allCues.filter((c) => c.kind === "VOICE" && c.voiceUrl);
+  const voiceCues = allCues.filter((c) => c.kind === "VOICE");
+  const currency = tallyCurrency(voiceCues, voiceStatus);
+  const current: boolean | null = currency.unknown > 0 && currency.fresh + currency.stale + currency.unrendered + currency.blocked === 0
+    ? null // no diff data was available at export time
+    : currency.stale === 0;
+
+  return {
     project: projectName,
     episode: { number: episodeNumber, title: episodeTitle },
     exportSpec: { width: EXPORT_WIDTH, maxSliceHeight: SLICE_HEIGHT, format: "MANHWA (webtoon vertical)" },
@@ -465,31 +556,49 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
       cueCount: allCues.length,
       kinds: allCues.reduce<Record<string, number>>((acc, c) => ({ ...acc, [c.kind]: (acc[c.kind] ?? 0) + 1 }), {}),
       stemFormat: stems.length > 0 ? "WAV 16-bit PCM mono 44.1kHz" : null,
+      // direction currency: which voice takes match the direction they would render with today
+      direction: {
+        ...currency,
+        current,
+        note: current === false
+          ? `${currency.stale} stale take(s) still mix their OLD render into the stems; re-render via the direction diff before a final export`
+          : "fresh takes match the current direction; unrendered cues contribute a synthesized blip, not speech",
+      },
       voiceTakes: {
         rendered: voiceTakes.length,
         note: "rendered TTS speech is mixed into the slice stems",
-        takes: voiceTakes.map((c) => ({
-          shotId: c.shotId,
-          voiceActor: c.voiceActor ?? null,
-          voiceCast: c.voiceCast ?? null,
-          voiceDurationMs: c.voiceDurationMs ?? null,
-          delivery: c.voiceState ?? "NEUTRAL",
-          stateLabel: c.voiceStateLabel ?? null,
-          direction: c.voiceDelivery ?? "AUTO",
-          note: c.voiceNote ?? null,
-        })),
+        takes: voiceTakes.map((c) => {
+          const hit = c.cueId ? voiceStatus?.[c.cueId] : undefined;
+          return {
+            cueId: c.cueId ?? null,
+            shotId: c.shotId,
+            voiceActor: c.voiceActor ?? null,
+            voiceCast: c.voiceCast ?? null,
+            voiceDurationMs: c.voiceDurationMs ?? null,
+            delivery: c.voiceState ?? "NEUTRAL",
+            stateLabel: c.voiceStateLabel ?? null,
+            direction: c.voiceDelivery ?? "AUTO",
+            note: c.voiceNote ?? null,
+            directionStatus: hit ? hit.status : "unknown",
+            changed: hit?.changed ?? [],
+          };
+        }),
       },
       stems: stems.map((st) => ({
         file: st.file,
         slice: st.index,
         durationMs: st.durationMs,
         cueCount: st.cueCount,
+        // per-stem currency: how current the speech mixed into THIS stem file is
+        voiceCurrency: tallyCurrency(st.cues, voiceStatus),
         // cues on the stem timeline; panel = shot number each cue belongs to
         cues: st.cues,
       })),
       // timing map for motion-comic authoring tools (millisecond timeline per panel)
-      cuesByShot: allCues.reduce<Record<string, SliceAudioCue[]>>((acc, c) => {
+      cuesByShot: allCues.reduce<Record<string, ManifestCue[]>>((acc, c) => {
+        const hit = c.cueId ? voiceStatus?.[c.cueId] : undefined;
         (acc[c.shotId] ??= []).push({
+          cueId: c.cueId,
           kind: c.kind,
           label: c.label,
           startMs: c.startMs,
@@ -503,22 +612,12 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
           voiceDelivery: c.voiceDelivery ?? null,
           voiceNote: c.voiceNote ?? null,
           voiceCast: c.voiceCast ?? null,
+          directionStatus: hit ? hit.status : null,
+          changed: hit?.changed ?? null,
         });
         return acc;
       }, {}),
     },
     slices: blobs.map((s) => ({ index: s.index, file: s.file, panels: s.shotIds })),
-  }, null, 2));
-
-  const zipBlob = await zip.generateAsync({ type: "blob" });
-  const url = URL.createObjectURL(zipBlob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${slug(projectName)}-ep${String(episodeNumber).padStart(2, "0")}-webtoon-slices.zip`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-  return blobs.length;
+  };
 }

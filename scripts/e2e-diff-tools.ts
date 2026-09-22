@@ -34,4 +34,16 @@ if (step === "diff") {
 } else if (step === "errors") {
   await run("diff_episode_direction", { episodeNumber: 99 });
   await run("diff_episode_direction", {});
+} else if (step === "variant-set") {
+  await run("set_state_voice_variant", { characterName: "Lin Yue", stateLabel: "battle-damaged", voice: "kazi" });
+  await run("diff_episode_direction", { episodeNumber: 7 });
+  await run("diff_episode_direction", { episodeNumber: 7, reRender: true });
+  await run("diff_episode_direction", { episodeNumber: 7 });
+} else if (step === "variant-clear") {
+  await run("set_state_voice_variant", { characterName: "Lin Yue", stateLabel: "battle-damaged", voice: "" });
+  await run("diff_episode_direction", { episodeNumber: 7 });
+} else if (step === "variant-redestore") {
+  await run("set_state_voice_variant", { characterName: "Lin Yue", stateLabel: "battle-damaged", voice: "kazi" });
+  await run("diff_episode_direction", { episodeNumber: 7, reRender: true });
+  await run("diff_all_episodes", {});
 }

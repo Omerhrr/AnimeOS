@@ -47,6 +47,7 @@ export interface DiffCueRow {
     stateLabel: string | null;
     voiceId: string;
     castArtistName: string | null;
+    variant: { voiceId: string; stateLabel: string } | null;
     baseSpeed: number;
     effectiveSpeed: number;
   } | null;
@@ -136,8 +137,9 @@ export async function diffEpisode(ep: EpisodeWithCues): Promise<EpisodeDiff> {
               deliveryLabel: deliveryProfile(plan.delivery.id).label,
               source: plan.delivery.source,
               stateLabel: plan.delivery.stateLabel,
-              voiceId: plan.cast.voiceId,
+              voiceId: plan.voiceId,
               castArtistName: plan.cast.artistName,
+              variant: plan.variant ? { voiceId: plan.variant.voiceId, stateLabel: plan.variant.stateLabel } : null,
               baseSpeed: plan.baseSpeed,
               effectiveSpeed: plan.speed,
             },

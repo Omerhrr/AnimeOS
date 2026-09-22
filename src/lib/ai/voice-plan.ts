@@ -2,8 +2,9 @@ import {
   deliveryProfile, isDeliveryId, shapeLineForDelivery,
 } from "@/lib/comic/delivery";
 import { dialogueDeliveryForCue } from "@/lib/comic/dialogue";
+import { isVoiceId } from "@/lib/comic/voice-catalog";
 import {
-  resolveAutoDelivery, resolveVoiceCast, type ResolvedCast, type ResolvedDelivery,
+  resolveStatePerformance, resolveVoiceCast, type ResolvedCast, type ResolvedDelivery, type ResolvedVariant,
 } from "@/lib/ai/voice-casting";
 
 // ─────────────────────────────────────────────────────────────
@@ -84,6 +85,8 @@ export interface TakePlan {
   text: string; // speakable text before delivery shaping
   spoken: string; // after shaping (exclamation / trailing read)
   cast: ResolvedCast;
+  variant: ResolvedVariant | null; // state voice variant overriding the cast voice for this line
+  voiceId: string; // effective voice: variant when active, else the cast voice
   delivery: ResolvedDelivery & { source: DeliverySource };
   baseSpeed: number;
   speed: number; // effective: base x delivery multiplier
@@ -117,6 +120,14 @@ export async function resolveTakePlan(
   // WHO speaks: request override > cast artist on the character > hash default
   const cast = await resolveVoiceCast(speaker, projectId, overrides.voice);
 
+  // state performance: delivery + voice variant from the speaker's
+  // episode-resolved states (one lookup for both)
+  const performance = await resolveStatePerformance(speaker, episodeNumber, projectId);
+  // an explicit request override performs with the requested voice; a
+  // state variant otherwise outranks the cast voice while it is effective
+  const variant = isVoiceId(overrides.voice) ? null : performance.variant;
+  const voiceId = variant?.voiceId ?? cast.voiceId;
+
   // HOW it is played: the delivery chain, most specific first
   let delivery: ResolvedDelivery & { source: DeliverySource };
   if (isDeliveryId(overrides.delivery)) {
@@ -130,7 +141,7 @@ export async function resolveTakePlan(
       // a pinned standing direction is its own source: no state attribution
       delivery = { id: cue.voiceDelivery, source: "direction", stateLabel: null };
     } else {
-      delivery = await resolveAutoDelivery(speaker, episodeNumber, projectId);
+      delivery = performance.delivery;
     }
   }
   const profile = deliveryProfile(delivery.id);
@@ -146,10 +157,12 @@ export async function resolveTakePlan(
     text,
     spoken: shapeLineForDelivery(text, profile.id),
     cast,
+    variant,
+    voiceId,
     delivery,
     baseSpeed,
     speed,
-    sig: buildTakeSig(text, cast.voiceId, profile.id, baseSpeed),
+    sig: buildTakeSig(text, voiceId, profile.id, baseSpeed),
   };
 }
 

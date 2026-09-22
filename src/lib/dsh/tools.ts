@@ -260,6 +260,15 @@ export const TOOL_DEFS: ToolDef[] = [
       limit: "number, max takes to re-render in one batch call (default 16, max 32)",
     },
   },
+  {
+    name: "set_state_voice_variant",
+    description: "State voice variants: bind a DIFFERENT TTS voice to one of a character's development states, so lines spoken while that state is episode-effective are performed with the variant voice instead of the cast artist's normal voice (possession, transformation, clone, corrupted, child form...). Casting beyond delivery registers: the state changes WHO the character sounds like, the delivery register changes HOW the line is played. Takes rendered before the change are flagged stale by the direction diff; pass voice as empty string to clear the variant.",
+    args: {
+      characterName: "string",
+      stateLabel: "string - matches a state by name (contains, case-insensitive); defaults to the character's latest episode-resolved state",
+      voice: "string - TTS voice id: tongtong | chuichui | xiaochen | jam | kazi | douji | luodo (empty string clears the variant)",
+    },
+  },
 ];
 
 type ActionResult = { status: "OK" | "ERROR"; result: string };
@@ -1019,7 +1028,9 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const blockedRows = diff.cues.filter((c) => c.status === "blocked");
         const staleLines = staleRows.map((c) => {
           const was = c.taken ? `was ${c.taken.deliveryId.toLowerCase()} x${c.taken.baseSpeed.toFixed(2)} / ${c.taken.voiceId}` : "was unversioned";
-          const now = c.current ? `now ${c.current.deliveryLabel.toLowerCase()} / ${c.current.voiceId}` : "now unresolved";
+          const now = c.current
+            ? `now ${c.current.deliveryLabel.toLowerCase()} / ${c.current.voiceId}${c.current.variant ? ` (variant from "${c.current.variant.stateLabel}")` : ""}`
+            : "now unresolved";
           return `shot ${String(c.shotNumber).padStart(3, "0")} "${c.speaker || "narration"}": moved ${c.changed.join(" + ")} (${was}; ${now})`;
         });
 
@@ -1071,6 +1082,50 @@ export async function executeTool(projectId: string, name: string, args: Record<
           result += ` ${totals.stale} stale take(s) across the season; pass reRender:true (limit caps each batch, default 16) to re-render the affected takes only.`;
         }
         return { status: "OK", result };
+      }
+
+      case "set_state_voice_variant": {
+        const ch = await characterByName(projectId, String(args.characterName ?? ""));
+        if (!ch) {
+          const known = await db.character.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `Character '${String(args.characterName)}' not found. Cast: ${known.map((c) => c.name).join(", ") || "none"}.` };
+        }
+        const states = await db.characterState.findMany({
+          where: { characterId: ch.id },
+          orderBy: [{ episodeNumber: "desc" }, { createdAt: "desc" }],
+        });
+        if (states.length === 0) {
+          return { status: "ERROR", result: `${ch.name} has no development states - record one with create_character_state first.` };
+        }
+        const labelArg = String(args.stateLabel ?? "").trim();
+        const state = labelArg
+          ? states.find((s) => s.label.toLowerCase().includes(labelArg.toLowerCase())) ?? null
+          : states[0];
+        if (!state) {
+          return { status: "ERROR", result: `No state of ${ch.name} matches '${labelArg}'. States: ${states.map((s) => `"${s.label}"${s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}`).join(", ")}.` };
+        }
+        const voiceArg = String(args.voice ?? "").trim();
+        if (voiceArg && !isVoiceId(voiceArg)) {
+          return { status: "ERROR", result: `Unknown voice '${voiceArg}'. Available: tongtong, chuichui, xiaochen, jam, kazi, douji, luodo.` };
+        }
+        await db.characterState.update({ where: { id: state.id }, data: { voiceVariant: voiceArg || null } });
+        const castLine = ch.voiceArtistId ? "the cast artist's voice" : "the default voice assignment";
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "STATE_CHANGE",
+            summary: voiceArg
+              ? `DSH bound state voice variant '${voiceArg}' to ${ch.name} "${state.label}"`
+              : `DSH cleared the state voice variant on ${ch.name} "${state.label}"`,
+          },
+        });
+        return {
+          status: "OK",
+          result: voiceArg
+            ? `State voice variant set: while "${state.label}"${state.episodeNumber ? ` (Ep${state.episodeNumber})` : ""} is episode-effective, ${ch.name}'s lines perform with '${voiceArg}' instead of ${castLine}. Existing takes for those episodes are now stale: run diff_episode_direction (or diff_all_episodes) with reRender:true to re-render them with the variant voice.`
+            : `State voice variant cleared on ${ch.name} "${state.label}": lines in that state return to ${castLine}. Existing variant-voice takes are now stale; re-render them via the direction diff.`,
+        };
       }
 
       default:
@@ -1163,7 +1218,7 @@ export async function buildCompactContext(projectId: string) {
       modelSheet: Boolean(c.modelSheetUrl),
       voiceActor: c.voiceArtist ? `${c.voiceArtist.name} (${c.voiceArtist.voiceId ?? "no voice set"})` : null,
       abilities: JSON.parse(c.abilities || "[]"),
-      states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon })),
+      states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon, voiceVariant: s.voiceVariant ?? null })),
     })),
     environments: project.environments.map((e) => e.name),
     assets: project.assets.map((a) => `${a.category}:${a.name}(${a.status})`),

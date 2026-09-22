@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { api, parseStringArray, type CharacterFull, type StudioProject } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
+import { VOICES } from "@/lib/comic/voice-catalog";
 import { SectionHeader } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,36 @@ function CreateCharacterDialog() {
 }
 
 // tiny helper to read projectId from store inside dialog
+
+/** State voice variant picker: while the state is episode-effective, lines perform with this voice. */
+function StateVoiceVariantSelect({ state }: { state: CharacterFull["states"][number] }) {
+  const qc = useQueryClient();
+  const { projectId } = useStudio();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Variant voice</span>
+      <select
+        value={state.voiceVariant ?? ""}
+        disabled={busy}
+        onChange={(e) => {
+          setBusy(true);
+          void api.patchCharacterState(state.id, e.target.value)
+            .then(() => qc.invalidateQueries({ queryKey: ["project", projectId] }))
+            .finally(() => setBusy(false));
+        }}
+        title="While this state is episode-effective, the character's lines perform with this voice instead of the cast artist's voice; the direction diff flags older takes stale"
+        className="h-6 flex-1 rounded-md bg-white/5 border border-white/12 px-1.5 text-[10px]"
+      >
+        <option value="" className="bg-card">Auto (cast voice)</option>
+        {VOICES.map((v) => (
+          <option key={v.id} value={v.id} className="bg-card">{v.id} - {v.blurb}</option>
+        ))}
+      </select>
+      {busy && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
+    </div>
+  );
+}
 
 function CharacterSheet({
   character, project, onGenerateSheet, sheetBusy,
@@ -222,6 +253,7 @@ function CharacterSheet({
                     {s.weapon && <span>⚔ {s.weapon}</span>}
                     {s.clothing && <span>{s.clothing}</span>}
                   </div>
+                  <StateVoiceVariantSelect state={s} />
                 </div>
               ))}
             </div>

@@ -3,16 +3,21 @@ import { classifyStateDelivery, type DeliveryId } from "@/lib/comic/delivery";
 import { defaultVoiceFor, isVoiceId } from "@/lib/comic/voice-catalog";
 
 // ─────────────────────────────────────────────────────────────
-// VOICE CASTING + STATE-AWARE DELIVERY (server side)
+// VOICE CASTING + STATE-AWARE PERFORMANCE (server side)
 //
-// One module owns the two lookups every voice take needs:
+// One module owns the three lookups every voice take needs:
 //  1. WHO speaks: the character's cast artist (per-artist voice
 //     casting) supplies the TTS voice, falling back to the
 //     deterministic speaker hash.
 //  2. HOW the line is played: the speaker's episode-resolved
 //     character state classifies into a delivery profile.
-// The render API and the DSH voice-direction tool share this module
-// so both always agree on casting and delivery.
+//  3. WHO they sound like WHILE in that state: a state can carry a
+//     voice VARIANT (a different TTS voice id), so possession,
+//     transformation, clone or corrupted beats perform with a
+//     different voice entirely - casting beyond delivery registers.
+// The render API, the direction diff and the DSH voice tools share
+// this module so all of them always agree on casting, delivery and
+// variants.
 // ─────────────────────────────────────────────────────────────
 
 export interface ResolvedDelivery {
@@ -27,51 +32,113 @@ export interface ResolvedCast {
   source: "cast" | "auto" | "manual";
 }
 
+/** A state-bound voice swap: while the state is effective, lines use this voice. */
+export interface ResolvedVariant {
+  voiceId: string;
+  stateLabel: string; // the state that supplies the variant voice
+}
+
+interface StateCandidate {
+  label: string;
+  stateType: string;
+  episodeNumber: number | null;
+  voiceVariant: string | null;
+}
+
+/** The delivery + voice variant a speaker's episode-resolved state performance implies. */
+export interface ResolvedPerformance {
+  delivery: ResolvedDelivery;
+  variant: ResolvedVariant | null;
+}
+
 /**
- * Resolve the speaker's current state for this shot's episode and
- * classify it into a delivery profile. Same-episode TEMPORARY states
- * (dramatic beats like "Battle-damaged (temple fight)") win over the
- * latest PERMANENT progression state; no match reads neutral.
+ * Resolve the speaker's candidate states for this shot's episode:
+ * same-episode TEMPORARY states (dramatic beats like "Battle-damaged
+ * (temple fight)") win over the latest PERMANENT progression state.
+ */
+function candidateStates(states: StateCandidate[], episodeNumber: number | null): StateCandidate[] {
+  const eligible = states.filter((s) => {
+    if (s.episodeNumber == null) return false;
+    if (s.stateType === "TEMPORARY") return s.episodeNumber === episodeNumber;
+    return episodeNumber == null || s.episodeNumber <= episodeNumber;
+  });
+  // temporary beats first, then the latest episode-resolved state
+  return eligible.sort((a, b) => {
+    const ta = a.stateType === "TEMPORARY" ? 1 : 0;
+    const tb = b.stateType === "TEMPORARY" ? 1 : 0;
+    if (ta !== tb) return tb - ta;
+    return (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1);
+  });
+}
+
+/**
+ * One pass over the speaker's states: the first classifiable state
+ * sets the delivery, the first state carrying a voiceVariant sets the
+ * variant voice. Both are independent: a state can swap the voice
+ * without pinning a register, and a register can come from a state
+ * that has no variant.
+ */
+export async function resolveStatePerformance(
+  speaker: string,
+  episodeNumber: number | null,
+  projectId: string,
+): Promise<ResolvedPerformance> {
+  const fallback: ResolvedPerformance = {
+    delivery: { id: "NEUTRAL", source: "auto", stateLabel: null },
+    variant: null,
+  };
+  if (!speaker) return fallback;
+  try {
+    const characters = await db.character.findMany({
+      where: { projectId },
+      include: { states: { select: { label: true, stateType: true, episodeNumber: true, voiceVariant: true } } },
+    });
+    const character = characters.find((c) => c.name.trim().toLowerCase() === speaker.toLowerCase());
+    if (!character) return fallback;
+
+    const candidates = candidateStates(character.states, episodeNumber);
+
+    let delivery: ResolvedDelivery | null = null;
+    for (const state of candidates) {
+      const hit = classifyStateDelivery(state.label);
+      if (hit) {
+        delivery = { id: hit, source: "auto", stateLabel: state.label };
+        break;
+      }
+    }
+    if (!delivery) {
+      // no classified state: fall back to the canonical condition summary
+      const canonical = classifyStateDelivery(character.canonicalState ?? "");
+      if (canonical) {
+        delivery = { id: canonical, source: "auto", stateLabel: character.canonicalState?.slice(0, 80) ?? null };
+      }
+    }
+
+    let variant: ResolvedVariant | null = null;
+    for (const state of candidates) {
+      if (state.voiceVariant && isVoiceId(state.voiceVariant)) {
+        variant = { voiceId: state.voiceVariant, stateLabel: state.label };
+        break;
+      }
+    }
+
+    return { delivery: delivery ?? fallback.delivery, variant };
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Resolve the speaker's state-derived delivery for this shot's
+ * episode. Kept for the DSH direction tool; take planning uses
+ * resolveStatePerformance so delivery and variant share one lookup.
  */
 export async function resolveAutoDelivery(
   speaker: string,
   episodeNumber: number | null,
   projectId: string,
 ): Promise<ResolvedDelivery> {
-  const fallback: ResolvedDelivery = { id: "NEUTRAL", source: "auto", stateLabel: null };
-  if (!speaker) return fallback;
-  try {
-    const characters = await db.character.findMany({
-      where: { projectId },
-      include: { states: true },
-    });
-    const character = characters.find((c) => c.name.trim().toLowerCase() === speaker.toLowerCase());
-    if (!character) return fallback;
-
-    const candidates = character.states.filter((s) => {
-      if (s.episodeNumber == null) return false;
-      if (s.stateType === "TEMPORARY") return s.episodeNumber === episodeNumber;
-      return episodeNumber == null || s.episodeNumber <= episodeNumber;
-    });
-    // temporary beats first, then the latest episode-resolved state
-    candidates.sort((a, b) => {
-      const ta = a.stateType === "TEMPORARY" ? 1 : 0;
-      const tb = b.stateType === "TEMPORARY" ? 1 : 0;
-      if (ta !== tb) return tb - ta;
-      return (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1);
-    });
-
-    for (const state of candidates) {
-      const hit = classifyStateDelivery(state.label);
-      if (hit) return { id: hit, source: "auto", stateLabel: state.label };
-    }
-    // no classified state: fall back to the canonical condition summary
-    const canonical = classifyStateDelivery(character.canonicalState ?? "");
-    if (canonical) return { id: canonical, source: "auto", stateLabel: character.canonicalState?.slice(0, 80) ?? null };
-    return fallback;
-  } catch {
-    return fallback;
-  }
+  return (await resolveStatePerformance(speaker, episodeNumber, projectId)).delivery;
 }
 
 /**

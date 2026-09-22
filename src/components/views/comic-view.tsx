@@ -385,8 +385,18 @@ export function ComicView({ project }: { project: StudioProject }) {
 
   const runSliceExport = async () => {
     if (!episode || format !== "MANHWA" || allShots.length === 0) return;
-    setExporting("Preparing…");
+    setExporting("Checking direction currency…");
     try {
+      // direction diff first: the manifest tags every voice stem fresh vs stale
+      let voiceStatus: Record<string, { status: "fresh" | "stale" | "unrendered" | "blocked"; changed: string[] }> | undefined;
+      try {
+        const diff = await api.voiceDiff(episode.id);
+        voiceStatus = Object.fromEntries(
+          (diff.episodes[0]?.cues ?? []).map((r) => [r.cueId, { status: r.status, changed: r.changed }]),
+        );
+      } catch {
+        // diff unavailable: export proceeds with untagged (unknown) currency
+      }
       const slices = await exportWebtoonSlices({
         projectName: project.title,
         episodeNumber: episode.number,
@@ -399,15 +409,18 @@ export function ComicView({ project }: { project: StudioProject }) {
           loraStrength: s.loraStrength ?? null,
           artistName: s.artist?.name ?? null,
           audioCues: (s.audioCues ?? []).map((c) => ({
+            cueId: c.id,
             kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume,
             voiceUrl: c.voiceUrl, voiceActor: c.voiceActor, voiceDurationMs: c.voiceDurationMs,
             voiceState: c.voiceState, voiceStateLabel: c.voiceStateLabel,
             voiceDelivery: c.voiceDelivery, voiceNote: c.voiceNote, voiceCast: c.voiceCast,
           })),
         })),
+        voiceStatus,
         onProgress: (msg) => setExporting(msg),
       });
-      setExporting(`${slices} slice${slices === 1 ? "" : "s"} downloaded ✓`);
+      const stale = Object.values(voiceStatus ?? {}).filter((s) => s.status === "stale").length;
+      setExporting(`${slices} slice${slices === 1 ? "" : "s"} downloaded ✓${stale > 0 ? ` - manifest flags ${stale} stale take${stale === 1 ? "" : "s"}` : " - all takes fresh"}`);
       setTimeout(() => setExporting(null), 3500);
     } catch (err) {
       console.error("Webtoon slice export failed:", err);

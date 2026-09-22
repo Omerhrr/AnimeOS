@@ -275,6 +275,7 @@ model CharacterState {
   weapon        String?
   clothing      String?
   abilities     String? // JSON string[]
+  voiceVariant  String? // state voice variant: TTS voice that performs the character's lines while this state is episode-effective (null = cast voice)
   createdAt     DateTime @default(now())
   character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 }
