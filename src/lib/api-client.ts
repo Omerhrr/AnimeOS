@@ -210,8 +210,17 @@ export interface AuditionResult {
   spoken: string;
   source: "custom" | "character line" | "sample";
   delivery: { id: string; label: string; speed: number };
+  pitch: number; // effective pitch factor the audition was bent by (1 = natural)
   voiceId: string;
   speaker: string | null;
+  variant: {
+    stateId: string;
+    stateLabel: string;
+    episodeNumber: number | null;
+    variantVoiceId: string | null;
+    speedHint: number | null;
+    pitchHint: number | null;
+  } | null;
 }
 
 export interface BridgeStatusInfo {
@@ -253,6 +262,8 @@ export interface CharacterFull {
     clothing: string | null;
     abilities: string | null;
     voiceVariant?: string | null; // state voice variant: TTS voice while this state is episode-effective
+    speedHint?: number | null; // state speed hint: multiplier on the take's base speed while effective
+    pitchHint?: number | null; // state pitch hint: playback pitch factor while effective (1 = natural)
   }>;
   relationsFrom: Array<{ id: string; type: string; to: { id: string; name: string } }>;
   relationsTo: Array<{ id: string; type: string; from: { id: string; name: string } }>;
@@ -379,10 +390,10 @@ export const api = {
     j<{ modelSheetUrl: string; prompt: string; anchor: string }>("/api/character-sheet", { method: "POST", body: JSON.stringify({ characterId }) }),
   createCharacter: (body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "POST", body: JSON.stringify(body) }),
   patchCharacter: (id: string, body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "PATCH", body: JSON.stringify({ id, ...body }) }),
-  // state voice variant: bind (or clear, empty string) the TTS voice that
-  // performs a character's lines while that development state is effective
-  patchCharacterState: (id: string, voiceVariant: string) =>
-    j<{ id: string; voiceVariant: string | null }>("/api/character-states", { method: "PATCH", body: JSON.stringify({ id, voiceVariant }) }),
+  // state voice performance: bind/clear the variant voice (empty string
+  // clears) and set/clear speed/pitch hints for a development state
+  patchCharacterState: (id: string, patch: { voiceVariant?: string; speedHint?: number | null; pitchHint?: number | null }) =>
+    j<{ id: string; voiceVariant: string | null; speedHint: number | null; pitchHint: number | null }>("/api/character-states", { method: "PATCH", body: JSON.stringify({ id, ...patch }) }),
   createEnvironment: (body: Record<string, unknown>) => j<{ id: string }>("/api/environments", { method: "POST", body: JSON.stringify(body) }),
 
   // style LoRA registry
@@ -441,8 +452,9 @@ export const api = {
     }>("/api/voice-diffs", { method: "POST", body: JSON.stringify({ projectId }) }),
 
   // casting-board audition: throwaway TTS render of one line with a voice,
-  // optionally the character's own first line; nothing is persisted
-  auditionVoice: (body: { projectId: string; voiceId: string; delivery?: string; text?: string; speaker?: string }) =>
+  // optionally the character's own first line, or a state audition
+  // (variant voice + speed/pitch hints); nothing is persisted
+  auditionVoice: (body: { projectId: string; voiceId?: string; delivery?: string; text?: string; speaker?: string; stateId?: string }) =>
     j<AuditionResult>("/api/voice-auditions", { method: "POST", body: JSON.stringify(body) }),
 
   // simulated LoRA training runs from approved panels

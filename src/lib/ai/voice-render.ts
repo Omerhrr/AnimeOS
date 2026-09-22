@@ -3,15 +3,17 @@ import path from "path";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { resolveTakePlan, VoicePlanError, type TakeOverrides } from "@/lib/ai/voice-plan";
+import { shiftWavPlayback, ttsSpeedAndPitchFactor } from "@/lib/ai/wav-dsp";
 
 // ─────────────────────────────────────────────────────────────
 // VOICE RENDER CORE
 //
 // Renders one VOICE cue into a real TTS take (24kHz mono WAV under
-// public/voices/{cueId}.wav) and stamps the cue with the take's
-// input snapshot (voiceSig) so the per-episode direction diff can
-// tell which takes are stale. Shared by the render API route and
-// the selective re-render in the direction-diff route.
+// public/voices/{cueId}.wav, playback-rate shifted when a state pitch
+// hint is active) and stamps the cue with the take's input snapshot
+// (voiceSig) so the per-episode direction diff can tell which takes
+// are stale. Shared by the render API route and the selective
+// re-render in the direction-diff route.
 // ─────────────────────────────────────────────────────────────
 
 export class VoiceRenderError extends Error {
@@ -66,6 +68,8 @@ export interface RenderTakeResult {
     source: string;
     variant: { voiceId: string; stateLabel: string } | null; // state voice variant that overrode the cast voice, if any
   };
+  hints: { stateLabel: string; speed: number | null; pitch: number | null } | null; // state performance hints active on this take
+  pitch: number; // effective pitch factor the take was bent by (1 = natural)
   direction: {
     note: string | null;
     standingDelivery: string | null;
@@ -97,15 +101,18 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
   let wav: Buffer;
   try {
     const zai = await ZAI.create();
+    // state pitch hint: render at compensated speed, then shift the
+    // playback rate so the take lands on plan.speed with the bend
+    const { ttsSpeed, factor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
     const res = await zai.audio.tts.create({
       input: plan.spoken,
       voice: plan.voiceId, // state voice variant when active, else the cast voice
-      speed: plan.speed,
+      speed: ttsSpeed,
       response_format: "wav",
       stream: false,
     });
     const arrayBuffer = await res.arrayBuffer();
-    wav = Buffer.from(new Uint8Array(arrayBuffer));
+    wav = shiftWavPlayback(Buffer.from(new Uint8Array(arrayBuffer)), factor);
   } catch (err) {
     throw new VoiceRenderError(`TTS render failed: ${err instanceof Error ? err.message : "unknown error"}`, 502);
   }
@@ -155,6 +162,10 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
       source: plan.cast.source,
       variant: plan.variant ? { voiceId: plan.variant.voiceId, stateLabel: plan.variant.stateLabel } : null,
     },
+    hints: plan.hints
+      ? { stateLabel: plan.hints.stateLabel, speed: plan.hints.speed, pitch: plan.hints.pitch }
+      : null,
+    pitch: plan.pitch,
     direction: {
       note: cue.voiceNote,
       standingDelivery: cue.voiceDelivery,

@@ -262,11 +262,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_state_voice_variant",
-    description: "State voice variants: bind a DIFFERENT TTS voice to one of a character's development states, so lines spoken while that state is episode-effective are performed with the variant voice instead of the cast artist's normal voice (possession, transformation, clone, corrupted, child form...). Casting beyond delivery registers: the state changes WHO the character sounds like, the delivery register changes HOW the line is played. Takes rendered before the change are flagged stale by the direction diff; pass voice as empty string to clear the variant.",
+    description: "State voice performance: bind a DIFFERENT TTS voice to one of a character's development states and/or set its speed/pitch hints, so lines spoken while that state is episode-effective perform with the variant voice and bent pace/pitch instead of the cast artist's flat read (possession, transformation, clone, corrupted, child form, exhausted...). Casting beyond delivery registers: the state changes WHO the character sounds like and HOW the variant performs; the delivery register only changes the read's punctuation shape. Takes rendered before the change are flagged stale by the direction diff; pass voice as empty string to clear the variant, speedHint/pitchHint as null to clear a hint.",
     args: {
       characterName: "string",
       stateLabel: "string - matches a state by name (contains, case-insensitive); defaults to the character's latest episode-resolved state",
-      voice: "string - TTS voice id: tongtong | chuichui | xiaochen | jam | kazi | douji | luodo (empty string clears the variant)",
+      voice: "string - TTS voice id: tongtong | chuichui | xiaochen | jam | kazi | douji | luodo (empty string clears the variant; omit to leave unchanged)",
+      speedHint: "number 0.5-2.0 - multiplier on the base speed while this state is effective (e.g. 0.85 = slower, drained; null clears; omit to leave unchanged)",
+      pitchHint: "number 0.5-2.0 - playback pitch factor while this state is effective (0.8 = deeper/possessed, 1.2 = higher; null clears; omit to leave unchanged)",
     },
   },
 ];
@@ -1104,27 +1106,55 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!state) {
           return { status: "ERROR", result: `No state of ${ch.name} matches '${labelArg}'. States: ${states.map((s) => `"${s.label}"${s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}`).join(", ")}.` };
         }
+        const clampHint = (v: number) => Math.round(Math.min(2, Math.max(0.5, v)) * 100) / 100;
+        const data: Record<string, unknown> = {};
+        const changes: string[] = [];
         const voiceArg = String(args.voice ?? "").trim();
-        if (voiceArg && !isVoiceId(voiceArg)) {
-          return { status: "ERROR", result: `Unknown voice '${voiceArg}'. Available: tongtong, chuichui, xiaochen, jam, kazi, douji, luodo.` };
+        if (args.voice !== undefined) {
+          if (voiceArg && !isVoiceId(voiceArg)) {
+            return { status: "ERROR", result: `Unknown voice '${voiceArg}'. Available: tongtong, chuichui, xiaochen, jam, kazi, douji, luodo.` };
+          }
+          data.voiceVariant = voiceArg || null;
+          changes.push(voiceArg ? `variant voice '${voiceArg}'` : "variant voice cleared");
         }
-        await db.characterState.update({ where: { id: state.id }, data: { voiceVariant: voiceArg || null } });
+        if (args.speedHint !== undefined) {
+          if (args.speedHint === null) {
+            data.speedHint = null;
+            changes.push("speed hint cleared");
+          } else {
+            const n = Number(args.speedHint);
+            if (!Number.isFinite(n)) return { status: "ERROR", result: `speedHint must be a number 0.5-2.0 or null (got '${String(args.speedHint)}')` };
+            data.speedHint = clampHint(n);
+            changes.push(`speed hint x${data.speedHint}`);
+          }
+        }
+        if (args.pitchHint !== undefined) {
+          if (args.pitchHint === null) {
+            data.pitchHint = null;
+            changes.push("pitch hint cleared");
+          } else {
+            const n = Number(args.pitchHint);
+            if (!Number.isFinite(n)) return { status: "ERROR", result: `pitchHint must be a number 0.5-2.0 or null (got '${String(args.pitchHint)}')` };
+            data.pitchHint = clampHint(n);
+            changes.push(`pitch hint x${data.pitchHint}`);
+          }
+        }
+        if (changes.length === 0) {
+          return { status: "ERROR", result: "Nothing to change: pass voice, speedHint and/or pitchHint (null clears a value)." };
+        }
+        await db.characterState.update({ where: { id: state.id }, data });
         const castLine = ch.voiceArtistId ? "the cast artist's voice" : "the default voice assignment";
         await db.productionEvent.create({
           data: {
             projectId,
             actor: "DSH",
             type: "STATE_CHANGE",
-            summary: voiceArg
-              ? `DSH bound state voice variant '${voiceArg}' to ${ch.name} "${state.label}"`
-              : `DSH cleared the state voice variant on ${ch.name} "${state.label}"`,
+            summary: `DSH set state voice performance on ${ch.name} "${state.label}": ${changes.join(", ")}`,
           },
         });
         return {
           status: "OK",
-          result: voiceArg
-            ? `State voice variant set: while "${state.label}"${state.episodeNumber ? ` (Ep${state.episodeNumber})` : ""} is episode-effective, ${ch.name}'s lines perform with '${voiceArg}' instead of ${castLine}. Existing takes for those episodes are now stale: run diff_episode_direction (or diff_all_episodes) with reRender:true to re-render them with the variant voice.`
-            : `State voice variant cleared on ${ch.name} "${state.label}": lines in that state return to ${castLine}. Existing variant-voice takes are now stale; re-render them via the direction diff.`,
+          result: `State voice performance set on ${ch.name} "${state.label}"${state.episodeNumber ? ` (Ep${state.episodeNumber})` : ""}: ${changes.join(", ")}. While that state is episode-effective, lines perform with ${data.voiceVariant ? `'${String(data.voiceVariant)}' instead of ${castLine}` : castLine}${data.speedHint != null ? ` at x${String(data.speedHint)} pace` : ""}${data.pitchHint != null ? ` and pitch x${String(data.pitchHint)}` : ""}. Existing takes for those episodes are now stale: run diff_episode_direction (or diff_all_episodes) with reRender:true to re-render them with the new performance.`,
         };
       }
 
@@ -1218,7 +1248,7 @@ export async function buildCompactContext(projectId: string) {
       modelSheet: Boolean(c.modelSheetUrl),
       voiceActor: c.voiceArtist ? `${c.voiceArtist.name} (${c.voiceArtist.voiceId ?? "no voice set"})` : null,
       abilities: JSON.parse(c.abilities || "[]"),
-      states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon, voiceVariant: s.voiceVariant ?? null })),
+      states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon, voiceVariant: s.voiceVariant ?? null, speedHint: s.speedHint ?? null, pitchHint: s.pitchHint ?? null })),
     })),
     environments: project.environments.map((e) => e.name),
     assets: project.assets.map((a) => `${a.category}:${a.name}(${a.status})`),

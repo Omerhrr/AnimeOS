@@ -10,11 +10,12 @@ import { renderVoiceTake } from "@/lib/ai/voice-render";
 //
 // A voice take is only as current as the direction it was made
 // with. Every take stamps a snapshot of its inputs (voiceSig:
-// text + voice + delivery + base speed); this module re-resolves
-// what each VOICE cue WOULD render as today and diffs:
+// text + voice + delivery + base speed + state speed/pitch hints);
+// this module re-resolves what each VOICE cue WOULD render as today
+// and diffs:
 //   fresh      - take matches the current direction
 //   stale      - direction moved (delivery / voice / line text /
-//                speed), the take needs a re-render
+//                speed / state hints), the take needs a re-render
 //   unrendered - no take yet
 //   blocked    - no speakable text, direction unresolved
 // Shared by the voice-diffs API route and the DSH tools
@@ -28,6 +29,8 @@ export const CHANGED_LABELS: Record<string, string> = {
   voice: "voice / casting",
   delivery: "delivery direction",
   speed: "base speed",
+  speedHint: "state speed hint",
+  pitch: "pitch hint",
   snapshot: "predates direction snapshots",
 };
 
@@ -48,8 +51,10 @@ export interface DiffCueRow {
     voiceId: string;
     castArtistName: string | null;
     variant: { voiceId: string; stateLabel: string } | null;
+    hints: { stateLabel: string; speed: number | null; pitch: number | null } | null;
     baseSpeed: number;
     effectiveSpeed: number;
+    pitch: number;
   } | null;
   taken: { voiceId: string; deliveryId: string; baseSpeed: number } | null;
   takeInfo: {
@@ -140,8 +145,10 @@ export async function diffEpisode(ep: EpisodeWithCues): Promise<EpisodeDiff> {
               voiceId: plan.voiceId,
               castArtistName: plan.cast.artistName,
               variant: plan.variant ? { voiceId: plan.variant.voiceId, stateLabel: plan.variant.stateLabel } : null,
+              hints: plan.hints ? { stateLabel: plan.hints.stateLabel, speed: plan.hints.speed, pitch: plan.hints.pitch } : null,
               baseSpeed: plan.baseSpeed,
               effectiveSpeed: plan.speed,
+              pitch: plan.pitch,
             },
             taken: stored ? { voiceId: stored.v, deliveryId: stored.d, baseSpeed: stored.s } : null,
             takeInfo: {

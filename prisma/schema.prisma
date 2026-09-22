@@ -276,6 +276,8 @@ model CharacterState {
   clothing      String?
   abilities     String? // JSON string[]
   voiceVariant  String? // state voice variant: TTS voice that performs the character's lines while this state is episode-effective (null = cast voice)
+  speedHint     Float?  // state speed hint: multiplier on the take's base speed while this state supplies the performance (1 = no bend)
+  pitchHint     Float?  // state pitch hint: playback pitch factor for takes in this state (1 = natural pitch; <1 deeper, >1 higher)
   createdAt     DateTime @default(now())
   character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 }

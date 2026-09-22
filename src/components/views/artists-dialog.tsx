@@ -9,9 +9,11 @@
 // Casting-board auditions: any roster voice can be auditioned with a
 // throwaway TTS render (a board line, or the character's own first
 // dialogue line) before committing a casting - no cue or take is
-// created.
+// created. STATE auditions go one deeper: pick one of a character's
+// development states and hear exactly how it performs - the variant
+// voice when one is bound, plus the state's speed/pitch hints.
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AudioLines, Loader2, Play, Plus, Square, Trash2, Users } from "lucide-react";
 import { api, type StudioProject } from "@/lib/api-client";
@@ -40,6 +42,8 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   const [auditionBusy, setAuditionBusy] = useState<string | null>(null);
   const [auditionPlaying, setAuditionPlaying] = useState<string | null>(null);
   const [auditionMsg, setAuditionMsg] = useState<string | null>(null);
+  // state auditions: per-character selected development state
+  const [stateSel, setStateSel] = useState<Record<string, string>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -119,18 +123,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
         text: auditionLine.trim() || undefined,
         speaker: auditionLine.trim() ? undefined : speaker,
       });
-      const bin = atob(res.audio);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      setAuditionPlaying(key);
-      audio.onended = () => {
-        setAuditionPlaying(null);
-        URL.revokeObjectURL(url);
-      };
-      await audio.play();
+      await playClip(key, res);
       setAuditionMsg(
         `audition: ${res.voiceId} · ${res.delivery.label.toLowerCase()}${res.speaker ? ` · ${res.speaker}'s line` : ` · ${res.source}`}${res.durationMs ? ` · ${(res.durationMs / 1000).toFixed(1)}s` : ""} · not saved as a take`,
       );
@@ -140,6 +133,60 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
     } finally {
       setAuditionBusy(null);
     }
+  }
+
+  /** State audition: hear how a development state performs - variant voice + speed/pitch hints - without binding anything. */
+  async function playStateAudition(characterId: string) {
+    const stateId = stateSel[characterId];
+    if (!stateId) return;
+    stopAudition();
+    setAuditionBusy(`state:${characterId}`);
+    setAuditionMsg(null);
+    setError(null);
+    try {
+      const res = await api.auditionVoice({
+        projectId: project.id,
+        stateId,
+        delivery: auditionDelivery,
+        text: auditionLine.trim() || undefined,
+        // no speaker override: the API reads the state's own character, so
+        // an empty board line auditions the character's first dialogue line
+      });
+      await playClip(`state-play-${characterId}`, res);
+      const v = res.variant;
+      const bits = [
+        `state audition: "${v?.stateLabel ?? "state"}"`,
+        `${res.voiceId}${v?.variantVoiceId ? " (variant voice)" : " (cast voice)"}`,
+        `x${res.delivery.speed.toFixed(2)}`,
+        res.pitch !== 1 ? `pitch x${res.pitch.toFixed(2)}` : null,
+        v?.episodeNumber != null ? `@Ep${v.episodeNumber}` : null,
+        res.speaker ? `${res.speaker}'s line` : res.source,
+        res.durationMs ? `${(res.durationMs / 1000).toFixed(1)}s` : "",
+        "not saved as a take",
+      ].filter(Boolean);
+      setAuditionMsg(bits.join(" · "));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "State audition failed");
+      setAuditionPlaying(null);
+    } finally {
+      setAuditionBusy(null);
+    }
+  }
+
+  /** Decode + play an audition clip; shared by voice and state auditions. */
+  async function playClip(key: string, res: { audio: string; mimeType: string; durationMs: number | null }) {
+    const bin = atob(res.audio);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setAuditionPlaying(key);
+    audio.onended = () => {
+      setAuditionPlaying(null);
+      URL.revokeObjectURL(url);
+    };
+    await audio.play();
   }
 
   const canCreate = name.trim().length > 0;
@@ -234,7 +281,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
               <span className="text-[9px] font-mono text-cyan-300/80">{castCount}/{project.characters.length} cast</span>
             </div>
             <p className="text-[10px] text-muted-foreground">
-              Bind a character to the roster artist who speaks for them. Their VOICE cues render with that artist&apos;s voice; DSH can also cast via <span className="font-mono text-[9px]">cast_voice_actor</span>.
+              Bind a character to the roster artist who speaks for them. Their VOICE cues render with that artist&apos;s voice; DSH can also cast via <span className="font-mono text-[9px]">cast_voice_actor</span>. Pick a development state under a character to audition how that state performs (variant voice + speed/pitch hints) before binding it.
             </p>
             {/* audition controls: register + optional line, applied to every audition button below */}
             <div className="flex items-center gap-2">
@@ -269,7 +316,8 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
             )}
             <div className="space-y-1.5 max-h-40 overflow-y-auto studio-scroll pr-1">
               {project.characters.map((c) => (
-                <div key={c.id} className="flex items-center gap-2">
+                <Fragment key={c.id}>
+                <div className="flex items-center gap-2">
                   <div className="w-24 shrink-0 min-w-0">
                     <div className="text-[11px] text-foreground truncate">{c.name}</div>
                     {c.role && <div className="text-[9px] text-muted-foreground truncate">{c.role.toLowerCase()}</div>}
@@ -307,6 +355,41 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
                         : <Play className="h-2.5 w-2.5" />}
                   </button>
                 </div>
+                {c.states.length > 0 && (
+                  <div className="flex items-center gap-2 pl-6 -mt-0.5">
+                    <span className="text-[8px] uppercase tracking-[0.14em] text-violet-300/80 shrink-0">state try</span>
+                    <select
+                      value={stateSel[c.id] ?? ""}
+                      onChange={(e) => setStateSel({ ...stateSel, [c.id]: e.target.value })}
+                      className="h-6 flex-1 rounded border border-violet-400/20 bg-black/30 px-1.5 text-[10px] text-foreground"
+                      title="Audition how this development state performs: its variant voice plus speed/pitch hints (throwaway render, nothing is saved)"
+                    >
+                      <option value="" className="bg-[#12121a]">pick a state to audition...</option>
+                      {c.states.map((s) => (
+                        <option key={s.id} value={s.id} className="bg-[#12121a]">
+                          {s.label}
+                          {s.voiceVariant ? ` · ${s.voiceVariant}` : ""}
+                          {s.speedHint != null ? ` · x${s.speedHint}` : ""}
+                          {s.pitchHint != null ? ` · pitch ${s.pitchHint}` : ""}
+                          {s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => void playStateAudition(c.id)}
+                      disabled={!stateSel[c.id] || auditionBusy === `state:${c.id}`}
+                      title="Hear the selected state: variant voice and speed/pitch hints on the board's line (throwaway render, nothing is saved)"
+                      className="h-6 w-6 flex items-center justify-center rounded-md border border-violet-400/25 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20 transition-colors shrink-0"
+                    >
+                      {auditionBusy === `state:${c.id}`
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : auditionPlaying === `state-play-${c.id}`
+                          ? <Square className="h-2.5 w-2.5" />
+                          : <Play className="h-2.5 w-2.5" />}
+                    </button>
+                  </div>
+                )}
+                </Fragment>
               ))}
             </div>
             {auditionMsg && (

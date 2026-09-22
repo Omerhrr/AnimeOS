@@ -5,7 +5,7 @@ import { defaultVoiceFor, isVoiceId } from "@/lib/comic/voice-catalog";
 // ─────────────────────────────────────────────────────────────
 // VOICE CASTING + STATE-AWARE PERFORMANCE (server side)
 //
-// One module owns the three lookups every voice take needs:
+// One module owns the four lookups every voice take needs:
 //  1. WHO speaks: the character's cast artist (per-artist voice
 //     casting) supplies the TTS voice, falling back to the
 //     deterministic speaker hash.
@@ -15,6 +15,10 @@ import { defaultVoiceFor, isVoiceId } from "@/lib/comic/voice-catalog";
 //     voice VARIANT (a different TTS voice id), so possession,
 //     transformation, clone or corrupted beats perform with a
 //     different voice entirely - casting beyond delivery registers.
+//  4. HOW the variant PERFORMS: a state can carry speed/pitch hints
+//     that bend the take's pace and voice depth while it is
+//     effective, so a possessed read can be slower and deeper
+//     without anyone re-pinning a delivery register.
 // The render API, the direction diff and the DSH voice tools share
 // this module so all of them always agree on casting, delivery and
 // variants.
@@ -38,17 +42,32 @@ export interface ResolvedVariant {
   stateLabel: string; // the state that supplies the variant voice
 }
 
+/** State-bound performance hints: pace and pitch bend while effective. */
+export interface ResolvedHints {
+  stateLabel: string; // the state that supplies the hints
+  speed: number | null; // multiplier on the take's base speed
+  pitch: number | null; // playback pitch factor (<1 deeper, >1 higher)
+}
+
 interface StateCandidate {
   label: string;
   stateType: string;
   episodeNumber: number | null;
   voiceVariant: string | null;
+  speedHint: number | null;
+  pitchHint: number | null;
 }
 
-/** The delivery + voice variant a speaker's episode-resolved state performance implies. */
+/** The delivery, variant and hints a speaker's episode-resolved state performance implies. */
 export interface ResolvedPerformance {
   delivery: ResolvedDelivery;
   variant: ResolvedVariant | null;
+  hints: ResolvedHints | null;
+}
+
+function clampHint(v: number | null, lo: number, hi: number): number | null {
+  if (v == null || !Number.isFinite(v)) return null;
+  return Math.min(hi, Math.max(lo, Math.round(v * 100) / 100));
 }
 
 /**
@@ -86,12 +105,13 @@ export async function resolveStatePerformance(
   const fallback: ResolvedPerformance = {
     delivery: { id: "NEUTRAL", source: "auto", stateLabel: null },
     variant: null,
+    hints: null,
   };
   if (!speaker) return fallback;
   try {
     const characters = await db.character.findMany({
       where: { projectId },
-      include: { states: { select: { label: true, stateType: true, episodeNumber: true, voiceVariant: true } } },
+      include: { states: { select: { label: true, stateType: true, episodeNumber: true, voiceVariant: true, speedHint: true, pitchHint: true } } },
     });
     const character = characters.find((c) => c.name.trim().toLowerCase() === speaker.toLowerCase());
     if (!character) return fallback;
@@ -122,7 +142,21 @@ export async function resolveStatePerformance(
       }
     }
 
-    return { delivery: delivery ?? fallback.delivery, variant };
+    // hints ride the same states: the first candidate carrying a speed
+    // or pitch hint supplies the performance bend for this line
+    let hints: ResolvedHints | null = null;
+    for (const state of candidates) {
+      if (state.speedHint != null || state.pitchHint != null) {
+        hints = {
+          stateLabel: state.label,
+          speed: clampHint(state.speedHint, 0.5, 2),
+          pitch: clampHint(state.pitchHint, 0.5, 2),
+        };
+        break;
+      }
+    }
+
+    return { delivery: delivery ?? fallback.delivery, variant, hints };
   } catch {
     return fallback;
   }

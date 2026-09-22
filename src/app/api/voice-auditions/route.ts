@@ -7,6 +7,8 @@ import { deliveryProfile, isDeliveryId, shapeLineForDelivery } from "@/lib/comic
 import { parseDialogue } from "@/lib/comic/dialogue";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
 import { wavDurationMs } from "@/lib/ai/voice-render";
+import { resolveVoiceCast } from "@/lib/ai/voice-casting";
+import { shiftWavPlayback, ttsSpeedAndPitchFactor } from "@/lib/ai/wav-dsp";
 
 // ─────────────────────────────────────────────────────────────
 // VOICE AUDITION (casting board preview)
@@ -16,6 +18,10 @@ import { wavDurationMs } from "@/lib/ai/voice-render";
 // The sample line is, in priority order: an explicit line from the
 // board, the character's own first dialogue line in the production
 // (speaker lookup), or a classic audition read.
+//
+// STATE AUDITIONS: pass a characterState id to hear how that state
+// performs - its variant voice (when one is bound) plus its
+// speed/pitch hints, all without persisting anything.
 // ─────────────────────────────────────────────────────────────
 
 const AUDITION_LINES = [
@@ -63,15 +69,52 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const voiceId = String(body.voiceId ?? "");
-  if (!isVoiceId(voiceId)) {
-    return NextResponse.json({ error: "voiceId must be a catalog voice: tongtong, chuichui, xiaochen, jam, kazi, douji, luodo" }, { status: 400 });
-  }
   const deliveryId = isDeliveryId(body.delivery) ? body.delivery : "NEUTRAL";
   const profile = deliveryProfile(deliveryId);
 
-  const speaker = body.speaker ? String(body.speaker).trim().slice(0, 60) : "";
+  // STATE audition: a development state supplies the variant voice and
+  // the speed/pitch hints; the character name supplies the line lookup
+  let stateBlock: {
+    stateId: string;
+    stateLabel: string;
+    episodeNumber: number | null;
+    variantVoiceId: string | null;
+    speedHint: number | null;
+    pitchHint: number | null;
+  } | null = null;
+  let stateSpeaker = "";
+  const stateId = body.stateId ? String(body.stateId) : "";
+  if (stateId) {
+    const state = await db.characterState.findUnique({ where: { id: stateId }, include: { character: true } });
+    if (!state) return NextResponse.json({ error: "State not found" }, { status: 404 });
+    const speedHint = state.speedHint != null && Number.isFinite(state.speedHint) ? state.speedHint : null;
+    const pitchHint = state.pitchHint != null && Number.isFinite(state.pitchHint) ? state.pitchHint : null;
+    stateBlock = {
+      stateId: state.id,
+      stateLabel: state.label,
+      episodeNumber: state.episodeNumber,
+      variantVoiceId: state.voiceVariant && isVoiceId(state.voiceVariant) ? state.voiceVariant : null,
+      speedHint: speedHint != null ? Math.min(2, Math.max(0.5, speedHint)) : null,
+      pitchHint: pitchHint != null ? Math.min(2, Math.max(0.5, pitchHint)) : null,
+    };
+    stateSpeaker = state.character?.name ?? "";
+  }
+
   const projectId = body.projectId ? String(body.projectId) : "";
+  let voiceId = String(body.voiceId ?? stateBlock?.variantVoiceId ?? "");
+  // a state with no variant voice auditions on the character's current
+  // cast/default voice, exactly as a take in that state would perform
+  if (!voiceId && stateBlock) {
+    voiceId = (await resolveVoiceCast(stateSpeaker, projectId)).voiceId;
+  }
+  if (!isVoiceId(voiceId)) {
+    return NextResponse.json(
+      { error: "voiceId must be a catalog voice (or a state with a variant voice): tongtong, chuichui, xiaochen, jam, kazi, douji, luodo" },
+      { status: 400 },
+    );
+  }
+
+  const speaker = (body.speaker ? String(body.speaker).trim() : stateSpeaker).slice(0, 60);
   const explicit = body.text ? String(body.text).trim().slice(0, 300) : "";
 
   let text = explicit;
@@ -87,7 +130,11 @@ export async function POST(req: Request) {
   if (text.length > 1024) text = text.slice(0, 1023);
 
   const spoken = shapeLineForDelivery(text, deliveryId);
-  const speed = Math.min(2, Math.max(0.5, Math.round(profile.speedMul * 100) / 100));
+  // state speed hint multiplies the register's pace; the pitch hint is
+  // realized by rendering at compensated speed then shifting playback
+  const hintSpeed = stateBlock?.speedHint ?? 1;
+  const targetSpeed = Math.min(2, Math.max(0.5, Math.round(profile.speedMul * hintSpeed * 100) / 100));
+  const { ttsSpeed, factor } = ttsSpeedAndPitchFactor(targetSpeed, stateBlock?.pitchHint ?? 1);
 
   let wav: Buffer;
   try {
@@ -95,11 +142,11 @@ export async function POST(req: Request) {
     const res = await zai.audio.tts.create({
       input: spoken,
       voice: voiceId,
-      speed,
+      speed: ttsSpeed,
       response_format: "wav",
       stream: false,
     });
-    wav = Buffer.from(new Uint8Array(await res.arrayBuffer()));
+    wav = shiftWavPlayback(Buffer.from(new Uint8Array(await res.arrayBuffer())), factor);
   } catch (err) {
     return NextResponse.json(
       { error: `Audition render failed: ${err instanceof Error ? err.message : "unknown error"}` },
@@ -118,9 +165,11 @@ export async function POST(req: Request) {
     delivery: {
       id: deliveryId,
       label: profile.label,
-      speed,
+      speed: targetSpeed,
     },
+    pitch: stateBlock?.pitchHint ?? 1,
     voiceId,
     speaker: speaker || null,
+    variant: stateBlock,
   });
 }

@@ -4,7 +4,8 @@ import {
 import { dialogueDeliveryForCue } from "@/lib/comic/dialogue";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
 import {
-  resolveStatePerformance, resolveVoiceCast, type ResolvedCast, type ResolvedDelivery, type ResolvedVariant,
+  resolveStatePerformance, resolveVoiceCast,
+  type ResolvedCast, type ResolvedDelivery, type ResolvedHints, type ResolvedVariant,
 } from "@/lib/ai/voice-casting";
 
 // ─────────────────────────────────────────────────────────────
@@ -13,11 +14,11 @@ import {
 // One module decides WHAT a voice take will be made of: who speaks
 // (per-artist voice casting), how the line is played (delivery
 // chain: request override > dialogue-line delivery > cue standing
-// direction > episode-resolved character state) and at what speed.
-// The same inputs collapse into a compact signature (voiceSig) that
-// is stamped on the cue at render time - the per-episode direction
-// diff re-resolves the plan and re-renders only takes whose
-// signature moved.
+// direction > episode-resolved character state) and at what pace and
+// pitch (state speed/pitch hints bend both). The same inputs collapse
+// into a compact signature (voiceSig) that is stamped on the cue at
+// render time - the per-episode direction diff re-resolves the plan
+// and re-renders only takes whose signature moved.
 // ─────────────────────────────────────────────────────────────
 
 export type DeliverySource = "auto" | "manual" | "direction" | "line";
@@ -27,7 +28,9 @@ export interface TakeSig {
   t: string; // speakable text (hashed, case/space normalized)
   v: string; // TTS voice id
   d: string; // delivery profile id
-  s: number; // base speed (delivery multiplier excluded)
+  s: number; // base speed (delivery + state hint multipliers excluded)
+  sh: number; // state speed hint multiplier (1 = none)
+  p: number; // state pitch factor (1 = natural pitch)
 }
 
 /** 32-bit FNV-1a, base36 - stable across server restarts. */
@@ -41,8 +44,16 @@ export function hashText(text: string): string {
   return (h >>> 0).toString(36);
 }
 
-export function buildTakeSig(text: string, voiceId: string, deliveryId: string, baseSpeed: number): TakeSig {
-  return { t: hashText(text), v: voiceId, d: deliveryId, s: Math.round(baseSpeed * 100) / 100 };
+export function buildTakeSig(
+  text: string,
+  voiceId: string,
+  deliveryId: string,
+  baseSpeed: number,
+  speedHint = 1,
+  pitch = 1,
+): TakeSig {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return { t: hashText(text), v: voiceId, d: deliveryId, s: r2(baseSpeed), sh: r2(speedHint), p: r2(pitch) };
 }
 
 export function parseTakeSig(raw: string | null | undefined): TakeSig | null {
@@ -50,7 +61,16 @@ export function parseTakeSig(raw: string | null | undefined): TakeSig | null {
   try {
     const v = JSON.parse(raw) as Partial<TakeSig>;
     if (typeof v.t !== "string" || typeof v.v !== "string" || typeof v.d !== "string") return null;
-    return { t: v.t, v: v.v, d: v.d, s: Number.isFinite(Number(v.s)) ? Number(v.s) : 1 };
+    // sh/p default to 1 so takes stamped before the hint fields existed
+    // only diff once a hint is actually active on their state
+    return {
+      t: v.t,
+      v: v.v,
+      d: v.d,
+      s: Number.isFinite(Number(v.s)) ? Number(v.s) : 1,
+      sh: Number.isFinite(Number(v.sh)) ? Number(v.sh) : 1,
+      p: Number.isFinite(Number(v.p)) ? Number(v.p) : 1,
+    };
   } catch {
     return null;
   }
@@ -63,6 +83,8 @@ export function sigChanges(stored: TakeSig, current: TakeSig): string[] {
   if (stored.v !== current.v) out.push("voice");
   if (stored.d !== current.d) out.push("delivery");
   if (Math.abs(stored.s - current.s) > 0.001) out.push("speed");
+  if (Math.abs((stored.sh ?? 1) - current.sh) > 0.001) out.push("speedHint");
+  if (Math.abs((stored.p ?? 1) - current.p) > 0.001) out.push("pitch");
   return out;
 }
 
@@ -86,10 +108,12 @@ export interface TakePlan {
   spoken: string; // after shaping (exclamation / trailing read)
   cast: ResolvedCast;
   variant: ResolvedVariant | null; // state voice variant overriding the cast voice for this line
+  hints: ResolvedHints | null; // state speed/pitch hints bending the performance
   voiceId: string; // effective voice: variant when active, else the cast voice
   delivery: ResolvedDelivery & { source: DeliverySource };
   baseSpeed: number;
-  speed: number; // effective: base x delivery multiplier
+  speed: number; // effective: base x delivery multiplier x state speed hint
+  pitch: number; // effective pitch factor (1 = natural pitch)
   sig: TakeSig;
 }
 
@@ -146,11 +170,14 @@ export async function resolveTakePlan(
   }
   const profile = deliveryProfile(delivery.id);
 
-  // the delivery bends the performance; the plan keeps the user's base
-  // speed so re-renders never compound the multiplier
+  // the delivery and the state speed hint bend the performance; the
+  // plan keeps the user's base speed so re-renders never compound
+  // multipliers into the stored base
   const speedNum = Number(overrides.speed);
   const baseSpeed = Number.isFinite(speedNum) ? Math.min(2, Math.max(0.5, speedNum)) : Math.min(2, Math.max(0.5, cue.voiceSpeed ?? 1));
-  const speed = Math.min(2, Math.max(0.5, Math.round(baseSpeed * profile.speedMul * 100) / 100));
+  const hintSpeed = performance.hints?.speed ?? 1;
+  const speed = Math.min(2, Math.max(0.5, Math.round(baseSpeed * profile.speedMul * hintSpeed * 100) / 100));
+  const pitch = performance.hints?.pitch ?? 1;
 
   return {
     speaker,
@@ -158,11 +185,13 @@ export async function resolveTakePlan(
     spoken: shapeLineForDelivery(text, profile.id),
     cast,
     variant,
+    hints: performance.hints,
     voiceId,
     delivery,
     baseSpeed,
     speed,
-    sig: buildTakeSig(text, voiceId, profile.id, baseSpeed),
+    pitch,
+    sig: buildTakeSig(text, voiceId, profile.id, baseSpeed, hintSpeed, pitch),
   };
 }
 

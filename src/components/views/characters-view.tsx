@@ -114,32 +114,68 @@ function CreateCharacterDialog() {
 
 // tiny helper to read projectId from store inside dialog
 
-/** State voice variant picker: while the state is episode-effective, lines perform with this voice. */
+/** State voice performance: variant voice + speed/pitch hints. While the
+ * state is episode-effective, lines perform with this voice at this pace
+ * and pitch, and the direction diff flags takes rendered before a change. */
+const SPEED_HINTS = ["0.8", "0.85", "0.9", "0.95", "1.05", "1.1", "1.15", "1.2"];
+const PITCH_HINTS = ["0.75", "0.8", "0.9", "1.1", "1.2", "1.3"];
+
 function StateVoiceVariantSelect({ state }: { state: CharacterFull["states"][number] }) {
   const qc = useQueryClient();
   const { projectId } = useStudio();
   const [busy, setBusy] = useState(false);
+  const patch = (p: { voiceVariant?: string; speedHint?: number | null; pitchHint?: number | null }) => {
+    setBusy(true);
+    void api.patchCharacterState(state.id, p)
+      .then(() => qc.invalidateQueries({ queryKey: ["project", projectId] }))
+      .finally(() => setBusy(false));
+  };
   return (
-    <div className="mt-2 flex items-center gap-2">
-      <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Variant voice</span>
-      <select
-        value={state.voiceVariant ?? ""}
-        disabled={busy}
-        onChange={(e) => {
-          setBusy(true);
-          void api.patchCharacterState(state.id, e.target.value)
-            .then(() => qc.invalidateQueries({ queryKey: ["project", projectId] }))
-            .finally(() => setBusy(false));
-        }}
-        title="While this state is episode-effective, the character's lines perform with this voice instead of the cast artist's voice; the direction diff flags older takes stale"
-        className="h-6 flex-1 rounded-md bg-white/5 border border-white/12 px-1.5 text-[10px]"
-      >
-        <option value="" className="bg-card">Auto (cast voice)</option>
-        {VOICES.map((v) => (
-          <option key={v.id} value={v.id} className="bg-card">{v.id} - {v.blurb}</option>
-        ))}
-      </select>
-      {busy && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
+    <div className="mt-2 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Variant voice</span>
+        <select
+          value={state.voiceVariant ?? ""}
+          disabled={busy}
+          onChange={(e) => patch({ voiceVariant: e.target.value })}
+          title="While this state is episode-effective, the character's lines perform with this voice instead of the cast artist's voice; the direction diff flags older takes stale"
+          className="h-6 flex-1 rounded-md bg-white/5 border border-white/12 px-1.5 text-[10px]"
+        >
+          <option value="" className="bg-card">Auto (cast voice)</option>
+          {VOICES.map((v) => (
+            <option key={v.id} value={v.id} className="bg-card">{v.id} - {v.blurb}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Speed hint</span>
+        <select
+          value={state.speedHint != null ? String(state.speedHint) : ""}
+          disabled={busy}
+          onChange={(e) => patch({ speedHint: e.target.value === "" ? null : Number(e.target.value) })}
+          title="While this state is effective, takes render at this multiple of the base speed; changing it flags older takes stale"
+          className="h-6 w-20 rounded-md bg-white/5 border border-white/12 px-1.5 text-[10px]"
+        >
+          <option value="" className="bg-card">Auto</option>
+          {SPEED_HINTS.map((s) => (
+            <option key={s} value={s} className="bg-card">x{s}</option>
+          ))}
+        </select>
+        <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">Pitch hint</span>
+        <select
+          value={state.pitchHint != null ? String(state.pitchHint) : ""}
+          disabled={busy}
+          onChange={(e) => patch({ pitchHint: e.target.value === "" ? null : Number(e.target.value) })}
+          title="While this state is effective, takes bend playback pitch by this factor (below 1 reads deeper, above 1 higher); changing it flags older takes stale"
+          className="h-6 w-20 rounded-md bg-white/5 border border-white/12 px-1.5 text-[10px]"
+        >
+          <option value="" className="bg-card">Natural</option>
+          {PITCH_HINTS.map((s) => (
+            <option key={s} value={s} className="bg-card">{Number(s) < 1 ? "deep" : "high"} x{s}</option>
+          ))}
+        </select>
+        {busy && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
+      </div>
     </div>
   );
 }
