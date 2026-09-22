@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, BookOpenCheck, CheckSquare, FileDown, Layers, MoveRight, Music, SlidersHorizontal, Sparkles, Loader2, MessageSquarePlus, Scissors, Users, X, Zap } from "lucide-react";
+import { BookOpen, BookOpenCheck, CheckSquare, FileDown, Layers, MoveRight, Music, SlidersHorizontal, Sparkles, Loader2, MessageSquarePlus, Scissors, TriangleAlert, Users, X, Zap } from "lucide-react";
 import type { StudioProject, SceneWithShots, ShotRow } from "@/lib/api-client";
 import { api } from "@/lib/api-client";
 import {
@@ -296,6 +296,13 @@ export function ComicView({ project }: { project: StudioProject }) {
   const [soundShot, setSoundShot] = useState<ShotRow | null>(null);
   const [genStatus, setGenStatus] = useState<Record<string, "loading" | "error">>({});
   const [exporting, setExporting] = useState<string | null>(null);
+  // export pre-flight: direction-currency check that gates the download when takes are stale/blocked
+  const [preflight, setPreflight] = useState<{
+    voiceStatus: Record<string, { status: "fresh" | "stale" | "unrendered" | "blocked"; changed: string[] }>;
+    rows: Array<{ cueId: string; shotNumber: number; speaker: string; text: string; status: "stale" | "blocked" | "unrendered"; changed: string[] }>;
+    fresh: number;
+    unrendered: number;
+  } | null>(null);
   const [artistFilter, setArtistFilter] = useState<"ALL" | "NONE" | string>("ALL");
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -385,18 +392,41 @@ export function ComicView({ project }: { project: StudioProject }) {
 
   const runSliceExport = async () => {
     if (!episode || format !== "MANHWA" || allShots.length === 0) return;
+    setPreflight(null);
     setExporting("Checking direction currency…");
+    // direction diff first: the manifest tags every voice stem fresh vs stale
+    let voiceStatus: Record<string, { status: "fresh" | "stale" | "unrendered" | "blocked"; changed: string[] }> | undefined;
+    let diffRows: Awaited<ReturnType<typeof api.voiceDiff>>["episodes"][number]["cues"] = [];
     try {
-      // direction diff first: the manifest tags every voice stem fresh vs stale
-      let voiceStatus: Record<string, { status: "fresh" | "stale" | "unrendered" | "blocked"; changed: string[] }> | undefined;
-      try {
-        const diff = await api.voiceDiff(episode.id);
-        voiceStatus = Object.fromEntries(
-          (diff.episodes[0]?.cues ?? []).map((r) => [r.cueId, { status: r.status, changed: r.changed }]),
-        );
-      } catch {
-        // diff unavailable: export proceeds with untagged (unknown) currency
-      }
+      const diff = await api.voiceDiff(episode.id);
+      diffRows = diff.episodes[0]?.cues ?? [];
+      voiceStatus = Object.fromEntries(diffRows.map((r) => [r.cueId, { status: r.status, changed: r.changed }]));
+    } catch {
+      // diff unavailable: export proceeds with untagged (unknown) currency
+    }
+    setExporting(null);
+    // pre-flight gate: stale or blocked takes would mix their old render into the stems
+    const offenders = diffRows.filter((r) => r.status === "stale" || r.status === "blocked");
+    if (offenders.length > 0) {
+      setPreflight({
+        voiceStatus: voiceStatus ?? {},
+        rows: offenders.map((r) => ({
+          cueId: r.cueId, shotNumber: r.shotNumber, speaker: r.speaker,
+          text: r.text.length > 44 ? `${r.text.slice(0, 43)}…` : r.text,
+          status: r.status as "stale" | "blocked", changed: r.changed,
+        })),
+        fresh: diffRows.filter((r) => r.status === "fresh").length,
+        unrendered: diffRows.filter((r) => r.status === "unrendered").length,
+      });
+      return;
+    }
+    await doSliceExport(voiceStatus);
+  };
+
+  const doSliceExport = async (voiceStatus?: Record<string, { status: "fresh" | "stale" | "unrendered" | "blocked"; changed: string[] }>) => {
+    if (!episode || format !== "MANHWA" || allShots.length === 0) return;
+    setPreflight(null);
+    try {
       const slices = await exportWebtoonSlices({
         projectName: project.title,
         episodeNumber: episode.number,
@@ -562,6 +592,44 @@ export function ComicView({ project }: { project: StudioProject }) {
           </Button>
         </div>
       </div>
+
+      {/* export pre-flight: stems flagged stale or blocked before anything downloads */}
+      {preflight && (
+        <div className="studio-panel p-3 mb-5 border-amber-400/30 bg-amber-400/[0.05] space-y-2 print:hidden">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
+              <TriangleAlert className="h-3.5 w-3.5" />
+              Export pre-flight: {preflight.rows.length} take{preflight.rows.length === 1 ? "" : "s"} would mix their OLD render into the stems
+            </div>
+            <button onClick={() => setPreflight(null)} className="text-muted-foreground hover:text-foreground" title="Dismiss">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="space-y-1 max-h-44 overflow-y-auto studio-scroll pr-1">
+            {preflight.rows.map((r) => (
+              <div key={r.cueId} className="flex items-center gap-2 text-[10px] font-mono rounded border border-white/8 bg-black/25 px-2 py-1">
+                <span className={cn("px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase shrink-0",
+                  r.status === "stale" ? "bg-amber-400/25 text-amber-300" : "bg-rose-400/25 text-rose-300")}>
+                  {r.status}
+                </span>
+                <span className="text-muted-foreground shrink-0">S{r.shotNumber}</span>
+                <span className="text-foreground/80 shrink-0">{r.speaker || "narration"}</span>
+                <span className="text-muted-foreground truncate">&quot;{r.text}&quot;</span>
+                <span className="text-amber-300/80 shrink-0 ml-auto">{r.changed.join(", ") || "direction moved"}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-col md:flex-row md:items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-[11px] border-amber-400/40 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20"
+              onClick={() => void doSliceExport(preflight.voiceStatus)}>
+              <Scissors className="h-3 w-3 mr-1" /> Export anyway ({preflight.fresh} fresh)
+            </Button>
+            <span className="text-[10px] text-muted-foreground">
+              Re-render the stale takes first from the Direction diff board{preflight.unrendered > 0 ? ` · ${preflight.unrendered} cue${preflight.unrendered === 1 ? "" : "s"} unrendered (synthesized blip in stems)` : ""}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* artist filter + bulk assignment bar */}
       <div className="studio-panel p-3 mb-5 flex flex-col md:flex-row md:items-center gap-3 print:hidden">

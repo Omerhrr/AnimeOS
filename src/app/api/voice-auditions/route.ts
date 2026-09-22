@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { deliveryProfile, isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
-import { renderAudition } from "@/lib/ai/audition";
+import { currentTakeForLine, renderAudition } from "@/lib/ai/audition";
 import { resolveVoiceCast } from "@/lib/ai/voice-casting";
 
 // ─────────────────────────────────────────────────────────────
@@ -20,6 +20,10 @@ import { resolveVoiceCast } from "@/lib/ai/voice-casting";
 // performs - its variant voice (when one is bound) plus its
 // speed/pitch hints, all without persisting anything. The render
 // core lives in lib/ai/audition.ts, shared with the DSH bind tool.
+//
+// A/B: when the auditioned line already has a stored take, the
+// response carries it as the current side, so the board can play
+// old vs new back to back before anything is committed.
 // ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -97,6 +101,12 @@ export async function POST(req: Request) {
   }
   if (rendered.wav.length < 100) return NextResponse.json({ error: "Audition render came back empty" }, { status: 502 });
 
+  // A/B side: the stored take of the same line, when one exists
+  // (sample reads have no production line to compare against)
+  const current = rendered.source === "sample" || !speaker
+    ? null
+    : await currentTakeForLine(projectId, speaker, rendered.text);
+
   return NextResponse.json({
     audio: rendered.wav.toString("base64"),
     mimeType: "audio/wav",
@@ -113,5 +123,6 @@ export async function POST(req: Request) {
     voiceId: rendered.voiceId,
     speaker: speaker || null,
     variant: stateBlock,
+    current,
   });
 }

@@ -22,6 +22,16 @@ if (process.argv[2] === "clean") {
     pitch: 0.75,
     stateLabel: "Battle-damaged (temple fight)",
     characterName: "Lin Yue",
+    current: {
+      cueId: "cmud1jgch0001m097p6uxcn3t",
+      url: "/voices/cmud1jgch0001m097p6uxcn3t.wav?v=1790109012861",
+      mimeType: "audio/wav",
+      durationMs: 3358,
+      voiceId: "jam",
+      deliveryId: "INJURED",
+      stateLabel: "Battle-damaged (temple fight)",
+      origin: "stored take",
+    },
   };
   const trace = [
     {
@@ -33,7 +43,7 @@ if (process.argv[2] === "clean") {
           tool: "set_state_voice_variant",
           args: { characterName: "Lin Yue", stateLabel: "battle-damaged", voice: "kazi", speedHint: 0.9, pitchHint: 0.75 },
           result:
-            "State voice performance set on Lin Yue \"Battle-damaged (temple fight)\" (Ep7): variant voice 'kazi', speed hint x0.9, pitch hint x0.75. Audition attached to this call: \"The Jade Sword still answers my call.\" performed by kazi at x0.74 pace with pitch x0.75 - tell the creator to play the preview in this trace to hear the new performance before re-rendering.",
+            "State voice performance set on Lin Yue \"Battle-damaged (temple fight)\" (Ep7): variant voice 'kazi', speed hint x0.9, pitch hint x0.75. Audition attached to this call as an A/B pair: the current stored take (jam) and the NEW performance (kazi at x0.74 pace with pitch x0.75) of the same line - tell the creator to play both in this trace and compare before re-rendering.",
           status: "OK",
           audition,
         },

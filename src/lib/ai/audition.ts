@@ -6,7 +6,7 @@ import { deliveryProfile, shapeLineForDelivery, type DeliveryId } from "@/lib/co
 import { parseDialogue } from "@/lib/comic/dialogue";
 import { shiftWavPlayback, ttsSpeedAndPitchFactor } from "@/lib/ai/wav-dsp";
 import { wavDurationMs } from "@/lib/ai/voice-render";
-import type { AuditionPreview } from "@/lib/types";
+import type { AuditionPreview, AuditionSide } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
 // AUDITION CORE (shared by the casting board API and DSH)
@@ -135,10 +135,67 @@ export async function renderAudition(req: AuditionRequest): Promise<AuditionRend
 }
 
 /**
+ * The CURRENT stored take of a line: the latest rendered VOICE cue whose
+ * label matches "speaker: text" (the same convention the dialogue parser
+ * uses to map cues to lines). Only real stored takes qualify as the A
+ * side: when the line was never rendered there is nothing honest to
+ * compare against and the audition stays single-sided.
+ */
+export async function currentTakeForLine(
+  projectId: string,
+  speaker: string,
+  line: string,
+): Promise<AuditionSide | null> {
+  const wantSpeaker = speaker.trim().toLowerCase();
+  const wantText = line.trim().toLowerCase();
+  if (!projectId || !wantSpeaker || !wantText) return null;
+  try {
+    const cues = await db.audioCue.findMany({
+      where: {
+        kind: "VOICE",
+        voiceUrl: { not: null },
+        shot: { scene: { episode: { season: { projectId } } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200, // recent takes only: the A side wants the current read, not ancient history
+      select: {
+        id: true, label: true, voiceUrl: true, voiceDurationMs: true,
+        voiceActor: true, voiceState: true, voiceStateLabel: true,
+      },
+    });
+    for (const cue of cues) {
+      const sep = cue.label.includes(": ") ? cue.label.indexOf(": ") : -1;
+      const cueSpeaker = sep >= 0 ? cue.label.slice(0, sep).trim().toLowerCase() : "";
+      const cueText = (sep >= 0 ? cue.label.slice(sep + 2) : cue.label).trim().toLowerCase();
+      if (cueText !== wantText) continue;
+      if (cueSpeaker && cueSpeaker !== wantSpeaker) continue;
+      return {
+        cueId: cue.id,
+        url: cue.voiceUrl as string, // non-null by the where filter
+        mimeType: "audio/wav",
+        durationMs: cue.voiceDurationMs,
+        voiceId: cue.voiceActor,
+        deliveryId: cue.voiceState,
+        stateLabel: cue.voiceStateLabel,
+        origin: "stored take",
+      };
+    }
+  } catch {
+    // best-effort lookup: a missing A side just means a single-player preview
+  }
+  return null;
+}
+
+/**
  * Audition a state's NEW performance right after a variant bind and
  * save it as a static WAV. Returns the preview the DSH tool attaches
  * to its result, or null when the render fails (the bind itself stays
  * successful and the failure is noted in the result text instead).
+ *
+ * A/B: when the auditioned line already has a stored take in the
+ * stems, that take rides the preview as the current side, so the
+ * creator hears the OLD read next to the NEW one before committing
+ * to a re-render.
  */
 export async function renderVariantAudition(opts: {
   projectId: string;
@@ -166,6 +223,12 @@ export async function renderVariantAudition(opts: {
     const file = `variant-${opts.stateId}.wav`;
     await writeFile(path.join(dir, file), rendered.wav);
 
+    // A/B pair: attach the stored take of the same line when one exists
+    // (sample reads have no production line to compare against)
+    const current = rendered.source === "sample"
+      ? null
+      : await currentTakeForLine(opts.projectId, opts.characterName, rendered.text);
+
     return {
       url: `/auditions/${file}?v=${Date.now()}`,
       mimeType: "audio/wav",
@@ -178,6 +241,7 @@ export async function renderVariantAudition(opts: {
       pitch: rendered.pitch,
       stateLabel: opts.stateLabel,
       characterName: opts.characterName,
+      current,
     };
   } catch {
     return null;

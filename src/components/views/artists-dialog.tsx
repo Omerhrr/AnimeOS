@@ -11,12 +11,14 @@
 // dialogue line) before committing a casting - no cue or take is
 // created. STATE auditions go one deeper: pick one of a character's
 // development states and hear exactly how it performs - the variant
-// voice when one is bound, plus the state's speed/pitch hints.
+// voice when one is bound, plus the state's speed/pitch hints. When
+// the auditioned line has a stored take, the response carries it as
+// the A side and the board can play current vs proposed back to back.
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Loader2, Play, Plus, Square, Trash2, Users } from "lucide-react";
-import { api, type StudioProject } from "@/lib/api-client";
+import { AudioLines, Headphones, Loader2, Play, Plus, Square, Trash2, Users } from "lucide-react";
+import { api, type StudioProject, type AuditionResult, type AuditionCurrentSide } from "@/lib/api-client";
 import { VOICES, defaultVoiceFor, voiceById } from "@/lib/comic/voice-catalog";
 import { DELIVERIES, type DeliveryId } from "@/lib/comic/delivery";
 import { Button } from "@/components/ui/button";
@@ -44,6 +46,8 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   const [auditionMsg, setAuditionMsg] = useState<string | null>(null);
   // state auditions: per-character selected development state
   const [stateSel, setStateSel] = useState<Record<string, string>>({});
+  // A/B pairs from the last state audition per character: the stored take of the line + the proposed render
+  const [statePairs, setStatePairs] = useState<Record<string, { proposed: AuditionResult; current: AuditionCurrentSide } | null>>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -154,6 +158,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       });
       await playClip(`state-play-${characterId}`, res);
       const v = res.variant;
+      setStatePairs((prev) => ({ ...prev, [characterId]: res.current ? { proposed: res, current: res.current } : null }));
       const bits = [
         `state audition: "${v?.stateLabel ?? "state"}"`,
         `${res.voiceId}${v?.variantVoiceId ? " (variant voice)" : " (cast voice)"}`,
@@ -162,6 +167,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
         v?.episodeNumber != null ? `@Ep${v.episodeNumber}` : null,
         res.speaker ? `${res.speaker}'s line` : res.source,
         res.durationMs ? `${(res.durationMs / 1000).toFixed(1)}s` : "",
+        res.current ? `A/B ready: current take ${res.current.voiceId ?? "?"}${res.current.durationMs ? ` · ${(res.current.durationMs / 1000).toFixed(1)}s` : ""}` : null,
         "not saved as a take",
       ].filter(Boolean);
       setAuditionMsg(bits.join(" · "));
@@ -187,6 +193,45 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       URL.revokeObjectURL(url);
     };
     await audio.play();
+  }
+
+  /** A/B compare: play the current stored take of the line, then the proposed performance, back to back. */
+  async function playCompare(characterId: string) {
+    const pair = statePairs[characterId];
+    if (!pair) return;
+    stopAudition();
+    setAuditionBusy(`ab:${characterId}`);
+    setError(null);
+    try {
+      // leg 1: the current stored take (same-origin URL under /voices/)
+      const currentAudio = new Audio(pair.current.url);
+      audioRef.current = currentAudio;
+      setAuditionPlaying(`ab-play-${characterId}`);
+      await new Promise<void>((resolve) => {
+        currentAudio.onended = () => resolve();
+        currentAudio.onerror = () => resolve();
+        void currentAudio.play().catch(() => resolve());
+      });
+      // stopAudition() during leg 1 swaps audioRef: do not roll into leg 2
+      if (audioRef.current !== currentAudio) return;
+      // leg 2: the proposed performance (throwaway base64 render)
+      const bin = atob(pair.proposed.audio);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: pair.proposed.mimeType }));
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        setAuditionPlaying(null);
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "A/B compare failed");
+      setAuditionPlaying(null);
+    } finally {
+      setAuditionBusy(null);
+    }
   }
 
   const canCreate = name.trim().length > 0;
@@ -387,6 +432,20 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
                           ? <Square className="h-2.5 w-2.5" />
                           : <Play className="h-2.5 w-2.5" />}
                     </button>
+                    {statePairs[c.id] && (
+                      <button
+                        onClick={() => void playCompare(c.id)}
+                        disabled={auditionBusy === `ab:${c.id}`}
+                        title={`A/B compare: the current stored take (${statePairs[c.id]!.current.voiceId ?? "unknown voice"}) first, then the proposed ${statePairs[c.id]!.proposed.voiceId} read, back to back`}
+                        className="h-6 w-6 flex items-center justify-center rounded-md border border-amber-400/25 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors shrink-0"
+                      >
+                        {auditionBusy === `ab:${c.id}`
+                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                          : auditionPlaying === `ab-play-${c.id}`
+                            ? <Square className="h-2.5 w-2.5" />
+                            : <Headphones className="h-2.5 w-2.5" />}
+                      </button>
+                    )}
                   </div>
                 )}
                 </Fragment>

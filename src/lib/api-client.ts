@@ -206,6 +206,17 @@ export interface VoiceDiffEpisode {
   cues: VoiceDiffRow[];
 }
 
+export interface AuditionCurrentSide {
+  cueId: string;
+  url: string; // stored take under /voices/
+  mimeType: string;
+  durationMs: number | null;
+  voiceId: string | null;
+  deliveryId: string | null;
+  stateLabel: string | null;
+  origin: "stored take";
+}
+
 export interface AuditionResult {
   audio: string; // base64 WAV
   mimeType: string;
@@ -225,6 +236,7 @@ export interface AuditionResult {
     speedHint: number | null;
     pitchHint: number | null;
   } | null;
+  current: AuditionCurrentSide | null; // the current stored take of the same line, for A/B (null = nothing to compare)
 }
 
 export interface BridgeStatusInfo {

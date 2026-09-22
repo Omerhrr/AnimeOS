@@ -71,20 +71,42 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
                     </pre>
                   )}
                   <div className="text-[11px] text-foreground/70 whitespace-pre-wrap leading-relaxed">{a.result}</div>
-                  {/* same-turn audition proposal: a variant bind renders a preview of the new performance */}
+                  {/* same-turn audition proposal: a variant bind renders a preview of the new performance,
+                      paired with the current stored take of the same line when one exists (A/B) */}
                   {a.audition && (
                     <div className="rounded-md border border-emerald-400/25 bg-emerald-400/[0.06] p-2 space-y-1.5">
                       <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-300">
                         <Volume2 className="h-3 w-3" />
                         Audition - {a.audition.characterName} &quot;{a.audition.stateLabel}&quot;
                       </div>
-                      <audio controls preload="none" src={a.audition.url} className="w-full h-8" />
+                      {a.audition.current && (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-slate-300/70">
+                            <span>current take</span>
+                            <span className="font-mono tracking-normal normal-case">
+                              {a.audition.current.voiceId ?? "unknown voice"}
+                              {a.audition.current.durationMs ? ` · ${(a.audition.current.durationMs / 1000).toFixed(1)}s` : ""}
+                              {a.audition.current.stateLabel ? ` · ${a.audition.current.stateLabel}` : ""}
+                            </span>
+                          </div>
+                          <audio controls preload="none" src={a.audition.current.url} className="w-full h-8 opacity-90" />
+                        </div>
+                      )}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.14em] text-emerald-300/90">
+                          <span>{a.audition.current ? "proposed" : "audition"}</span>
+                          <span className="font-mono tracking-normal normal-case">
+                            {a.audition.voiceId}
+                            {a.audition.speed !== 1 && ` · x${a.audition.speed} pace`}
+                            {a.audition.pitch !== 1 && ` · pitch x${a.audition.pitch}`}
+                            {a.audition.durationMs ? ` · ${(a.audition.durationMs / 1000).toFixed(1)}s` : ""}
+                          </span>
+                        </div>
+                        <audio controls preload="none" src={a.audition.url} className="w-full h-8" />
+                      </div>
                       <div className="text-[10px] leading-relaxed text-muted-foreground">
+                        {a.audition.current && <span className="text-amber-300/90">A/B: current first, then proposed. </span>}
                         <span className="italic">&quot;{a.audition.text}&quot;</span>
-                        {" "}· {a.audition.voiceId}
-                        {a.audition.speed !== 1 && ` · x${a.audition.speed} pace`}
-                        {a.audition.pitch !== 1 && ` · pitch x${a.audition.pitch}`}
-                        {a.audition.durationMs ? ` · ${(a.audition.durationMs / 1000).toFixed(1)}s` : ""}
                         {` · ${a.audition.source}`}
                       </div>
                     </div>

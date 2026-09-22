@@ -264,7 +264,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_state_voice_variant",
-    description: "State voice performance: bind a DIFFERENT TTS voice to one of a character's development states and/or set its speed/pitch hints, so lines spoken while that state is episode-effective perform with the variant voice and bent pace/pitch instead of the cast artist's flat read (possession, transformation, clone, corrupted, child form, exhausted...). Casting beyond delivery registers: the state changes WHO the character sounds like and HOW the variant performs; the delivery register only changes the read's punctuation shape. The result carries an AUDITION of the new performance (rendered on the character's own first line and playable from the trace), so point the creator to it in your reply the same turn. Takes rendered before the change are flagged stale by the direction diff; pass voice as empty string to clear the variant, speedHint/pitchHint as null to clear a hint.",
+    description: "State voice performance: bind a DIFFERENT TTS voice to one of a character's development states and/or set its speed/pitch hints, so lines spoken while that state is episode-effective perform with the variant voice and bent pace/pitch instead of the cast artist's flat read (possession, transformation, clone, corrupted, child form, exhausted...). Casting beyond delivery registers: the state changes WHO the character sounds like and HOW the variant performs; the delivery register only changes the read's punctuation shape. The result carries an AUDITION of the new performance rendered on the character's own first line, paired with the character's current stored take of that line when one exists (an A/B pair playable from the trace), so point the creator to it in your reply the same turn. Takes rendered before the change are flagged stale by the direction diff; pass voice as empty string to clear the variant, speedHint/pitchHint as null to clear a hint.",
     args: {
       characterName: "string",
       stateLabel: "string - matches a state by name (contains, case-insensitive); defaults to the character's latest episode-resolved state",
@@ -1175,7 +1175,11 @@ export async function executeTool(projectId: string, name: string, args: Record<
         });
         let result = `State voice performance set on ${ch.name} "${state.label}"${state.episodeNumber ? ` (Ep${state.episodeNumber})` : ""}: ${changes.join(", ")}. While that state is episode-effective, lines perform with ${data.voiceVariant ? `'${String(data.voiceVariant)}' instead of ${castLine}` : castLine}${data.speedHint != null ? ` at x${String(data.speedHint)} pace` : ""}${data.pitchHint != null ? ` and pitch x${String(data.pitchHint)}` : ""}. `;
         if (audition) {
-          result += `Audition attached to this call: "${audition.text}" performed by ${audition.voiceId}${audition.speed !== 1 ? ` at x${audition.speed} pace` : ""}${audition.pitch !== 1 ? ` with pitch x${audition.pitch}` : ""} - tell the creator to play the preview in this trace to hear the new performance before re-rendering. `;
+          if (audition.current) {
+            result += `Audition attached to this call as an A/B pair: the current stored take (${audition.current.voiceId ?? "unknown voice"}) and the NEW performance (${audition.voiceId}${audition.speed !== 1 ? ` at x${audition.speed} pace` : ""}${audition.pitch !== 1 ? ` with pitch x${audition.pitch}` : ""}) of the same line - tell the creator to play both in this trace and compare before re-rendering. `;
+          } else {
+            result += `Audition attached to this call: "${audition.text}" performed by ${audition.voiceId}${audition.speed !== 1 ? ` at x${audition.speed} pace` : ""}${audition.pitch !== 1 ? ` with pitch x${audition.pitch}` : ""} - tell the creator to play the preview in this trace to hear the new performance before re-rendering. `;
+          }
         } else {
           result += "Audition preview failed to render (the binding is saved) - audition the state from the casting board instead. ";
         }

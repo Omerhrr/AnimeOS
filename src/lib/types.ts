@@ -1,5 +1,17 @@
 // Shared types for the AI-Native Animation Production Platform
 
+/** One side of an A/B audition pair: the CURRENT stored take of the line. */
+export interface AuditionSide {
+  cueId: string;
+  url: string; // stored take under /voices/, cache-busted at render time
+  mimeType: string;
+  durationMs: number | null;
+  voiceId: string | null; // TTS voice that performed the stored take
+  deliveryId: string | null; // delivery register stamped on the take
+  stateLabel: string | null; // state the take performed under (null = plain read)
+  origin: "stored take";
+}
+
 /** An audition preview attached to a DSH tool result (rendered, playable). */
 export interface AuditionPreview {
   url: string; // static WAV under /auditions/, cache-busted
@@ -13,6 +25,7 @@ export interface AuditionPreview {
   pitch: number; // effective pitch factor (1 = natural)
   stateLabel: string; // the state whose performance was auditioned
   characterName: string;
+  current?: AuditionSide | null; // the current stored take of the same line, for A/B (null = nothing to compare)
 }
 
 export interface TraceAction {
