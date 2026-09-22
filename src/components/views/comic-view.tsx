@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, BookOpenCheck, FileDown, Layers, MoveRight, Sparkles, Loader2, MessageSquarePlus, Scissors } from "lucide-react";
+import { BookOpen, BookOpenCheck, CheckSquare, FileDown, Layers, MoveRight, Music, SlidersHorizontal, Sparkles, Loader2, MessageSquarePlus, Scissors, Users, X, Zap } from "lucide-react";
 import type { StudioProject, SceneWithShots, ShotRow } from "@/lib/api-client";
 import { api } from "@/lib/api-client";
 import {
@@ -14,6 +14,10 @@ import { exportWebtoonSlices } from "@/lib/comic/export-slices";
 import { PanelArt } from "@/components/views/comic-panel-art";
 import { SpeechBubbles, DialogueEditor } from "@/components/views/comic-bubbles";
 import { StyleDirectionDialog } from "@/components/views/style-direction-dialog";
+import { LoraStudioDialog } from "@/components/views/lora-studio-dialog";
+import { ArtistsDialog } from "@/components/views/artists-dialog";
+import { PanelInspectorDialog } from "@/components/views/panel-inspector-dialog";
+import { SoundTimelineDialog } from "@/components/views/sound-timeline-dialog";
 import { SectionHeader } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -38,7 +42,10 @@ function bubbleCapacity(panel: PanelPlacement): number {
 interface PanelActions {
   onEdit: (shot: ShotRow) => void;
   onGenerateArt: (shotId: string) => void;
+  onInspect: (shot: ShotRow) => void;
+  onSound: (shot: ShotRow) => void;
   genStatus: Record<string, "loading" | "error">;
+  selectMode: boolean;
 }
 
 function PanelToolbar({
@@ -51,10 +58,12 @@ function PanelToolbar({
   paper: string;
 }) {
   const status = actions.genStatus[shot.id];
+  const scored = (shot.audioCues?.length ?? 0) > 0;
   return (
     <span
       className={cn("absolute top-1 z-20 flex gap-1 print:hidden", rtl ? "left-1" : "right-1")}
       style={{ flexDirection: rtl ? "row-reverse" : "row" }}
+      onClick={(e) => e.stopPropagation()}
     >
       <button
         onClick={() => actions.onGenerateArt(shot.id)}
@@ -78,6 +87,25 @@ function PanelToolbar({
       >
         <MessageSquarePlus className="h-2.5 w-2.5" />
       </button>
+      <button
+        onClick={() => actions.onInspect(shot)}
+        title="Artist + style LoRA"
+        className="flex h-4.5 w-4.5 items-center justify-center rounded-sm border text-neutral-700 transition-colors hover:bg-black/5"
+        style={{ background: "rgba(255,255,255,0.85)", borderColor: ink }}
+      >
+        <SlidersHorizontal className="h-2.5 w-2.5" />
+      </button>
+      <button
+        onClick={() => actions.onSound(shot)}
+        title="Motion sound / SFX timing"
+        className={cn(
+          "flex h-4.5 w-4.5 items-center justify-center rounded-sm border transition-colors",
+          scored ? "text-amber-700" : "text-neutral-700 hover:bg-black/5"
+        )}
+        style={{ background: scored ? "rgba(232,176,75,0.35)" : "rgba(255,255,255,0.85)", borderColor: ink }}
+      >
+        <Music className="h-2.5 w-2.5" />
+      </button>
       {shot.artworkUrl && (
         <span
           className="flex h-4.5 items-center rounded-sm border px-1 text-[7px] font-bold tracking-widest"
@@ -86,18 +114,39 @@ function PanelToolbar({
           AI
         </span>
       )}
+      {shot.lora && (
+        <span
+          title={`Style LoRA ${shot.lora.name} @ ${(shot.loraStrength ?? shot.lora.weight).toFixed(2)}`}
+          className="flex h-4.5 items-center gap-0.5 rounded-sm border px-1 text-[7px] font-bold tracking-wider"
+          style={{ background: "rgba(232,176,75,0.85)", color: "#1c1917", borderColor: ink }}
+        >
+          <Zap className="h-2 w-2" /> {shot.lora.name.split("-")[0].slice(0, 4).toUpperCase()}
+        </span>
+      )}
+      {shot.artist && (
+        <span
+          title={`Artist: ${shot.artist.name}`}
+          className="flex h-4.5 w-4.5 items-center justify-center rounded-full border text-[7px] font-bold"
+          style={{ background: shot.artist.color, color: "#1c1917", borderColor: ink }}
+        >
+          {shot.artist.name.slice(0, 1).toUpperCase()}
+        </span>
+      )}
     </span>
   );
 }
 
 function PanelFrame({
-  panel, format, rtl, scene, actions,
+  panel, format, rtl, scene, actions, dimmed, selected, onToggleSelect,
 }: {
   panel: PanelPlacement<ShotRow>;
   format: ComicFormat;
   rtl: boolean;
   scene: SceneWithShots;
   actions: PanelActions;
+  dimmed: boolean;
+  selected: boolean;
+  onToggleSelect: (shotId: string) => void;
 }) {
   const cfg = COMIC_FORMATS[format];
   const shot = panel.shot;
@@ -108,7 +157,14 @@ function PanelFrame({
   return (
     <figure
       data-shot-id={shot.id}
-      className={cn("comic-panel relative overflow-hidden bg-white", panel.emphasis && "comic-splash")}
+      onClick={actions.selectMode ? () => onToggleSelect(shot.id) : undefined}
+      className={cn(
+        "comic-panel relative overflow-hidden bg-white",
+        panel.emphasis && "comic-splash",
+        dimmed && "opacity-25 grayscale",
+        actions.selectMode && "cursor-pointer",
+        selected && "outline outline-2 outline-offset-2 outline-primary z-10"
+      )}
       style={{
         gridColumn: `${panel.colStart} / span ${panel.colSpan}`,
         gridRow: `span ${panel.rowSpan}`,
@@ -174,19 +230,32 @@ function PanelFrame({
 }
 
 function WebtoonPanel({
-  shot, scene, format, actions,
+  shot, scene, format, actions, dimmed, selected, onToggleSelect,
 }: {
   shot: ShotRow;
   scene: SceneWithShots;
   format: ComicFormat;
   actions: PanelActions;
+  dimmed: boolean;
+  selected: boolean;
+  onToggleSelect: (shotId: string) => void;
 }) {
   const cfg = COMIC_FORMATS[format];
   const dynamic = shot.movement && ["PAN", "TRACKING", "DOLLY_IN", "ORBIT", "CRANE"].includes(shot.movement);
   const lines = parseDialogue(shot.dialogue).slice(0, 3);
   const loading = actions.genStatus[shot.id] === "loading";
   return (
-    <figure data-shot-id={shot.id} className="comic-panel relative overflow-hidden bg-white" style={{ border: `2px solid ${cfg.ink}`, height: stripHeight(shot.shotType) }}>
+    <figure
+      data-shot-id={shot.id}
+      onClick={actions.selectMode ? () => onToggleSelect(shot.id) : undefined}
+      className={cn(
+        "comic-panel relative overflow-hidden bg-white",
+        dimmed && "opacity-25 grayscale",
+        actions.selectMode && "cursor-pointer",
+        selected && "outline outline-2 outline-offset-2 outline-primary z-10"
+      )}
+      style={{ border: `2px solid ${cfg.ink}`, height: stripHeight(shot.shotType) }}
+    >
       {shot.artworkUrl ? (
         <img src={shot.artworkUrl} alt={shot.description} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
       ) : (
@@ -221,8 +290,16 @@ export function ComicView({ project }: { project: StudioProject }) {
   const [format, setFormat] = useState<ComicFormat>("MANHUA");
   const [episodeIdx, setEpisodeIdx] = useState(0);
   const [editingShot, setEditingShot] = useState<ShotRow | null>(null);
+  const [inspectingShot, setInspectingShot] = useState<ShotRow | null>(null);
+  const [soundShot, setSoundShot] = useState<ShotRow | null>(null);
   const [genStatus, setGenStatus] = useState<Record<string, "loading" | "error">>({});
   const [exporting, setExporting] = useState<string | null>(null);
+  const [artistFilter, setArtistFilter] = useState<"ALL" | "NONE" | string>("ALL");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkArtist, setBulkArtist] = useState<string>("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const cfg = COMIC_FORMATS[format];
 
@@ -242,8 +319,42 @@ export function ComicView({ project }: { project: StudioProject }) {
   const allShots = useMemo(() => scenePages.flatMap((sp) => sp.pages.flatMap((p) => p.panels.map((pl) => pl.shot))), [scenePages]);
   const withoutArt = allShots.filter((s) => !s.artworkUrl);
   const generatingCount = Object.values(genStatus).filter((s) => s === "loading").length;
+  const cueCount = allShots.reduce((n, s) => n + (s.audioCues?.length ?? 0), 0);
+  const loraCoverage = allShots.filter((s) => s.loraId).length;
+  const assignedCount = allShots.filter((s) => s.artistId).length;
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["project", project.id] });
+
+  const toggleSelect = (shotId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(shotId)) next.delete(shotId);
+      else next.add(shotId);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setBulkMsg(null);
+  };
+
+  const bulkAssign = async () => {
+    if (!bulkArtist || selectedIds.size === 0) return;
+    setBulkBusy(true);
+    setBulkMsg(null);
+    try {
+      const res = await api.patchShot({ ids: [...selectedIds], artistId: bulkArtist === "__none__" ? null : bulkArtist });
+      setBulkMsg(`Assigned ${res.updated ?? selectedIds.size} panel${selectedIds.size === 1 ? "" : "s"} ✓`);
+      await invalidate();
+      setTimeout(() => { setBulkMsg(null); exitSelectMode(); }, 1200);
+    } catch (err) {
+      setBulkMsg(err instanceof Error ? err.message : "Bulk assign failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const generateArt = async (shotId: string) => {
     setGenStatus((st) => ({ ...st, [shotId]: "loading" }));
@@ -281,6 +392,10 @@ export function ComicView({ project }: { project: StudioProject }) {
         shots: allShots.map((s) => ({
           id: s.id, number: s.number, description: s.description,
           shotType: s.shotType, artworkUrl: s.artworkUrl, dialogue: s.dialogue,
+          loraName: s.lora?.name ?? null,
+          loraStrength: s.loraStrength ?? null,
+          artistName: s.artist?.name ?? null,
+          audioCues: (s.audioCues ?? []).map((c) => ({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs })),
         })),
         onProgress: (msg) => setExporting(msg),
       });
@@ -329,8 +444,15 @@ export function ComicView({ project }: { project: StudioProject }) {
   const actions: PanelActions = {
     onEdit: (shot) => setEditingShot(shot),
     onGenerateArt: (shotId) => void generateArt(shotId),
+    onInspect: (shot) => setInspectingShot(shot),
+    onSound: (shot) => setSoundShot(shot),
     genStatus,
+    selectMode,
   };
+
+  const isDimmed = (shot: ShotRow) =>
+    artistFilter !== "ALL" &&
+    (artistFilter === "NONE" ? Boolean(shot.artistId) : shot.artistId !== artistFilter);
 
   return (
     <div>
@@ -372,6 +494,8 @@ export function ComicView({ project }: { project: StudioProject }) {
         <p className="text-[11px] text-muted-foreground xl:ml-2">{cfg.blurb}</p>
         <div className="xl:ml-auto flex items-center gap-2 flex-wrap">
           <StyleDirectionDialog project={project} />
+          <LoraStudioDialog project={project} />
+          <ArtistsDialog project={project} />
           <Button
             size="sm" variant="outline"
             className="h-7 text-[11px] border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 print:hidden"
@@ -403,13 +527,88 @@ export function ComicView({ project }: { project: StudioProject }) {
         </div>
       </div>
 
+      {/* artist filter + bulk assignment bar */}
+      <div className="studio-panel p-3 mb-5 flex flex-col md:flex-row md:items-center gap-3 print:hidden">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mr-1 flex items-center gap-1">
+            <Users className="h-3 w-3" /> Artists
+          </span>
+          <button
+            onClick={() => setArtistFilter("ALL")}
+            className={cn(
+              "px-2.5 h-7 rounded-lg text-[11px] border transition-colors",
+              artistFilter === "ALL" ? "bg-primary/15 text-primary border-primary/30" : "text-muted-foreground border-white/10 bg-white/5 hover:text-foreground"
+            )}
+          >
+            All {allShots.length}
+          </button>
+          {project.artists.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setArtistFilter(a.id)}
+              title={a.role ?? a.name}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[11px] border transition-colors",
+                artistFilter === a.id ? "bg-primary/15 text-primary border-primary/30" : "text-muted-foreground border-white/10 bg-white/5 hover:text-foreground"
+              )}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ background: a.color }} />
+              {a.name}
+              <span className="text-[9px] opacity-70 tabular-nums">{a._count?.shots ?? 0}</span>
+            </button>
+          ))}
+          <button
+            onClick={() => setArtistFilter("NONE")}
+            className={cn(
+              "px-2.5 h-7 rounded-lg text-[11px] border transition-colors",
+              artistFilter === "NONE" ? "bg-primary/15 text-primary border-primary/30" : "text-muted-foreground border-white/10 bg-white/5 hover:text-foreground"
+            )}
+          >
+            Pool {allShots.length - assignedCount}
+          </button>
+        </div>
+        <div className="md:ml-auto flex items-center gap-2">
+          <Button
+            size="sm" variant={selectMode ? "default" : "outline"}
+            className="h-7 text-[11px] border-white/12 bg-white/5 print:hidden"
+            onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+          >
+            {selectMode ? <><X className="h-3 w-3 mr-1" /> Cancel</> : <><CheckSquare className="h-3 w-3 mr-1" /> Bulk assign</>}
+          </Button>
+          {selectMode && (
+            <>
+              <span className="text-[11px] text-muted-foreground">{selectedIds.size} selected — click panels to toggle</span>
+              <select
+                value={bulkArtist}
+                onChange={(e) => setBulkArtist(e.target.value)}
+                className="h-7 rounded-md border border-white/10 bg-white/5 text-[11px] px-1.5 text-foreground"
+              >
+                <option value="" disabled>Assign to…</option>
+                {project.artists.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+                <option value="__none__">— Unassigned pool —</option>
+              </select>
+              <Button size="sm" className="h-7 text-[11px]" onClick={() => void bulkAssign()} disabled={!bulkArtist || selectedIds.size === 0 || bulkBusy}>
+                {bulkBusy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                Apply
+              </Button>
+            </>
+          )}
+          {bulkMsg && <span className="text-[11px] text-teal-300">{bulkMsg}</span>}
+        </div>
+      </div>
+
       {/* stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6 print:hidden">
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 mb-6 print:hidden">
         {[
           { icon: Layers, label: "Panels", value: stats.panels },
           { icon: BookOpen, label: cfg.readingDirection === "VERTICAL" ? "Scroll cards" : "Pages", value: stats.pages },
           { icon: BookOpenCheck, label: "Splash panels", value: stats.splash },
           { icon: Sparkles, label: "AI art ready", value: `${stats.withArt}/${stats.panels}` },
+          { icon: Zap, label: "LoRA tuned", value: `${loraCoverage}/${stats.panels}` },
+          { icon: Users, label: "Assigned", value: `${assignedCount}/${stats.panels}` },
+          { icon: Music, label: "Sound cues", value: cueCount },
           { icon: BookOpen, label: "Est. read", value: `${stats.readMin} min` },
         ].map((s) => (
           <div key={s.label} className="studio-panel p-3">
@@ -452,7 +651,12 @@ export function ComicView({ project }: { project: StudioProject }) {
                   {pages.map((pg) =>
                     pg.panels.map((p) => (
                       <div key={p.shot.id}>
-                        <WebtoonPanel shot={p.shot} scene={scene} format={format} actions={actions} />
+                        <WebtoonPanel
+                          shot={p.shot} scene={scene} format={format} actions={actions}
+                          dimmed={isDimmed(p.shot)}
+                          selected={selectedIds.has(p.shot.id)}
+                          onToggleSelect={toggleSelect}
+                        />
                       </div>
                     ))
                   )}
@@ -471,7 +675,12 @@ export function ComicView({ project }: { project: StudioProject }) {
                         style={{ gap: cfg.gutter }}
                       >
                         {pg.panels.map((p) => (
-                          <PanelFrame key={p.shot.id} panel={p} format={format} rtl={cfg.readingDirection === "RTL"} scene={scene} actions={actions} />
+                          <PanelFrame
+                            key={p.shot.id} panel={p} format={format} rtl={cfg.readingDirection === "RTL"} scene={scene} actions={actions}
+                            dimmed={isDimmed(p.shot)}
+                            selected={selectedIds.has(p.shot.id)}
+                            onToggleSelect={toggleSelect}
+                          />
                         ))}
                       </div>
                       <div className="mt-2 flex items-center justify-between text-[9px] font-mono tracking-widest" style={{ color: "#8a8578" }}>
@@ -492,8 +701,9 @@ export function ComicView({ project }: { project: StudioProject }) {
 
       <p className="text-[11px] text-muted-foreground mt-8 print:hidden">
         Panel sizing follows shot grammar: establishing shots claim splash pages, close-ups pack tight, dynamic movements get speed lines.
-        Hit the ✦ on any panel to generate AI artwork in the current style, or the ✎ to author speech bubbles, thoughts and SFX.
-        In webtoon format, Export slices packages the strip into 800px-wide platform-ready PNG slices with a manifest.
+        Hit the ✦ on any panel to generate AI artwork, the ✎ to author speech bubbles, the sliders to assign an artist and fine-tune the shot&apos;s style LoRA,
+        and the ♪ to time sound cues on the motion timeline (with a synthesized preview).
+        In webtoon format, Export slices packages the strip into 800px-wide platform-ready PNG slices with a manifest that carries audio timing, artists and LoRA metadata.
       </p>
 
       {editingShot && (
@@ -503,6 +713,26 @@ export function ComicView({ project }: { project: StudioProject }) {
           open
           onClose={() => setEditingShot(null)}
           onSaved={invalidate}
+        />
+      )}
+
+      {inspectingShot && (
+        <PanelInspectorDialog
+          shot={inspectingShot}
+          artists={project.artists}
+          loras={project.loras}
+          open
+          onClose={() => setInspectingShot(null)}
+          onSaved={invalidate}
+        />
+      )}
+
+      {soundShot && (
+        <SoundTimelineDialog
+          shot={soundShot}
+          open
+          onClose={() => setSoundShot(null)}
+          onChanged={invalidate}
         />
       )}
     </div>

@@ -33,6 +33,8 @@ model Project {
   updatedAt        DateTime @updatedAt
 
   seasons          Season[]
+  loras            StyleLora[]
+  artists          Artist[]
   characters       Character[]
   environments     Environment[]
   assets           Asset[]
@@ -124,11 +126,68 @@ model Shot {
   status      String   @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED
   artworkUrl  String?  // AI-generated panel art (served from /panels/)
   dialogue    String?  // JSON: Array<{ speaker, text, kind: SPEECH | THOUGHT | SFX }>
+  // Per-shot style LoRA fine-tuning — selects a production LoRA adapter
+  // whose trigger tokens are injected into this shot's art prompt.
+  loraId      String?
+  loraStrength Float?  // 0.1–1.2, falls back to the LoRA's default weight
+  // Multi-artist workflow — which artist owns this panel
+  artistId    String?
   createdAt   DateTime @default(now())
   scene       Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   renderJobs  RenderJob[]
+  lora        StyleLora? @relation(fields: [loraId], references: [id], onDelete: SetNull)
+  artist      Artist?    @relation(fields: [artistId], references: [id], onDelete: SetNull)
+  audioCues   AudioCue[]
 
   @@unique([sceneId, number])
+}
+
+// ─────────────────────────────────────────────────────────────
+// STYLE LORA REGISTRY + ARTIST ROSTER + SOUND DESIGN
+// ─────────────────────────────────────────────────────────────
+
+// A style LoRA adapter registered for a production. Trigger tokens
+// + strength flow into the art prompt of any shot assigned to it —
+// per-shot style fine-tuning on top of the production style.
+model StyleLora {
+  id            String   @id @default(cuid())
+  projectId     String
+  name          String
+  triggerPhrase String   // comma/space-separated trigger tokens injected verbatim
+  weight        Float    @default(0.8) // default strength for shots without an explicit one
+  baseModel     String?  // e.g. "SDXL", "FLUX.1", "animagine-xl"
+  notes         String?
+  createdAt     DateTime @default(now())
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shots         Shot[]
+
+  @@unique([projectId, name])
+}
+
+// Studio roster member for multi-artist shot assignment.
+model Artist {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  role      String?  // e.g. "Key animator", "Backgrounds", "Effects"
+  color     String   @default("#7c9cff")
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shots     Shot[]
+}
+
+// Sound-design cue for a shot's motion panel: timed on the shot's
+// duration timeline and previewed with the WebAudio engine.
+model AudioCue {
+  id         String  @id @default(cuid())
+  shotId     String
+  kind       String  @default("SFX") // SFX | VOICE | BGM | AMBIENCE
+  label      String
+  startMs    Int     @default(0)
+  durationMs Int     @default(600)
+  volume     Float   @default(0.8)
+  createdAt  DateTime @default(now())
+  shot       Shot    @relation(fields: [shotId], references: [id], onDelete: Cascade)
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -20,6 +20,13 @@ import JSZip from "jszip";
 import { stripHeight, COMIC_FORMATS } from "@/lib/comic/layout";
 import { parseDialogue, bubbleSpots } from "@/lib/comic/dialogue";
 
+export interface SliceAudioCue {
+  kind: string;
+  label: string;
+  startMs: number;
+  durationMs: number;
+}
+
 export interface SliceShot {
   id: string;
   number: number;
@@ -27,6 +34,11 @@ export interface SliceShot {
   shotType: string;
   artworkUrl?: string | null;
   dialogue?: string | null;
+  // metadata carried into the manifest for downstream motion-comic tooling
+  loraName?: string | null;
+  loraStrength?: number | null;
+  artistName?: string | null;
+  audioCues?: SliceAudioCue[];
 }
 
 export interface SliceExportOptions {
@@ -365,12 +377,20 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
       index: s,
       file: `EP${String(episodeNumber).padStart(2, "0")}_slice_${String(s + 1).padStart(2, "0")}.png`,
       blob,
-      shotIds: sliceBlocks.map((b) => ({ id: b.shot.id, number: b.shot.number, description: b.shot.description })),
+      shotIds: sliceBlocks.map((b) => ({
+        id: b.shot.id,
+        number: b.shot.number,
+        description: b.shot.description,
+        artist: b.shot.artistName ?? null,
+        styleLora: b.shot.loraName ? `${b.shot.loraName}@${(b.shot.loraStrength ?? 0.8).toFixed(2)}` : null,
+        audioCues: b.shot.audioCues ?? [],
+      })),
     });
   }
 
   // 4. zip + download
   onProgress?.("Packaging ZIP…");
+  const allCues = shots.flatMap((s) => (s.audioCues ?? []).map((c) => ({ ...c, shotId: s.id })));
   const zip = new JSZip();
   for (const s of blobs) zip.file(s.file, s.blob);
   zip.file("manifest.json", JSON.stringify({
@@ -379,6 +399,15 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
     exportSpec: { width: EXPORT_WIDTH, maxSliceHeight: SLICE_HEIGHT, format: "MANHWA (webtoon vertical)" },
     generatedAt: new Date().toISOString(),
     sliceCount: blobs.length,
+    audio: {
+      cueCount: allCues.length,
+      kinds: allCues.reduce<Record<string, number>>((acc, c) => ({ ...acc, [c.kind]: (acc[c.kind] ?? 0) + 1 }), {}),
+      // timing map for motion-comic authoring tools (millisecond timeline per panel)
+      cuesByShot: allCues.reduce<Record<string, SliceAudioCue[]>>((acc, c) => {
+        (acc[c.shotId] ??= []).push({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs });
+        return acc;
+      }, {}),
+    },
     slices: blobs.map((s) => ({ index: s.index, file: s.file, panels: s.shotIds })),
   }, null, 2));
 

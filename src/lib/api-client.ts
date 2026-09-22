@@ -34,6 +34,8 @@ export interface StudioProject {
   artPalettePrompt: string | null;
   artNegativePrompt: string | null;
   status: string;
+  loras: StyleLoraRow[];
+  artists: ArtistRow[];
   seasons: Array<{
     id: string;
     number: number;
@@ -89,6 +91,44 @@ export interface ShotRow {
   status: string;
   artworkUrl?: string | null;
   dialogue?: string | null;
+  loraId?: string | null;
+  loraStrength?: number | null;
+  artistId?: string | null;
+  lora?: { id: string; name: string; triggerPhrase: string; weight: number } | null;
+  artist?: { id: string; name: string; role: string | null; color: string } | null;
+  audioCues?: AudioCueRow[];
+}
+
+export interface StyleLoraRow {
+  id: string;
+  projectId: string;
+  name: string;
+  triggerPhrase: string;
+  weight: number;
+  baseModel: string | null;
+  notes: string | null;
+  _count?: { shots: number };
+}
+
+export interface ArtistRow {
+  id: string;
+  projectId: string;
+  name: string;
+  role: string | null;
+  color: string;
+  _count?: { shots: number };
+}
+
+export type AudioCueKind = "SFX" | "VOICE" | "BGM" | "AMBIENCE";
+
+export interface AudioCueRow {
+  id: string;
+  shotId: string;
+  kind: AudioCueKind;
+  label: string;
+  startMs: number;
+  durationMs: number;
+  volume: number;
 }
 
 export interface BridgeStatusInfo {
@@ -247,13 +287,31 @@ export const api = {
   createEpisode: (body: Record<string, unknown>) => j<{ id: string }>("/api/episodes", { method: "POST", body: JSON.stringify(body) }),
   createScene: (body: Record<string, unknown>) => j<{ id: string }>("/api/scenes", { method: "POST", body: JSON.stringify(body) }),
   createShot: (body: Record<string, unknown>) => j<{ id: string }>("/api/shots", { method: "POST", body: JSON.stringify(body) }),
-  patchShot: (body: Record<string, unknown>) => j<{ id: string }>("/api/shots", { method: "PATCH", body: JSON.stringify(body) }),
+  patchShot: (body: Record<string, unknown>) => j<{ id: string; updated?: number }>("/api/shots", { method: "PATCH", body: JSON.stringify(body) }),
   generatePanelArt: (shotId: string, format: string) =>
     j<{ artworkUrl: string; prompt: string }>("/api/panel-art", { method: "POST", body: JSON.stringify({ shotId, format }) }),
   generateCharacterSheet: (characterId: string) =>
     j<{ modelSheetUrl: string; prompt: string; anchor: string }>("/api/character-sheet", { method: "POST", body: JSON.stringify({ characterId }) }),
   createCharacter: (body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "POST", body: JSON.stringify(body) }),
   createEnvironment: (body: Record<string, unknown>) => j<{ id: string }>("/api/environments", { method: "POST", body: JSON.stringify(body) }),
+
+  // style LoRA registry
+  loras: (projectId: string) => j<StyleLoraRow[]>(`/api/loras?projectId=${projectId}`),
+  createLora: (body: Record<string, unknown>) => j<{ id: string }>("/api/loras", { method: "POST", body: JSON.stringify(body) }),
+  patchLora: (id: string, body: Record<string, unknown>) => j<{ id: string }>(`/api/loras/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteLora: (id: string) => j<{ ok: boolean }>(`/api/loras/${id}`, { method: "DELETE" }),
+
+  // artist roster
+  artists: (projectId: string) => j<ArtistRow[]>(`/api/artists?projectId=${projectId}`),
+  createArtist: (body: Record<string, unknown>) => j<{ id: string }>("/api/artists", { method: "POST", body: JSON.stringify(body) }),
+  patchArtist: (id: string, body: Record<string, unknown>) => j<{ id: string }>(`/api/artists/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteArtist: (id: string) => j<{ ok: boolean }>(`/api/artists/${id}`, { method: "DELETE" }),
+
+  // sound-design cues
+  audioCues: (shotId: string) => j<AudioCueRow[]>(`/api/audio-cues?shotId=${shotId}`),
+  createAudioCue: (body: Record<string, unknown>) => j<AudioCueRow>("/api/audio-cues", { method: "POST", body: JSON.stringify(body) }),
+  patchAudioCue: (id: string, body: Record<string, unknown>) => j<AudioCueRow>(`/api/audio-cues/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteAudioCue: (id: string) => j<{ ok: boolean }>(`/api/audio-cues/${id}`, { method: "DELETE" }),
   createAsset: (body: Record<string, unknown>) => j<{ id: string }>("/api/assets", { method: "POST", body: JSON.stringify(body) }),
   addContinuityEvent: (body: Record<string, unknown>) => j<{ id: string }>("/api/continuity", { method: "POST", body: JSON.stringify(body) }),
   addTerminology: (body: Record<string, unknown>) => j<{ id: string }>("/api/terminology", { method: "POST", body: JSON.stringify(body) }),

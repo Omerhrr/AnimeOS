@@ -283,5 +283,138 @@ export async function ensureSeed() {
     ],
   });
 
+  await seedStudioTeam(project.id);
+
   return project.id;
+}
+
+// ─────────────────────────────────────────────────────────────
+// STUDIO TEAM SEED — style LoRA registry, artist roster,
+// per-shot assignments and motion-panel sound design.
+// Idempotent (checks by unique name) so it can also augment a
+// live production database without touching existing artwork.
+// ─────────────────────────────────────────────────────────────
+
+export async function seedStudioTeam(projectId: string) {
+  // ── Style LoRA registry ────────────────────────────────
+  const loraDefs = [
+    { name: "immortal-path-v3", triggerPhrase: "immortalpath_xianxia_style, jade_teal_rimlight", weight: 0.85, baseModel: "SDXL", notes: "House style adapter — matches the season 1 look. Default for hero shots." },
+    { name: "ink-wash-flashback", triggerPhrase: "inkwash_2d, monochrome_wash, brush_stroke_edges", weight: 0.7, baseModel: "SDXL", notes: "2D ink-wash treatment for Willow Village flashbacks (Ep 9, 19)." },
+    { name: "azure-flame-fx", triggerPhrase: "azureflame_vfx, volumetric_sword_qi, teal_energy_rim", weight: 0.9, baseModel: "SDXL", notes: "Energy-VFX accent for cultivation blasts and sword-qi moments." },
+  ];
+  const loras: Record<string, string> = {};
+  for (const def of loraDefs) {
+    const existing = await db.styleLora.findUnique({ where: { projectId_name: { projectId, name: def.name } } });
+    if (existing) { loras[def.name] = existing.id; continue; }
+    const lora = await db.styleLora.create({ data: { projectId, ...def } });
+    loras[def.name] = lora.id;
+  }
+
+  // ── Artist roster ──────────────────────────────────────
+  const artistDefs = [
+    { name: "Mei Lin", role: "Key animator — characters", color: "#e8b04b" },
+    { name: "Jiang Wu", role: "Backgrounds & environments", color: "#5aa88f" },
+    { name: "Su Qing", role: "Effects animation", color: "#b07cd8" },
+    { name: "Dao Zhang", role: "Webtoon inker / cleanup", color: "#d8767c" },
+  ];
+  const artists: Record<string, string> = {};
+  for (const def of artistDefs) {
+    const existing = await db.artist.findFirst({ where: { projectId, name: def.name } });
+    if (existing) { artists[def.name] = existing.id; continue; }
+    const artist = await db.artist.create({ data: { projectId, ...def } });
+    artists[def.name] = artist.id;
+  }
+
+  // ── Scene 12 shot assignments + sound design ───────────
+  const scene12 = await db.scene.findFirst({
+    where: { episode: { season: { projectId } }, number: 12 },
+    include: { shots: { orderBy: { number: "asc" } } },
+  });
+  if (!scene12) return;
+
+  const assignment: Array<{ number: number; artist: string; lora?: string; strength?: number }> = [
+    { number: 1, artist: "Jiang Wu", lora: "immortal-path-v3", strength: 0.85 },
+    { number: 2, artist: "Mei Lin" },
+    { number: 3, artist: "Mei Lin" },
+    { number: 4, artist: "Su Qing" },
+    { number: 5, artist: "Su Qing", lora: "azure-flame-fx", strength: 0.9 },
+    { number: 6, artist: "Dao Zhang" },
+  ];
+  for (const a of assignment) {
+    const shot = scene12.shots.find((s) => s.number === a.number);
+    if (!shot) continue;
+    const patch: Record<string, unknown> = {};
+    if (!shot.artistId && artists[a.artist]) patch.artistId = artists[a.artist];
+    if (a.lora && !shot.loraId && loras[a.lora]) {
+      patch.loraId = loras[a.lora];
+      patch.loraStrength = a.strength ?? null;
+    }
+    if (Object.keys(patch).length) await db.shot.update({ where: { id: shot.id }, data: patch });
+  }
+
+  // Sound design for the motion panels (timed against shot duration)
+  const cueDefs: Array<{ number: number; cues: Array<{ kind: string; label: string; startMs: number; durationMs: number; volume: number }> }> = [
+    {
+      number: 1,
+      cues: [
+        { kind: "AMBIENCE", label: "Storm howl over the peak", startMs: 0, durationMs: 4200, volume: 0.55 },
+        { kind: "BGM", label: "Ominous strings enter", startMs: 600, durationMs: 3600, volume: 0.4 },
+        { kind: "SFX", label: "Distant thunder crack", startMs: 2600, durationMs: 900, volume: 0.7 },
+      ],
+    },
+    {
+      number: 2,
+      cues: [
+        { kind: "AMBIENCE", label: "Rain on broken tiles", startMs: 0, durationMs: 5000, volume: 0.6 },
+        { kind: "SFX", label: "Footsteps splashing", startMs: 400, durationMs: 1800, volume: 0.5 },
+      ],
+    },
+    {
+      number: 3,
+      cues: [
+        { kind: "SFX", label: "Rain dies unnaturally", startMs: 700, durationMs: 800, volume: 0.75 },
+        { kind: "VOICE", label: "The rain... it stopped.", startMs: 1500, durationMs: 1200, volume: 0.9 },
+      ],
+    },
+    {
+      number: 4,
+      cues: [
+        { kind: "AMBIENCE", label: "Sub-bass dread drone", startMs: 0, durationMs: 4000, volume: 0.5 },
+        { kind: "SFX", label: "Aura crawling — glassy hiss", startMs: 1800, durationMs: 1600, volume: 0.55 },
+      ],
+    },
+    {
+      number: 5,
+      cues: [
+        { kind: "SFX", label: "Blade shing — unsheathe", startMs: 300, durationMs: 700, volume: 0.9 },
+        { kind: "SFX", label: "Azure energy coiling", startMs: 900, durationMs: 2000, volume: 0.6 },
+      ],
+    },
+    {
+      number: 6,
+      cues: [
+        { kind: "SFX", label: "Impact detonation", startMs: 200, durationMs: 1200, volume: 1.0 },
+        { kind: "SFX", label: "Debris scatter", startMs: 1100, durationMs: 1400, volume: 0.65 },
+        { kind: "BGM", label: "Percussion hit", startMs: 200, durationMs: 1000, volume: 0.6 },
+      ],
+    },
+  ];
+  for (const def of cueDefs) {
+    const shot = scene12.shots.find((s) => s.number === def.number);
+    if (!shot) continue;
+    const existing = await db.audioCue.count({ where: { shotId: shot.id } });
+    if (existing > 0) continue;
+    for (const cue of def.cues) {
+      await db.audioCue.create({ data: { shotId: shot.id, ...cue } });
+    }
+  }
+
+  // One authored dialogue line so the VO cue pairs with a bubble
+  const shot3 = scene12.shots.find((s) => s.number === 3);
+  if (shot3 && !shot3.dialogue) {
+    await db.shot.update({
+      where: { id: shot3.id },
+      data: { dialogue: JSON.stringify([{ speaker: "Lin Yue", text: "The rain... it stopped.", kind: "THOUGHT" }]) },
+    });
+  }
 }

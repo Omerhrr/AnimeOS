@@ -17,7 +17,20 @@ export async function GET(_req: Request, ctx: Ctx) {
           episodes: {
             orderBy: { number: "asc" },
             include: {
-              scenes: { orderBy: { number: "asc" }, include: { shots: { orderBy: { number: "asc" } }, environment: true } },
+              scenes: {
+                orderBy: { number: "asc" },
+                include: {
+                  environment: true,
+                  shots: {
+                    orderBy: { number: "asc" },
+                    include: {
+                      lora: true,
+                      artist: true,
+                      audioCues: { orderBy: { startMs: "asc" } },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -32,6 +45,8 @@ export async function GET(_req: Request, ctx: Ctx) {
         },
       },
       environments: { orderBy: { createdAt: "asc" } },
+      loras: { orderBy: { createdAt: "asc" }, include: { _count: { select: { shots: true } } } },
+      artists: { orderBy: { createdAt: "asc" }, include: { _count: { select: { shots: true } } } },
       assets: { orderBy: { createdAt: "asc" }, include: { versions: { orderBy: { version: "asc" } } } },
       terminology: { orderBy: { createdAt: "asc" } },
       continuityEvents: { orderBy: { createdAt: "desc" } },

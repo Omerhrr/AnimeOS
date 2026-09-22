@@ -82,6 +82,31 @@ export function productionNegativeTokens(project: StyleTunableProject): string {
   return custom ? `${NEGATIVE_TAIL}, ${custom}` : NEGATIVE_TAIL;
 }
 
+// ─── Per-shot style LoRA fine-tuning ────────────────────────
+// A shot can carry a style adapter from the production's LoRA
+// registry: its trigger tokens are injected verbatim and the
+// strength steers how hard the adapter bends the look. High
+// strengths explicitly override the production style directive.
+
+interface LoraAdapter {
+  name: string;
+  triggerPhrase: string;
+  weight: number;
+  baseModel?: string | null;
+}
+
+export function shotLoraDirective(
+  lora: LoraAdapter | null | undefined,
+  strength: number | null | undefined
+): string | null {
+  if (!lora?.triggerPhrase?.trim()) return null;
+  const s = Math.min(1.2, Math.max(0.1, strength ?? lora.weight));
+  const dominance = s >= 0.75
+    ? "this adapter dominates the visual style"
+    : "blend this adapter with the base production style";
+  return `style LoRA "${lora.name}" active (trigger tokens: ${lora.triggerPhrase.trim()}) at strength ${s.toFixed(2)} — ${dominance}`;
+}
+
 interface CastMember {
   id: string;
   name: string;
@@ -132,6 +157,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
   const shot = await db.shot.findUnique({
     where: { id: shotId },
     include: {
+      lora: true,
       scene: {
         include: {
           environment: true,
@@ -146,6 +172,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
   const scene = shot.scene;
   const styleTokens = productionStyleTokens(project);
   const negativeTail = productionNegativeTokens(project);
+  const loraDirective = shotLoraDirective(shot.lora, shot.loraStrength);
 
   const cast = detectCast(project.characters, shot.description)
     .map((c) => {
@@ -158,6 +185,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
   const promptParts = [
     FORMAT_STYLE[comicFormat],
     styleTokens,
+    loraDirective,
     FRAMING[shot.shotType] ?? FRAMING.MEDIUM,
     shot.description,
     scene.environment ? `Setting: ${scene.environment.name}${scene.environment.description ? ` — ${scene.environment.description}` : ""}` : null,
@@ -181,7 +209,11 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
   const artworkUrl = `/panels/${shot.id}.png?v=${Date.now()}`;
   await db.shot.update({ where: { id: shot.id }, data: { artworkUrl } });
 
-  return { artworkUrl, prompt: prompt.slice(0, 500) };
+  return {
+    artworkUrl,
+    prompt: prompt.slice(0, 500),
+    lora: shot.lora ? { name: shot.lora.name, strength: shot.loraStrength ?? shot.lora.weight } : null,
+  };
 }
 
 // ─── Character model sheets ─────────────────────────────────

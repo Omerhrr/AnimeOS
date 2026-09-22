@@ -178,6 +178,38 @@ export const TOOL_DEFS: ToolDef[] = [
       negativePrompt: "string (optional) — extra things to avoid, e.g. 'no modern clothing, no western architecture'",
     },
   },
+  {
+    name: "set_shot_lora",
+    description: "Fine-tune the style of ONE shot with a style LoRA adapter from the production's registry. The adapter's trigger tokens flow into that shot's panel-art prompt at the given strength (0.1-1.2; >=0.75 dominates the production style). Use for style-critical shots: flashbacks, VFX-heavy beats, dream sequences. Pass loraName as empty string to detach.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      loraName: "string — LoRA name from the production's loras list (empty string clears the assignment)",
+      strength: "number 0.1-1.2 (optional, defaults to the LoRA's default weight)",
+    },
+  },
+  {
+    name: "set_shot_artist",
+    description: "Assign a shot to an artist on the production roster (multi-artist workflow). Use to balance workload and route specialisms (backgrounds, characters, effects). Pass artistName as empty string to unassign.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      artistName: "string — artist name from the production's artists list (empty string unassigns)",
+    },
+  },
+  {
+    name: "add_audio_cue",
+    description: "Add a timed sound-design cue to a shot's motion panel: SFX accent, VOICE line, BGM beat or AMBIENCE bed, timed in milliseconds against the shot's duration. Score dynamic shots (camera movement) with an ambience bed + 1-3 SFX accents; keep VOICE cues inside the shot duration.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      kind: "SFX | VOICE | BGM | AMBIENCE",
+      label: "string, e.g. 'Blade shing — unsheathe' or the spoken line for VOICE",
+      startMs: "number, cue start on the shot timeline",
+      durationMs: "number, how long the sound lasts (default 600)",
+      volume: "number 0.05-1 (default 0.8)",
+    },
+  },
 ];
 
 type ActionResult = { status: "OK" | "ERROR"; result: string };
@@ -591,6 +623,89 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return { status: "OK", result: `Art style direction updated — ${parts}. Every future panel-art and model-sheet prompt in this production now carries it.` };
       }
 
+      case "set_shot_lora": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+
+        const loraName = String(args.loraName ?? "").trim();
+        if (!loraName) {
+          await db.shot.update({ where: { id: shot.id }, data: { loraId: null, loraStrength: null } });
+          return { status: "OK", result: `Style LoRA detached from Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) — back to the production style.` };
+        }
+        const lora = await db.styleLora.findFirst({ where: { projectId, name: { contains: loraName } } });
+        if (!lora) {
+          const known = await db.styleLora.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `No LoRA named '${loraName}' in this production. Registered: ${known.map((l) => l.name).join(", ") || "none — register one with the creator"}.` };
+        }
+        const strength = args.strength !== undefined ? Math.min(1.2, Math.max(0.1, Number(args.strength))) : lora.weight;
+        if (args.strength !== undefined && !Number.isFinite(strength)) {
+          return { status: "ERROR", result: "strength must be a number between 0.1 and 1.2." };
+        }
+        await db.shot.update({ where: { id: shot.id }, data: { loraId: lora.id, loraStrength: strength } });
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "STATE_CHANGE",
+            summary: `DSH attached style LoRA '${lora.name}' @${strength.toFixed(2)} to Scene ${scene.number} / Shot ${String(shot.number).padStart(3, "0")}`,
+          },
+        });
+        return {
+          status: "OK",
+          result: `Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) now renders with style LoRA '${lora.name}' (trigger: ${lora.triggerPhrase}) at strength ${strength.toFixed(2)}. Future panel art for this shot picks it up automatically.`,
+        };
+      }
+
+      case "set_shot_artist": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+
+        const artistName = String(args.artistName ?? "").trim();
+        if (!artistName) {
+          await db.shot.update({ where: { id: shot.id }, data: { artistId: null } });
+          return { status: "OK", result: `Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) unassigned — back in the pool.` };
+        }
+        const artist = await db.artist.findFirst({ where: { projectId, name: { contains: artistName } } });
+        if (!artist) {
+          const roster = await db.artist.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `No artist named '${artistName}' on this production's roster. Roster: ${roster.map((a) => a.name).join(", ") || "empty"}.` };
+        }
+        await db.shot.update({ where: { id: shot.id }, data: { artistId: artist.id } });
+        return { status: "OK", result: `Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) assigned to ${artist.name}${artist.role ? ` (${artist.role})` : ""}.` };
+      }
+
+      case "add_audio_cue": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+
+        const kindRaw = String(args.kind ?? "SFX").toUpperCase();
+        const kind = ["SFX", "VOICE", "BGM", "AMBIENCE"].includes(kindRaw) ? kindRaw : "SFX";
+        const label = String(args.label ?? "").trim();
+        if (!label) return { status: "ERROR", result: "label is required — describe the sound or give the spoken line." };
+        const timelineMs = Math.max(1, Math.round((shot.duration ?? 4) * 1000));
+        const startMs = Math.min(timelineMs - 50, Math.max(0, Math.round(Number(args.startMs ?? 0)) || 0));
+        const durationMs = Math.min(Math.max(timelineMs, 50), Math.max(50, Math.round(Number(args.durationMs ?? 600)) || 600));
+        const volume = Number.isFinite(Number(args.volume)) ? Math.min(1, Math.max(0.05, Number(args.volume))) : 0.8;
+        const cue = await db.audioCue.create({ data: { shotId: shot.id, kind, label: label.slice(0, 120), startMs, durationMs, volume } });
+        const total = await db.audioCue.count({ where: { shotId: shot.id } });
+        return {
+          status: "OK",
+          result: `${kind} cue "${cue.label}" @${cue.startMs}ms (+${cue.durationMs}ms) added to Shot ${String(shot.number).padStart(3, "0")} — shot now carries ${total} cue(s) on its ${timelineMs}ms motion timeline.`,
+        };
+      }
+
       default:
         return { status: "ERROR", result: `Unknown tool: ${name}` };
     }
@@ -603,12 +718,32 @@ export async function buildCompactContext(projectId: string) {
   const project = await db.project.findUnique({
     where: { id: projectId },
     include: {
-      seasons: { include: { episodes: { include: { scenes: { include: { shots: true, environment: true } } } } } },
+      seasons: {
+        include: {
+          episodes: {
+            include: {
+              scenes: {
+                include: {
+                  environment: true,
+                  shots: {
+                    include: {
+                      artist: { select: { name: true } },
+                      lora: { select: { name: true, weight: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       characters: { include: { states: true } },
       environments: true,
       assets: true,
       terminology: true,
       continuityEvents: true,
+      loras: { include: { _count: { select: { shots: true } } } },
+      artists: { include: { _count: { select: { shots: true } } } },
     },
   });
   if (!project) return null;
@@ -627,6 +762,8 @@ export async function buildCompactContext(projectId: string) {
       language: project.originalLanguage,
       subtitles: JSON.parse(project.subtitleLanguages || "[]"),
     },
+    loras: project.loras.map((l) => ({ name: l.name, trigger: l.triggerPhrase, defaultWeight: l.weight, assignedShots: l._count.shots })),
+    artists: project.artists.map((a) => ({ name: a.name, role: a.role, assignedShots: a._count.shots })),
     structure: project.seasons.map((s) => ({
       season: s.number,
       episodes: s.episodes.map((e) => ({
@@ -648,6 +785,8 @@ export async function buildCompactContext(projectId: string) {
             duration: sh.duration, status: sh.status, description: sh.description,
             dialogueLines: sh.dialogue ? JSON.parse(sh.dialogue).length : 0,
             art: Boolean(sh.artworkUrl),
+            artist: sh.artist?.name ?? null,
+            lora: sh.lora ? `${sh.lora.name}@${(sh.loraStrength ?? sh.lora.weight).toFixed(2)}` : null,
           })),
         })),
       })),
