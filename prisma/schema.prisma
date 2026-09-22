@@ -191,15 +191,19 @@ model LoraTrainRun {
 }
 
 // Studio roster member for multi-artist shot assignment.
+// Per-artist voice casting: an artist carries a TTS voice and can be
+// cast as the speaking voice of characters (Character.voiceArtist).
 model Artist {
   id        String   @id @default(cuid())
   projectId String
   name      String
   role      String?  // e.g. "Key animator", "Backgrounds", "Effects"
   color     String   @default("#7c9cff")
+  voiceId   String?  // TTS voice id this artist performs with
   createdAt DateTime @default(now())
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   shots     Shot[]
+  voiceRoles Character[] @relation("VoiceCast")
 }
 
 // Sound-design cue for a shot's motion panel: timed on the shot's
@@ -220,6 +224,9 @@ model AudioCue {
   voiceDurationMs  Int?      // actual rendered audio duration
   voiceState       String?   // delivery profile: NEUTRAL | EXCITED | INJURED
   voiceStateLabel  String?   // character state the delivery was resolved from
+  voiceDelivery    String?   // standing direction: null = auto per render, else NEUTRAL | EXCITED | INJURED
+  voiceNote        String?   // directorial note attached to the delivery
+  voiceCast        String?   // cast artist name that performed the last take
   createdAt  DateTime @default(now())
   shot       Shot    @relation(fields: [shotId], references: [id], onDelete: Cascade)
 }
@@ -245,6 +252,9 @@ model Character {
   modelSheetPrompt String? // Canonical visual-anchor prompt - reused in every panel art for consistency
   parentId       String?  // derivative source character
   derivativeType String?  // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
+  // Per-artist voice casting: which roster artist speaks for this character
+  voiceArtistId  String?
+  voiceArtist    Artist?  @relation("VoiceCast", fields: [voiceArtistId], references: [id], onDelete: SetNull)
   createdAt      DateTime @default(now())
   project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parent         Character?  @relation("Derivatives", fields: [parentId], references: [id])

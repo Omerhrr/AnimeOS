@@ -11,6 +11,7 @@ import { api, type AudioCueKind, type AudioCueRow, type ShotRow } from "@/lib/ap
 import { parseDialogue } from "@/lib/comic/dialogue";
 import { CUE_KIND_META, CuePlayer } from "@/lib/comic/audio";
 import { DELIVERIES, deliveryProfile } from "@/lib/comic/delivery";
+import { VOICES, defaultVoiceFor } from "@/lib/comic/voice-catalog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -21,27 +22,6 @@ import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 
 const KINDS: AudioCueKind[] = ["SFX", "VOICE", "BGM", "AMBIENCE"];
-
-// Same roster the server exposes via GET /api/voice-renders
-const VOICES: Array<{ id: string; blurb: string }> = [
-  { id: "tongtong", blurb: "Warm, gentle" },
-  { id: "chuichui", blurb: "Bright, playful" },
-  { id: "xiaochen", blurb: "Calm, steady" },
-  { id: "jam", blurb: "British, refined" },
-  { id: "kazi", blurb: "Clear, neutral" },
-  { id: "douji", blurb: "Natural, flowing" },
-  { id: "luodo", blurb: "Expressive, resonant" },
-];
-
-/** Deterministic default casting: the same speaker always lands on the same voice. */
-function defaultVoiceFor(speaker: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < speaker.length; i++) {
-    h ^= speaker.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return VOICES[(h >>> 0) % VOICES.length].id;
-}
 
 /** The speed a take was actually performed at: stored base x its delivery multiplier. */
 function effectiveTakeSpeed(cue: AudioCueRow): number {
@@ -67,6 +47,7 @@ export function SoundTimelineDialog({
   const [voiceDraft, setVoiceDraft] = useState<string>("tongtong");
   const [speedDraft, setSpeedDraft] = useState(1.0);
   const [deliveryDraft, setDeliveryDraft] = useState<string>("AUTO");
+  const [noteDraft, setNoteDraft] = useState<string>("");
   const [deliveryInfo, setDeliveryInfo] = useState<{ id: string; label: string; source: string; stateLabel: string | null; speed: number } | null>(null);
   const [renderingIds, setRenderingIds] = useState<Set<string>>(new Set());
   const [batchMsg, setBatchMsg] = useState<string | null>(null);
@@ -107,13 +88,15 @@ export function SoundTimelineDialog({
     setLabelDraft(selected?.label ?? "");
   }, [selected?.id, selected?.label]);
 
-  // voice casting defaults follow the selected VOICE cue's speaker
+  // voice casting defaults follow the selected VOICE cue's speaker:
+  // last take > the character's cast artist voice > deterministic hash
   useEffect(() => {
     if (!selected || selected.kind !== "VOICE") return;
     const speaker = selected.label.includes(": ") ? selected.label.split(":")[0].trim() : "";
-    setVoiceDraft(selected.voiceActor ?? defaultVoiceFor(speaker || selected.label));
+    setVoiceDraft(selected.voiceActor ?? selected.cast?.voiceId ?? defaultVoiceFor(speaker || selected.label));
     setSpeedDraft(selected.voiceSpeed ?? 1.0);
-    setDeliveryDraft("AUTO");
+    setDeliveryDraft(selected.voiceDelivery ?? "AUTO");
+    setNoteDraft(selected.voiceNote ?? "");
     setDeliveryInfo(
       selected.voiceUrl
         ? {
@@ -125,7 +108,7 @@ export function SoundTimelineDialog({
           }
         : null,
     );
-  }, [selected?.id, selected?.kind, selected?.voiceActor, selected?.voiceSpeed, selected?.voiceUrl]);
+  }, [selected?.id, selected?.kind, selected?.voiceActor, selected?.voiceSpeed, selected?.voiceUrl, selected?.voiceDelivery, selected?.voiceNote]);
 
   function ensurePlayer(): CuePlayer {
     if (!playerRef.current) playerRef.current = new CuePlayer();
@@ -179,7 +162,7 @@ export function SoundTimelineDialog({
     setBatchMsg(null);
     try {
       const res = await api.renderVoice(cue.id, voice, speed, delivery);
-      setCues((cs) => cs.map((c) => (c.id === res.cue.id ? res.cue : c)).sort((a, b) => a.startMs - b.startMs));
+      setCues((cs) => cs.map((c) => (c.id === res.cue.id ? { ...c, ...res.cue, cast: res.cue.cast ?? c.cast } : c)).sort((a, b) => a.startMs - b.startMs));
       if (selectedId === cue.id) setDeliveryInfo(res.delivery);
       onChanged();
       return res;
@@ -203,24 +186,27 @@ export function SoundTimelineDialog({
     }
     let done = 0;
     let stateAware = 0;
+    let castCount = 0;
     // small pool so the TTS service is not hammered
     const queue = [...pending];
     const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
       while (queue.length > 0) {
         const cue = queue.shift();
         if (!cue) break;
-        const speaker = cue.label.includes(": ") ? cue.label.split(":")[0].trim() : "";
-        // AUTO delivery: the server resolves the speaker's character state
-        const res = await renderCueVoice(cue, defaultVoiceFor(speaker || cue.label), 1.0, "AUTO");
+        // no explicit voice: the server casts from the speaker's roster artist
+        const res = await renderCueVoice(cue);
         if (res) {
           done++;
           if (res.delivery.id !== "NEUTRAL") stateAware++;
+          if (res.cast.artistName) castCount++;
         }
       }
     });
     await Promise.all(workers);
     setBatchMsg(
-      `Rendered ${done} voice take${done === 1 ? "" : "s"} (auto-cast, character-state delivery)${stateAware > 0 ? ` · ${stateAware} in a non-neutral state` : ""}`,
+      `Rendered ${done} voice take${done === 1 ? "" : "s"} (roster casting, character-state delivery)`
+        + (castCount > 0 ? ` · ${castCount} from cast artists` : "")
+        + (stateAware > 0 ? ` · ${stateAware} in a non-neutral state` : ""),
     );
   }, [cues, renderCueVoice]);
 
@@ -460,9 +446,11 @@ export function SoundTimelineDialog({
               <Label className="text-[11px] flex items-center gap-1.5 text-cyan-200"><AudioLines className="h-3.5 w-3.5" /> Real voice render</Label>
               {selected.voiceUrl ? (
                 <span className="text-[9px] font-mono text-cyan-300/90">
-                  take: {selected.voiceActor} · {((selected.voiceDurationMs ?? 0) / 1000).toFixed(1)}s · x{effectiveTakeSpeed(selected).toFixed(2)}
+                  take: {selected.voiceActor}{selected.voiceCast ? ` · cast ${selected.voiceCast}` : ""} · {((selected.voiceDurationMs ?? 0) / 1000).toFixed(1)}s · x{effectiveTakeSpeed(selected).toFixed(2)}
                   {selected.voiceState && selected.voiceState !== "NEUTRAL" && ` · ${selected.voiceState.toLowerCase()}`}
                 </span>
+              ) : selected.cast ? (
+                <span className="text-[9px] font-mono text-cyan-300/90">cast: {selected.cast.artistName} · {selected.cast.voiceId ?? "no voice assigned"}</span>
               ) : (
                 <span className="text-[9px] text-muted-foreground">no take yet, preview speaks via browser TTS</span>
               )}
@@ -475,16 +463,24 @@ export function SoundTimelineDialog({
                   onChange={(e) => setVoiceDraft(e.target.value)}
                   className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-foreground"
                 >
+                  {selected.cast?.voiceId && !VOICES.some((v) => v.id === voiceDraft) && (
+                    <option key={selected.cast.voiceId} value={selected.cast.voiceId} className="bg-[#12121a]">{selected.cast.voiceId} · cast</option>
+                  )}
                   {VOICES.map((v) => (
                     <option key={v.id} value={v.id} className="bg-[#12121a]">{v.id} · {v.blurb}</option>
                   ))}
                 </select>
               </div>
               <div className="grid gap-1.5">
-                <Label className="text-[10px]">Delivery (character state)</Label>
+                <Label className="text-[10px]">Delivery (standing direction)</Label>
                 <select
                   value={deliveryDraft}
-                  onChange={(e) => setDeliveryDraft(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setDeliveryDraft(v);
+                    // pin the delivery on the cue: every future take (UI, batch, DSH) plays it this way
+                    void patchCue(selected.id, { voiceDelivery: v === "AUTO" ? null : v });
+                  }}
                   className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-foreground"
                 >
                   <option value="AUTO" className="bg-[#12121a]">auto · from character state</option>
@@ -501,6 +497,16 @@ export function SoundTimelineDialog({
                 <div className="flex items-center gap-2 h-8">
                   <Slider value={[speedDraft]} min={0.5} max={2} step={0.05} onValueChange={(v) => setSpeedDraft(v[0] ?? 1)} className="flex-1" />
                 </div>
+              </div>
+              <div className="col-span-3 grid gap-1.5">
+                <Label className="text-[10px]">Direction note</Label>
+                <Input
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  onBlur={() => { if (noteDraft !== (selected.voiceNote ?? "")) void patchCue(selected.id, { voiceNote: noteDraft }); }}
+                  placeholder="e.g. clenched teeth, pained breaths - rides the take and the manifest"
+                  className="bg-white/5 border-white/10 text-xs h-8"
+                />
               </div>
             </div>
             {deliveryInfo && (
@@ -522,7 +528,7 @@ export function SoundTimelineDialog({
                   : <><AudioLines className="h-3.5 w-3.5 mr-1" /> {selected.voiceUrl ? "Re-render take" : "Render voice take"}</>}
               </Button>
               <span className="text-[9px] text-muted-foreground">
-                The take is mixed into exported slice stems and played by the live preview.
+                Takes render with the speaker's cast artist voice, mixed into exported slice stems and the live preview.
               </span>
             </div>
           </div>

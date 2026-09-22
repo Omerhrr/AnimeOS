@@ -135,6 +135,7 @@ export interface ArtistRow {
   name: string;
   role: string | null;
   color: string;
+  voiceId: string | null; // TTS voice the artist performs with (per-artist voice casting)
   _count?: { shots: number };
 }
 
@@ -155,6 +156,10 @@ export interface AudioCueRow {
   voiceDurationMs: number | null;
   voiceState: string | null;      // delivery profile: NEUTRAL | EXCITED | INJURED
   voiceStateLabel: string | null; // character state the delivery resolved from
+  voiceDelivery: string | null;   // standing direction: null = auto per render, else a pinned profile
+  voiceNote: string | null;       // directorial note on the delivery
+  voiceCast: string | null;       // cast artist name that performed the last take
+  cast?: { artistName: string; voiceId: string | null } | null; // resolved standing cast (VOICE cues)
 }
 
 export interface BridgeStatusInfo {
@@ -199,6 +204,7 @@ export interface CharacterFull {
   relationsFrom: Array<{ id: string; type: string; to: { id: string; name: string } }>;
   relationsTo: Array<{ id: string; type: string; from: { id: string; name: string } }>;
   derivatives: Array<{ id: string; name: string; derivativeType: string | null }>;
+  voiceArtist?: { id: string; name: string; voiceId: string | null } | null;
 }
 
 export interface EnvironmentRow {
@@ -319,6 +325,7 @@ export const api = {
   generateCharacterSheet: (characterId: string) =>
     j<{ modelSheetUrl: string; prompt: string; anchor: string }>("/api/character-sheet", { method: "POST", body: JSON.stringify({ characterId }) }),
   createCharacter: (body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "POST", body: JSON.stringify(body) }),
+  patchCharacter: (id: string, body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "PATCH", body: JSON.stringify({ id, ...body }) }),
   createEnvironment: (body: Record<string, unknown>) => j<{ id: string }>("/api/environments", { method: "POST", body: JSON.stringify(body) }),
 
   // style LoRA registry
@@ -339,13 +346,16 @@ export const api = {
   patchAudioCue: (id: string, body: Record<string, unknown>) => j<AudioCueRow>(`/api/audio-cues/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAudioCue: (id: string) => j<{ ok: boolean }>(`/api/audio-cues/${id}`, { method: "DELETE" }),
 
-  // real TTS voice renders for VOICE cues (per character-state delivery)
+  // real TTS voice renders for VOICE cues (per character-state delivery,
+  // per-artist voice casting: omit voice to let the server cast from the roster)
   renderVoice: (cueId: string, voice?: string, speed?: number, delivery?: string) =>
     j<{
       cue: AudioCueRow;
       bytes: number;
       text: string;
-      delivery: { id: string; label: string; source: "auto" | "manual"; stateLabel: string | null; speed: number };
+      delivery: { id: string; label: string; source: "auto" | "manual" | "direction"; stateLabel: string | null; speed: number };
+      cast: { artistName: string | null; voiceId: string; source: "cast" | "auto" | "manual" };
+      direction: { note: string | null; standingDelivery: string | null };
     }>("/api/voice-renders", {
       method: "POST", body: JSON.stringify({ cueId, voice, speed, delivery }),
     }),

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { isVoiceId } from "@/lib/comic/voice-catalog";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,6 +17,16 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   if (body.role !== undefined) data.role = body.role ? String(body.role).trim().slice(0, 120) : null;
   if (body.color !== undefined && /^#[0-9a-fA-F]{6}$/.test(String(body.color))) data.color = String(body.color);
+  // per-artist voice casting: the TTS voice this artist performs with
+  if (body.voiceId !== undefined) {
+    if (body.voiceId === null || body.voiceId === "") {
+      data.voiceId = null;
+    } else if (isVoiceId(body.voiceId)) {
+      data.voiceId = body.voiceId;
+    } else {
+      return NextResponse.json({ error: "Unknown voice id" }, { status: 400 });
+    }
+  }
   try {
     const artist = await db.artist.update({ where: { id }, data });
     return NextResponse.json({ id: artist.id });

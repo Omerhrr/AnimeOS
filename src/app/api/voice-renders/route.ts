@@ -6,43 +6,27 @@ import path from "path";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import {
-  classifyStateDelivery, deliveryProfile, isDeliveryId, shapeLineForDelivery,
-  type DeliveryId,
+  deliveryProfile, isDeliveryId, shapeLineForDelivery,
 } from "@/lib/comic/delivery";
+import { isVoiceId } from "@/lib/comic/voice-catalog";
+import { resolveAutoDelivery, resolveVoiceCast } from "@/lib/ai/voice-casting";
 
 // Real TTS voice renders for VOICE audio cues. A rendered take is a
 // 24kHz mono WAV stored under public/voices/{cueId}.wav; the cue keeps
 // the actual duration so stems and manifests can carry real speech.
-// Takes are performed in the speaker's current character state:
-// the delivery (neutral / excited / injured) resolves from the
-// character's episode-effective CharacterState label unless the
-// caller overrides it.
-
-export const VOICES = [
-  { id: "tongtong", blurb: "Warm, gentle" },
-  { id: "chuichui", blurb: "Bright, playful" },
-  { id: "xiaochen", blurb: "Calm, steady" },
-  { id: "jam", blurb: "British, refined" },
-  { id: "kazi", blurb: "Clear, neutral" },
-  { id: "douji", blurb: "Natural, flowing" },
-  { id: "luodo", blurb: "Expressive, resonant" },
-] as const;
-
-const VOICE_IDS: Set<string> = new Set(VOICES.map((v) => v.id));
-type VoiceId = (typeof VOICES)[number]["id"];
+//
+// WHO speaks: per-artist voice casting. A character cast to a roster
+// artist (Character.voiceArtist) is performed with that artist's TTS
+// voice; uncast speakers fall back to the deterministic hash voice.
+//
+// HOW the line is played: state-aware delivery. Priority is an
+// explicit request override, then the cue's standing direction
+// (voiceDelivery, set by the creator or DSH), then the speaker's
+// episode-effective CharacterState.
 
 export async function GET() {
+  const { VOICES } = await import("@/lib/comic/voice-catalog");
   return NextResponse.json({ voices: VOICES });
-}
-
-/** Deterministic default casting: the same speaker always lands on the same voice. */
-export function defaultVoiceFor(speaker: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < speaker.length; i++) {
-    h ^= speaker.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return VOICES[(h >>> 0) % VOICES.length].id;
 }
 
 /** Parse the real playback duration (ms) out of a standard WAV file buffer. */
@@ -72,61 +56,6 @@ function wavDurationMs(buf: Buffer): number | null {
   }
 }
 
-// ── character-state delivery resolution ──
-
-interface ResolvedDelivery {
-  id: DeliveryId;
-  source: "auto" | "manual";
-  stateLabel: string | null; // character state the delivery came from
-}
-
-/**
- * Resolve the speaker's current state for this shot's episode and
- * classify it into a delivery profile. Same-episode TEMPORARY states
- * (dramatic beats like "Battle-damaged (temple fight)") win over the
- * latest PERMANENT progression state; no match reads neutral.
- */
-async function resolveAutoDelivery(
-  speaker: string,
-  episodeNumber: number | null,
-  projectId: string,
-): Promise<ResolvedDelivery> {
-  const fallback: ResolvedDelivery = { id: "NEUTRAL", source: "auto", stateLabel: null };
-  if (!speaker) return fallback;
-  try {
-    const characters = await db.character.findMany({
-      where: { projectId },
-      include: { states: true },
-    });
-    const character = characters.find((c) => c.name.trim().toLowerCase() === speaker.toLowerCase());
-    if (!character) return fallback;
-
-    const candidates = character.states.filter((s) => {
-      if (s.episodeNumber == null) return false;
-      if (s.stateType === "TEMPORARY") return s.episodeNumber === episodeNumber;
-      return episodeNumber == null || s.episodeNumber <= episodeNumber;
-    });
-    // temporary beats first, then the latest episode-resolved state
-    candidates.sort((a, b) => {
-      const ta = a.stateType === "TEMPORARY" ? 1 : 0;
-      const tb = b.stateType === "TEMPORARY" ? 1 : 0;
-      if (ta !== tb) return tb - ta;
-      return (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1);
-    });
-
-    for (const state of candidates) {
-      const hit = classifyStateDelivery(state.label);
-      if (hit) return { id: hit, source: "auto", stateLabel: state.label };
-    }
-    // no classified state: fall back to the canonical condition summary
-    const canonical = classifyStateDelivery(character.canonicalState ?? "");
-    if (canonical) return { id: canonical, source: "auto", stateLabel: character.canonicalState?.slice(0, 80) ?? null };
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 export async function POST(req: Request) {
   let body: Record<string, unknown>;
   try {
@@ -149,6 +78,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Voice renders apply to VOICE cues only" }, { status: 400 });
   }
 
+  const projectId = cue.shot.scene.episode.season.projectId;
+  const episodeNumber = cue.shot.scene.episode?.number ?? null;
+
   // VOICE labels may carry a "Speaker: line" prefix: speak only the line
   const rawLabel = cue.label;
   const text = (rawLabel.includes(": ") ? rawLabel.split(": ").slice(1).join(": ") : rawLabel).trim();
@@ -159,23 +91,22 @@ export async function POST(req: Request) {
 
   const speaker = rawLabel.includes(": ") ? rawLabel.split(":")[0].trim() : "";
 
-  // delivery: manual override wins, otherwise resolve from the
+  // voice: explicit request > cast artist on the character > hash default
+  const cast = await resolveVoiceCast(speaker, projectId, body.voice);
+
+  // delivery: manual override > standing direction on the cue > the
   // speaker's character state at this shot's episode
-  let delivery: ResolvedDelivery;
+  let delivery;
   if (isDeliveryId(body.delivery)) {
-    delivery = { id: body.delivery, source: "manual", stateLabel: null };
+    delivery = { id: body.delivery, source: "manual" as const, stateLabel: null };
+  } else if (isDeliveryId(cue.voiceDelivery)) {
+    // a pinned standing direction is its own source: no character-state attribution
+    delivery = { id: cue.voiceDelivery, source: "direction" as const, stateLabel: null };
   } else {
-    delivery = await resolveAutoDelivery(
-      speaker,
-      cue.shot.scene.episode?.number ?? null,
-      cue.shot.scene.episode.season.projectId,
-    );
+    delivery = await resolveAutoDelivery(speaker, episodeNumber, projectId);
   }
   const profile = deliveryProfile(delivery.id);
 
-  const voice = (VOICE_IDS.has(String(body.voice))
-    ? String(body.voice)
-    : defaultVoiceFor(speaker || rawLabel)) as VoiceId;
   const speedNum = Number(body.speed);
   const baseSpeed = Number.isFinite(speedNum) ? Math.min(2, Math.max(0.5, speedNum)) : 1.0;
   // the delivery bends the performance; the cue keeps the user's base
@@ -190,7 +121,7 @@ export async function POST(req: Request) {
     const zai = await ZAI.create();
     const res = await zai.audio.tts.create({
       input: spoken,
-      voice,
+      voice: cast.voiceId,
       speed,
       response_format: "wav",
       stream: false,
@@ -221,7 +152,8 @@ export async function POST(req: Request) {
     where: { id: cueId },
     data: {
       voiceUrl: `/voices/${file}?v=${Date.now()}`,
-      voiceActor: voice,
+      voiceActor: cast.voiceId,
+      voiceCast: cast.artistName,
       voiceSpeed: baseSpeed, // base only; effective speed = base x delivery multiplier
       voiceDurationMs: actualMs,
       voiceState: profile.id,
@@ -240,6 +172,15 @@ export async function POST(req: Request) {
       source: delivery.source,
       stateLabel: delivery.stateLabel,
       speed,
+    },
+    cast: {
+      artistName: cast.artistName,
+      voiceId: cast.voiceId,
+      source: cast.source,
+    },
+    direction: {
+      note: cue.voiceNote,
+      standingDelivery: cue.voiceDelivery,
     },
   });
 }

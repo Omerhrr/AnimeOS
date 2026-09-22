@@ -401,6 +401,7 @@ export function ComicView({ project }: { project: StudioProject }) {
             kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume,
             voiceUrl: c.voiceUrl, voiceActor: c.voiceActor, voiceDurationMs: c.voiceDurationMs,
             voiceState: c.voiceState, voiceStateLabel: c.voiceStateLabel,
+            voiceDelivery: c.voiceDelivery, voiceNote: c.voiceNote, voiceCast: c.voiceCast,
           })),
         })),
         onProgress: (msg) => setExporting(msg),

@@ -3,6 +3,9 @@ import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { createRenderJob } from "@/lib/engine/render";
 import { serializeDialogue, type DialogueLine } from "@/lib/comic/dialogue";
 import { generateShotPanelArt, generateCharacterModelSheet } from "@/lib/ai/art";
+import { isDeliveryId } from "@/lib/comic/delivery";
+import { isVoiceId, defaultVoiceFor } from "@/lib/comic/voice-catalog";
+import { resolveAutoDelivery } from "@/lib/ai/voice-casting";
 
 // ─────────────────────────────────────────────────────────────
 // DSH PRODUCTION TOOL API (§6/§7)
@@ -217,6 +220,25 @@ export const TOOL_DEFS: ToolDef[] = [
       startMs: "number, cue start on the shot timeline",
       durationMs: "number, how long the sound lasts (default 600)",
       volume: "number 0.05-1 (default 0.8)",
+    },
+  },
+  {
+    name: "direct_voice_takes",
+    description: "State-aware voice direction: set the standing delivery for every VOICE cue in a scene (or on one shot) so future voice takes are PERFORMED, not just spoken. delivery AUTO resolves each speaker's episode-effective character state (battle-damaged -> injured, triumphant/furious -> excited, else neutral); an explicit profile pins that register on every directed cue. Optionally attach a directorial note (e.g. 'clenched teeth, pained breaths').",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (optional - direct one shot; omit to direct the whole scene)",
+      delivery: "AUTO | NEUTRAL | EXCITED | INJURED (default AUTO - resolve from each speaker's character state)",
+      note: "string, directorial note stored on each directed cue (optional)",
+    },
+  },
+  {
+    name: "cast_voice_actor",
+    description: "Per-artist voice casting: make a roster artist the speaking voice of a character, so every VOICE cue for that character renders with the artist's TTS voice (and that artist's name rides the take, stems and manifest). Optionally (re)assign which TTS voice the artist performs with. Pass artistName as empty string to clear a casting.",
+    args: {
+      characterName: "string - the character to cast",
+      artistName: "string - artist on the production roster (empty string clears the casting)",
+      voice: "string, optional TTS voice id for the artist: tongtong | chuichui | xiaochen | jam | kazi | douji | luodo",
     },
   },
 ];
@@ -832,6 +854,132 @@ export async function executeTool(projectId: string, name: string, args: Record<
         };
       }
 
+      case "direct_voice_takes": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
+        const shots = await db.shot.findMany({
+          where: { sceneId: scene.id, ...(args.shotNumber ? { number: Number(args.shotNumber) } : {}) },
+          orderBy: { number: "asc" },
+          include: { scene: true },
+        });
+        if (shots.length === 0) {
+          return { status: "ERROR", result: `Scene ${scene.number} has no shots${args.shotNumber ? ` matching number ${String(args.shotNumber)}` : ""}.` };
+        }
+
+        const cues = await db.audioCue.findMany({
+          where: { shotId: { in: shots.map((s) => s.id) }, kind: "VOICE" },
+          orderBy: { startMs: "asc" },
+        });
+        if (cues.length === 0) {
+          return { status: "ERROR", result: `No VOICE cues to direct - score the scene's dialogue with add_audio_cue (kind VOICE) first.` };
+        }
+
+        const deliveryArg = String(args.delivery ?? "AUTO").toUpperCase();
+        const pinned = isDeliveryId(deliveryArg) ? deliveryArg : null; // AUTO (or invalid) keeps state-aware resolution
+        const note = args.note !== undefined ? String(args.note).trim().slice(0, 200) || null : undefined;
+
+        // episode context for state-aware resolution
+        const episodeRow = await db.episode.findUnique({
+          where: { id: shots[0].scene.episodeId },
+          include: { season: true },
+        });
+        const episodeNumber = episodeRow?.number ?? null;
+        const epProjectId = episodeRow?.season.projectId ?? projectId;
+
+        const lines: string[] = [];
+        let pinnedCount = 0;
+        const stateTally: Record<string, number> = {};
+        for (const cue of cues) {
+          const speaker = cue.label.includes(": ") ? cue.label.split(":")[0].trim() : "";
+          let resolvedId: string;
+          let fromLabel: string | null = null;
+          if (pinned) {
+            resolvedId = pinned;
+            pinnedCount += 1;
+          } else {
+            const resolved = await resolveAutoDelivery(speaker, episodeNumber, epProjectId);
+            resolvedId = resolved.id;
+            fromLabel = resolved.stateLabel;
+          }
+          stateTally[resolvedId] = (stateTally[resolvedId] ?? 0) + 1;
+          const shot = shots.find((s) => s.id === cue.shotId);
+          await db.audioCue.update({
+            where: { id: cue.id },
+            data: {
+              voiceDelivery: pinned, // null keeps every future render state-aware
+              ...(note !== undefined ? { voiceNote: note } : {}),
+            },
+          });
+          lines.push(
+            `shot ${String(shot?.number ?? 0).padStart(3, "0")} "${speaker || cue.label.slice(0, 24)}" -> ${resolvedId.toLowerCase()}${fromLabel ? ` (from "${fromLabel}")` : ""}`,
+          );
+        }
+
+        const tallyText = Object.entries(stateTally).map(([k, v]) => `${v} ${k.toLowerCase()}`).join(", ");
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "STATE_CHANGE",
+            summary: `DSH directed ${cues.length} voice take(s) in Scene ${scene.number} - ${tallyText}${note ? `, note: "${note}"` : ""}`,
+          },
+        });
+        return {
+          status: "OK",
+          result: `Voice direction set on ${cues.length} VOICE cue(s) in Scene ${scene.number}: ${tallyText}${pinned ? ` (${pinnedCount} pinned to ${pinned.toLowerCase()})` : " (state-aware: each re-render re-reads the speaker's character state)"}${note ? `. Directorial note: "${note}"` : ""}. Direction: ${lines.join("; ")}. Re-render the takes (sound timeline or batch) to hear it.`,
+        };
+      }
+
+      case "cast_voice_actor": {
+        const ch = await characterByName(projectId, String(args.characterName ?? ""));
+        if (!ch) {
+          const known = await db.character.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `Character '${String(args.characterName)}' not found. Cast: ${known.map((c) => c.name).join(", ") || "none"}.` };
+        }
+        const artistName = String(args.artistName ?? "").trim();
+        if (!artistName) {
+          if (!ch.voiceArtistId) {
+            return { status: "OK", result: `${ch.name} has no voice casting - lines fall back to the default voice assignment.` };
+          }
+          await db.character.update({ where: { id: ch.id }, data: { voiceArtistId: null } });
+          await db.productionEvent.create({
+            data: { projectId, actor: "DSH", type: "STATE_CHANGE", summary: `DSH cleared voice casting for ${ch.name}` },
+          });
+          return { status: "OK", result: `Voice casting cleared: ${ch.name} returns to the default voice assignment.` };
+        }
+        const artist = await db.artist.findFirst({ where: { projectId, name: { contains: artistName } } });
+        if (!artist) {
+          const roster = await db.artist.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `No artist named '${artistName}' on the roster. Roster: ${roster.map((a) => a.name).join(", ") || "empty"}.` };
+        }
+        let voiceLine = "";
+        if (args.voice !== undefined) {
+          const v = String(args.voice);
+          if (!isVoiceId(v)) {
+            return { status: "ERROR", result: `Unknown voice '${v}'. Available: tongtong, chuichui, xiaochen, jam, kazi, douji, luodo.` };
+          }
+          await db.artist.update({ where: { id: artist.id }, data: { voiceId: v } });
+          voiceLine = ` with voice '${v}'`;
+        } else if (!artist.voiceId) {
+          const v = defaultVoiceFor(artist.name);
+          await db.artist.update({ where: { id: artist.id }, data: { voiceId: v } });
+          voiceLine = ` with voice '${v}' (auto-assigned)`;
+        }
+        await db.character.update({ where: { id: ch.id }, data: { voiceArtistId: artist.id } });
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "STATE_CHANGE",
+            summary: `DSH cast ${artist.name} as the voice of ${ch.name}${voiceLine}`,
+          },
+        });
+        return {
+          status: "OK",
+          result: `${ch.name} is now voiced by ${artist.name}${voiceLine}. Every VOICE cue for ${ch.name} renders with this artist's voice${artist.voiceId ? ` (${artist.voiceId})` : ""}; re-render the takes to hear the new performance.`,
+        };
+      }
+
       default:
         return { status: "ERROR", result: `Unknown tool: ${name}` };
     }
@@ -863,7 +1011,7 @@ export async function buildCompactContext(projectId: string) {
           },
         },
       },
-      characters: { include: { states: true } },
+      characters: { include: { states: true, voiceArtist: true } },
       environments: true,
       assets: true,
       terminology: true,
@@ -889,7 +1037,7 @@ export async function buildCompactContext(projectId: string) {
       subtitles: JSON.parse(project.subtitleLanguages || "[]"),
     },
     loras: project.loras.map((l) => ({ name: l.name, trigger: l.triggerPhrase, defaultWeight: l.weight, assignedShots: l._count.shots })),
-    artists: project.artists.map((a) => ({ name: a.name, role: a.role, assignedShots: a._count.shots })),
+    artists: project.artists.map((a) => ({ name: a.name, role: a.role, voice: a.voiceId, assignedShots: a._count.shots })),
     structure: project.seasons.map((s) => ({
       season: s.number,
       episodes: s.episodes.map((e) => ({
@@ -920,6 +1068,7 @@ export async function buildCompactContext(projectId: string) {
     characters: project.characters.map((c) => ({
       name: c.name, role: c.role, derivative: c.derivativeType,
       modelSheet: Boolean(c.modelSheetUrl),
+      voiceActor: c.voiceArtist ? `${c.voiceArtist.name} (${c.voiceArtist.voiceId ?? "no voice set"})` : null,
       abilities: JSON.parse(c.abilities || "[]"),
       states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon })),
     })),

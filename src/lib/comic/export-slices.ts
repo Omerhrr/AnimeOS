@@ -33,6 +33,9 @@ export interface SliceAudioCue {
   voiceDurationMs?: number | null;
   voiceState?: string | null;     // delivery profile: NEUTRAL | EXCITED | INJURED
   voiceStateLabel?: string | null; // character state the delivery resolved from
+  voiceDelivery?: string | null;  // standing direction (null = state-aware auto)
+  voiceNote?: string | null;      // directorial note
+  voiceCast?: string | null;      // cast artist that performed the take
 }
 
 export interface SliceShot {
@@ -468,9 +471,12 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
         takes: voiceTakes.map((c) => ({
           shotId: c.shotId,
           voiceActor: c.voiceActor ?? null,
+          voiceCast: c.voiceCast ?? null,
           voiceDurationMs: c.voiceDurationMs ?? null,
           delivery: c.voiceState ?? "NEUTRAL",
           stateLabel: c.voiceStateLabel ?? null,
+          direction: c.voiceDelivery ?? "AUTO",
+          note: c.voiceNote ?? null,
         })),
       },
       stems: stems.map((st) => ({
@@ -494,6 +500,9 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
           voiceDurationMs: c.voiceDurationMs ?? null,
           voiceState: c.voiceState ?? null,
           voiceStateLabel: c.voiceStateLabel ?? null,
+          voiceDelivery: c.voiceDelivery ?? null,
+          voiceNote: c.voiceNote ?? null,
+          voiceCast: c.voiceCast ?? null,
         });
         return acc;
       }, {}),

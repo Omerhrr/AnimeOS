@@ -34,7 +34,34 @@ export async function PATCH(req: Request) {
     if (rest[key] !== undefined) data[key] = String(rest[key]);
   }
   if (rest.abilities !== undefined) data.abilities = JSON.stringify(rest.abilities);
+  // per-artist voice casting: bind (or clear) the roster artist who
+  // speaks for this character; voice takes render with their voice
+  if (rest.voiceArtistId !== undefined) {
+    const artistId = rest.voiceArtistId ? String(rest.voiceArtistId) : null;
+    const target = await db.character.findUnique({ where: { id: String(id) } });
+    if (!target) return NextResponse.json({ error: "Character not found" }, { status: 404 });
+    if (artistId) {
+      const artist = await db.artist.findUnique({ where: { id: artistId } });
+      if (!artist) return NextResponse.json({ error: "Artist not found" }, { status: 404 });
+      if (artist.projectId !== target.projectId) {
+        return NextResponse.json({ error: "Artist is not on this production's roster" }, { status: 400 });
+      }
+    }
+    data.voiceArtistId = artistId;
+  }
   const ch = await db.character.update({ where: { id: String(id) }, data });
+  if (data.voiceArtistId !== undefined) {
+    await db.productionEvent.create({
+      data: {
+        projectId: ch.projectId,
+        actor: "USER",
+        type: "STATE_CHANGE",
+        summary: data.voiceArtistId
+          ? `Voice casting: ${ch.name} is now voiced by a roster artist`
+          : `Voice casting cleared for ${ch.name}`,
+      },
+    });
+  }
   return NextResponse.json({ id: ch.id });
 }
 

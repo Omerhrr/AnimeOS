@@ -42,6 +42,7 @@ export async function GET(_req: Request, ctx: Ctx) {
           relationsFrom: { include: { to: true } },
           relationsTo: { include: { from: true } },
           derivatives: true,
+          voiceArtist: { select: { id: true, name: true, voiceId: true } },
         },
       },
       environments: { orderBy: { createdAt: "asc" } },

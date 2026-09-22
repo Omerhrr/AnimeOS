@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { isDeliveryId } from "@/lib/comic/delivery";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -33,6 +34,19 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const n = Math.round(Number(body.durationMs));
     if (!Number.isFinite(n)) return NextResponse.json({ error: "durationMs must be a number" }, { status: 400 });
     data.durationMs = Math.min(Math.max(timelineMs, 50), Math.max(50, n));
+  }
+  // standing voice direction: an explicit delivery profile pins every
+  // future render, null returns the cue to auto (character-state) resolution
+  if (body.voiceDelivery !== undefined) {
+    if (body.voiceDelivery === null || body.voiceDelivery === "" || body.voiceDelivery === "AUTO") {
+      data.voiceDelivery = null;
+    } else if (isDeliveryId(body.voiceDelivery)) {
+      data.voiceDelivery = body.voiceDelivery;
+    }
+  }
+  if (body.voiceNote !== undefined) {
+    const note = String(body.voiceNote ?? "").trim().slice(0, 200);
+    data.voiceNote = note.length > 0 ? note : null;
   }
   const updated = await db.audioCue.update({ where: { id }, data });
   return NextResponse.json(updated);
