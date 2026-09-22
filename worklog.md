@@ -105,3 +105,23 @@ Stage Summary:
 - GitHub main pushed with this iteration (5 commits + this one)
 - Studio now: batch-renders whole episodes with throttled DSH inspection; exports webtoon platform slices (800px, boundary-aware, manifest) from the live strip; art prompts are per-production tunable from UI and by DSH itself
 - Next horizons: per-shot style LoRA fine-tuning, multi-artist shot assignment, sound/SFX timing for motion panels
+
+---
+Task ID: 6
+Agent: Super Z (main agent)
+Task: Push Iteration 6 to GitHub + verify the three new features live (user: "you havent push the last work to github, push and proceed")
+
+Work Log:
+- Found the full Iteration 6 implementation sitting unpushed as a local commit with a UUID message (24 files, +2189 lines: loras/audio-cues/artists API routes, lora-studio/sound-timeline/artists/panel-inspector dialogs, comic/audio.ts Web Audio engine, schema StyleLora/Artist/AudioCue + Shot.loraId/loraStrength/artistId)
+- Pre-push verification: bunx tsc --noEmit clean on src/ (only pre-existing examples/ + skills/ scaffold errors remain); eslint clean on all new/changed files
+- Amended commit message to "Iteration 6: per-shot style LoRA fine-tuning, sound/SFX timing for motion panels, multi-artist shot assignment" and pushed cb10f83..5ee5e82 to origin/main
+- Browser E2E verification of all three features:
+  * LoRA studio: "Style LoRA registry" dialog lists 4 seeded adapters; registered new adapter "celestial-gold-v2" (name/base model/trigger tokens/strength slider) → badge LoRA 4→5, appears in registry + panel inspector
+  * Sound timeline: shot 001 dialog with 3 seeded cues; "Auto-score from shot" derived 2 more (Storm rain bed AMBIENCE, Camera crane air swish SFX) + VOICE cue auto-created from dialogue; edited cue duration 5200 → server clamped to 4.2s timeline, persisted (verified in DB); preview button present (Web Audio synth)
+  * Multi-artist: roster dialog lists 4 seeded artists; added "Han Zhao — Action sequences & FX"; panel inspector assigns artist + LoRA + weight per shot; saved shot 001 → Han Zhao + celestial-gold-v2 @ 0.85 (verified in DB via shot.artist/lora relations); toolbar artist filter chip "Han Zhao 1" updated live; bulk-assign chips present
+- Console/error check clean throughout; removed temp verification screenshots
+
+Stage Summary:
+- GitHub main @ 5ee5e82 (6 commits total); Iteration 6 fully pushed and verified end-to-end
+- Per-shot style LoRA binding (trigger tokens injected into panel-art prompts), motion-panel sound design with auto-scoring + Web Audio preview, multi-artist roster with per-shot ownership are all live
+- Suggested next horizons: audio stems in webtoon slice export (manifest), DSH tools for artist/LoRA assignment, artist workload balance view
