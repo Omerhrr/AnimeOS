@@ -43,7 +43,7 @@ function BubbleTail({ kind, spot, rtl, ink }: { kind: BubbleKind; spot: BubbleSp
 }
 
 export function SpeechBubbles({ lines, rtl, ink }: { lines: DialogueLine[]; rtl: boolean; ink: string }) {
-  // RTL mirroring happens in the style switch below (right: instead of left:) —
+  // RTL mirroring happens in the style switch below (right: instead of left:) -
   // mirroring the spot values as well would double-flip and push bubbles off-panel.
   const spots = bubbleSpots(lines.length);
   return (
@@ -157,7 +157,7 @@ export function DialogueEditor({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MessageSquarePlus className="h-4 w-4 text-primary" />
-            Dialogue — Shot {String(shot.number).padStart(3, "0")}
+            Dialogue - Shot {String(shot.number).padStart(3, "0")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             Bubbles render on every comic format. Order = reading order; 8 lines max.
@@ -197,7 +197,7 @@ export function DialogueEditor({
               <Textarea
                 value={line.text}
                 onChange={(e) => update(i, { text: e.target.value })}
-                placeholder={line.kind === "SFX" ? "WHAM! / SHAA— / rumble…" : "What is said…"}
+                placeholder={line.kind === "SFX" ? "WHAM! / SHAA- / rumble…" : "What is said…"}
                 rows={2}
                 className="bg-white/5 border-white/10 text-xs resize-none"
               />

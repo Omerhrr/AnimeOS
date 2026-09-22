@@ -30,7 +30,7 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
         className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-medium text-violet-200/90 hover:bg-violet-400/5"
       >
         <Brain className="h-3.5 w-3.5" />
-        DSH execution trace — {steps.length} round{steps.length > 1 ? "s" : ""},{" "}
+        DSH execution trace - {steps.length} round{steps.length > 1 ? "s" : ""},{" "}
         {steps.reduce((n, s) => n + s.actions.length, 0)} tool call{steps.reduce((n, s) => n + s.actions.length, 0) > 1 ? "s" : ""}
         {open ? <ChevronUp className="h-3 w-3 ml-auto" /> : <ChevronDown className="h-3 w-3 ml-auto" />}
       </button>
@@ -40,7 +40,7 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
             <div key={step.step} className="border-l-2 border-violet-400/30 pl-3 space-y-2">
               <div className="text-[11px] leading-relaxed text-violet-100/80">
                 <span className="font-semibold text-violet-300">Thought · </span>
-                {step.thought || "—"}
+                {step.thought || "-"}
               </div>
               {step.plan.length > 0 && (
                 <div className="text-[11px] text-muted-foreground">
@@ -149,10 +149,10 @@ export function DshConsole() {
       <div className="mb-3">
         <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
           <Sparkles className="h-4.5 w-4.5 text-primary" />
-          DSH — AI Director
+          DSH - AI Director
         </h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Speak in natural language. DSH plans, calls production tools, observes results, and reports back — every decision is traceable.
+          Speak in natural language. DSH plans, calls production tools, observes results, and reports back - every decision is traceable.
         </p>
       </div>
 
@@ -161,7 +161,7 @@ export function DshConsole() {
           <div className="studio-panel p-5">
             <p className="text-sm font-medium mb-1">The set is quiet, director.</p>
             <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-              Describe what should happen — DSH understands the production state: characters, continuity, environments, scenes and shots.
+              Describe what should happen - DSH understands the production state: characters, continuity, environments, scenes and shots.
             </p>
             <div className="grid sm:grid-cols-2 gap-2">
               {SUGGESTIONS.map((s) => (
@@ -211,7 +211,7 @@ export function DshConsole() {
               <Brain className="h-3.5 w-3.5 text-violet-300 dsh-pulse" />
             </div>
             <span className="text-xs flex items-center gap-2">
-              DSH is directing — planning, calling tools, observing results
+              DSH is directing - planning, calling tools, observing results
               <Loader2 className="h-3 w-3 animate-spin" />
             </span>
           </div>
@@ -234,7 +234,7 @@ export function DshConsole() {
               send();
             }
           }}
-          placeholder="Direct the production…  (e.g. 'Continue Episode 7 — create the confrontation scene and break it into shots')"
+          placeholder="Direct the production…  (e.g. 'Continue Episode 7 - create the confrontation scene and break it into shots')"
           className="min-h-[52px] max-h-40 bg-white/[0.04] border-white/12 text-[13px] resize-none"
           disabled={busy}
         />

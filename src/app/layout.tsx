@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Animation OS — AI-Native Production Platform",
+  title: "Animation OS - AI-Native Production Platform",
   description:
     "DSH is the brain. The production tools execute. The engine builds the world. A persistent animated universe for donghua, anime, manhwa-inspired and general animation.",
   keywords: ["animation", "donghua", "anime", "AI director", "production pipeline", "blender", "three.js"],
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "Animation OS — AI-Native Production Platform",
+    title: "Animation OS - AI-Native Production Platform",
     description: "Persistent animated universes, orchestrated by an AI director.",
     siteName: "Animation OS",
     type: "website",

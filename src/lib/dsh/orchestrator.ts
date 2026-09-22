@@ -5,7 +5,7 @@ import { buildSystemPrompt, parseDshResponse } from "@/lib/dsh/prompts";
 import type { DshTurnResult, TraceAction, TraceStep } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
-// DSH ORCHESTRATOR — the brain's core loop (§5)
+// DSH ORCHESTRATOR - the brain's core loop (§5)
 //
 //   INTENT → PLAN → EXECUTE → OBSERVE → (repeat, max N) → REPLY
 //
@@ -58,8 +58,8 @@ export async function runDshTurn(projectId: string, userMessage: string): Promis
     const parsed = parseDshResponse(raw);
 
     if (!parsed) {
-      // Model broke protocol — salvage whatever text exists as the reply
-      finalReply = raw.trim() || "I need a moment to re-align my production plan — try that instruction once more.";
+      // Model broke protocol - salvage whatever text exists as the reply
+      finalReply = raw.trim() || "I need a moment to re-align my production plan - try that instruction once more.";
       break;
     }
 

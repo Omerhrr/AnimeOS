@@ -31,11 +31,11 @@ export async function runRenderEvaluation(renderJobId: string) {
   const project = await db.project.findUnique({ where: { id: job.projectId } });
 
   const zai = await ZAI.create();
-  const prompt = `You are DSH inspecting a ${job.mode} render of one shot — a studio dallies review. The production engine reports the shot rendered successfully; judge it like a director reviewing the frame series, reasoning over the shot's intent, its cinematography spec, and the scene's live render parameters.
+  const prompt = `You are DSH inspecting a ${job.mode} render of one shot - a studio dallies review. The production engine reports the shot rendered successfully; judge it like a director reviewing the frame series, reasoning over the shot's intent, its cinematography spec, and the scene's live render parameters.
 
 PRODUCTION: ${project?.title ?? "Production"} (${project?.visualStyle ?? "3D"} / ${project?.originalLanguage ?? ""})
-SCENE ${scene.number} "${scene.title}" — ${scene.description ?? ""}
-ENVIRONMENT: ${scene.environment?.name ?? "unlinked"} — ${scene.environment?.weather ?? ""}, ${scene.environment?.lighting ?? ""}
+SCENE ${scene.number} "${scene.title}" - ${scene.description ?? ""}
+ENVIRONMENT: ${scene.environment?.name ?? "unlinked"} - ${scene.environment?.weather ?? ""}, ${scene.environment?.lighting ?? ""}
 SHOT ${String(job.shot.number).padStart(3, "0")} (attempt ${job.attempt}): ${job.shot.description}
 SPEC: type=${job.shot.shotType}, lens=${job.shot.lens ?? "default"}, movement=${job.shot.movement ?? "static"}, duration=${job.shot.duration}s, lighting=${job.shot.lighting ?? "default"}
 LIVE RENDER PARAMS: fogDensity=${scene.fogDensity}, lightningIntensity=${scene.lightningIntensity}, energyIntensity=${scene.energyIntensity}, cameraDistance=${scene.cameraDistance}, rimLightIntensity=${scene.rimLightIntensity}
@@ -52,10 +52,10 @@ Respond with ONLY JSON:
   "actions": [{"type": "ADJUST_SCENE"|"ADJUST_SHOT", "param": "paramName", "from": <current>, "to": <proposed>, "reason": "short"}]
 }
 
-Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (attempt=1) lean NEEDS_REVISION with 3-4 concrete numeric adjustments (a real pipeline almost never approves attempt one). On attempt >= 3 be more forgiving. Only propose values within bounds. from = the current values listed above (for ADJUST_SHOT strings, from = current spec value).`;
+Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (attempt=1) lean NEEDS_REVISION with 3-4 concrete numeric adjustments (a real pipeline almost never approves attempt one). On attempt >= 3 be more forgiving. Only propose values within bounds. from = the current values listed above (for ADJUST_SHOT strings, from = current spec value). Never use em dashes (-) or en dashes (-) in any generated text; use commas, colons or periods instead.`;
 
   let verdict = "NEEDS_REVISION";
-  let summary = "Evaluation unavailable — defaulting to revision.";
+  let summary = "Evaluation unavailable - defaulting to revision.";
   let findings: EvaluationFinding[] = [];
   let actions: EvaluationAction[] = [];
 
@@ -121,7 +121,7 @@ Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (at
       projectId: job.projectId,
       actor: "DSH",
       type: "EVALUATION",
-      summary: `Preview inspection — Shot ${String(job.shot.number).padStart(3, "0")} attempt ${job.attempt} → ${verdict} (${actions.length} proposed modification(s))`,
+      summary: `Preview inspection - Shot ${String(job.shot.number).padStart(3, "0")} attempt ${job.attempt} → ${verdict} (${actions.length} proposed modification(s))`,
       payload: JSON.stringify({ renderJobId: job.id, verdict, findings, actions }),
     },
   });

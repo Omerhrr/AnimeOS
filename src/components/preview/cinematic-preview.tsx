@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────
 // BROWSER 3D PREVIEW (§37)
-// Three.js is NOT the production renderer — it is the browser
+// Three.js is NOT the production renderer - it is the browser
 // preview layer. The scene is built from live production state:
 // shot list (camera spec), scene render params (tuned by DSH).
 // ─────────────────────────────────────────────────────────────
@@ -483,10 +483,10 @@ export function CinematicPreview() {
         <Mountain className="h-4 w-4 text-primary" />
         <div className="min-w-0">
           <div className="text-sm font-semibold truncate">
-            Cinematic Preview — Scene {scene?.number} “{scene?.title}”
+            Cinematic Preview - Scene {scene?.number} “{scene?.title}”
           </div>
           <div className="text-[10px] text-muted-foreground">
-            Browser preview (Three.js) · driven by live production state — not the production renderer
+            Browser preview (Three.js) · driven by live production state - not the production renderer
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground hidden md:flex">

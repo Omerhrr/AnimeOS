@@ -28,7 +28,7 @@ export function HistoryView({ project }: { project: import("@/lib/api-client").S
     <div>
       <SectionHeader
         title="Production History"
-        sub="Every decision, tool call, render and evaluation — the production remembers everything (§52)."
+        sub="Every decision, tool call, render and evaluation - the production remembers everything (§52)."
       />
       <div className="studio-panel p-4">
         <div className="relative max-h-[calc(100vh-14rem)] overflow-y-auto studio-scroll pr-2">

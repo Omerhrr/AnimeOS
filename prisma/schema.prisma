@@ -22,7 +22,7 @@ model Project {
   subtitleLanguages String  @default("[]") // JSON string[]
   fps              Int      @default(24)
   resolution       String   @default("1920x1080")
-  // Per-production art style tuning — injected into every art prompt
+  // Per-production art style tuning - injected into every art prompt
   // (panel art + model sheets). Empty fields fall back to the preset
   // tokens derived from visualStyle.
   artStylePrompt    String? // custom style directive (overrides preset tokens)
@@ -34,6 +34,7 @@ model Project {
 
   seasons          Season[]
   loras            StyleLora[]
+  trainRuns        LoraTrainRun[]
   artists          Artist[]
   characters       Character[]
   environments     Environment[]
@@ -126,11 +127,11 @@ model Shot {
   status      String   @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED
   artworkUrl  String?  // AI-generated panel art (served from /panels/)
   dialogue    String?  // JSON: Array<{ speaker, text, kind: SPEECH | THOUGHT | SFX }>
-  // Per-shot style LoRA fine-tuning — selects a production LoRA adapter
+  // Per-shot style LoRA fine-tuning - selects a production LoRA adapter
   // whose trigger tokens are injected into this shot's art prompt.
   loraId      String?
-  loraStrength Float?  // 0.1–1.2, falls back to the LoRA's default weight
-  // Multi-artist workflow — which artist owns this panel
+  loraStrength Float?  // 0.1-1.2, falls back to the LoRA's default weight
+  // Multi-artist workflow - which artist owns this panel
   artistId    String?
   createdAt   DateTime @default(now())
   scene       Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
@@ -147,7 +148,7 @@ model Shot {
 // ─────────────────────────────────────────────────────────────
 
 // A style LoRA adapter registered for a production. Trigger tokens
-// + strength flow into the art prompt of any shot assigned to it —
+// + strength flow into the art prompt of any shot assigned to it -
 // per-shot style fine-tuning on top of the production style.
 model StyleLora {
   id            String   @id @default(cuid())
@@ -157,11 +158,36 @@ model StyleLora {
   weight        Float    @default(0.8) // default strength for shots without an explicit one
   baseModel     String?  // e.g. "SDXL", "FLUX.1", "animagine-xl"
   notes         String?
+  // Simulated fine-tune runs distilled from the production's approved panels
+  status        String   @default("READY") // READY | TRAINING | FAILED
+  trainProgress Float    @default(1)      // 0..1 while TRAINING, 1 when READY
+  trainedPanels Int?     // dataset size of the last completed run
+  trainedAt     DateTime?
   createdAt     DateTime @default(now())
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   shots         Shot[]
+  trainRuns     LoraTrainRun[]
 
   @@unique([projectId, name])
+}
+
+// One simulated LoRA fine-tune run over a panel dataset. Progress is
+// advanced by tickLoraTrainRuns on GET polls (same pattern as render jobs).
+model LoraTrainRun {
+  id         String    @id @default(cuid())
+  loraId     String
+  projectId  String
+  status     String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
+  progress   Float     @default(0)         // 0..1
+  step       Int       @default(0)
+  totalSteps Int       @default(0)
+  panelCount Int       @default(0)
+  lossCurve  String?   // JSON number[] sampled over training
+  runLog     String?   // JSON string[] milestone messages
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  lora       StyleLora @relation(fields: [loraId], references: [id], onDelete: Cascade)
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 // Studio roster member for multi-artist shot assignment.
@@ -186,6 +212,12 @@ model AudioCue {
   startMs    Int     @default(0)
   durationMs Int     @default(600)
   volume     Float   @default(0.8)
+  // Real TTS voice render for VOICE cues (served from /voices/);
+  // synthesized blip fallback applies when voiceUrl is null.
+  voiceUrl         String?   // rendered take, cache-busted with ?v=
+  voiceActor       String?   // TTS voice name used for the render
+  voiceSpeed       Float?    // speed used for the render (0.5..2.0)
+  voiceDurationMs  Int?      // actual rendered audio duration
   createdAt  DateTime @default(now())
   shot       Shot    @relation(fields: [shotId], references: [id], onDelete: Cascade)
 }
@@ -208,7 +240,7 @@ model Character {
   animationLib   String?  // JSON string[]
   canonicalState String?  // JSON summary of current canonical condition (injuries etc.)
   modelSheetUrl   String?  // AI-generated character model sheet (served from /sheets/)
-  modelSheetPrompt String? // Canonical visual-anchor prompt — reused in every panel art for consistency
+  modelSheetPrompt String? // Canonical visual-anchor prompt - reused in every panel art for consistency
   parentId       String?  // derivative source character
   derivativeType String?  // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
   createdAt      DateTime @default(now())

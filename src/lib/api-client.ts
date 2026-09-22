@@ -107,7 +107,26 @@ export interface StyleLoraRow {
   weight: number;
   baseModel: string | null;
   notes: string | null;
+  // simulated fine-tune runs from approved panels
+  status: string; // READY | TRAINING | FAILED
+  trainProgress: number;
+  trainedPanels: number | null;
+  trainedAt: string | null;
   _count?: { shots: number };
+}
+
+export interface LoraTrainRunRow {
+  id: string;
+  loraId: string;
+  status: string; // RUNNING | COMPLETED | FAILED
+  progress: number;
+  step: number;
+  totalSteps: number;
+  panelCount: number;
+  lossCurve: string | null; // JSON number[]
+  runLog: string | null; // JSON string[]
+  startedAt: string;
+  finishedAt: string | null;
 }
 
 export interface ArtistRow {
@@ -129,6 +148,11 @@ export interface AudioCueRow {
   startMs: number;
   durationMs: number;
   volume: number;
+  // real TTS voice render (VOICE cues)
+  voiceUrl: string | null;
+  voiceActor: string | null;
+  voiceSpeed: number | null;
+  voiceDurationMs: number | null;
 }
 
 export interface BridgeStatusInfo {
@@ -312,6 +336,17 @@ export const api = {
   createAudioCue: (body: Record<string, unknown>) => j<AudioCueRow>("/api/audio-cues", { method: "POST", body: JSON.stringify(body) }),
   patchAudioCue: (id: string, body: Record<string, unknown>) => j<AudioCueRow>(`/api/audio-cues/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAudioCue: (id: string) => j<{ ok: boolean }>(`/api/audio-cues/${id}`, { method: "DELETE" }),
+
+  // real TTS voice renders for VOICE cues
+  renderVoice: (cueId: string, voice?: string, speed?: number) =>
+    j<{ cue: AudioCueRow; bytes: number; text: string }>("/api/voice-renders", {
+      method: "POST", body: JSON.stringify({ cueId, voice, speed }),
+    }),
+
+  // simulated LoRA training runs from approved panels
+  trainLora: (loraId: string) =>
+    j<{ runId: string; totalSteps: number; panelCount: number }>("/api/lora-train", { method: "POST", body: JSON.stringify({ loraId }) }),
+  loraRuns: (projectId: string) => j<LoraTrainRunRow[]>(`/api/lora-train?projectId=${projectId}`),
   createAsset: (body: Record<string, unknown>) => j<{ id: string }>("/api/assets", { method: "POST", body: JSON.stringify(body) }),
   addContinuityEvent: (body: Record<string, unknown>) => j<{ id: string }>("/api/continuity", { method: "POST", body: JSON.stringify(body) }),
   addTerminology: (body: Record<string, unknown>) => j<{ id: string }>("/api/terminology", { method: "POST", body: JSON.stringify(body) }),

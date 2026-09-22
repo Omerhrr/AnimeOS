@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     },
   });
   await db.productionEvent.create({
-    data: { projectId: String(body.projectId), actor: "USER", type: "CONTINUITY", summary: `Continuity watch: ${ev.entityName} — ${ev.kind}` },
+    data: { projectId: String(body.projectId), actor: "USER", type: "CONTINUITY", summary: `Continuity watch: ${ev.entityName} - ${ev.kind}` },
   });
   return NextResponse.json({ id: ev.id });
 }

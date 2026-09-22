@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 
 // ─────────────────────────────────────────────────────────────
-// LIVE BLENDER BRIDGE (§31 — replaceable engine driver)
+// LIVE BLENDER BRIDGE (§31 - replaceable engine driver)
 //
 // Transport: the AnimeOS Blender add-on (bridges/blender/
 // animeos_bridge.py) runs a tiny HTTP server inside Blender:
@@ -13,13 +13,13 @@ import path from "path";
 //   POST /ping      → liveness
 //
 // Connection sources, in order:
-//   1. ANIMEOS_BLENDER_HOST — an already-running add-on endpoint
+//   1. ANIMEOS_BLENDER_HOST - an already-running add-on endpoint
 //      (e.g. "127.0.0.1:8100"), the way a workstation Blender or a
 //      render node attaches to this studio.
-//   2. Local `blender` binary — we spawn `blender -b -P
+//   2. Local `blender` binary - we spawn `blender -b -P
 //      animeos_bridge.py` ourselves (headless live bridge).
 // If neither exists, every call degrades to null and the render
-// pipeline keeps using the built-in simulator — nothing breaks.
+// pipeline keeps using the built-in simulator - nothing breaks.
 // ─────────────────────────────────────────────────────────────
 
 const HOST_ENV = process.env.ANIMEOS_BLENDER_HOST ?? "";
@@ -87,7 +87,7 @@ async function trySpawnBlender(): Promise<boolean> {
         stdio: "ignore",
         detached: false,
       });
-      // If the binary doesn't exist, spawn errors asynchronously — listen and clean up.
+      // If the binary doesn't exist, spawn errors asynchronously - listen and clean up.
       let failed = false;
       child.on("error", () => {
         failed = true;
@@ -107,21 +107,21 @@ async function trySpawnBlender(): Promise<boolean> {
         return Boolean(spawnedProcess);
       }
     } catch {
-      // binary not found — try next candidate
+      // binary not found - try next candidate
     }
   }
   spawnedAvailable = false;
   return false;
 }
 
-/** Full bridge status — used by /api/bridge and the render pipeline. */
+/** Full bridge status - used by /api/bridge and the render pipeline. */
 export async function bridgeStatus(force = false): Promise<BridgeStatus> {
   const cached = !force && Date.now() - lastProbe.at < 4000;
   if (cached && !lastProbe.live && !spawnedProcess && !HOST_ENV) {
     return {
       mode: "SIMULATOR", source: null, host: null, reachable: false,
       blenderVersion: null, scene: null, busy: false,
-      detail: "Blender bridge offline — set ANIMEOS_BLENDER_HOST to a running animeos_bridge.py add-on, or install Blender locally. Simulator driver active.",
+      detail: "Blender bridge offline - set ANIMEOS_BLENDER_HOST to a running animeos_bridge.py add-on, or install Blender locally. Simulator driver active.",
     };
   }
 
@@ -137,7 +137,7 @@ export async function bridgeStatus(force = false): Promise<BridgeStatus> {
     }
   }
 
-  // No env host (or env host down) — attempt local spawn once
+  // No env host (or env host down) - attempt local spawn once
   if (!HOST_ENV && (await trySpawnBlender())) {
     const info = await probeHost(`127.0.0.1:${BRIDGE_PORT}`);
     if (info) {
@@ -156,8 +156,8 @@ export async function bridgeStatus(force = false): Promise<BridgeStatus> {
     host: HOST_ENV || (spawnedProcess ? `127.0.0.1:${BRIDGE_PORT}` : null),
     reachable: false, blenderVersion: null, scene: null, busy: false,
     detail: HOST_ENV
-      ? `No response from ANIMEOS_BLENDER_HOST (${HOST_ENV}) — simulator driver active.`
-      : "Blender bridge offline — set ANIMEOS_BLENDER_HOST to a running animeos_bridge.py add-on, or install Blender locally. Simulator driver active.",
+      ? `No response from ANIMEOS_BLENDER_HOST (${HOST_ENV}) - simulator driver active.`
+      : "Blender bridge offline - set ANIMEOS_BLENDER_HOST to a running animeos_bridge.py add-on, or install Blender locally. Simulator driver active.",
   };
 }
 

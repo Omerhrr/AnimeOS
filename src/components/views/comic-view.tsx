@@ -219,7 +219,7 @@ function PanelFrame({
         </span>
       )}
 
-      {/* narration caption — clamped when bubbles share the panel (avoid overlap) */}
+      {/* narration caption - clamped when bubbles share the panel (avoid overlap) */}
       <figcaption
         className={cn("absolute bottom-6 z-10 px-1.5 py-1 text-[9px] leading-snug text-neutral-900", rtl ? "right-1 text-right" : "left-1 text-left", lines.length > 0 ? "line-clamp-1" : "line-clamp-2")}
         style={{ background: "rgba(255,255,255,0.88)", border: `1px solid ${cfg.ink}`, maxWidth: "72%" }}
@@ -397,7 +397,10 @@ export function ComicView({ project }: { project: StudioProject }) {
           loraName: s.lora?.name ?? null,
           loraStrength: s.loraStrength ?? null,
           artistName: s.artist?.name ?? null,
-          audioCues: (s.audioCues ?? []).map((c) => ({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume })),
+          audioCues: (s.audioCues ?? []).map((c) => ({
+            kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume,
+            voiceUrl: c.voiceUrl, voiceActor: c.voiceActor, voiceDurationMs: c.voiceDurationMs,
+          })),
         })),
         onProgress: (msg) => setExporting(msg),
       });
@@ -405,7 +408,7 @@ export function ComicView({ project }: { project: StudioProject }) {
       setTimeout(() => setExporting(null), 3500);
     } catch (err) {
       console.error("Webtoon slice export failed:", err);
-      setExporting("Export failed — see console");
+      setExporting("Export failed - see console");
       setTimeout(() => setExporting(null), 4000);
     }
   };
@@ -437,7 +440,7 @@ export function ComicView({ project }: { project: StudioProject }) {
       <div>
         <SectionHeader title="Comic Mode" sub="Storyboard episodes as manhua, manhwa/webtoon or manga pages." />
         <div className="studio-panel p-10 text-center text-sm text-muted-foreground">
-          No episodes yet — create one in Story & Scenes, or ask DSH to break down a scene.
+          No episodes yet - create one in Story & Scenes, or ask DSH to break down a scene.
         </div>
       </div>
     );
@@ -460,7 +463,7 @@ export function ComicView({ project }: { project: StudioProject }) {
     <div>
       <SectionHeader
         title="Comic Mode"
-        sub="The episode re-composed as sequential art. Panel layout is derived from the shot breakdown — no re-authoring."
+        sub="The episode re-composed as sequential art. Panel layout is derived from the shot breakdown - no re-authoring."
         right={
           <div className="flex gap-1.5 flex-wrap">
             {episodes.map((ep, i) => (
@@ -580,7 +583,7 @@ export function ComicView({ project }: { project: StudioProject }) {
           </Button>
           {selectMode && (
             <>
-              <span className="text-[11px] text-muted-foreground">{selectedIds.size} selected — click panels to toggle</span>
+              <span className="text-[11px] text-muted-foreground">{selectedIds.size} selected - click panels to toggle</span>
               <select
                 value={bulkArtist}
                 onChange={(e) => setBulkArtist(e.target.value)}
@@ -590,7 +593,7 @@ export function ComicView({ project }: { project: StudioProject }) {
                 {project.artists.map((a) => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
-                <option value="__none__">— Unassigned pool —</option>
+                <option value="__none__">- Unassigned pool -</option>
               </select>
               <Button size="sm" className="h-7 text-[11px]" onClick={() => void bulkAssign()} disabled={!bulkArtist || selectedIds.size === 0 || bulkBusy}>
                 {bulkBusy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
@@ -631,7 +634,7 @@ export function ComicView({ project }: { project: StudioProject }) {
               <span className="px-2 py-0.5 rounded text-[10px] font-semibold tracking-widest" style={{ background: "#25335c", color: "#f8f4e9" }}>
                 SCENE {String(scene.number).padStart(2, "0")}
               </span>
-              <span className="ml-2" style={{ color: "#d4d4d4" }}>{scene.title} — no shots yet</span>
+              <span className="ml-2" style={{ color: "#d4d4d4" }}>{scene.title} - no shots yet</span>
             </div>
           ) : (
             <section key={scene.id} className="space-y-5">

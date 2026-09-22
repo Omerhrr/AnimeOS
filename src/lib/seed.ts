@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 
 // ─────────────────────────────────────────────────────────────
-// DEMO UNIVERSE SEED — "Immortal Path" (仙途)
+// DEMO UNIVERSE SEED - "Immortal Path" (仙途)
 // Implements the exact examples from the vision doc:
 //   §18 character development, §27 continuity conflict,
 //   §29 scene derivation, §30 shot breakdown, §14 terminology.
@@ -27,7 +27,7 @@ export async function ensureSeed() {
   });
 
   const season = await db.season.create({
-    data: { projectId: project.id, number: 1, title: "Season 1 — The Awakened Blade" },
+    data: { projectId: project.id, number: 1, title: "Season 1 - The Awakened Blade" },
   });
 
   const ep7 = await db.episode.create({
@@ -35,7 +35,7 @@ export async function ensureSeed() {
       seasonId: season.id,
       number: 7,
       title: "The Storm Over Azure Mountain",
-      synopsis: "Lin Yue shelters in a ruined temple on Azure Mountain. The storm is not natural — someone is hunting him.",
+      synopsis: "Lin Yue shelters in a ruined temple on Azure Mountain. The storm is not natural - someone is hunting him.",
       status: "IN_PRODUCTION",
     },
   });
@@ -99,7 +99,7 @@ export async function ensureSeed() {
   const clone001 = await db.character.create({
     data: {
       projectId: project.id,
-      name: "Lin Yue — Clone 001",
+      name: "Lin Yue - Clone 001",
       role: "SUPPORTING",
       derivativeType: "CLONE",
       parentId: linYue.id,
@@ -118,21 +118,21 @@ export async function ensureSeed() {
     ],
   });
 
-  // Character development states (§18) — history is preserved
+  // Character development states (§18) - history is preserved
   await db.characterState.createMany({
     data: [
       {
-        characterId: linYue.id, label: "S01 — Village Disciple", episodeNumber: 1, stateType: "PERMANENT",
+        characterId: linYue.id, label: "S01 - Village Disciple", episodeNumber: 1, stateType: "PERMANENT",
         cultivation: "Qi Condensation", weapon: "Wooden Sword", clothing: "Disciple Robes",
         abilities: JSON.stringify(["Basic Swordsmanship"]),
       },
       {
-        characterId: linYue.id, label: "S02 — Foundation Established", episodeNumber: 15, stateType: "PERMANENT",
+        characterId: linYue.id, label: "S02 - Foundation Established", episodeNumber: 15, stateType: "PERMANENT",
         cultivation: "Foundation Establishment", weapon: "Jade Sword", clothing: "Battle Robes",
         abilities: JSON.stringify(["Advanced Swordsmanship", "Azure Flame"]),
       },
       {
-        characterId: linYue.id, label: "S03 — Core Formation", episodeNumber: 40, stateType: "PERMANENT",
+        characterId: linYue.id, label: "S03 - Core Formation", episodeNumber: 40, stateType: "PERMANENT",
         cultivation: "Core Formation", weapon: "Celestial Sword", clothing: "Sect Elder Robes",
         abilities: JSON.stringify(["Sword Domain", "Azure Heaven Flame"]),
       },
@@ -177,7 +177,7 @@ export async function ensureSeed() {
   await db.assetVersion.create({ data: { assetId: jadeSword.id, version: 2, note: "Jade shader + energy channel" } });
   await db.assetVersion.create({ data: { assetId: jadeSword.id, version: 3, note: "Battle-damage variant" } });
 
-  await db.asset.create({ data: { projectId: project.id, category: "EFFECT", name: "Azure Flame", description: "Signature cultivation flame — blue-green fire with sword-qi particles.", status: "BUILDING" } });
+  await db.asset.create({ data: { projectId: project.id, category: "EFFECT", name: "Azure Flame", description: "Signature cultivation flame - blue-green fire with sword-qi particles.", status: "BUILDING" } });
   await db.asset.create({ data: { projectId: project.id, category: "PROP", name: "Wooden Sword", status: "APPROVED" } });
   await db.asset.create({ data: { projectId: project.id, category: "ENVIRONMENT", name: "Azure Mountain", status: "APPROVED" } });
 
@@ -198,7 +198,7 @@ export async function ensureSeed() {
       episodeId: ep7.id,
       number: 12,
       title: "The Ruined Temple",
-      description: "Lin Yue enters an ancient ruined temple during a storm. Rain hammers the broken roof. As he catches his breath, the temperature drops — the storm outside has stopped moving. He draws his sword; azure energy gathers along the blade as lightning illuminates the altar.",
+      description: "Lin Yue enters an ancient ruined temple during a storm. Rain hammers the broken roof. As he catches his breath, the temperature drops - the storm outside has stopped moving. He draws his sword; azure energy gathers along the blade as lightning illuminates the altar.",
       environmentId: ancientTemple.id,
       timeOfDay: "Night",
       weather: "Storm",
@@ -209,12 +209,12 @@ export async function ensureSeed() {
   });
 
   const shotDefs = [
-    { number: 1, description: "Establishing shot — Azure Mountain summit, temple ruin in the storm, clouds churning below the peak", shotType: "ESTABLISHING", lens: "24mm", movement: "CRANE", duration: 4.2, lighting: "Moonlight + storm clouds" },
+    { number: 1, description: "Establishing shot - Azure Mountain summit, temple ruin in the storm, clouds churning below the peak", shotType: "ESTABLISHING", lens: "24mm", movement: "CRANE", duration: 4.2, lighting: "Moonlight + storm clouds" },
     { number: 2, description: "Lin Yue enters the temple, robes whipping in the wind, rain trailing off his shoulders", shotType: "MEDIUM", lens: "35mm", movement: "TRACKING", duration: 5.0, lighting: "Backlight + interior shadows" },
-    { number: 3, description: "Close-up — Lin Yue's eyes narrow; the rain sound dies unnaturally", shotType: "CLOSEUP", lens: "85mm", movement: "STATIC", duration: 2.8, lighting: "Cold key, deep shadow" },
-    { number: 4, description: "Reverse shot — a shadow detaches itself from the altar; the Demon Lord's aura crawls across the floor", shotType: "WIDE", lens: "35mm", movement: "PAN", duration: 4.0, lighting: "Aura glow + lightning" },
-    { number: 5, description: "Sword draw — jade blade sings out of its sheath, azure energy coiling up the steel", shotType: "LOW_ANGLE", lens: "50mm", movement: "ORBIT", duration: 4.2, lighting: "Blade emission + rim light" },
-    { number: 6, description: "Impact — first clash, lightning detonates through the broken roof, debris suspended mid-air", shotType: "WIDE", lens: "28mm", movement: "STATIC", duration: 3.6, lighting: "Lightning detonation" },
+    { number: 3, description: "Close-up - Lin Yue's eyes narrow; the rain sound dies unnaturally", shotType: "CLOSEUP", lens: "85mm", movement: "STATIC", duration: 2.8, lighting: "Cold key, deep shadow" },
+    { number: 4, description: "Reverse shot - a shadow detaches itself from the altar; the Demon Lord's aura crawls across the floor", shotType: "WIDE", lens: "35mm", movement: "PAN", duration: 4.0, lighting: "Aura glow + lightning" },
+    { number: 5, description: "Sword draw - jade blade sings out of its sheath, azure energy coiling up the steel", shotType: "LOW_ANGLE", lens: "50mm", movement: "ORBIT", duration: 4.2, lighting: "Blade emission + rim light" },
+    { number: 6, description: "Impact - first clash, lightning detonates through the broken roof, debris suspended mid-air", shotType: "WIDE", lens: "28mm", movement: "STATIC", duration: 3.6, lighting: "Lightning detonation" },
   ];
   for (const s of shotDefs) {
     await db.shot.create({ data: { sceneId: scene12.id, ...s, status: "DRAFT" } });
@@ -253,9 +253,9 @@ export async function ensureSeed() {
         verdict: "NEEDS_REVISION",
         summary: "Sword draw reads clearly but the shot underuses its drama: the camera orbits too wide, the figure sits low in frame, and the blade energy is barely visible against the fog.",
         findings: JSON.stringify([
-          { aspect: "Camera", status: "ISSUE", note: "Camera is too wide for a sword-draw beat — the draw happens in the middle third." },
+          { aspect: "Camera", status: "ISSUE", note: "Camera is too wide for a sword-draw beat - the draw happens in the middle third." },
           { aspect: "Exposure", status: "ISSUE", note: "Character is underexposed; rim light is not separating him from the temple wall." },
-          { aspect: "VFX", status: "ISSUE", note: "Azure energy emission lacks intensity — the blade glow washes out in the fog." },
+          { aspect: "VFX", status: "ISSUE", note: "Azure energy emission lacks intensity - the blade glow washes out in the fog." },
           { aspect: "Atmosphere", status: "ISSUE", note: "Background fog is too dense; the temple interior loses depth." },
           { aspect: "Character", status: "GOOD", note: "Battle-robe state and silhouette are correct for Episode 7." },
         ]),
@@ -273,7 +273,7 @@ export async function ensureSeed() {
   // ── Production history (§47/§52) ─────────────────────────
   await db.productionEvent.createMany({
     data: [
-      { projectId: project.id, actor: "DSH", type: "PROJECT", summary: "Production 'Immortal Path' initialized — Donghua / 3D / zh-CN" },
+      { projectId: project.id, actor: "DSH", type: "PROJECT", summary: "Production 'Immortal Path' initialized - Donghua / 3D / zh-CN" },
       { projectId: project.id, actor: "DSH", type: "TOOL_CALL", summary: "character.create → Lin Yue (PROTAGONIST) with 3 development states" },
       { projectId: project.id, actor: "DSH", type: "TOOL_CALL", summary: "character.create → Chen Hao (RIVAL), Elder Han (MENTOR), Demon Lord Wei (ANTAGONIST)" },
       { projectId: project.id, actor: "DSH", type: "TOOL_CALL", summary: "environment.create → Azure Mountain, Ancient Temple" },
@@ -289,7 +289,7 @@ export async function ensureSeed() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// STUDIO TEAM SEED — style LoRA registry, artist roster,
+// STUDIO TEAM SEED - style LoRA registry, artist roster,
 // per-shot assignments and motion-panel sound design.
 // Idempotent (checks by unique name) so it can also augment a
 // live production database without touching existing artwork.
@@ -298,7 +298,7 @@ export async function ensureSeed() {
 export async function seedStudioTeam(projectId: string) {
   // ── Style LoRA registry ────────────────────────────────
   const loraDefs = [
-    { name: "immortal-path-v3", triggerPhrase: "immortalpath_xianxia_style, jade_teal_rimlight", weight: 0.85, baseModel: "SDXL", notes: "House style adapter — matches the season 1 look. Default for hero shots." },
+    { name: "immortal-path-v3", triggerPhrase: "immortalpath_xianxia_style, jade_teal_rimlight", weight: 0.85, baseModel: "SDXL", notes: "House style adapter - matches the season 1 look. Default for hero shots." },
     { name: "ink-wash-flashback", triggerPhrase: "inkwash_2d, monochrome_wash, brush_stroke_edges", weight: 0.7, baseModel: "SDXL", notes: "2D ink-wash treatment for Willow Village flashbacks (Ep 9, 19)." },
     { name: "azure-flame-fx", triggerPhrase: "azureflame_vfx, volumetric_sword_qi, teal_energy_rim", weight: 0.9, baseModel: "SDXL", notes: "Energy-VFX accent for cultivation blasts and sword-qi moments." },
   ];
@@ -312,7 +312,7 @@ export async function seedStudioTeam(projectId: string) {
 
   // ── Artist roster ──────────────────────────────────────
   const artistDefs = [
-    { name: "Mei Lin", role: "Key animator — characters", color: "#e8b04b" },
+    { name: "Mei Lin", role: "Key animator - characters", color: "#e8b04b" },
     { name: "Jiang Wu", role: "Backgrounds & environments", color: "#5aa88f" },
     { name: "Su Qing", role: "Effects animation", color: "#b07cd8" },
     { name: "Dao Zhang", role: "Webtoon inker / cleanup", color: "#d8767c" },
@@ -380,13 +380,13 @@ export async function seedStudioTeam(projectId: string) {
       number: 4,
       cues: [
         { kind: "AMBIENCE", label: "Sub-bass dread drone", startMs: 0, durationMs: 4000, volume: 0.5 },
-        { kind: "SFX", label: "Aura crawling — glassy hiss", startMs: 1800, durationMs: 1600, volume: 0.55 },
+        { kind: "SFX", label: "Aura crawling - glassy hiss", startMs: 1800, durationMs: 1600, volume: 0.55 },
       ],
     },
     {
       number: 5,
       cues: [
-        { kind: "SFX", label: "Blade shing — unsheathe", startMs: 300, durationMs: 700, volume: 0.9 },
+        { kind: "SFX", label: "Blade shing - unsheathe", startMs: 300, durationMs: 700, volume: 0.9 },
         { kind: "SFX", label: "Azure energy coiling", startMs: 900, durationMs: 2000, volume: 0.6 },
       ],
     },

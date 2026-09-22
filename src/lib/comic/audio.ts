@@ -4,10 +4,10 @@
 // MOTION-PANEL AUDIO ENGINE (client-only, WebAudio)
 //
 // Synthesizes sound-design cues on the shot's millisecond timeline:
-//   SFX      — percussive noise burst, timbre seeded by the label
-//   VOICE    — speech synthesis (falls back to a soft blip)
-//   BGM      — detuned triangle pad through a lowpass
-//   AMBIENCE — looping filtered-noise bed with slow fades
+//   SFX      - percussive noise burst, timbre seeded by the label
+//   VOICE    - speech synthesis (falls back to a soft blip)
+//   BGM      - detuned triangle pad through a lowpass
+//   AMBIENCE - looping filtered-noise bed with slow fades
 // Everything is scheduled against one AudioContext clock so the
 // playhead and the sounds stay in sync. No audio files needed.
 // ─────────────────────────────────────────────────────────────
@@ -15,10 +15,10 @@
 import type { AudioCueKind } from "@/lib/api-client";
 
 export const CUE_KIND_META: Record<AudioCueKind, { label: string; color: string; blurb: string }> = {
-  SFX: { label: "SFX", color: "#e8b04b", blurb: "Percussive accent — impacts, draws, debris" },
-  VOICE: { label: "Voice", color: "#4bc0e8", blurb: "Spoken line — synthesized from the label" },
-  BGM: { label: "Music", color: "#b07cd8", blurb: "Score bed — pads and percussion hits" },
-  AMBIENCE: { label: "Ambience", color: "#5aa88f", blurb: "Environment bed — rain, wind, drones" },
+  SFX: { label: "SFX", color: "#e8b04b", blurb: "Percussive accent - impacts, draws, debris" },
+  VOICE: { label: "Voice", color: "#4bc0e8", blurb: "Spoken line - synthesized from the label" },
+  BGM: { label: "Music", color: "#b07cd8", blurb: "Score bed - pads and percussion hits" },
+  AMBIENCE: { label: "Ambience", color: "#5aa88f", blurb: "Environment bed - rain, wind, drones" },
 };
 
 export interface CueLike {
@@ -28,6 +28,7 @@ export interface CueLike {
   startMs: number;
   durationMs: number;
   volume: number;
+  voiceUrl?: string | null; // rendered TTS take; live preview plays it when present
 }
 
 /** Deterministic 0..1 hash so a label always sounds the same. */
@@ -53,6 +54,7 @@ export class CuePlayer {
   private master: GainNode | null = null;
   private sources: Array<AudioScheduledSourceNode> = [];
   private timers: number[] = [];
+  private audios: HTMLAudioElement[] = [];
   private raf: number | null = null;
   private startCtxTime = 0;
   private running = false;
@@ -94,7 +96,7 @@ export class CuePlayer {
         if (cue.kind === "SFX") this.scheduleSfx(ctx, cue.label, when, dur, vol);
         else if (cue.kind === "BGM") this.scheduleBgm(ctx, cue.label, when, dur, vol);
         else if (cue.kind === "AMBIENCE") this.scheduleAmbience(ctx, cue.label, when, dur, vol);
-        else if (cue.kind === "VOICE") this.scheduleVoice(cue.label, when, cue.durationMs, vol);
+        else if (cue.kind === "VOICE") this.scheduleVoice(cue, when, cue.durationMs, vol);
       } catch {
         // a bad cue must never kill the whole preview
       }
@@ -126,10 +128,14 @@ export class CuePlayer {
       try { src.disconnect(); } catch { /* noop */ }
     }
     this.sources = [];
+    for (const a of this.audios) {
+      try { a.pause(); } catch { /* noop */ }
+    }
+    this.audios = [];
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
   }
 
-  /** SFX — bandpass-shaped noise burst; centre frequency seeded by the label. */
+  /** SFX - bandpass-shaped noise burst; centre frequency seeded by the label. */
   private scheduleSfx(ctx: AudioContext, label: string, when: number, dur: number, vol: number): void {
     if (!this.master) return;
     const h = labelHash(label);
@@ -153,7 +159,7 @@ export class CuePlayer {
     this.sources.push(src);
   }
 
-  /** BGM — two detuned triangles through a soft lowpass; slow attack/release. */
+  /** BGM - two detuned triangles through a soft lowpass; slow attack/release. */
   private scheduleBgm(ctx: AudioContext, label: string, when: number, dur: number, vol: number): void {
     if (!this.master) return;
     const h = labelHash(label);
@@ -178,7 +184,7 @@ export class CuePlayer {
     }
   }
 
-  /** AMBIENCE — looped noise through a slowly-wobbling lowpass bed. */
+  /** AMBIENCE - looped noise through a slowly-wobbling lowpass bed. */
   private scheduleAmbience(ctx: AudioContext, label: string, when: number, dur: number, vol: number): void {
     if (!this.master) return;
     const h = labelHash(label);
@@ -206,15 +212,21 @@ export class CuePlayer {
     this.sources.push(src, lfo);
   }
 
-  /** VOICE — speech synthesis at the right offset; blip fallback. */
-  private scheduleVoice(label: string, when: number, durationMs: number, vol: number): void {
+  /** VOICE - a rendered TTS take when the cue has one, else speech synthesis; blip fallback. */
+  private scheduleVoice(cue: CueLike, when: number, durationMs: number, vol: number): void {
     const ctx = this.ensureCtx();
     const delayMs = Math.max(0, (when - ctx.currentTime) * 1000);
     const timer = window.setTimeout(() => {
       if (!this.running) return;
-      if (typeof window !== "undefined" && "speechSynthesis" in window && label.trim()) {
-        // VOICE labels may carry a "Speaker: line" prefix — speak only the line
-        const spoken = label.includes(": ") ? label.split(": ").slice(1).join(": ") : label;
+      if (cue.voiceUrl) {
+        // rendered take: real speech, synced to the same clock as the synth cues
+        const a = new Audio(cue.voiceUrl);
+        a.volume = Math.min(1, vol);
+        this.audios.push(a);
+        void a.play().catch(() => { /* autoplay guard: fall through to synthesis */ });
+      } else if (typeof window !== "undefined" && "speechSynthesis" in window && cue.label.trim()) {
+        // VOICE labels may carry a "Speaker: line" prefix - speak only the line
+        const spoken = cue.label.includes(": ") ? cue.label.split(": ").slice(1).join(": ") : cue.label;
         const u = new SpeechSynthesisUtterance(spoken);
         u.rate = 0.95;
         u.volume = Math.min(1, vol);

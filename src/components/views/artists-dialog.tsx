@@ -1,6 +1,6 @@
 "use client";
 
-// Artist roster — studio team management for multi-artist shot
+// Artist roster - studio team management for multi-artist shot
 // assignment. Deleting an artist unassigns their shots (pool fallback).
 
 import { useEffect, useState } from "react";
@@ -83,7 +83,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
 
           <div className="space-y-2 max-h-56 overflow-y-auto studio-scroll pr-1">
             {project.artists.length === 0 && (
-              <p className="text-xs text-muted-foreground py-2">Roster is empty — every panel sits in the unassigned pool.</p>
+              <p className="text-xs text-muted-foreground py-2">Roster is empty - every panel sits in the unassigned pool.</p>
             )}
             {project.artists.map((a) => (
               <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">

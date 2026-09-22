@@ -1,6 +1,6 @@
 "use client";
 
-// Per-production art style tuning — the compiled tokens from this
+// Per-production art style tuning - the compiled tokens from this
 // dialog are injected into every future panel-art and model-sheet
 // prompt (server-side in src/lib/ai/art.ts). DSH can tune the same
 // fields via the set_art_style tool.
@@ -95,7 +95,7 @@ export function StyleDirectionDialog({ project }: { project: StudioProject }) {
             <DialogDescription className="text-xs text-muted-foreground">
               Tune how every art prompt in “{project.title}” is compiled. Base preset:{" "}
               <b className="text-foreground">{preset?.label ?? project.visualStyle}</b>
-              {preset ? ` — ${preset.vibe}` : ""}.
+              {preset ? ` - ${preset.vibe}` : ""}.
             </DialogDescription>
           </DialogHeader>
 
@@ -136,7 +136,7 @@ export function StyleDirectionDialog({ project }: { project: StudioProject }) {
             </div>
 
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Applies to all new panel art and model sheets in this production — existing artwork is unchanged until regenerated.
+              Applies to all new panel art and model sheets in this production - existing artwork is unchanged until regenerated.
               DSH can also tune this direction itself via its <span className="font-mono text-[10px]">set_art_style</span> tool.
             </p>
             {error && <p className="text-[11px] text-rose-300">{error}</p>}

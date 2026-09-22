@@ -94,7 +94,7 @@ export function TerminologyView({ project }: { project: import("@/lib/api-client
     <div>
       <SectionHeader
         title="Translation Memory"
-        sub="Canonical terminology database — keeps names, techniques, realms and locations consistent across hundreds of episodes and every subtitle language."
+        sub="Canonical terminology database - keeps names, techniques, realms and locations consistent across hundreds of episodes and every subtitle language."
         right={<AddTermDialog />}
       />
       <div className="studio-panel overflow-x-auto studio-scroll">
@@ -114,9 +114,9 @@ export function TerminologyView({ project }: { project: import("@/lib/api-client
               return (
                 <tr key={t.id} className="border-b border-white/5 hover:bg-white/[0.02]">
                   <td className="px-4 py-2.5 font-medium whitespace-nowrap">{t.term}</td>
-                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{t.category ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">{t.category ?? "-"}</td>
                   {langs.map((l) => (
-                    <td key={l} className="px-3 py-2.5">{tr[l] ?? <span className="text-muted-foreground/40">—</span>}</td>
+                    <td key={l} className="px-3 py-2.5">{tr[l] ?? <span className="text-muted-foreground/40">-</span>}</td>
                   ))}
                 </tr>
               );

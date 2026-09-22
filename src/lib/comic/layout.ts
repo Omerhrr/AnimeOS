@@ -27,7 +27,7 @@ export const COMIC_FORMATS: Record<ComicFormat, ComicFormatConfig> = {
     ink: "#25335c",
     paper: "#f8f4e9",
     gutter: 10,
-    blurb: "Full-colour cinematic pages, top-to-bottom flow — pairs with the donghua pipeline",
+    blurb: "Full-colour cinematic pages, top-to-bottom flow - pairs with the donghua pipeline",
   },
   MANHWA: {
     id: "MANHWA",
@@ -175,7 +175,7 @@ function templateFor(weights: number[], variant: number): Array<{ colStart: numb
         ];
   }
 
-  // 5+ panels: dense action page — rows of pairs/thirds, last panel wide
+  // 5+ panels: dense action page - rows of pairs/thirds, last panel wide
   const rows: Array<{ colStart: number; colSpan: number; rowSpan: number; emphasis: boolean }> = [];
   let i = 0;
   while (i < n - 2) {

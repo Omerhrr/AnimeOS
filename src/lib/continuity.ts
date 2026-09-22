@@ -3,7 +3,7 @@ import type { CapabilityCheck } from "@/lib/types";
 import { safeJsonParse } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
-// CONTINUITY ENGINE — a first-class production system (§27)
+// CONTINUITY ENGINE - a first-class production system (§27)
 // Detects conflicts between story requirements and canonical history.
 // The system never silently creates an inconsistent asset.
 // ─────────────────────────────────────────────────────────────
@@ -19,20 +19,20 @@ export interface ContinuityConflict {
 
 const RESOLUTIONS_BY_KIND: Record<string, string[]> = {
   DESTROYED: [
-    "Script error — rewrite the line",
-    "Flashback — mark the shot as a flashback",
-    "Restored — add a restoration story event before this scene",
-    "Alternate weapon — substitute a different asset",
+    "Script error - rewrite the line",
+    "Flashback - mark the shot as a flashback",
+    "Restored - add a restoration story event before this scene",
+    "Alternate weapon - substitute a different asset",
   ],
   LOST: [
-    "Script error — rewrite the line",
-    "Recovered — add a recovery event before this scene",
-    "Alternate asset — substitute",
+    "Script error - rewrite the line",
+    "Recovered - add a recovery event before this scene",
+    "Alternate asset - substitute",
   ],
   INJURED: [
-    "Healed — add recovery event before this scene",
-    "Intentional — keep injury visible in the render",
-    "Timeline error — move the scene earlier",
+    "Healed - add recovery event before this scene",
+    "Intentional - keep injury visible in the render",
+    "Timeline error - move the scene earlier",
   ],
   TRANSFORMED: [
     "Revert transformation before this scene",
@@ -139,7 +139,7 @@ export async function checkSceneCapabilities(projectId: string, sceneId: string)
       requirement: req,
       category: "VFX / Prop",
       present: Boolean(found),
-      detail: found ? `Covered by asset: ${found}` : "Missing — DSH must create this before rendering",
+      detail: found ? `Covered by asset: ${found}` : "Missing - DSH must create this before rendering",
     });
   }
 

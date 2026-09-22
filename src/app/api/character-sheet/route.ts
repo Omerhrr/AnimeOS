@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { generateCharacterModelSheet } from "@/lib/ai/art";
 
 /**
- * Generate a character model sheet — the reference image + canonical
+ * Generate a character model sheet - the reference image + canonical
  * visual anchor that keep faces consistent across panels.
  */
 export async function POST(req: Request) {

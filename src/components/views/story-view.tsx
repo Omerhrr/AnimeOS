@@ -43,7 +43,7 @@ function CreateEpisodeDialog({ project }: { project: StudioProject }) {
         <Button size="sm" variant="outline" className="border-white/12 bg-white/5"><Plus className="h-4 w-4 mr-1.5" /> Episode</Button>
       </DialogTrigger>
       <DialogContent className="bg-card max-w-md">
-        <DialogHeader><DialogTitle>New episode — {project.seasons[0]?.title ?? "Season 1"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>New episode - {project.seasons[0]?.title ?? "Season 1"}</DialogTitle></DialogHeader>
         <div className="grid gap-3 py-1">
           <div className="grid gap-1.5"><Label>Episode number</Label>
             <Input type="number" value={num} onChange={(e) => setNum(Number(e.target.value))} className="bg-white/5 border-white/12" />
@@ -90,7 +90,7 @@ function CreateSceneDialog({ episodeId, episodeNumber }: { episodeId: string; ep
         <Button size="sm" variant="outline" className="border-white/12 bg-white/5"><Plus className="h-4 w-4 mr-1.5" /> Scene</Button>
       </DialogTrigger>
       <DialogContent className="bg-card max-w-lg">
-        <DialogHeader><DialogTitle>New scene — Episode {episodeNumber}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>New scene - Episode {episodeNumber}</DialogTitle></DialogHeader>
         <div className="grid gap-3 py-1">
           <div className="grid gap-1.5"><Label>Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="The Ruined Temple" className="bg-white/5 border-white/12" />
@@ -138,7 +138,7 @@ function SceneDetail({ analysis }: { analysis: SceneAnalysis }) {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold">Scene {scene.number} — {scene.title}</h3>
+              <h3 className="text-base font-semibold">Scene {scene.number} - {scene.title}</h3>
               <StatusBadge status={scene.status} />
             </div>
             <p className="text-[13px] text-muted-foreground leading-relaxed mt-1.5 max-w-3xl">{scene.description}</p>
@@ -155,7 +155,7 @@ function SceneDetail({ analysis }: { analysis: SceneAnalysis }) {
         </div>
       </div>
 
-      {/* Missing capability detection — §26 */}
+      {/* Missing capability detection - §26 */}
       <div className="studio-panel p-4">
         <h4 className="text-sm font-semibold mb-2.5 flex items-center gap-2">
           <Wand2 className="h-4 w-4 text-amber-300" /> Capability check
@@ -182,7 +182,7 @@ function SceneDetail({ analysis }: { analysis: SceneAnalysis }) {
         )}
       </div>
 
-      {/* Continuity — §27 */}
+      {/* Continuity - §27 */}
       {analysis.continuity.length > 0 && (
         <div className="rounded-xl border border-rose-400/25 bg-rose-400/[0.05] p-4">
           <h4 className="text-sm font-semibold mb-2.5 flex items-center gap-2 text-rose-200">
@@ -192,7 +192,7 @@ function SceneDetail({ analysis }: { analysis: SceneAnalysis }) {
             {analysis.continuity.map((c, i) => (
               <div key={i} className="text-[12px]">
                 <span className="font-medium text-rose-100">{c.entityName}</span>
-                <span className="text-rose-300/80"> — {c.kind}{c.eventEpisode != null ? ` (Episode ${c.eventEpisode})` : ""}: </span>
+                <span className="text-rose-300/80"> - {c.kind}{c.eventEpisode != null ? ` (Episode ${c.eventEpisode})` : ""}: </span>
                 <span className="text-foreground/75">{c.description}</span>
                 <div className="mt-1.5 text-[11px] text-muted-foreground">
                   Possible resolutions: {c.resolutions.map((r, j) => (
@@ -205,13 +205,13 @@ function SceneDetail({ analysis }: { analysis: SceneAnalysis }) {
         </div>
       )}
 
-      {/* Shots — §30 */}
+      {/* Shots - §30 */}
       <div className="studio-panel p-4">
         <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
           <Camera className="h-4 w-4 text-primary" /> Shot list ({scene.shots.length})
         </h4>
         {scene.shots.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-3 text-center">No shots yet — ask DSH to break this scene down.</p>
+          <p className="text-xs text-muted-foreground py-3 text-center">No shots yet - ask DSH to break this scene down.</p>
         ) : (
           <div className="space-y-2 max-h-[420px] overflow-y-auto studio-scroll pr-1">
             {scene.shots.map((s) => (

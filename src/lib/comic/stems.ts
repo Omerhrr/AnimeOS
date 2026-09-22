@@ -8,12 +8,12 @@
 //   1. All cues on the slice are re-timed onto ONE stem timeline
 //      (panels play back-to-back in reading order, each cue
 //      offset by the panels before it).
-//   2. An OfflineAudioContext renders everything in one pass —
+//   2. An OfflineAudioContext renders everything in one pass -
 //      same synthesis DNA as the live CuePlayer (bandpass-noise
 //      SFX, detuned-triangle BGM, wobbling-filter ambience).
-//   3. VOICE cues can't use speechSynthesis offline (it neither
-//      routes into the graph nor renders offline) so they render
-//      as a soft formant blip carrying the cue's cadence.
+//   3. VOICE cues with a rendered TTS take (voiceUrl) mix the
+//      real speech WAV into the stem; cues without one render as
+//      a soft formant blip carrying the cue's cadence.
 //   4. The AudioBuffer is encoded as 16-bit PCM mono WAV.
 // ─────────────────────────────────────────────────────────────
 
@@ -25,12 +25,43 @@ export interface StemCue {
   startMs: number;
   durationMs: number;
   volume: number;
+  voiceUrl?: string | null; // rendered TTS take (cache-busted URL)
 }
 
 const SAMPLE_RATE = 44100;
 
+/** Decode rendered TTS takes so stems can mix real speech. */
+export async function decodeVoiceClips(urls: string[]): Promise<Map<string, AudioBuffer>> {
+  const clips = new Map<string, AudioBuffer>();
+  const unique = [...new Set(urls.filter(Boolean))];
+  if (unique.length === 0) return clips;
+  const OfflineAC =
+    window.OfflineAudioContext ??
+    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+  if (!OfflineAC) return clips;
+  const decodeCtx = new OfflineAC(1, 1, SAMPLE_RATE);
+  await Promise.all(
+    unique.map(async (url) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const bytes = await res.arrayBuffer();
+        const buf = await decodeCtx.decodeAudioData(bytes);
+        clips.set(url, buf);
+      } catch {
+        // a broken take falls back to the synthesized blip
+      }
+    }),
+  );
+  return clips;
+}
+
 /** Render the cue list onto one offline timeline and encode 16-bit mono WAV. */
-export async function renderStemWav(cues: StemCue[], totalMs: number): Promise<Blob> {
+export async function renderStemWav(
+  cues: StemCue[],
+  totalMs: number,
+  voiceClips?: Map<string, AudioBuffer>,
+): Promise<Blob> {
   const totalSec = Math.max(0.5, totalMs / 1000) + 0.25; // tail for release envelopes
   const OfflineAC =
     window.OfflineAudioContext ??
@@ -50,7 +81,11 @@ export async function renderStemWav(cues: StemCue[], totalMs: number): Promise<B
       if (cue.kind === "SFX") sfx(ctx, master, cue.label, when, dur, vol);
       else if (cue.kind === "BGM") bgm(ctx, master, cue.label, when, dur, vol);
       else if (cue.kind === "AMBIENCE") ambience(ctx, master, cue.label, when, dur, vol);
-      else if (cue.kind === "VOICE") voiceBlip(ctx, master, cue.label, when, dur, vol);
+      else if (cue.kind === "VOICE") {
+        const clip = cue.voiceUrl ? voiceClips?.get(cue.voiceUrl) : undefined;
+        if (clip) realVoice(ctx, master, clip, when, dur, vol);
+        else voiceBlip(ctx, master, cue.label, when, dur, vol);
+      }
     } catch {
       // one bad cue must never sink the whole stem
     }
@@ -128,6 +163,22 @@ function ambience(ctx: BaseAudioContext, dest: AudioNode, label: string, when: n
   lfo.start(when);
   src.stop(when + dur + 0.1);
   lfo.stop(when + dur + 0.1);
+}
+
+/** Mix a rendered TTS take into the stem at the cue's slot and volume. */
+function realVoice(ctx: BaseAudioContext, dest: AudioNode, clip: AudioBuffer, when: number, dur: number, vol: number): void {
+  const src = ctx.createBufferSource();
+  src.buffer = clip; // a 24kHz take resamples into the 44.1kHz render automatically
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, when);
+  gain.gain.linearRampToValueAtTime(vol, when + 0.02);
+  // never let one take bleed past its slot into the next panel
+  const playSec = Math.min(clip.duration, dur + 0.15);
+  gain.gain.setValueAtTime(vol, when + Math.max(0.02, playSec - 0.06));
+  gain.gain.linearRampToValueAtTime(0, when + playSec);
+  src.connect(gain).connect(dest);
+  src.start(when);
+  src.stop(when + playSec);
 }
 
 /** Offline stand-in for speechSynthesis: a vowel-ish tone with the cue's rhythm. */

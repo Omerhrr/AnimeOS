@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { safeJsonParse } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
-// AI ART SERVICE — panel art + character model sheets
+// AI ART SERVICE - panel art + character model sheets
 //
 // The model sheet is the consistency mechanism: for every cast
 // member we generate a reference sheet AND store the canonical
@@ -43,7 +43,7 @@ const FRAMING: Record<string, string> = {
   EXTREME_CLOSEUP: "extreme close-up, one striking detail fills the frame",
 };
 
-/** Per-production-style tokens — shared by panels AND model sheets so the whole cast lives in one visual language. */
+/** Per-production-style tokens - shared by panels AND model sheets so the whole cast lives in one visual language. */
 const STYLE_TOKENS: Record<string, string> = {
   DONGHUA: "cinematic Chinese donghua art style, xianxia aesthetic, flowing robes, ink-wash influenced atmosphere, jade-teal and gold palette",
   ANIME: "Japanese anime art style, cel shading, crisp linework, expressive eyes, vibrant but controlled palette",
@@ -104,7 +104,7 @@ export function shotLoraDirective(
   const dominance = s >= 0.75
     ? "this adapter dominates the visual style"
     : "blend this adapter with the base production style";
-  return `style LoRA "${lora.name}" active (trigger tokens: ${lora.triggerPhrase.trim()}) at strength ${s.toFixed(2)} — ${dominance}`;
+  return `style LoRA "${lora.name}" active (trigger tokens: ${lora.triggerPhrase.trim()}) at strength ${s.toFixed(2)} - ${dominance}`;
 }
 
 interface CastMember {
@@ -188,7 +188,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
     loraDirective,
     FRAMING[shot.shotType] ?? FRAMING.MEDIUM,
     shot.description,
-    scene.environment ? `Setting: ${scene.environment.name}${scene.environment.description ? ` — ${scene.environment.description}` : ""}` : null,
+    scene.environment ? `Setting: ${scene.environment.name}${scene.environment.description ? ` - ${scene.environment.description}` : ""}` : null,
     scene.timeOfDay ? `${scene.timeOfDay.toLowerCase()} lighting` : null,
     scene.weather ? `${scene.weather.toLowerCase()} weather` : null,
     shot.lighting ? `Lighting: ${shot.lighting}` : null,
@@ -228,7 +228,7 @@ function parseAppearance(raw: string | null): Record<string, string> {
 }
 
 /**
- * Build the canonical visual anchor for a character — the exact token
+ * Build the canonical visual anchor for a character - the exact token
  * string stored as modelSheetPrompt and reused in every panel featuring them.
  */
 export function buildVisualAnchor(

@@ -1,4 +1,4 @@
-// Wipe all production data (dev utility) — the API auto-reseeds on next request.
+// Wipe all production data (dev utility) - the API auto-reseeds on next request.
 import { PrismaClient } from "@prisma/client";
 
 const db = new PrismaClient();

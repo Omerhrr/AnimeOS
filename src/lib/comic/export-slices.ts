@@ -4,12 +4,12 @@
 // WEBTOON SLICE EXPORT (client-side compositor)
 //
 // Turns the episode's webtoon strip into platform-ready vertical
-// slices (800px wide, ≤1280px tall — NAVER WEBTOON-style spec):
+// slices (800px wide, ≤1280px tall - NAVER WEBTOON-style spec):
 //   1. Each panel is redrawn on canvas at export resolution:
 //      AI artwork (or the procedural sketch, serialized from the
 //      live DOM), panel border, speech bubbles, SFX, narration
 //      caption, shot chip.
-//   2. Panels are packed boundary-aware into slices — a panel is
+//   2. Panels are packed boundary-aware into slices - a panel is
 //      never cut in half; slices are white-backed and uniform.
 //   3. Everything is zipped with a manifest.json and downloaded.
 // No server round-trip: same-origin images and SVG data-URLs keep
@@ -19,7 +19,7 @@
 import JSZip from "jszip";
 import { stripHeight, COMIC_FORMATS } from "@/lib/comic/layout";
 import { parseDialogue, bubbleSpots } from "@/lib/comic/dialogue";
-import { renderStemWav, type StemCue } from "@/lib/comic/stems";
+import { renderStemWav, decodeVoiceClips, type StemCue } from "@/lib/comic/stems";
 
 export interface SliceAudioCue {
   kind: string;
@@ -27,6 +27,10 @@ export interface SliceAudioCue {
   startMs: number;
   durationMs: number;
   volume: number;
+  // rendered TTS take (VOICE cues); stems mix the real speech when present
+  voiceUrl?: string | null;
+  voiceActor?: string | null;
+  voiceDurationMs?: number | null;
 }
 
 export interface SliceShot {
@@ -34,7 +38,7 @@ export interface SliceShot {
   number: number;
   description: string;
   shotType: string;
-  duration: number; // seconds — audio stem timeline per panel
+  duration: number; // seconds - audio stem timeline per panel
   artworkUrl?: string | null;
   dialogue?: string | null;
   // metadata carried into the manifest for downstream motion-comic tooling
@@ -245,7 +249,7 @@ function drawPanel(ctx: CanvasRenderingContext2D, shot: SliceShot, geo: PanelGeo
     ctx.font = `${Math.round(11 * SCALE)}px ${SANS}`;
     ctx.fillStyle = "#8a8a96";
     ctx.textAlign = "center";
-    ctx.fillText("art pending — regenerate panel", w / 2, h / 2);
+    ctx.fillText("art pending - regenerate panel", w / 2, h / 2);
     ctx.textAlign = "left";
   }
 
@@ -360,7 +364,7 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
     ctx.fillRect(0, 0, w, sliceH);
 
     // each panel is painted on an offscreen canvas at origin, then blitted
-    // into its final position — keeps drawPanel logic position-independent
+    // into its final position - keeps drawPanel logic position-independent
     let ry = GAP;
     for (const block of sliceBlocks) {
       const panel = document.createElement("canvas");
@@ -391,8 +395,13 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
     });
   }
 
-  // 4. render audio stems — one WAV per slice, cues re-timed onto a
-  //    single stem timeline (panels back-to-back in reading order)
+  // 4. render audio stems - one WAV per slice, cues re-timed onto a
+  //    single stem timeline (panels back-to-back in reading order).
+  //    VOICE cues with a rendered TTS take mix the real speech in.
+  const allSliceCues = shots.flatMap((s) => s.audioCues ?? []);
+  const voiceClips = await decodeVoiceClips(
+    allSliceCues.filter((c) => c.kind === "VOICE").map((c) => c.voiceUrl ?? ""),
+  );
   const stems: Array<{ index: number; file: string; blob: Blob; durationMs: number; cueCount: number; cues: StemCue[] }> = [];
   const slicesWithCues = packed.filter((blocks) => blocks.some((b) => (b.shot.audioCues ?? []).length > 0)).length;
   if (slicesWithCues > 0) {
@@ -409,6 +418,7 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
             startMs: offsetMs + cue.startMs,
             durationMs: Math.min(cue.durationMs, panelMs - cue.startMs),
             volume: cue.volume,
+            voiceUrl: cue.voiceUrl ?? null,
             panel: block.shot.number,
           });
         }
@@ -417,7 +427,7 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
       if (sliceCues.length === 0) continue;
       onProgress?.(`Rendering audio stem ${stems.length + 1}/${slicesWithCues}…`);
       try {
-        const blob = await renderStemWav(sliceCues, offsetMs);
+        const blob = await renderStemWav(sliceCues, offsetMs, voiceClips);
         stems.push({
           index: s,
           file: `EP${String(episodeNumber).padStart(2, "0")}_slice_${String(s + 1).padStart(2, "0")}.wav`,
@@ -435,6 +445,7 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
   // 5. zip + download
   onProgress?.("Packaging ZIP…");
   const allCues = shots.flatMap((s) => (s.audioCues ?? []).map((c) => ({ ...c, shotId: s.id })));
+  const voiceTakes = allCues.filter((c) => c.kind === "VOICE" && c.voiceUrl);
   const zip = new JSZip();
   for (const s of blobs) zip.file(s.file, s.blob);
   for (const st of stems) zip.file(st.file, st.blob);
@@ -448,6 +459,15 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
       cueCount: allCues.length,
       kinds: allCues.reduce<Record<string, number>>((acc, c) => ({ ...acc, [c.kind]: (acc[c.kind] ?? 0) + 1 }), {}),
       stemFormat: stems.length > 0 ? "WAV 16-bit PCM mono 44.1kHz" : null,
+      voiceTakes: {
+        rendered: voiceTakes.length,
+        note: "rendered TTS speech is mixed into the slice stems",
+        takes: voiceTakes.map((c) => ({
+          shotId: c.shotId,
+          voiceActor: c.voiceActor ?? null,
+          voiceDurationMs: c.voiceDurationMs ?? null,
+        })),
+      },
       stems: stems.map((st) => ({
         file: st.file,
         slice: st.index,
@@ -458,7 +478,16 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
       })),
       // timing map for motion-comic authoring tools (millisecond timeline per panel)
       cuesByShot: allCues.reduce<Record<string, SliceAudioCue[]>>((acc, c) => {
-        (acc[c.shotId] ??= []).push({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume });
+        (acc[c.shotId] ??= []).push({
+          kind: c.kind,
+          label: c.label,
+          startMs: c.startMs,
+          durationMs: c.durationMs,
+          volume: c.volume,
+          voiceUrl: c.voiceUrl ?? null,
+          voiceActor: c.voiceActor ?? null,
+          voiceDurationMs: c.voiceDurationMs ?? null,
+        });
         return acc;
       }, {}),
     },

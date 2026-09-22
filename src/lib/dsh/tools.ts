@@ -49,7 +49,7 @@ export const TOOL_DEFS: ToolDef[] = [
       backstory: "string (optional)",
       appearance: "string, free-text description (optional)",
       abilities: "comma-separated ability names (optional)",
-      derivativeType: "CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION (optional — set when this character derives from another)",
+      derivativeType: "CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION (optional - set when this character derives from another)",
       parentName: "string, source character name when derivativeType is set (optional)",
     },
   },
@@ -58,7 +58,7 @@ export const TOOL_DEFS: ToolDef[] = [
     description: "Record a character development state at a point in the story (PERMANENT development, TEMPORARY scene state, or VARIANT appearance).",
     args: {
       characterName: "string",
-      label: "string, e.g. 'S02 — Foundation Established'",
+      label: "string, e.g. 'S02 - Foundation Established'",
       episodeNumber: "number (optional)",
       stateType: "PERMANENT | TEMPORARY | VARIANT",
       cultivation: "string (optional)",
@@ -94,7 +94,7 @@ export const TOOL_DEFS: ToolDef[] = [
       episodeNumber: "number (defaults to latest episode)",
       number: "number, scene number",
       title: "string",
-      description: "string, narrative description — be cinematic and specific",
+      description: "string, narrative description - be cinematic and specific",
       environmentName: "string (optional, links existing environment)",
       timeOfDay: "string (optional)",
       weather: "string (optional)",
@@ -152,12 +152,12 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
-      lines: "JSON array string, e.g. [{\"speaker\":\"Lin Yue\",\"text\":\"The sword chose me.\",\"kind\":\"SPEECH\"}] — empty array clears dialogue",
+      lines: "JSON array string, e.g. [{\"speaker\":\"Lin Yue\",\"text\":\"The sword chose me.\",\"kind\":\"SPEECH\"}] - empty array clears dialogue",
     },
   },
   {
     name: "generate_panel_art",
-    description: "Generate AI panel art for a shot in a comic format (MANHUA | MANHWA | MANGA). Uses the production's visual style, scene environment and each detected character's model-sheet anchor, so faces stay consistent. Slower (~15-40s) — use for hero shots.",
+    description: "Generate AI panel art for a shot in a comic format (MANHUA | MANHWA | MANGA). Uses the production's visual style, scene environment and each detected character's model-sheet anchor, so faces stay consistent. Slower (~15-40s) - use for hero shots.",
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
@@ -171,11 +171,11 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_art_style",
-    description: "Tune this production's art style direction — a custom style directive (overrides the visualStyle preset tokens), palette tokens and extra negative tokens that are injected into every future panel-art and model-sheet prompt. Pass empty strings to reset a field back to the preset. Use this when the creator asks for a specific look (e.g. 'ink-wash with gold accents', 'pastel webtoon palette').",
+    description: "Tune this production's art style direction - a custom style directive (overrides the visualStyle preset tokens), palette tokens and extra negative tokens that are injected into every future panel-art and model-sheet prompt. Pass empty strings to reset a field back to the preset. Use this when the creator asks for a specific look (e.g. 'ink-wash with gold accents', 'pastel webtoon palette').",
     args: {
-      styleDirective: "string (optional) — full art style directive, e.g. 'wuxia ink-wash style, gold rim lighting, misty mountain palette'",
-      paletteTokens: "string (optional) — colour/mood tokens, e.g. 'jade green, ink black, warm gold highlights'",
-      negativePrompt: "string (optional) — extra things to avoid, e.g. 'no modern clothing, no western architecture'",
+      styleDirective: "string (optional) - full art style directive, e.g. 'wuxia ink-wash style, gold rim lighting, misty mountain palette'",
+      paletteTokens: "string (optional) - colour/mood tokens, e.g. 'jade green, ink black, warm gold highlights'",
+      negativePrompt: "string (optional) - extra things to avoid, e.g. 'no modern clothing, no western architecture'",
     },
   },
   {
@@ -184,7 +184,7 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
-      loraName: "string — LoRA name from the production's loras list (empty string clears the assignment)",
+      loraName: "string - LoRA name from the production's loras list (empty string clears the assignment)",
       strength: "number 0.1-1.2 (optional, defaults to the LoRA's default weight)",
     },
   },
@@ -194,16 +194,16 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
-      artistName: "string — artist name from the production's artists list (empty string unassigns)",
+      artistName: "string - artist name from the production's artists list (empty string unassigns)",
     },
   },
   {
     name: "auto_assign_scene_team",
-    description: "Autonomously staff an ENTIRE scene in one call: distribute every shot across the artist roster (routing by specialism — backgrounds, characters, effects — while balancing per-artist load) and attach matching style LoRAs by content keywords (flashback → ink-wash, flame/VFX → energy adapters, etc.). Use this when a scene is broken down and needs a full crew before art generation; use set_shot_artist/set_shot_lora afterwards only for surgical overrides.",
+    description: "Autonomously staff an ENTIRE scene in one call: distribute every shot across the artist roster (routing by specialism - backgrounds, characters, effects - while balancing per-artist load) and attach matching style LoRAs by content keywords (flashback → ink-wash, flame/VFX → energy adapters, etc.). Use this when a scene is broken down and needs a full crew before art generation; use set_shot_artist/set_shot_lora afterwards only for surgical overrides.",
     args: {
       sceneNumber: "number (defaults to latest scene)",
-      scope: "artists | lora | both (default both) — which assignments to make",
-      overwrite: "boolean (default false) — true replaces existing artist/LoRA assignments on the scene's shots",
+      scope: "artists | lora | both (default both) - which assignments to make",
+      overwrite: "boolean (default false) - true replaces existing artist/LoRA assignments on the scene's shots",
     },
   },
   {
@@ -213,7 +213,7 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       kind: "SFX | VOICE | BGM | AMBIENCE",
-      label: "string, e.g. 'Blade shing — unsheathe' or the spoken line for VOICE",
+      label: "string, e.g. 'Blade shing - unsheathe' or the spoken line for VOICE",
       startMs: "number, cue start on the shot timeline",
       durationMs: "number, how long the sound lasts (default 600)",
       volume: "number 0.05-1 (default 0.8)",
@@ -344,14 +344,14 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const to = await characterByName(projectId, String(args.toName ?? ""));
         if (!from || !to) return { status: "ERROR", result: `Could not resolve both characters: ${String(args.fromName)} → ${String(args.toName)}.` };
         await db.relationship.create({ data: { fromId: from.id, toId: to.id, type: String(args.type ?? "ALLY") } });
-        return { status: "OK", result: `Relationship: ${from.name} —${String(args.type)}→ ${to.name}.` };
+        return { status: "OK", result: `Relationship: ${from.name} -${String(args.type)}→ ${to.name}.` };
       }
 
       case "create_environment": {
         await findProject(projectId);
         const envName = String(args.name ?? "Unnamed Environment");
         const exists = await db.environment.findFirst({ where: { projectId, name: envName } });
-        if (exists) return { status: "OK", result: `Environment '${envName}' already exists — reusing it.` };
+        if (exists) return { status: "OK", result: `Environment '${envName}' already exists - reusing it.` };
         const env = await db.environment.create({
           data: {
             projectId,
@@ -403,7 +403,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           });
         }
         if (!episode) episode = await latestEpisode(projectId);
-        if (!episode) return { status: "ERROR", result: "No episode exists yet — create an episode first." };
+        if (!episode) return { status: "ERROR", result: "No episode exists yet - create an episode first." };
 
         let environmentId: string | null = null;
         if (args.environmentName) {
@@ -436,7 +436,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           scene = scenes[0] ?? null;
         }
         if (!scene) scene = await latestScene(projectId);
-        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
 
         const maxNum = await db.shot.aggregate({ where: { sceneId: scene.id }, _max: { number: true } });
         const shot = await db.shot.create({
@@ -494,7 +494,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         });
         const hits = events.filter((e) => text.includes(e.entityName.toLowerCase()));
         if (!hits.length) return { status: "OK", result: "No continuity conflicts detected for this text." };
-        const lines = hits.map((h) => `CONFLICT: '${h.entityName}' — ${h.kind}${h.episodeNumber ? ` in Episode ${h.episodeNumber}` : ""}: ${h.description}`);
+        const lines = hits.map((h) => `CONFLICT: '${h.entityName}' - ${h.kind}${h.episodeNumber ? ` in Episode ${h.episodeNumber}` : ""}: ${h.description}`);
         return { status: "OK", result: lines.join("\n") };
       }
 
@@ -511,7 +511,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!scene) return { status: "ERROR", result: "No scene to check." };
         const caps = await checkSceneCapabilities(projectId, scene.id);
         const missing = caps.filter((c) => !c.present);
-        const lines = caps.map((c) => `${c.present ? "✓" : "✗"} ${c.requirement} (${c.category}) — ${c.detail}`);
+        const lines = caps.map((c) => `${c.present ? "✓" : "✗"} ${c.requirement} (${c.category}) - ${c.detail}`);
         return { status: "OK", result: `Capability check for Scene ${scene.number} '${scene.title}':\n${lines.join("\n")}${missing.length ? `\n→ ${missing.length} missing capability(ies): ${missing.map((m) => m.requirement).join(", ")}` : "\n→ All requirements satisfied."}` };
       }
 
@@ -532,12 +532,12 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
         const mode = String(args.mode ?? "PREVIEW") === "FINAL" ? "FINAL" : "PREVIEW";
         const job = await createRenderJob(projectId, shot.id, mode);
-        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} — DSH will inspect the preview when it completes.` };
+        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} - DSH will inspect the preview when it completes.` };
       }
 
       case "set_shot_dialogue": {
         const scene = await resolveScene(projectId, args.sceneNumber);
-        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
         const shot = await db.shot.findFirst({
           where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
         });
@@ -571,7 +571,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
 
       case "generate_panel_art": {
         const scene = await resolveScene(projectId, args.sceneNumber);
-        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
         const shot = await db.shot.findFirst({
           where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
         });
@@ -595,7 +595,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           const sheet = await generateCharacterModelSheet(ch.id);
           return {
             status: "OK",
-            result: `Model sheet generated for ${ch.name} → ${sheet.modelSheetUrl}. Canonical visual anchor stored: "${sheet.anchor.slice(0, 160)}" — future panel art of ${ch.name} will match it.`,
+            result: `Model sheet generated for ${ch.name} → ${sheet.modelSheetUrl}. Canonical visual anchor stored: "${sheet.anchor.slice(0, 160)}" - future panel art of ${ch.name} will match it.`,
           };
         } catch (err) {
           return { status: "ERROR", result: `Model sheet generation failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -612,7 +612,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           }
         }
         if (Object.keys(data).length === 0) {
-          return { status: "ERROR", result: "Nothing to change — pass styleDirective, paletteTokens and/or negativePrompt." };
+          return { status: "ERROR", result: "Nothing to change - pass styleDirective, paletteTokens and/or negativePrompt." };
         }
         const updated = await db.project.update({ where: { id: project.id }, data });
         await db.productionEvent.create({
@@ -629,12 +629,12 @@ export async function executeTool(projectId: string, name: string, args: Record<
           updated.artPalettePrompt ? `palette: "${updated.artPalettePrompt}"` : null,
           updated.artNegativePrompt ? `negatives: "${updated.artNegativePrompt}"` : null,
         ].filter(Boolean).join(" · ");
-        return { status: "OK", result: `Art style direction updated — ${parts}. Every future panel-art and model-sheet prompt in this production now carries it.` };
+        return { status: "OK", result: `Art style direction updated - ${parts}. Every future panel-art and model-sheet prompt in this production now carries it.` };
       }
 
       case "set_shot_lora": {
         const scene = await resolveScene(projectId, args.sceneNumber);
-        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
         const shot = await db.shot.findFirst({
           where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
         });
@@ -643,12 +643,12 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const loraName = String(args.loraName ?? "").trim();
         if (!loraName) {
           await db.shot.update({ where: { id: shot.id }, data: { loraId: null, loraStrength: null } });
-          return { status: "OK", result: `Style LoRA detached from Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) — back to the production style.` };
+          return { status: "OK", result: `Style LoRA detached from Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) - back to the production style.` };
         }
         const lora = await db.styleLora.findFirst({ where: { projectId, name: { contains: loraName } } });
         if (!lora) {
           const known = await db.styleLora.findMany({ where: { projectId }, select: { name: true } });
-          return { status: "ERROR", result: `No LoRA named '${loraName}' in this production. Registered: ${known.map((l) => l.name).join(", ") || "none — register one with the creator"}.` };
+          return { status: "ERROR", result: `No LoRA named '${loraName}' in this production. Registered: ${known.map((l) => l.name).join(", ") || "none - register one with the creator"}.` };
         }
         const strength = args.strength !== undefined ? Math.min(1.2, Math.max(0.1, Number(args.strength))) : lora.weight;
         if (args.strength !== undefined && !Number.isFinite(strength)) {
@@ -671,7 +671,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
 
       case "set_shot_artist": {
         const scene = await resolveScene(projectId, args.sceneNumber);
-        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
         const shot = await db.shot.findFirst({
           where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
         });
@@ -680,7 +680,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const artistName = String(args.artistName ?? "").trim();
         if (!artistName) {
           await db.shot.update({ where: { id: shot.id }, data: { artistId: null } });
-          return { status: "OK", result: `Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) unassigned — back in the pool.` };
+          return { status: "OK", result: `Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) unassigned - back in the pool.` };
         }
         const artist = await db.artist.findFirst({ where: { projectId, name: { contains: artistName } } });
         if (!artist) {
@@ -693,7 +693,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
 
       case "auto_assign_scene_team": {
         const scene = await resolveScene(projectId, args.sceneNumber);
-        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
         const sceneShots = await db.shot.findMany({
           where: { sceneId: scene.id },
           orderBy: { number: "asc" },
@@ -712,10 +712,10 @@ export async function executeTool(projectId: string, name: string, args: Record<
         });
         const loras = await db.styleLora.findMany({ where: { projectId } });
         if (scope !== "lora" && roster.length === 0) {
-          return { status: "ERROR", result: "The artist roster is empty — ask the creator to add artists (or add them via create tooling) before auto-staffing." };
+          return { status: "ERROR", result: "The artist roster is empty - ask the creator to add artists (or add them via create tooling) before auto-staffing." };
         }
         if (scope !== "artists" && loras.length === 0 && scope === "lora") {
-          return { status: "ERROR", result: "No style LoRAs are registered for this production — register adapters before auto-attaching them." };
+          return { status: "ERROR", result: "No style LoRAs are registered for this production - register adapters before auto-attaching them." };
         }
 
         const updates: Array<{ shotId: string; data: Record<string, unknown> }> = [];
@@ -796,21 +796,21 @@ export async function executeTool(projectId: string, name: string, args: Record<
               projectId,
               actor: "DSH",
               type: "STATE_CHANGE",
-              summary: `DSH auto-staffed Scene ${scene.number} — ${updates.length} shot update(s): ${notes.join(" · ")}`,
+              summary: `DSH auto-staffed Scene ${scene.number} - ${updates.length} shot update(s): ${notes.join(" · ")}`,
             },
           });
         }
         return {
           status: "OK",
           result: updates.length === 0
-            ? `Scene ${scene.number} needed no changes — ${notes.join(" · ")}.`
-            : `Scene ${scene.number} staffed autonomously — ${notes.join(" · ")}. The board and workload view reflect it immediately; panel-art prompts pick up the LoRA triggers on the next generation.`,
+            ? `Scene ${scene.number} needed no changes - ${notes.join(" · ")}.`
+            : `Scene ${scene.number} staffed autonomously - ${notes.join(" · ")}. The board and workload view reflect it immediately; panel-art prompts pick up the LoRA triggers on the next generation.`,
         };
       }
 
       case "add_audio_cue": {
         const scene = await resolveScene(projectId, args.sceneNumber);
-        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
         const shot = await db.shot.findFirst({
           where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
         });
@@ -819,7 +819,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const kindRaw = String(args.kind ?? "SFX").toUpperCase();
         const kind = ["SFX", "VOICE", "BGM", "AMBIENCE"].includes(kindRaw) ? kindRaw : "SFX";
         const label = String(args.label ?? "").trim();
-        if (!label) return { status: "ERROR", result: "label is required — describe the sound or give the spoken line." };
+        if (!label) return { status: "ERROR", result: "label is required - describe the sound or give the spoken line." };
         const timelineMs = Math.max(1, Math.round((shot.duration ?? 4) * 1000));
         const startMs = Math.min(timelineMs - 50, Math.max(0, Math.round(Number(args.startMs ?? 0)) || 0));
         const durationMs = Math.min(Math.max(timelineMs, 50), Math.max(50, Math.round(Number(args.durationMs ?? 600)) || 600));
@@ -828,7 +828,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const total = await db.audioCue.count({ where: { shotId: shot.id } });
         return {
           status: "OK",
-          result: `${kind} cue "${cue.label}" @${cue.startMs}ms (+${cue.durationMs}ms) added to Shot ${String(shot.number).padStart(3, "0")} — shot now carries ${total} cue(s) on its ${timelineMs}ms motion timeline.`,
+          result: `${kind} cue "${cue.label}" @${cue.startMs}ms (+${cue.durationMs}ms) added to Shot ${String(shot.number).padStart(3, "0")} - shot now carries ${total} cue(s) on its ${timelineMs}ms motion timeline.`,
         };
       }
 

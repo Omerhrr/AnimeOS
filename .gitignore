@@ -75,3 +75,7 @@ public/renders/*.png
 # Python + tooling artifacts
 __pycache__/
 tool-results/
+
+# Generated voice renders (regenerable)
+public/voices/*.wav
+!public/voices/.gitkeep

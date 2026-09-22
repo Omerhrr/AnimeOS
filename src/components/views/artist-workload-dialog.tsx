@@ -4,13 +4,15 @@
 // ARTIST WORKLOAD-BALANCE VIEW
 //
 // How the episode's panels are distributed across the roster:
-//   • per-artist bar rows — episode panels vs production-wide load,
+//   • per-artist bar rows - episode panels vs production-wide load,
 //     art coverage and LoRA tuning per artist
-//   • balance readout — production-wide spread judged against the
+//   • balance readout - production-wide spread judged against the
 //     ideal per-artist share, so an uneven board is visible at a
 //     glance (BALANCED / UNEVEN / SKEWED)
-//   • "Distribute pool" — one click routes every unassigned panel
+//   • "Distribute pool" - one click routes every unassigned panel
 //     of this episode to the least-loaded roster members
+//   • per-artist style affinity - which style LoRA each artist has
+//     actually delivered with, scored from shot history + approval
 // Full-scene autonomous staffing (specialism-aware) stays with DSH
 // via auto_assign_scene_team; this view keeps humans in charge of
 // the balance itself.
@@ -24,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 export function ArtistWorkloadDialog({ project, shots }: { project: StudioProject; shots: ShotRow[] }) {
   const qc = useQueryClient();
@@ -61,6 +64,44 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
       : spread <= 0.12 ? "Balanced" : spread <= 0.3 ? "Uneven" : "Skewed";
     return { perArtist, pool, assigned: assigned.length, maxPanels, ideal: wideIdeal, balance };
   }, [project.artists, shots]);
+
+  // per-artist style affinity: which style LoRA each artist actually
+  // delivered with, production-wide. Score = usage share boosted by
+  // the approval rate of that pairing, normalized to the artist's
+  // strongest pairing (100).
+  const affinity = useMemo(() => {
+    const allShots: ShotRow[] = [];
+    for (const season of project.seasons) {
+      for (const ep of season.episodes) {
+        for (const scene of ep.scenes) allShots.push(...scene.shots);
+      }
+    }
+    const loraName = new Map(project.loras.map((l) => [l.id, l.name]));
+    const isDone = (s: ShotRow) => s.status === "APPROVED" || s.status === "FINAL";
+    const rows = project.artists.map((a) => {
+      const owned = allShots.filter((s) => s.artistId === a.id);
+      const pairings = project.loras
+        .map((l) => {
+          const bound = owned.filter((s) => s.loraId === l.id);
+          const done = bound.filter(isDone).length;
+          const avgStrength = bound.length
+            ? bound.reduce((n, s) => n + (s.loraStrength ?? l.weight), 0) / bound.length
+            : 0;
+          const raw = bound.length * (0.55 + 0.45 * (bound.length ? done / bound.length : 0));
+          return { loraId: l.id, name: loraName.get(l.id) ?? l.name, shots: bound.length, approved: done, avgStrength, raw };
+        })
+        .filter((p) => p.shots > 0)
+        .sort((x, y) => y.raw - x.raw);
+      const maxRaw = Math.max(1, ...pairings.map((p) => p.raw));
+      return {
+        artist: a,
+        owned: owned.length,
+        approved: owned.filter(isDone).length,
+        pairings: pairings.map((p) => ({ ...p, affinity: Math.round((p.raw / maxRaw) * 100) })).slice(0, 3),
+      };
+    });
+    return rows.filter((r) => r.pairings.length > 0);
+  }, [project]);
 
   async function distributePool() {
     if (stats.pool.length === 0 || project.artists.length === 0) return;
@@ -138,7 +179,7 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
           <div className="space-y-2.5 max-h-72 overflow-y-auto studio-scroll pr-1">
             {stats.perArtist.length === 0 && (
               <p className="text-xs text-muted-foreground py-2">
-                Roster is empty — add artists from the Artists dialog, then distribute the pool.
+                Roster is empty - add artists from the Artists dialog, then distribute the pool.
               </p>
             )}
             {stats.perArtist.map((p) => (
@@ -173,6 +214,54 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
               <div className="rounded-lg border border-dashed border-white/15 px-3 py-2 text-[11px] text-muted-foreground flex items-center justify-between">
                 <span>Unassigned pool</span>
                 <span className="tabular-nums text-foreground font-semibold">{stats.pool.length} panel{stats.pool.length === 1 ? "" : "s"}</span>
+              </div>
+            )}
+          </div>
+
+          {/* per-artist style affinity */}
+          <div className="pt-1">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-2">Style affinity</div>
+            {affinity.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">
+                No style pairings yet: assign artists and LoRAs to panels (or let DSH auto-staff a scene) and their affinity history will surface here.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto studio-scroll pr-1">
+                {affinity.map((row) => {
+                  const top = row.pairings[0];
+                  return (
+                    <div key={row.artist.id} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="h-3 w-3 rounded-full shrink-0" style={{ background: row.artist.color }} />
+                          <span className="text-sm font-medium text-foreground truncate">{row.artist.name}</span>
+                          <span className="text-[9px] uppercase tracking-wider text-muted-foreground shrink-0">
+                            {row.owned} panel{row.owned === 1 ? "" : "s"} · {row.approved} done
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono text-muted-foreground shrink-0">top {top.affinity}</span>
+                      </div>
+                      <div className="mt-1.5 space-y-1.5">
+                        {row.pairings.map((p, i) => (
+                          <div key={p.loraId} className="flex items-center gap-2">
+                            <div className="h-1.5 flex-1 rounded-full bg-white/8 overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${p.affinity}%`, background: row.artist.color, opacity: i === 0 ? 0.9 : 0.45 }}
+                              />
+                            </div>
+                            <span className={cn("text-[9px] truncate max-w-[45%]", i === 0 ? "text-foreground font-medium" : "text-muted-foreground")}>
+                              {p.name} · {p.shots} shot{p.shots === 1 ? "" : "s"} · @{p.avgStrength.toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-[9px] text-muted-foreground leading-relaxed">
+                  Affinity = LoRA usage share boosted by the pairing's approval rate, normalized to each artist's strongest style (100). Route new panels to the artist whose affinity bar is highest for that adapter.
+                </p>
               </div>
             )}
           </div>

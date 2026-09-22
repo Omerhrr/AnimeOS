@@ -41,7 +41,7 @@ export function DashboardView() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title={`Studio Dashboard — ${p.title}`}
+        title={`Studio Dashboard - ${p.title}`}
         sub={p.logline ?? "AI-native production workspace"}
       />
 
@@ -98,7 +98,7 @@ export function DashboardView() {
                 ) : (
                   <ShieldX className="h-3.5 w-3.5 text-violet-300" />
                 )}
-                <span className="text-xs font-semibold">Latest DSH inspection — {latestEvaluationJob.evaluation.verdict.replace("_", " ")}</span>
+                <span className="text-xs font-semibold">Latest DSH inspection - {latestEvaluationJob.evaluation.verdict.replace("_", " ")}</span>
               </div>
               <p className="text-[11px] text-muted-foreground leading-relaxed">{latestEvaluationJob.evaluation.summary}</p>
               <p className="text-[10px] text-muted-foreground/70 mt-1.5">

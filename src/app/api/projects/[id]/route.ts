@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Full production universe — the persistent animated state (§47). */
+/** Full production universe - the persistent animated state (§47). */
 export async function GET(_req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const project = await db.project.findUnique({
@@ -82,7 +82,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
         projectId: project.id,
         actor: "USER",
         type: "STATE_CHANGE",
-        summary: `Art style direction updated — new panel art & model sheets will follow it`,
+        summary: `Art style direction updated - new panel art & model sheets will follow it`,
         payload: JSON.stringify({
           artStylePrompt: project.artStylePrompt,
           artPalettePrompt: project.artPalettePrompt,

@@ -104,7 +104,7 @@ export function ContinuityView({ project }: { project: import("@/lib/api-client"
     <div>
       <SectionHeader
         title="Continuity Engine"
-        sub="First-class canonical history. The system never silently creates an inconsistent asset — story text is checked against these events (see a scene in Story & Scenes for live conflict detection)."
+        sub="First-class canonical history. The system never silently creates an inconsistent asset - story text is checked against these events (see a scene in Story & Scenes for live conflict detection)."
         right={<AddEventDialog />}
       />
       <div className="space-y-2.5 max-h-[calc(100vh-13rem)] overflow-y-auto studio-scroll pr-1">

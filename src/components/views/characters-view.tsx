@@ -149,7 +149,7 @@ function CharacterSheet({
       </SheetHeader>
 
       <div className="px-4 pb-6 space-y-5 text-sm">
-        {/* Model sheet — the casting-consistency reference (§16) */}
+        {/* Model sheet - the casting-consistency reference (§16) */}
         <section>
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground flex items-center gap-1.5">
@@ -174,7 +174,7 @@ function CharacterSheet({
                 className="aspect-square w-full object-cover"
               />
               <figcaption className="bg-white/5 px-2.5 py-1.5 text-[10px] text-muted-foreground">
-                Turnaround reference — injected as the canonical visual anchor into every panel featuring {character.name}.
+                Turnaround reference - injected as the canonical visual anchor into every panel featuring {character.name}.
               </figcaption>
             </figure>
           ) : (
@@ -203,7 +203,7 @@ function CharacterSheet({
           </section>
         )}
 
-        {/* Development states — §18 */}
+        {/* Development states - §18 */}
         <section>
           <h4 className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-2">Development states</h4>
           {character.states.length === 0 ? (
@@ -250,7 +250,7 @@ function CharacterSheet({
           </section>
         )}
 
-        {/* Relationships — §25 */}
+        {/* Relationships - §25 */}
         {(character.relationsFrom.length > 0 || character.relationsTo.length > 0) && (
           <section>
             <h4 className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-2">Relationships</h4>
@@ -320,7 +320,7 @@ export function CharactersView({ project }: { project: StudioProject }) {
     <div>
       <SectionHeader
         title="Characters"
-        sub="Persistent production entities — identity, development states, relationships, derivatives and animation libraries. Not just meshes."
+        sub="Persistent production entities - identity, development states, relationships, derivatives and animation libraries. Not just meshes."
         right={<CreateCharacterDialog />}
       />
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -356,7 +356,7 @@ export function CharactersView({ project }: { project: StudioProject }) {
                   <div className="text-sm font-semibold truncate flex items-center gap-1.5">
                     {c.name}
                     {c.modelSheetUrl && (
-                      <span title="Model sheet generated — casting anchor active" className="inline-flex items-center rounded bg-emerald-400/10 border border-emerald-400/30 px-1 text-[8px] font-bold tracking-widest text-emerald-300">
+                      <span title="Model sheet generated - casting anchor active" className="inline-flex items-center rounded bg-emerald-400/10 border border-emerald-400/30 px-1 text-[8px] font-bold tracking-widest text-emerald-300">
                         ANCHOR
                       </span>
                     )}

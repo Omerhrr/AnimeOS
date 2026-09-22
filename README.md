@@ -1,8 +1,8 @@
-# AnimeOS — AI-Native Animation Production Platform
+# AnimeOS - AI-Native Animation Production Platform
 
 > **DSH decides · Tools execute · Engine builds · State remembers**
 
-AnimeOS is an AI-native production studio for animated and illustrated storytelling. It natively supports **donghua**, **anime**, **manhua/manhwa (comics)** and adjacent formats through one unified, stateful production pipeline — designed so an AI director (DSH) drives the studio through tools, not ad-hoc chat.
+AnimeOS is an AI-native production studio for animated and illustrated storytelling. It natively supports **donghua**, **anime**, **manhua/manhwa (comics)** and adjacent formats through one unified, stateful production pipeline - designed so an AI director (DSH) drives the studio through tools, not ad-hoc chat.
 
 ## Core thesis
 
@@ -16,31 +16,31 @@ Every step writes to a persistent production universe: projects, seasons, episod
 
 | Area | What it does |
 |------|--------------|
-| **DSH Director** | 23-tool production API behind a 4-round INTENT → PLAN → EXECUTE → OBSERVE orchestrator. Mid-turn project switching, full execution trace rendered in the console. The director authors **dialogue** (`set_shot_dialogue`), **panel art** (`generate_panel_art`), **character model sheets** (`generate_model_sheet`), the **art style direction** (`set_art_style`) and **scene staffing** (`auto_assign_scene_team` — specialism-aware artist routing + content-matched LoRA attachment, load-balanced) itself. |
-| **Render pipeline** | **Live Blender bridge** when attached (jobs submitted over HTTP to the `animeos_bridge.py` add-on, progress polled, frames pulled back), built-in simulator otherwise — same job lifecycle, same LLM render evaluator with *bounded* parameter fixes, apply-fixes → auto re-render, approve → FINAL. **Batch rendering** queues every shot across selected episodes in one click (PREVIEW or FINAL, FINAL shots skipped), with DSH inspections throttled per poll. |
-| **Style direction** | Per-production **art style tuning**: a custom style directive (overrides the visual-style preset), palette tokens and extra negative tokens — compiled into every panel-art and model-sheet prompt, tunable from the studio UI or by DSH itself. |
-| **Casting consistency** | Per-character **AI model sheets** (turnaround reference images) plus a stored **canonical visual anchor** — the exact prompt tokens re-injected into every panel featuring that character, keeping faces/wardrobe coherent across panels and episodes. |
+| **DSH Director** | 23-tool production API behind a 4-round INTENT → PLAN → EXECUTE → OBSERVE orchestrator. Mid-turn project switching, full execution trace rendered in the console. The director authors **dialogue** (`set_shot_dialogue`), **panel art** (`generate_panel_art`), **character model sheets** (`generate_model_sheet`), the **art style direction** (`set_art_style`) and **scene staffing** (`auto_assign_scene_team` - specialism-aware artist routing + content-matched LoRA attachment, load-balanced) itself. |
+| **Render pipeline** | **Live Blender bridge** when attached (jobs submitted over HTTP to the `animeos_bridge.py` add-on, progress polled, frames pulled back), built-in simulator otherwise - same job lifecycle, same LLM render evaluator with *bounded* parameter fixes, apply-fixes → auto re-render, approve → FINAL. **Batch rendering** queues every shot across selected episodes in one click (PREVIEW or FINAL, FINAL shots skipped), with DSH inspections throttled per poll. |
+| **Style direction** | Per-production **art style tuning**: a custom style directive (overrides the visual-style preset), palette tokens and extra negative tokens - compiled into every panel-art and model-sheet prompt, tunable from the studio UI or by DSH itself. |
+| **Casting consistency** | Per-character **AI model sheets** (turnaround reference images) plus a stored **canonical visual anchor** - the exact prompt tokens re-injected into every panel featuring that character, keeping faces/wardrobe coherent across panels and episodes. |
 | **Continuity engine** | Universe-level conflict detection (e.g. destroyed artefact reappearing in Ep 29) with proposed resolutions, plus missing-capability analysis per scene. |
-| **Comic Mode** | Shot breakdowns re-composed as sequential art — **manhua** pages, **manhwa/webtoon** vertical scroll, **manga** right-to-left pages. Deterministic panel-layout engine, **AI-generated panel artwork** (style-aware prompts seeded with shot type, environment, weather and character states), **speech-bubble authoring** (speech / thought / SFX, RTL-aware placement), print/PDF export, and **webtoon slice export** — the strip re-rendered at 800px and packed boundary-aware into platform-ready PNG slices, each scored slice carrying a **synthesized audio stem** (16-bit WAV, cues re-timed onto the slice timeline) plus a manifest with artists, LoRA metadata and audio timing, zipped client-side. |
-| **Multi-artist studio** | **Style LoRA registry** (per-adapter trigger tokens, strength, base model) with **per-shot fine-tuning** from the panel inspector; an **artist roster** with per-shot assignment, bulk assignment and a **workload-balance view** (production-wide spread badge, per-artist bars, one-click pool distribution); DSH can staff whole scenes autonomously via `auto_assign_scene_team`. |
+| **Comic Mode** | Shot breakdowns re-composed as sequential art - **manhua** pages, **manhwa/webtoon** vertical scroll, **manga** right-to-left pages. Deterministic panel-layout engine, **AI-generated panel artwork** (style-aware prompts seeded with shot type, environment, weather and character states), **speech-bubble authoring** (speech / thought / SFX, RTL-aware placement), print/PDF export, and **webtoon slice export** - the strip re-rendered at 800px and packed boundary-aware into platform-ready PNG slices, each scored slice carrying an **audio stem** (16-bit WAV, cues re-timed onto the slice timeline) that mixes **real TTS voice renders** for dialogue cues (auto-cast voices, speed control) with the synthesized SFX/BGM/ambience beds, plus a manifest with artists, LoRA metadata, voice takes and audio timing, zipped client-side. |
+| **Multi-artist studio** | **Style LoRA registry** (per-adapter trigger tokens, strength, base model) with **per-shot fine-tuning** from the panel inspector and **simulated LoRA training runs** distilled from approved panels (live steps, decayed loss curve, milestone log, TRAINED badge); an **artist roster** with per-shot assignment, bulk assignment and a **workload-balance view** (production-wide spread badge, per-artist bars, one-click pool distribution, **per-artist style affinity** scoring which LoRA each artist delivered with); DSH can staff whole scenes autonomously via `auto_assign_scene_team`. |
 | **3D cinematic preview** | Three.js procedural MVP scene driven by live scene parameters and shot camera presets (movement-aware), with auto shot advance. |
 | **Studio UI** | Dashboard, Productions, Characters (states / relationships / derivatives), Story & Scenes, Comic Mode, Timeline, Render Queue, Continuity, Terminology, History. |
 
 ## Screenshots
 
-**Comic Mode** — the same episode re-composed as manhua (LTR, colour), manga (RTL, monochrome + screentone) and manhwa/webtoon (vertical scroll) pages:
+**Comic Mode** - the same episode re-composed as manhua (LTR, colour), manga (RTL, monochrome + screentone) and manhwa/webtoon (vertical scroll) pages:
 
 | Manhua | Manga (RTL) | Webtoon |
 |--------|-------------|---------|
 | ![Manhua mode](docs/screenshots/comic-mode-manhua.png) | ![Manga mode](docs/screenshots/comic-mode-manga.png) | ![Webtoon mode](docs/screenshots/comic-mode-webtoon.png) |
 
-**Casting consistency & the live bridge** — Lin Yue's AI model sheet (turnaround anchor), DSH-authored dialogue rendered as bubbles over anchor-consistent AI art, and the engine-driver card:
+**Casting consistency & the live bridge** - Lin Yue's AI model sheet (turnaround anchor), DSH-authored dialogue rendered as bubbles over anchor-consistent AI art, and the engine-driver card:
 
 | Model sheet | DSH-authored art + thought bubble | Engine driver |
 |--------|-------------|---------|
 | ![Model sheet](docs/screenshots/model-sheet-linyue.png) | ![DSH bubble](docs/screenshots/comic-bubbles-fixed.png) | ![Bridge](docs/screenshots/bridge-driver-card.png) |
 
-**Batch pipeline & slice export** — the cross-episode batch render card in the queue, and platform-ready 800px webtoon slices cut from the strip (bubbles, captions, chips re-drawn at export resolution):
+**Batch pipeline & slice export** - the cross-episode batch render card in the queue, and platform-ready 800px webtoon slices cut from the strip (bubbles, captions, chips re-drawn at export resolution):
 
 | Batch render | Webtoon slice (800px) |
 |--------|-------------|
@@ -75,12 +75,12 @@ src/
     ├── comic/          # deterministic panel layout engine + dialogue model
     ├── continuity.ts   # conflict + capability checking
     └── seed.ts         # "Immortal Path" demo universe
-bridges/blender/       # animeos_bridge.py — run this INSIDE Blender
+bridges/blender/       # animeos_bridge.py - run this INSIDE Blender
 ```
 
 **Stack:** Next.js 16 · TypeScript · Prisma/SQLite · TanStack Query · zustand · Tailwind · shadcn/ui · Three.js.
 
-Per the replaceability principle, the render engine is a **pluggable driver**: attach a live Blender (below) or let the built-in simulator drive — the production state machine, queue and DSH evaluation loop are identical.
+Per the replaceability principle, the render engine is a **pluggable driver**: attach a live Blender (below) or let the built-in simulator drive - the production state machine, queue and DSH evaluation loop are identical.
 
 ### Attach a live Blender
 
@@ -106,13 +106,15 @@ The database auto-seeds on first request with the **Immortal Path** demo product
 
 ### Try the loop
 
-1. Open **Render Queue**, trigger a render on any shot — the **Engine driver** card shows whether a live Blender or the simulator is driving; the job badge shows `BLENDER` or `SIM`.
+1. Open **Render Queue**, trigger a render on any shot - the **Engine driver** card shows whether a live Blender or the simulator is driving; the job badge shows `BLENDER` or `SIM`.
 2. Watch the evaluation come back `NEEDS_REVISION` with bounded parameter fixes → **Apply fixes** auto-queues attempt 2.
-3. Open **DSH Director** and talk to the studio: *"For scene 12 shot 3: author the dialogue, generate a model sheet for any new character, then paint the panel in manhua style"* — the 19-tool trace shows the director doing it itself. Ask it to *"shift to a cold moonlit silver-blue palette"* and it retunes the production's style direction itself.
-4. Open **Characters** — hit ✦ on a character to generate their **model sheet**; the stored anchor then steers every panel they appear in (cards show an `ANCHOR` badge once locked).
-5. Open **Comic Mode** and flip the same episode between manhua / webtoon / manga layouts. Bubbles (speech / thought / SFX) place themselves around the art — mirrored for manga RTL — **Print / PDF** exports pages with chrome hidden, and in webtoon format **Export slices** downloads a ZIP of 800px platform-ready strips with a manifest.
-6. Back in **Render Queue**, use **Batch render**: tick two episodes, hit *Queue N renders*, and watch the queue fill, DSH inspect each preview (throttled per poll), and the stats row track active / review / approved.
+3. Open **DSH Director** and talk to the studio: *"For scene 12 shot 3: author the dialogue, generate a model sheet for any new character, then paint the panel in manhua style"* - the 19-tool trace shows the director doing it itself. Ask it to *"shift to a cold moonlit silver-blue palette"* and it retunes the production's style direction itself.
+4. Open **Characters** - hit ✦ on a character to generate their **model sheet**; the stored anchor then steers every panel they appear in (cards show an `ANCHOR` badge once locked).
+5. Open **Comic Mode** and flip the same episode between manhua / webtoon / manga layouts. Bubbles (speech / thought / SFX) place themselves around the art - mirrored for manga RTL - **Print / PDF** exports pages with chrome hidden, and in webtoon format **Export slices** downloads a ZIP of 800px platform-ready strips whose audio stems mix real TTS voice takes into the score.
+6. In **Comic Mode**, open **Motion sound** on a motion panel: auto-score the timeline, hit **Render voices** to give every dialogue cue a real TTS take (or cast one per cue with a voice actor and speed), and preview - exported stems use the same takes.
+7. Open **LoRA** and hit **Train** on an adapter: a simulated fine-tune run distills the production's approved panels with a live loss curve; then open **Workload** to see each artist's **style affinity** ranking next to the balance board.
+8. Back in **Render Queue**, use **Batch render**: tick two episodes, hit *Queue N renders*, and watch the queue fill, DSH inspect each preview (throttled per poll), and the stats row track active / review / approved.
 
 ## Status
 
-The full thesis now runs end-to-end: DSH directs dialogue, panel art, model sheets, style direction, scene staffing and renders through 23 production tools; a live Blender can drive the engine via the bridge; Comic Mode produces AI-illustrated, dialogue-authored, casting-consistent pages in all three native formats, exports webtoon platform slices with synthesized per-slice audio stems, and the queue swallows whole episodes in one batch.
+The full thesis now runs end-to-end: DSH directs dialogue, panel art, model sheets, style direction, scene staffing and renders through 23 production tools; a live Blender can drive the engine via the bridge; Comic Mode produces AI-illustrated, dialogue-authored, casting-consistent pages in all three native formats, exports webtoon platform slices whose audio stems carry real TTS voice takes over the synthesized score, trains style adapters from approved panels with simulated runs, ranks per-artist style affinity, and the queue swallows whole episodes in one batch.

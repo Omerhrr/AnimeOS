@@ -45,7 +45,7 @@ function EngineDriverCard() {
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">
           {live
-            ? `Blender ${s?.blenderVersion ?? ""} attached at ${s?.host}${s?.scene ? ` · scene “${s.scene}”` : ""} — jobs render in the real engine and flow back into the queue.`
+            ? `Blender ${s?.blenderVersion ?? ""} attached at ${s?.host}${s?.scene ? ` · scene “${s.scene}”` : ""} - jobs render in the real engine and flow back into the queue.`
             : s?.detail ?? "Probing bridge…"}
         </p>
         {!live && s?.envHint && (
@@ -126,7 +126,7 @@ function BatchRenderCard({ project }: { project: StudioProject }) {
       <div className="flex items-center gap-2 flex-wrap">
         <Layers className="h-4 w-4 text-primary" />
         <span className="text-sm font-semibold">Batch render</span>
-        <span className="text-[11px] text-muted-foreground">queue every shot across episodes — DSH inspects each preview as it lands</span>
+        <span className="text-[11px] text-muted-foreground">queue every shot across episodes - DSH inspects each preview as it lands</span>
         <div className="ml-auto flex items-center gap-1.5">
           <button
             onClick={() => setMode("PREVIEW")}
@@ -176,7 +176,7 @@ function BatchRenderCard({ project }: { project: StudioProject }) {
         </Button>
         {result && <span className="text-[11px] text-teal-200/90">{result}</span>}
         {!result && selected.size === 0 && (
-          <span className="text-[11px] text-muted-foreground">Pick one or more episodes — shots already marked FINAL are skipped.</span>
+          <span className="text-[11px] text-muted-foreground">Pick one or more episodes - shots already marked FINAL are skipped.</span>
         )}
       </div>
     </div>
@@ -221,7 +221,7 @@ export function RenderView({ project }: { project: StudioProject }) {
     <div>
       <SectionHeader
         title="Render Queue"
-        sub="Live Blender when attached, built-in simulator otherwise — same job lifecycle, same DSH inspection loop. Completed previews go straight to DSH for inspection."
+        sub="Live Blender when attached, built-in simulator otherwise - same job lifecycle, same DSH inspection loop. Completed previews go straight to DSH for inspection."
       />
 
       <EngineDriverCard />
@@ -332,9 +332,9 @@ export function RenderView({ project }: { project: StudioProject }) {
                 <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-3">
                   <div className="flex items-center gap-2 text-xs font-semibold">
                     {job.evaluation.verdict === "APPROVED" ? (
-                      <><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /> DSH inspection — Approved</>
+                      <><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /> DSH inspection - Approved</>
                     ) : (
-                      <><ShieldX className="h-3.5 w-3.5 text-violet-300" /> DSH inspection — Needs revision</>
+                      <><ShieldX className="h-3.5 w-3.5 text-violet-300" /> DSH inspection - Needs revision</>
                     )}
                     {job.evaluation.applied && <span className="text-[10px] font-normal text-muted-foreground">(modifications applied)</span>}
                   </div>
@@ -354,7 +354,7 @@ export function RenderView({ project }: { project: StudioProject }) {
                         {actions.map((a, i) => (
                           <div key={i} className="text-[11px] font-mono text-teal-200/90">
                             {a.param}: {String(a.from)} → <b>{String(a.to)}</b>
-                            <span className="text-muted-foreground font-sans"> — {a.reason}</span>
+                            <span className="text-muted-foreground font-sans"> - {a.reason}</span>
                           </div>
                         ))}
                       </div>

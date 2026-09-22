@@ -31,7 +31,7 @@ export function TimelineView({ project }: { project: StudioProject }) {
     return (
       <div>
         <SectionHeader title="Timeline" sub="Shot-based screen time across the episode." />
-        <div className="studio-panel p-10 text-center text-sm text-muted-foreground">No episodes yet — create one in Story & Scenes.</div>
+        <div className="studio-panel p-10 text-center text-sm text-muted-foreground">No episodes yet - create one in Story & Scenes.</div>
       </div>
     );
   }
@@ -62,7 +62,7 @@ export function TimelineView({ project }: { project: StudioProject }) {
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <GanttChartSquare className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-semibold">Scene {scene.number} — {scene.title}</span>
+                  <span className="text-sm font-semibold">Scene {scene.number} - {scene.title}</span>
                   <StatusBadge status={scene.status} />
                 </div>
                 <div className="flex items-center gap-2">
@@ -93,7 +93,7 @@ export function TimelineView({ project }: { project: StudioProject }) {
                 ))}
                 {scene.shots.length === 0 && (
                   <div className="flex-1 rounded-md border border-dashed border-white/15 flex items-center justify-center text-[11px] text-muted-foreground">
-                    No shots — ask DSH to break this scene down
+                    No shots - ask DSH to break this scene down
                   </div>
                 )}
               </div>
@@ -102,7 +102,7 @@ export function TimelineView({ project }: { project: StudioProject }) {
                   {(() => {
                     const shot = scene.shots.find((s) => s.id === hover);
                     if (!shot) return null;
-                    return `SHOT ${String(shot.number).padStart(3, "0")} — ${SHOT_TYPE_LABELS[shot.shotType] ?? shot.shotType} · ${shot.lens ?? "default"} · ${shot.movement?.toLowerCase() ?? "static"} — ${shot.description}`;
+                    return `SHOT ${String(shot.number).padStart(3, "0")} - ${SHOT_TYPE_LABELS[shot.shotType] ?? shot.shotType} · ${shot.lens ?? "default"} · ${shot.movement?.toLowerCase() ?? "static"} - ${shot.description}`;
                   })()}
                 </p>
               )}

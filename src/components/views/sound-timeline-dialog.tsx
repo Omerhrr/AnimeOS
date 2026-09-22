@@ -3,10 +3,10 @@
 // Sound / SFX timing editor for a shot's motion panel.
 // The timeline is the shot's duration (ms); cues are blocks you can
 // add by clicking the track, edit inline, and preview with the
-// WebAudio CuePlayer (synthesized — no audio files needed).
+// WebAudio CuePlayer (synthesized - no audio files needed).
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Music, Play, Plus, Square, Trash2, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AudioLines, Loader2, Music, Play, Plus, Square, Trash2, Wand2 } from "lucide-react";
 import { api, type AudioCueKind, type AudioCueRow, type ShotRow } from "@/lib/api-client";
 import { parseDialogue } from "@/lib/comic/dialogue";
 import { CUE_KIND_META, CuePlayer } from "@/lib/comic/audio";
@@ -20,6 +20,27 @@ import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 
 const KINDS: AudioCueKind[] = ["SFX", "VOICE", "BGM", "AMBIENCE"];
+
+// Same roster the server exposes via GET /api/voice-renders
+const VOICES: Array<{ id: string; blurb: string }> = [
+  { id: "tongtong", blurb: "Warm, gentle" },
+  { id: "chuichui", blurb: "Bright, playful" },
+  { id: "xiaochen", blurb: "Calm, steady" },
+  { id: "jam", blurb: "British, refined" },
+  { id: "kazi", blurb: "Clear, neutral" },
+  { id: "douji", blurb: "Natural, flowing" },
+  { id: "luodo", blurb: "Expressive, resonant" },
+];
+
+/** Deterministic default casting: the same speaker always lands on the same voice. */
+function defaultVoiceFor(speaker: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < speaker.length; i++) {
+    h ^= speaker.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return VOICES[(h >>> 0) % VOICES.length].id;
+}
 
 export function SoundTimelineDialog({
   shot, open, onClose, onChanged,
@@ -35,6 +56,10 @@ export function SoundTimelineDialog({
   const [playheadMs, setPlayheadMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [labelDraft, setLabelDraft] = useState<string>("");
+  const [voiceDraft, setVoiceDraft] = useState<string>("tongtong");
+  const [speedDraft, setSpeedDraft] = useState(1.0);
+  const [renderingIds, setRenderingIds] = useState<Set<string>>(new Set());
+  const [batchMsg, setBatchMsg] = useState<string | null>(null);
   const playerRef = useRef<CuePlayer | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
 
@@ -71,6 +96,14 @@ export function SoundTimelineDialog({
   useEffect(() => {
     setLabelDraft(selected?.label ?? "");
   }, [selected?.id, selected?.label]);
+
+  // voice casting defaults follow the selected VOICE cue's speaker
+  useEffect(() => {
+    if (!selected || selected.kind !== "VOICE") return;
+    const speaker = selected.label.includes(": ") ? selected.label.split(":")[0].trim() : "";
+    setVoiceDraft(selected.voiceActor ?? defaultVoiceFor(speaker || selected.label));
+    setSpeedDraft(selected.voiceSpeed ?? 1.0);
+  }, [selected?.id, selected?.kind, selected?.voiceActor, selected?.voiceSpeed]);
 
   function ensurePlayer(): CuePlayer {
     if (!playerRef.current) playerRef.current = new CuePlayer();
@@ -119,6 +152,53 @@ export function SoundTimelineDialog({
     }
   }
 
+  const renderCueVoice = useCallback(async (cue: AudioCueRow, voice?: string, speed?: number) => {
+    setRenderingIds((s) => new Set(s).add(cue.id));
+    setBatchMsg(null);
+    try {
+      const res = await api.renderVoice(cue.id, voice, speed);
+      setCues((cs) => cs.map((c) => (c.id === res.cue.id ? res.cue : c)).sort((a, b) => a.startMs - b.startMs));
+      onChanged();
+      return res;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Voice render failed");
+      return null;
+    } finally {
+      setRenderingIds((s) => {
+        const next = new Set(s);
+        next.delete(cue.id);
+        return next;
+      });
+    }
+  }, [onChanged]);
+
+  const renderAllVoices = useCallback(async () => {
+    const pending = cues.filter((c) => c.kind === "VOICE" && !c.voiceUrl);
+    if (pending.length === 0) {
+      setBatchMsg("Every VOICE cue already has a rendered take");
+      return;
+    }
+    let done = 0;
+    // small pool so the TTS service is not hammered
+    const queue = [...pending];
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const cue = queue.shift();
+        if (!cue) break;
+        const speaker = cue.label.includes(": ") ? cue.label.split(":")[0].trim() : "";
+        const res = await renderCueVoice(cue, defaultVoiceFor(speaker || cue.label), 1.0);
+        if (res) done++;
+      }
+    });
+    await Promise.all(workers);
+    setBatchMsg(`Rendered ${done} voice take${done === 1 ? "" : "s"} with auto-cast voices`);
+  }, [cues, renderCueVoice]);
+
+  const voiceStats = useMemo(() => {
+    const voiceCues = cues.filter((c) => c.kind === "VOICE");
+    return { total: voiceCues.length, rendered: voiceCues.filter((c) => c.voiceUrl).length };
+  }, [cues]);
+
   function autoScore() {
     // non-destructive: only ADDS cues, existing ones stay
     void (async () => {
@@ -129,7 +209,7 @@ export function SoundTimelineDialog({
         if (shot.movement && shot.movement !== "STATIC") {
           await api.createAudioCue({
             shotId: shot.id, kind: "SFX",
-            label: `Camera ${shot.movement.toLowerCase()} — air swish`,
+            label: `Camera ${shot.movement.toLowerCase()} - air swish`,
             startMs: Math.round(totalMs * 0.12), durationMs: Math.min(900, Math.round(totalMs * 0.25)), volume: 0.55,
           });
         }
@@ -173,7 +253,7 @@ export function SoundTimelineDialog({
       <DialogContent className="studio-root bg-[#12121a] border-white/10 text-foreground sm:max-w-2xl max-h-[85vh] overflow-y-auto studio-scroll">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Music className="h-4 w-4 text-primary" /> Motion sound — shot {String(shot.number).padStart(3, "0")}
+            <Music className="h-4 w-4 text-primary" /> Motion sound - shot {String(shot.number).padStart(3, "0")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             {(shot.movement && shot.movement !== "STATIC" ? `Motion panel (${shot.movement})` : "Static panel")} · {totalMs}ms timeline · click the track to drop a cue, click a block to edit.
@@ -190,6 +270,16 @@ export function SoundTimelineDialog({
           </Button>
           <Button size="sm" variant="outline" className="h-8 border-white/12 bg-white/5 text-[11px]" onClick={() => void addCueAt()}>
             <Plus className="h-3.5 w-3.5 mr-1" /> Add cue
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="h-8 border-white/12 bg-white/5 text-[11px]"
+            onClick={() => void renderAllVoices()}
+            disabled={voiceStats.total === 0 || renderingIds.size > 0}
+            title={voiceStats.total === 0 ? "No VOICE cues on this timeline" : "Render every VOICE cue missing a take (auto-cast voices)"}
+          >
+            {renderingIds.size > 0 ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <AudioLines className="h-3.5 w-3.5 mr-1" />}
+            Render voices {voiceStats.total > 0 && `(${voiceStats.rendered}/${voiceStats.total})`}
           </Button>
           <span className="ml-auto text-xs font-mono tabular-nums text-muted-foreground">
             {playing ? `${(playheadMs / 1000).toFixed(2)}s / ${(totalMs / 1000).toFixed(2)}s` : `${(totalMs / 1000).toFixed(2)}s`}
@@ -236,9 +326,12 @@ export function SoundTimelineDialog({
                     background: `${meta.color}33`,
                     borderColor: meta.color,
                   }}
-                  title={`${meta.label}: ${cue.label} (${cue.startMs}ms +${cue.durationMs}ms)`}
+                  title={`${meta.label}: ${cue.label} (${cue.startMs}ms +${cue.durationMs}ms)${cue.kind === "VOICE" && cue.voiceUrl ? ` · TTS take ${cue.voiceActor ?? ""} ${((cue.voiceDurationMs ?? 0) / 1000).toFixed(1)}s` : ""}`}
                 >
-                  <span className="block text-[8px] font-semibold leading-tight truncate text-white">{cue.label}</span>
+                  <span className="block text-[8px] font-semibold leading-tight truncate text-white">
+                    {cue.kind === "VOICE" && cue.voiceUrl && <span className="text-cyan-300 mr-0.5">●</span>}
+                    {cue.label}
+                  </span>
                 </button>
               );
             })}
@@ -252,7 +345,7 @@ export function SoundTimelineDialog({
             {KINDS.map((k) => (
               <span key={k} className="flex items-center gap-1 text-[9px] text-muted-foreground">
                 <span className="h-2 w-2 rounded-sm" style={{ background: `${CUE_KIND_META[k].color}66`, border: `1px solid ${CUE_KIND_META[k].color}` }} />
-                {CUE_KIND_META[k].label} — {CUE_KIND_META[k].blurb}
+                {CUE_KIND_META[k].label} - {CUE_KIND_META[k].blurb}
               </span>
             ))}
           </div>
@@ -267,7 +360,7 @@ export function SoundTimelineDialog({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 grid gap-1.5">
-                <Label className="text-[10px]">Label {selected.kind === "VOICE" && "(spoken by the preview — text after the colon)"}</Label>
+                <Label className="text-[10px]">Label {selected.kind === "VOICE" && "(spoken by the preview - text after the colon)"}</Label>
                 <Input
                   value={labelDraft}
                   onChange={(e) => setLabelDraft(e.target.value)}
@@ -330,12 +423,66 @@ export function SoundTimelineDialog({
           </div>
         )}
 
+        {/* real TTS voice render (VOICE cues only) */}
+        {selected && selected.kind === "VOICE" && (
+          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px] flex items-center gap-1.5 text-cyan-200"><AudioLines className="h-3.5 w-3.5" /> Real voice render</Label>
+              {selected.voiceUrl ? (
+                <span className="text-[9px] font-mono text-cyan-300/90">
+                  take: {selected.voiceActor} · {((selected.voiceDurationMs ?? 0) / 1000).toFixed(1)}s · x{(selected.voiceSpeed ?? 1).toFixed(2)}
+                </span>
+              ) : (
+                <span className="text-[9px] text-muted-foreground">no take yet, preview speaks via browser TTS</span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-[10px]">Voice actor (TTS)</Label>
+                <select
+                  value={voiceDraft}
+                  onChange={(e) => setVoiceDraft(e.target.value)}
+                  className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-foreground"
+                >
+                  {VOICES.map((v) => (
+                    <option key={v.id} value={v.id} className="bg-[#12121a]">{v.id} · {v.blurb}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[10px]">Speed</Label>
+                  <span className="text-[10px] font-mono tabular-nums text-cyan-300">x{speedDraft.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-2 h-8">
+                  <Slider value={[speedDraft]} min={0.5} max={2} step={0.05} onValueChange={(v) => setSpeedDraft(v[0] ?? 1)} className="flex-1" />
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm" className="h-8"
+                onClick={() => void renderCueVoice(selected, voiceDraft, speedDraft)}
+                disabled={renderingIds.has(selected.id)}
+              >
+                {renderingIds.has(selected.id)
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Rendering…</>
+                  : <><AudioLines className="h-3.5 w-3.5 mr-1" /> {selected.voiceUrl ? "Re-render take" : "Render voice take"}</>}
+              </Button>
+              <span className="text-[9px] text-muted-foreground">
+                The take is mixed into exported slice stems and played by the live preview.
+              </span>
+            </div>
+          </div>
+        )}
+
         {loading && (
           <p className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Loading cues…</p>
         )}
+        {batchMsg && <p className="text-[11px] text-cyan-300">{batchMsg}</p>}
         {!loading && cues.length === 0 && (
           <p className="text-[11px] text-muted-foreground">
-            No cues yet — click the track to place one, or hit Auto-score to bed ambience, movement SFX and dialogue VOICE automatically.
+            No cues yet - click the track to place one, or hit Auto-score to bed ambience, movement SFX and dialogue VOICE automatically.
           </p>
         )}
         {error && <p className="text-[11px] text-rose-300">{error}</p>}

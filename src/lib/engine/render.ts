@@ -11,11 +11,11 @@ import { bridgeStatus, submitRenderJob, pollJobProgress } from "@/lib/bridge/ble
 //   Scene → Shot → Validation → Render → DSH Inspection → Revision → Approve
 //
 // Two drivers behind the same job lifecycle:
-//   • BLENDER   — a live Blender instance running the AnimeOS bridge
+//   • BLENDER   - a live Blender instance running the AnimeOS bridge
 //     add-on (bridges/blender/animeos_bridge.py). Jobs are submitted
 //     over HTTP, progress is polled, and the finished frame is pulled
 //     back into public/renders/.
-//   • SIMULATOR — the built-in timed-stage driver, used whenever no
+//   • SIMULATOR - the built-in timed-stage driver, used whenever no
 //     Blender is attached (and as automatic fallback mid-job). The
 //     production state machine, render queue, and DSH evaluation loop
 //     are identical for both drivers.
@@ -87,7 +87,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         driver = "BLENDER";
         stage = `Blender: job submitted → ${bridge.host}`;
       } else {
-        stage = `Blender submit failed (${submit.error ?? "unknown"}) — simulator taking over`;
+        stage = `Blender submit failed (${submit.error ?? "unknown"}) - simulator taking over`;
       }
     }
   }
@@ -102,7 +102,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       projectId,
       actor: "SYSTEM",
       type: "RENDER",
-      summary: `Render job ${job.id.slice(-6)} queued — ${mode} attempt ${job.attempt} (${driver})`,
+      summary: `Render job ${job.id.slice(-6)} queued - ${mode} attempt ${job.attempt} (${driver})`,
       payload: JSON.stringify({ jobId: job.id, shotId, mode, driver }),
     },
   });
@@ -138,7 +138,7 @@ export async function tickRenderJob(jobId: string) {
         } else {
           job = await db.renderJob.update({
             where: { id: jobId },
-            data: { status: "REVIEW", progress: 100, stage: prog.stage?.slice(0, 120) || "Blender render complete — awaiting DSH inspection", finishedAt: new Date() },
+            data: { status: "REVIEW", progress: 100, stage: prog.stage?.slice(0, 120) || "Blender render complete - awaiting DSH inspection", finishedAt: new Date() },
             include: { evaluation: true },
           });
         }
@@ -150,10 +150,10 @@ export async function tickRenderJob(jobId: string) {
         });
       }
     } else {
-      // Bridge lost mid-job — degrade to the simulator cleanly.
+      // Bridge lost mid-job - degrade to the simulator cleanly.
       job = await db.renderJob.update({
         where: { id: jobId },
-        data: { driver: "SIMULATOR", stage: "Blender bridge lost — simulator taking over", startedAt: new Date() },
+        data: { driver: "SIMULATOR", stage: "Blender bridge lost - simulator taking over", startedAt: new Date() },
         include: { evaluation: true },
       });
     }
@@ -189,7 +189,7 @@ function persistRenderFrame(jobId: string, base64: string) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, `${jobId}.png`), Buffer.from(base64, "base64"));
   } catch {
-    // non-fatal — the frame already exists on the Blender host
+    // non-fatal - the frame already exists on the Blender host
   }
 }
 

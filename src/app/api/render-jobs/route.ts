@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   await tickProjectJobs(projectId);
 
   // Hand completed, uninspected renders to DSH exactly once (atomic claim).
-  // Capped per tick — a batch render completing all at once must not turn a
+  // Capped per tick - a batch render completing all at once must not turn a
   // single poll into a dozen sequential LLM inspections; the remaining
   // renders are picked up by subsequent polls (2s cadence).
   const INSPECTIONS_PER_TICK = 2;
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
       await runRenderEvaluation(job.id).catch(() => {
         return db.renderJob.update({
           where: { id: job.id },
-          data: { status: "NEEDS_REVISION", stage: "Inspection failed — manual review" },
+          data: { status: "NEEDS_REVISION", stage: "Inspection failed - manual review" },
         });
       });
     }
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
         projectId: episodes[0].season.projectId,
         actor: "USER",
         type: "RENDER",
-        summary: `Batch render queued — ${created} shot(s) across ${episodes.length} episode(s) (${mode})${skipped ? `, ${skipped} already FINAL skipped` : ""}`,
+        summary: `Batch render queued - ${created} shot(s) across ${episodes.length} episode(s) (${mode})${skipped ? `, ${skipped} already FINAL skipped` : ""}`,
         payload: JSON.stringify({ episodeIds: ids, mode, created, skipped }),
       },
     });

@@ -59,7 +59,7 @@ export interface BubbleSpot {
 }
 
 // Logical zones, top-heavy so bubbles never collide with the bottom narration
-// caption — even in short panels (~112px). Caption zone = bottom ~25%.
+// caption - even in short panels (~112px). Caption zone = bottom ~25%.
 const SPOT_POOL: BubbleSpot[] = [
   { top: "8%", left: "6%", tail: "bl" },
   { top: "30%", left: "44%", tail: "br" },

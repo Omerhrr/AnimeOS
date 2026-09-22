@@ -206,7 +206,7 @@ def render_job(job_id, payload):
                     set_job(job_id, stage="Blender: applying AnimeOS parameters", progress=0.18)
                 elif state["step"] == 1:
                     set_job(job_id, stage="Blender: lighting & camera rig", progress=0.42)
-                    build()  # heavy part — one shot inside the timer callback
+                    build()  # heavy part - one shot inside the timer callback
                     set_job(job_id, stage="Blender: done", progress=1.0, done=True,
                             png=encode_render(job_id))
                     CURRENT["id"] = None
@@ -214,7 +214,7 @@ def render_job(job_id, payload):
                 state["step"] += 1
             except Exception as exc:  # noqa: BLE001
                 traceback.print_exc()
-                set_job(job_id, error=str(exc), done=True, stage=f"Blender: failed — {exc}")
+                set_job(job_id, error=str(exc), done=True, stage=f"Blender: failed - {exc}")
                 CURRENT["id"] = None
                 return None
             return 0.1  # next tick
@@ -322,7 +322,7 @@ def main():
         return 5.0
 
     bpy.app.timers.register(heartbeat, persistent=True)
-    # In background mode Blender exits when the script ends — park the main thread:
+    # In background mode Blender exits when the script ends - park the main thread:
     try:
         while True:
             time.sleep(3600)

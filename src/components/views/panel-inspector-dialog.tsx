@@ -20,7 +20,7 @@ function compileLoraDirective(lora: StyleLoraRow | null, strength: number | null
   if (!lora?.triggerPhrase?.trim()) return null;
   const s = Math.min(1.2, Math.max(0.1, strength ?? lora.weight));
   const dominance = s >= 0.75 ? "this adapter dominates the visual style" : "blend this adapter with the base production style";
-  return `style LoRA "${lora.name}" active (trigger tokens: ${lora.triggerPhrase.trim()}) at strength ${s.toFixed(2)} — ${dominance}`;
+  return `style LoRA "${lora.name}" active (trigger tokens: ${lora.triggerPhrase.trim()}) at strength ${s.toFixed(2)} - ${dominance}`;
 }
 
 export function PanelInspectorDialog({
@@ -75,7 +75,7 @@ export function PanelInspectorDialog({
       <DialogContent className="studio-root bg-[#12121a] border-white/10 text-foreground sm:max-w-lg max-h-[85vh] overflow-y-auto studio-scroll">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <SlidersHorizontal className="h-4 w-4 text-primary" /> Panel inspector — shot {String(shot.number).padStart(3, "0")}
+            <SlidersHorizontal className="h-4 w-4 text-primary" /> Panel inspector - shot {String(shot.number).padStart(3, "0")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground line-clamp-2">
             {shot.description}
@@ -117,7 +117,7 @@ export function PanelInspectorDialog({
                 </button>
               ))}
               {artists.length === 0 && (
-                <p className="text-[11px] text-muted-foreground">Roster is empty — add artists from the Artists button in the toolbar.</p>
+                <p className="text-[11px] text-muted-foreground">Roster is empty - add artists from the Artists button in the toolbar.</p>
               )}
             </div>
             {artistId && (
@@ -178,7 +178,7 @@ export function PanelInspectorDialog({
                   onValueChange={(v) => setStrength(v[0] ?? 0.8)}
                 />
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  {strength >= 0.75 ? "≥ 0.75 — the adapter dominates the production style." : "Blends with the base production style."}
+                  {strength >= 0.75 ? "≥ 0.75 - the adapter dominates the production style." : "Blends with the base production style."}
                 </p>
                 <div className="rounded border border-white/10 bg-black/40 p-2">
                   <div className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground mb-1">Injected into this shot&apos;s art prompt</div>

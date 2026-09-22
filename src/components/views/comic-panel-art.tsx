@@ -1,7 +1,7 @@
 "use client";
 
 // Procedural panel sketches for the comic view.
-// Deterministic per shot number — same shot always sketches the same art.
+// Deterministic per shot number - same shot always sketches the same art.
 // Art style adapts to the comic format: manhua ink-wash colour,
 // manhwa flat pastel, manga monochrome + screentone.
 
