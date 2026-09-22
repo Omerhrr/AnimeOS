@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import {
   Clapperboard, MessageSquareDot, FolderKanban, Users, Film, GanttChartSquare,
-  MonitorPlay, ShieldAlert, Languages, History, Sparkles, Loader2, Gauge,
+  MonitorPlay, ShieldAlert, Languages, History, Sparkles, Loader2, Gauge, BookOpen,
 } from "lucide-react";
 import { useStudio, type StudioView, } from "@/lib/store";
 import { api } from "@/lib/api-client";
@@ -19,6 +19,7 @@ import { DshConsole } from "@/components/views/dsh-console";
 import { ProductionsView } from "@/components/views/productions-view";
 import { CharactersView } from "@/components/views/characters-view";
 import { StoryView } from "@/components/views/story-view";
+import { ComicView } from "@/components/views/comic-view";
 import { TimelineView } from "@/components/views/timeline-view";
 import { RenderView } from "@/components/views/render-view";
 import { ContinuityView } from "@/components/views/continuity-view";
@@ -36,6 +37,7 @@ const NAV: Array<{ id: StudioView; label: string; icon: typeof Clapperboard; gro
   { id: "productions", label: "Productions", icon: FolderKanban, group: "Production" },
   { id: "characters", label: "Characters", icon: Users, group: "Production" },
   { id: "story", label: "Story & Scenes", icon: Film, group: "Production" },
+  { id: "comic", label: "Comic Mode", icon: BookOpen, group: "Production" },
   { id: "timeline", label: "Timeline", icon: GanttChartSquare, group: "Production" },
   { id: "render", label: "Render Queue", icon: MonitorPlay, group: "Pipeline" },
   { id: "continuity", label: "Continuity", icon: ShieldAlert, group: "Pipeline" },
@@ -184,6 +186,7 @@ function Shell() {
               {view === "productions" && <ProductionsView />}
               {view === "characters" && <CharactersView project={project} />}
               {view === "story" && <StoryView project={project} />}
+              {view === "comic" && <ComicView project={project} />}
               {view === "timeline" && <TimelineView project={project} />}
               {view === "render" && <RenderView project={project} />}
               {view === "continuity" && <ContinuityView project={project} />}

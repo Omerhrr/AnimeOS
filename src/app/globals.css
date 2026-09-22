@@ -191,3 +191,12 @@
 .scan-line {
   animation: scan-line 2.2s linear infinite;
 }
+
+/* ── Comic Mode print/export ─────────────────────────────────── */
+@media print {
+  header, nav, .print\:hidden { display: none !important; }
+  body, .studio-root { background: #ffffff !important; }
+  main { overflow: visible !important; }
+  .comic-page { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; }
+  .comic-panel { break-inside: avoid; }
+}

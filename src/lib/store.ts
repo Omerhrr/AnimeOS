@@ -8,6 +8,7 @@ export type StudioView =
   | "productions"
   | "characters"
   | "story"
+  | "comic"
   | "timeline"
   | "render"
   | "continuity"
