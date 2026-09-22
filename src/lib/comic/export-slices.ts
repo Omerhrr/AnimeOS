@@ -19,12 +19,14 @@
 import JSZip from "jszip";
 import { stripHeight, COMIC_FORMATS } from "@/lib/comic/layout";
 import { parseDialogue, bubbleSpots } from "@/lib/comic/dialogue";
+import { renderStemWav, type StemCue } from "@/lib/comic/stems";
 
 export interface SliceAudioCue {
   kind: string;
   label: string;
   startMs: number;
   durationMs: number;
+  volume: number;
 }
 
 export interface SliceShot {
@@ -32,6 +34,7 @@ export interface SliceShot {
   number: number;
   description: string;
   shotType: string;
+  duration: number; // seconds — audio stem timeline per panel
   artworkUrl?: string | null;
   dialogue?: string | null;
   // metadata carried into the manifest for downstream motion-comic tooling
@@ -388,11 +391,53 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
     });
   }
 
-  // 4. zip + download
+  // 4. render audio stems — one WAV per slice, cues re-timed onto a
+  //    single stem timeline (panels back-to-back in reading order)
+  const stems: Array<{ index: number; file: string; blob: Blob; durationMs: number; cueCount: number; cues: StemCue[] }> = [];
+  const slicesWithCues = packed.filter((blocks) => blocks.some((b) => (b.shot.audioCues ?? []).length > 0)).length;
+  if (slicesWithCues > 0) {
+    for (let s = 0; s < packed.length; s++) {
+      const sliceBlocks = packed[s];
+      const sliceCues: Array<StemCue & { panel: number }> = [];
+      let offsetMs = 0;
+      for (const block of sliceBlocks) {
+        const panelMs = Math.max(500, Math.round((block.shot.duration ?? 4) * 1000));
+        for (const cue of block.shot.audioCues ?? []) {
+          sliceCues.push({
+            kind: cue.kind,
+            label: cue.label,
+            startMs: offsetMs + cue.startMs,
+            durationMs: Math.min(cue.durationMs, panelMs - cue.startMs),
+            volume: cue.volume,
+            panel: block.shot.number,
+          });
+        }
+        offsetMs += panelMs;
+      }
+      if (sliceCues.length === 0) continue;
+      onProgress?.(`Rendering audio stem ${stems.length + 1}/${slicesWithCues}…`);
+      try {
+        const blob = await renderStemWav(sliceCues, offsetMs);
+        stems.push({
+          index: s,
+          file: `EP${String(episodeNumber).padStart(2, "0")}_slice_${String(s + 1).padStart(2, "0")}.wav`,
+          blob,
+          durationMs: offsetMs,
+          cueCount: sliceCues.length,
+          cues: sliceCues,
+        });
+      } catch (err) {
+        console.warn("Stem rendering skipped for slice", s + 1, err);
+      }
+    }
+  }
+
+  // 5. zip + download
   onProgress?.("Packaging ZIP…");
   const allCues = shots.flatMap((s) => (s.audioCues ?? []).map((c) => ({ ...c, shotId: s.id })));
   const zip = new JSZip();
   for (const s of blobs) zip.file(s.file, s.blob);
+  for (const st of stems) zip.file(st.file, st.blob);
   zip.file("manifest.json", JSON.stringify({
     project: projectName,
     episode: { number: episodeNumber, title: episodeTitle },
@@ -402,9 +447,18 @@ export async function exportWebtoonSlices(opts: SliceExportOptions): Promise<num
     audio: {
       cueCount: allCues.length,
       kinds: allCues.reduce<Record<string, number>>((acc, c) => ({ ...acc, [c.kind]: (acc[c.kind] ?? 0) + 1 }), {}),
+      stemFormat: stems.length > 0 ? "WAV 16-bit PCM mono 44.1kHz" : null,
+      stems: stems.map((st) => ({
+        file: st.file,
+        slice: st.index,
+        durationMs: st.durationMs,
+        cueCount: st.cueCount,
+        // cues on the stem timeline; panel = shot number each cue belongs to
+        cues: st.cues,
+      })),
       // timing map for motion-comic authoring tools (millisecond timeline per panel)
       cuesByShot: allCues.reduce<Record<string, SliceAudioCue[]>>((acc, c) => {
-        (acc[c.shotId] ??= []).push({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs });
+        (acc[c.shotId] ??= []).push({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume });
         return acc;
       }, {}),
     },

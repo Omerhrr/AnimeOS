@@ -125,3 +125,21 @@ Stage Summary:
 - GitHub main @ 5ee5e82 (6 commits total); Iteration 6 fully pushed and verified end-to-end
 - Per-shot style LoRA binding (trigger tokens injected into panel-art prompts), motion-panel sound design with auto-scoring + Web Audio preview, multi-artist roster with per-shot ownership are all live
 - Suggested next horizons: audio stems in webtoon slice export (manifest), DSH tools for artist/LoRA assignment, artist workload balance view
+
+---
+Task ID: 7
+Agent: Super Z (main agent)
+Task: Iteration 7 — DSH autonomous artist/LoRA staffing + audio stems in webtoon slice exports + artist workload-balance view (user: "proceed with DSH tools to autonomously assign artists/LoRas, audio stems embedded in webtoon slice exports, and an artist workload-balance view")
+
+Work Log:
+- DSH: new tool #21 auto_assign_scene_team — staffs an entire scene in one call: artist routing scores specialism (background/environment roles → ESTABLISHING/WIDE, character roles → CLOSEUP/ECU, FX roles → movement/energy-keyword shots) against a load penalty (0.5 × production-wide count) so work spreads; LoRA routing tokenizes name+trigger+notes (≥4 chars) and attaches the best content match (shot description + movement + lighting + scene environment) at the adapter's default weight; scope artists|lora|both, overwrite flag, guards for empty roster/registry, single production event per call; doctrine rule 11 rewritten (one-call scene staffing first, surgical set_shot_artist/set_shot_lora only for overrides) + intro updated
+- Audio stems: src/lib/comic/stems.ts — OfflineAudioContext renderer (44.1kHz mono) with the live engine's synthesis DNA (bandpass-noise SFX, detuned-triangle BGM, wobbling-filter ambience; VOICE → syllabic-wobble formant blip since speechSynthesis can't render offline), 16-bit PCM WAV encoder; audio.ts exports labelHash/noiseBuffer (BaseAudioContext) so both engines share primitives; export-slices.ts re-times each slice's cues onto one stem timeline (panels back-to-back in reading order, per-cue offset by preceding panel durations, volume carried through), renders one WAV per scored slice (EPxx_slice_NN.wav) into the ZIP, manifest.audio gains stemFormat + per-stem {file, slice, durationMs, cueCount, cues[]} with panel mapping; SliceShot now carries duration, SliceAudioCue carries volume
+- Workload view: src/components/views/artist-workload-dialog.tsx — toolbar button next to Artists; per-artist rows (episode panels vs production-wide total, colored bar, art/lora/in-flight/done mini-stats), production-wide balance badge (BALANCED ≤0.12 / UNEVEN ≤0.3 / SKEWED spread vs ideal per-artist share), unassigned pool row, "Distribute pool" one-click round-robin (least-production-load-first) using the existing bulk PATCH; ArtistsDialog blurb now points at the workload view + auto tool
+- Fixed a self-inflicted file corruption in artist-workload-dialog.tsx (Write tool left a truncated/mangled line that surfaced as a client-side exception in Comic Mode) — rewrote the file cleanly and re-verified
+- Verified E2E: live DSH turn "re-staff Scene 12..." → called auto_assign_scene_team {sceneNumber:12, scope:both, overwrite:true} → 6 shots re-routed (Jiang Wu 0→3, all roster members loaded), 4 LoRAs content-matched (azure-flame-fx, spirit-beast-form), DB verified; workload dialog on E08 showed 1/3 assigned UNEVEN → Distribute pool → "2 pool panels distributed across 2 artists ✓" → 3/3; webtoon export with capture-patched createObjectURL → ZIP holds EP07_slice_01/02.png + EP07_slice_01/02.wav (RIFF/WAVE magic), manifest audio: 17 cues (4 AMB/9 SFX/2 BGM/2 VOICE), stemFormat "WAV 16-bit PCM mono 44.1kHz", slice_01 stem 16000ms/12 cues with panel-relative re-timing; tsc src-clean, eslint clean
+- README: 23-tool count, Multi-artist studio row, slice-export stem wording, status paragraph
+
+Stage Summary:
+- GitHub main pushed with this iteration (7 commits + this one)
+- DSH now staffs scenes autonomously (specialism + load-balanced artists, content-matched LoRAs); exported webtoon slices carry real playable audio stems + authoring-tool manifests; creators get a live workload-balance board with one-click pool distribution
+- Next horizons: real TTS/voice renders for VOICE stems, LoRA training-run simulation (dataset from approved panels), per-artist style preset affinity

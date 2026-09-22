@@ -31,7 +31,7 @@ export interface CueLike {
 }
 
 /** Deterministic 0..1 hash so a label always sounds the same. */
-function labelHash(label: string): number {
+export function labelHash(label: string): number {
   let h = 2166136261;
   for (let i = 0; i < label.length; i++) {
     h ^= label.charCodeAt(i);
@@ -40,7 +40,8 @@ function labelHash(label: string): number {
   return ((h >>> 0) % 1000) / 1000;
 }
 
-function noiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
+// BaseAudioContext (not AudioContext) so the offline stem renderer can reuse it.
+export function noiseBuffer(ctx: BaseAudioContext, seconds: number): AudioBuffer {
   const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * seconds)), ctx.sampleRate);
   const data = buf.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;

@@ -16,6 +16,7 @@ import { SpeechBubbles, DialogueEditor } from "@/components/views/comic-bubbles"
 import { StyleDirectionDialog } from "@/components/views/style-direction-dialog";
 import { LoraStudioDialog } from "@/components/views/lora-studio-dialog";
 import { ArtistsDialog } from "@/components/views/artists-dialog";
+import { ArtistWorkloadDialog } from "@/components/views/artist-workload-dialog";
 import { PanelInspectorDialog } from "@/components/views/panel-inspector-dialog";
 import { SoundTimelineDialog } from "@/components/views/sound-timeline-dialog";
 import { SectionHeader } from "@/components/views/shared";
@@ -392,10 +393,11 @@ export function ComicView({ project }: { project: StudioProject }) {
         shots: allShots.map((s) => ({
           id: s.id, number: s.number, description: s.description,
           shotType: s.shotType, artworkUrl: s.artworkUrl, dialogue: s.dialogue,
+          duration: s.duration,
           loraName: s.lora?.name ?? null,
           loraStrength: s.loraStrength ?? null,
           artistName: s.artist?.name ?? null,
-          audioCues: (s.audioCues ?? []).map((c) => ({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs })),
+          audioCues: (s.audioCues ?? []).map((c) => ({ kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume })),
         })),
         onProgress: (msg) => setExporting(msg),
       });
@@ -496,6 +498,7 @@ export function ComicView({ project }: { project: StudioProject }) {
           <StyleDirectionDialog project={project} />
           <LoraStudioDialog project={project} />
           <ArtistsDialog project={project} />
+          <ArtistWorkloadDialog project={project} shots={allShots} />
           <Button
             size="sm" variant="outline"
             className="h-7 text-[11px] border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 print:hidden"

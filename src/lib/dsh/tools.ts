@@ -198,6 +198,15 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "auto_assign_scene_team",
+    description: "Autonomously staff an ENTIRE scene in one call: distribute every shot across the artist roster (routing by specialism — backgrounds, characters, effects — while balancing per-artist load) and attach matching style LoRAs by content keywords (flashback → ink-wash, flame/VFX → energy adapters, etc.). Use this when a scene is broken down and needs a full crew before art generation; use set_shot_artist/set_shot_lora afterwards only for surgical overrides.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      scope: "artists | lora | both (default both) — which assignments to make",
+      overwrite: "boolean (default false) — true replaces existing artist/LoRA assignments on the scene's shots",
+    },
+  },
+  {
     name: "add_audio_cue",
     description: "Add a timed sound-design cue to a shot's motion panel: SFX accent, VOICE line, BGM beat or AMBIENCE bed, timed in milliseconds against the shot's duration. Score dynamic shots (camera movement) with an ambience bed + 1-3 SFX accents; keep VOICE cues inside the shot duration.",
     args: {
@@ -680,6 +689,123 @@ export async function executeTool(projectId: string, name: string, args: Record<
         }
         await db.shot.update({ where: { id: shot.id }, data: { artistId: artist.id } });
         return { status: "OK", result: `Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}) assigned to ${artist.name}${artist.role ? ` (${artist.role})` : ""}.` };
+      }
+
+      case "auto_assign_scene_team": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        const sceneShots = await db.shot.findMany({
+          where: { sceneId: scene.id },
+          orderBy: { number: "asc" },
+          include: { scene: { include: { environment: true } } },
+        });
+        if (sceneShots.length === 0) return { status: "ERROR", result: `Scene ${scene.number} has no shots to staff.` };
+
+        const scopeRaw = String(args.scope ?? "both").toLowerCase();
+        const scope = ["artists", "lora", "both"].includes(scopeRaw) ? scopeRaw : "both";
+        const overwrite = Boolean(args.overwrite);
+
+        const roster = await db.artist.findMany({
+          where: { projectId },
+          orderBy: { createdAt: "asc" },
+          include: { _count: { select: { shots: true } } },
+        });
+        const loras = await db.styleLora.findMany({ where: { projectId } });
+        if (scope !== "lora" && roster.length === 0) {
+          return { status: "ERROR", result: "The artist roster is empty — ask the creator to add artists (or add them via create tooling) before auto-staffing." };
+        }
+        if (scope !== "artists" && loras.length === 0 && scope === "lora") {
+          return { status: "ERROR", result: "No style LoRAs are registered for this production — register adapters before auto-attaching them." };
+        }
+
+        const updates: Array<{ shotId: string; data: Record<string, unknown> }> = [];
+        const notes: string[] = [];
+
+        // ── artist routing: specialism score − load imbalance ──
+        if (scope === "artists" || scope === "both") {
+          const load = new Map<string, number>(roster.map((a) => [a.id, a._count.shots]));
+          const roleOf = (a: (typeof roster)[number]) => `${a.name} ${a.role ?? ""}`.toLowerCase();
+          const isBg = (a: (typeof roster)[number]) => /background|environment|layout|scenery/.test(roleOf(a));
+          const isChar = (a: (typeof roster)[number]) => /character|key anim|cleanup|portrait|cast/.test(roleOf(a));
+          const isFx = (a: (typeof roster)[number]) => /effect|fx|action|vfx|energy/.test(roleOf(a));
+          const fxWords = /energy|qi|blast|flame|fire|lightning|explosion|sword|storm|thunder|aura|spirit|flash/i;
+
+          for (const shot of sceneShots) {
+            if (shot.artistId && !overwrite) continue;
+            const wide = shot.shotType === "ESTABLISHING" || shot.shotType === "WIDE";
+            const tight = shot.shotType === "CLOSEUP" || shot.shotType === "EXTREME_CLOSEUP";
+            const moving = Boolean(shot.movement && shot.movement !== "STATIC");
+            const fxShot = fxWords.test(shot.description) || (moving && Boolean(shot.movement && ["ORBIT", "CRANE", "TRACKING"].includes(shot.movement)));
+
+            let best: { id: string; name: string; score: number } | null = null;
+            for (const a of roster) {
+              let score = 0;
+              if (wide && isBg(a)) score += 3;
+              if (tight && isChar(a)) score += 3;
+              if (fxShot && isFx(a)) score += 3;
+              if (!wide && !tight && !fxShot && isChar(a)) score += 1;
+              score -= (load.get(a.id) ?? 0) * 0.5; // balance: load halves the pull of specialism
+              if (!best || score > best.score) best = { id: a.id, name: a.name, score };
+            }
+            if (best) {
+              updates.push({ shotId: shot.id, data: { artistId: best.id } });
+              load.set(best.id, (load.get(best.id) ?? 0) + 1);
+            }
+          }
+          const assigned = updates.length;
+          if (assigned > 0) {
+            const tally = roster.map((a) => `${a.name} ${load.get(a.id) ?? 0}`).join(", ");
+            notes.push(`${assigned} shot${assigned === 1 ? "" : "s"} routed across the roster (load now: ${tally})`);
+          } else {
+            notes.push("every shot already had an artist (pass overwrite: true to re-route)");
+          }
+        }
+
+        // ── LoRA routing: keyword overlap between shot content and adapter tokens ──
+        if (scope === "lora" || scope === "both") {
+          if (loras.length > 0) {
+            const env = sceneShots[0]?.scene?.environment;
+            const envWords = `${env?.name ?? ""} ${env?.weather ?? ""} ${env?.lighting ?? ""}`.toLowerCase();
+            let loraHits = 0;
+            for (const shot of sceneShots) {
+              if (shot.loraId && !overwrite) continue;
+              const hay = `${shot.description} ${shot.movement ?? ""} ${shot.lighting ?? ""} ${envWords}`.toLowerCase();
+              let best: { id: string; name: string; hits: number } | null = null;
+              for (const lora of loras) {
+                const tokens = `${lora.name} ${lora.triggerPhrase} ${lora.notes ?? ""}`
+                  .toLowerCase()
+                  .split(/[^a-z]+/)
+                  .filter((t) => t.length >= 4);
+                let hits = 0;
+                for (const t of new Set(tokens)) if (hay.includes(t)) hits += 1;
+                if (hits > 0 && (!best || hits > best.hits)) best = { id: lora.id, name: lora.name, hits };
+              }
+              if (best) {
+                updates.push({ shotId: shot.id, data: { loraId: best.id, loraStrength: loras.find((l) => l.id === best!.id)?.weight ?? 0.8 } });
+                loraHits += 1;
+              }
+            }
+            notes.push(loraHits > 0 ? `${loraHits} shot${loraHits === 1 ? "" : "s"} LoRA-tuned by content match` : "no LoRA matched any shot content (left on production style)");
+          }
+        }
+
+        for (const u of updates) await db.shot.update({ where: { id: u.shotId }, data: u.data });
+        if (updates.length > 0) {
+          await db.productionEvent.create({
+            data: {
+              projectId,
+              actor: "DSH",
+              type: "STATE_CHANGE",
+              summary: `DSH auto-staffed Scene ${scene.number} — ${updates.length} shot update(s): ${notes.join(" · ")}`,
+            },
+          });
+        }
+        return {
+          status: "OK",
+          result: updates.length === 0
+            ? `Scene ${scene.number} needed no changes — ${notes.join(" · ")}.`
+            : `Scene ${scene.number} staffed autonomously — ${notes.join(" · ")}. The board and workload view reflect it immediately; panel-art prompts pick up the LoRA triggers on the next generation.`,
+        };
       }
 
       case "add_audio_cue": {

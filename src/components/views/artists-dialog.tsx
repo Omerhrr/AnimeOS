@@ -77,7 +77,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
               <Users className="h-4 w-4 text-primary" /> Artist roster
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Who owns which panel. Assign from the inspector button on any panel, in bulk from the board, or let DSH delegate via <span className="font-mono text-[10px]">set_shot_artist</span>.
+              Who owns which panel. Assign from the inspector button on any panel, in bulk from the board, balance via the Workload view, or let DSH staff whole scenes with <span className="font-mono text-[10px]">auto_assign_scene_team</span>.
             </DialogDescription>
           </DialogHeader>
 
