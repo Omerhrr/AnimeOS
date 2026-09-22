@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { createRenderJob } from "@/lib/engine/render";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
+import { applyArcTemplate, arcTemplateByName, ARC_TEMPLATES, formatTemplateReport } from "@/lib/comic/arc-templates";
 import { generateShotPanelArt, generateCharacterModelSheet } from "@/lib/ai/art";
 import { classifyStateDelivery, isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId, defaultVoiceFor } from "@/lib/comic/voice-catalog";
@@ -275,7 +276,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_state_arc",
-    description: "State arc: force one of a character's development states across a RANGE of shots (a fight beat, a possession sequence, a corruption spread) instead of line by line. scope:'scene' (default) stamps the character's lines from shot shotFrom through shotTo (inclusive) within one scene; scope:'episode' stamps across whole scenes of one episode (sceneNumber/shotFrom start the arc, toSceneNumber/shotTo end it), so a beat that crosses scene boundaries stays one arc. Each stamped line then performs with that state's variant voice, speed/pitch hints and state-classified delivery, exactly like a per-line override but for the whole beat. Deliberately ignores episode timing: a forced beat is a directorial decision. Empty stateLabel clears the arc on the range. Takes rendered before the change are flagged stale by the direction diff; run it after stamping.",
+    description: "State arc: force one of a character's development states across a RANGE of shots (a fight beat, a possession sequence, a corruption spread) instead of line by line. scope:'scene' (default) stamps the character's lines from shot shotFrom through shotTo (inclusive) within one scene; scope:'episode' stamps across whole scenes of one episode (sceneNumber/shotFrom start the arc, toSceneNumber/shotTo end it), so a beat that crosses scene boundaries stays one arc. Each stamped line then performs with that state's variant voice, speed/pitch hints and state-classified delivery, exactly like a per-line override but for the whole beat. Deliberately ignores episode timing: a forced beat is a directorial decision. Empty stateLabel clears the arc on the range. The result reports the episode's direction impact (the takes the arc made stale) so you can offer the re-render to the creator in the same turn.",
     args: {
       characterName: "string",
       stateLabel: "string - matches a state by name (contains, case-insensitive); empty string clears the arc on the range",
@@ -285,6 +286,21 @@ export const TOOL_DEFS: ToolDef[] = [
       shotFrom: "number - first shot number of the arc (defaults to the start scene's first shot)",
       toSceneNumber: "number, episode scope only - the scene the arc ENDS in (defaults to the episode's last scene with shots)",
       shotTo: "number - last shot number of the arc, inclusive (defaults to the end scene's last shot)",
+    },
+  },
+  {
+    name: "apply_arc_template",
+    description: "Reusable arc template: paint a NAMED beat SHAPE onto a character's lines across a range in one call, instead of one uniform span. Templates (possession spread: auto 25% -> state 50% -> auto 25%; full takeover: auto 15% -> state 70% -> auto 15%; recovery arc: state 60% -> auto 40%) are fractions of the speaker's own lines in the range, so the same shape stretches over any beat length - the early lines stay auto, the middle performs with the chosen state (variant voice + hints), the tail releases back. The template carries the shape, you choose the state (stateLabel, matched like set_state_arc). Same range args and scopes as set_state_arc. The result reports the per-segment shape actually stamped plus the episode's direction impact, so offer the re-render in the same turn.",
+    args: {
+      characterName: "string",
+      template: "string - template name or id: possession spread | full takeover | recovery arc",
+      stateLabel: "string - matches a state by name (contains, case-insensitive); drives the template's state segments",
+      scope: "\"scene\" (default) or \"episode\" - same semantics as set_state_arc",
+      episodeNumber: "number, episode scope only (defaults to the latest episode with shots)",
+      sceneNumber: "number - the scene to stamp in (scene scope; defaults to the latest scene with shots) or the start scene (episode scope)",
+      shotFrom: "number - first shot number of the arc (defaults to the start scene's first shot)",
+      toSceneNumber: "number, episode scope only - the scene the arc ENDS in",
+      shotTo: "number - last shot number of the arc, inclusive",
     },
   },
 ];
@@ -332,6 +348,135 @@ async function resolveScene(projectId: string, sceneNumberArg: unknown) {
     if (scenes[0]) return scenes[0];
   }
   return latestScene(projectId);
+}
+
+interface ArcRangeShot { id: string; dialogue: string | null; label: string }
+type ArcRangeResolution =
+  | { ok: false; error: string }
+  | { ok: true; rangeShots: ArcRangeShot[]; rangeDesc: string; episode: { id: string; number: number } | null };
+
+/**
+ * Shared range resolver for the arc tools (set_state_arc,
+ * apply_arc_template): collects the shots a range covers under both
+ * scopes and reports the owning episode (for the direction diff).
+ * Every error string is tool-facing and asserted by the E2E suite -
+ * do not reword.
+ */
+async function resolveArcRange(projectId: string, args: Record<string, unknown>): Promise<ArcRangeResolution> {
+  const scope = String(args.scope ?? "scene").trim().toLowerCase() === "episode" ? "episode" : "scene";
+
+  if (scope === "episode") {
+    const eps = await db.episode.findMany({
+      where: { season: { projectId } },
+      orderBy: [{ season: { number: "asc" } }, { number: "desc" }],
+      include: {
+        scenes: {
+          where: { shots: { some: {} } },
+          orderBy: { number: "asc" },
+          include: { shots: { orderBy: { number: "asc" } } },
+        },
+      },
+    });
+    let ep: (typeof eps)[number] | null = null;
+    if (args.episodeNumber !== undefined && args.episodeNumber !== null) {
+      const want = Number(args.episodeNumber);
+      ep = eps.find((e) => e.number === want && e.scenes.length > 0) ?? null;
+      if (!ep) {
+        const withShots = eps.filter((e) => e.scenes.length > 0).map((e) => `Ep${e.number}`);
+        return { ok: false, error: withShots.length
+          ? `No episode ${want} with shots. Episodes with shots: ${withShots.join(", ")}.`
+          : "No episode with shots exists yet - break down a scene first." };
+      }
+    } else {
+      ep = eps.find((e) => e.scenes.length > 0) ?? null;
+      if (!ep) return { ok: false, error: "No episode with shots exists yet - break down a scene first." };
+    }
+    const scenes = ep.scenes;
+    const sceneSummary = scenes.map((s) => `Sc${s.number} (shots ${s.shots.map((x) => x.number).join(", ")})`).join(", ");
+    const startScene = args.sceneNumber !== undefined && args.sceneNumber !== null
+      ? scenes.find((s) => s.number === Number(args.sceneNumber)) ?? null
+      : scenes[0];
+    if (!startScene) {
+      return { ok: false, error: `Episode ${ep.number} has no scene ${String(args.sceneNumber)} with shots. Scenes: ${sceneSummary}.` };
+    }
+    const endScene = args.toSceneNumber !== undefined && args.toSceneNumber !== null
+      ? scenes.find((s) => s.number === Number(args.toSceneNumber)) ?? null
+      : scenes[scenes.length - 1];
+    if (!endScene) {
+      return { ok: false, error: `Episode ${ep.number} has no scene ${String(args.toSceneNumber)} with shots. Scenes: ${sceneSummary}.` };
+    }
+    const from = args.shotFrom !== undefined && args.shotFrom !== null ? Number(args.shotFrom) : startScene.shots[0].number;
+    const to = args.shotTo !== undefined && args.shotTo !== null ? Number(args.shotTo) : endScene.shots[endScene.shots.length - 1].number;
+    if (!Number.isFinite(from) || !Number.isFinite(to)) {
+      return { ok: false, error: `Invalid shot bounds ${String(args.shotFrom)}-${String(args.shotTo)} (must be numbers).` };
+    }
+    if (!startScene.shots.some((s) => s.number === from)) {
+      return { ok: false, error: `Scene ${startScene.number} has no shot ${from}. Shots: ${startScene.shots.map((s) => s.number).join(", ")}.` };
+    }
+    if (!endScene.shots.some((s) => s.number === to)) {
+      return { ok: false, error: `Scene ${endScene.number} has no shot ${to}. Shots: ${endScene.shots.map((s) => s.number).join(", ")}.` };
+    }
+    if (startScene.number > endScene.number || (startScene.number === endScene.number && from > to)) {
+      return { ok: false, error: `Invalid range Sc${startScene.number} S${from} → Sc${endScene.number} S${to} (the arc must run forward). Scenes: ${sceneSummary}.` };
+    }
+    const rangeShots: ArcRangeShot[] = [];
+    for (const s of scenes) {
+      if (s.number < startScene.number || s.number > endScene.number) continue;
+      let inScene = s.shots;
+      if (s.number === startScene.number) inScene = inScene.filter((sh) => sh.number >= from);
+      if (s.number === endScene.number) inScene = inScene.filter((sh) => sh.number <= to);
+      for (const sh of inScene) rangeShots.push({ id: sh.id, dialogue: sh.dialogue, label: `Sc${s.number} S${sh.number}` });
+    }
+    return {
+      ok: true,
+      rangeShots,
+      rangeDesc: `episode ${ep.number} (Sc${startScene.number} S${from} → Sc${endScene.number} S${to})`,
+      episode: { id: ep.id, number: ep.number },
+    };
+  }
+
+  const scene = await resolveScene(projectId, args.sceneNumber);
+  if (!scene) {
+    return { ok: false, error: "No scene with shots exists yet - break down a scene first." };
+  }
+  const shots = await db.shot.findMany({ where: { sceneId: scene.id }, orderBy: { number: "asc" }, select: { id: true, number: true, dialogue: true } });
+  if (shots.length === 0) {
+    return { ok: false, error: `Scene ${scene.number} has no shots.` };
+  }
+  const nums = shots.map((s) => s.number);
+  const from = args.shotFrom !== undefined && args.shotFrom !== null ? Number(args.shotFrom) : nums[0];
+  const to = args.shotTo !== undefined && args.shotTo !== null ? Number(args.shotTo) : nums[nums.length - 1];
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) {
+    return { ok: false, error: `Invalid shot range ${String(args.shotFrom)}-${String(args.shotTo)} (shotFrom must be <= shotTo). Scene ${scene.number} shots: ${nums.join(", ")}.` };
+  }
+  const range = shots.filter((s) => s.number >= from && s.number <= to);
+  if (range.length === 0) {
+    return { ok: false, error: `No shots ${from}-${to} in scene ${scene.number}. Shots: ${nums.join(", ")}.` };
+  }
+  const rangeShots: ArcRangeShot[] = range.map((sh) => ({ id: sh.id, dialogue: sh.dialogue, label: String(sh.number) }));
+  const episode = await db.episode.findUnique({ where: { id: scene.episodeId }, select: { id: true, number: true } });
+  return {
+    ok: true,
+    rangeShots,
+    rangeDesc: `scene ${scene.number} shots ${from}-${to}`,
+    episode: episode ? { id: episode.id, number: episode.number } : null,
+  };
+}
+
+/**
+ * Same-turn re-render offer for the arc tools: right after an arc
+ * move, diff the owning episode and hand DSH the staleness counts
+ * plus the offer framing, so the creator hears "these stems are out
+ * of date, want the re-render?" in the SAME turn - not two turns later.
+ */
+async function directionImpactFor(episode: { id: string; number: number } | null): Promise<string> {
+  if (!episode) return "";
+  const diff = await diffEpisodeById(episode.id);
+  if (!diff) return "";
+  if (diff.stale === 0) {
+    return ` Direction impact: episode ${diff.number} is clean (${diff.fresh} fresh, ${diff.unrendered} unrendered) - no rendered take moved.`;
+  }
+  return ` Direction impact: episode ${diff.number} now has ${diff.stale} stale take(s) (${diff.fresh} fresh, ${diff.unrendered} unrendered). Offer the re-render in the same turn: tell the creator those stems still carry the old direction and that diff_episode_direction with reRender:true re-renders exactly these ${diff.stale} stale take(s); run it yourself in this same turn when they already asked for the arc to land on the audio.`;
 }
 
 export async function executeTool(projectId: string, name: string, args: Record<string, unknown>): Promise<ActionResult> {
@@ -1230,98 +1375,13 @@ export async function executeTool(projectId: string, name: string, args: Record<
           stateLabel = state.label; // stamp the FULL label so the override stays exact
         }
 
-        const scope = String(args.scope ?? "scene").trim().toLowerCase() === "episode" ? "episode" : "scene";
+        const range = await resolveArcRange(projectId, args);
+        if (!range.ok) return { status: "ERROR", result: range.error };
+        const { rangeShots, rangeDesc } = range;
+
         let stamped = 0;
         const touched: string[] = [];
         const speakersSeen = new Set<string>();
-        let rangeShots: Array<{ id: string; dialogue: string | null; label: string }> = [];
-        let rangeDesc = "";
-
-        if (scope === "episode") {
-          const eps = await db.episode.findMany({
-            where: { season: { projectId } },
-            orderBy: [{ season: { number: "asc" } }, { number: "desc" }],
-            include: {
-              scenes: {
-                where: { shots: { some: {} } },
-                orderBy: { number: "asc" },
-                include: { shots: { orderBy: { number: "asc" } } },
-              },
-            },
-          });
-          let ep: (typeof eps)[number] | null = null;
-          if (args.episodeNumber !== undefined && args.episodeNumber !== null) {
-            const want = Number(args.episodeNumber);
-            ep = eps.find((e) => e.number === want && e.scenes.length > 0) ?? null;
-            if (!ep) {
-              const withShots = eps.filter((e) => e.scenes.length > 0).map((e) => `Ep${e.number}`);
-              return { status: "ERROR", result: withShots.length
-                ? `No episode ${want} with shots. Episodes with shots: ${withShots.join(", ")}.`
-                : "No episode with shots exists yet - break down a scene first." };
-            }
-          } else {
-            ep = eps.find((e) => e.scenes.length > 0) ?? null;
-            if (!ep) return { status: "ERROR", result: "No episode with shots exists yet - break down a scene first." };
-          }
-          const scenes = ep.scenes;
-          const sceneSummary = scenes.map((s) => `Sc${s.number} (shots ${s.shots.map((x) => x.number).join(", ")})`).join(", ");
-          const startScene = args.sceneNumber !== undefined && args.sceneNumber !== null
-            ? scenes.find((s) => s.number === Number(args.sceneNumber)) ?? null
-            : scenes[0];
-          if (!startScene) {
-            return { status: "ERROR", result: `Episode ${ep.number} has no scene ${String(args.sceneNumber)} with shots. Scenes: ${sceneSummary}.` };
-          }
-          const endScene = args.toSceneNumber !== undefined && args.toSceneNumber !== null
-            ? scenes.find((s) => s.number === Number(args.toSceneNumber)) ?? null
-            : scenes[scenes.length - 1];
-          if (!endScene) {
-            return { status: "ERROR", result: `Episode ${ep.number} has no scene ${String(args.toSceneNumber)} with shots. Scenes: ${sceneSummary}.` };
-          }
-          const from = args.shotFrom !== undefined && args.shotFrom !== null ? Number(args.shotFrom) : startScene.shots[0].number;
-          const to = args.shotTo !== undefined && args.shotTo !== null ? Number(args.shotTo) : endScene.shots[endScene.shots.length - 1].number;
-          if (!Number.isFinite(from) || !Number.isFinite(to)) {
-            return { status: "ERROR", result: `Invalid shot bounds ${String(args.shotFrom)}-${String(args.shotTo)} (must be numbers).` };
-          }
-          if (!startScene.shots.some((s) => s.number === from)) {
-            return { status: "ERROR", result: `Scene ${startScene.number} has no shot ${from}. Shots: ${startScene.shots.map((s) => s.number).join(", ")}.` };
-          }
-          if (!endScene.shots.some((s) => s.number === to)) {
-            return { status: "ERROR", result: `Scene ${endScene.number} has no shot ${to}. Shots: ${endScene.shots.map((s) => s.number).join(", ")}.` };
-          }
-          if (startScene.number > endScene.number || (startScene.number === endScene.number && from > to)) {
-            return { status: "ERROR", result: `Invalid range Sc${startScene.number} S${from} → Sc${endScene.number} S${to} (the arc must run forward). Scenes: ${sceneSummary}.` };
-          }
-          for (const s of scenes) {
-            if (s.number < startScene.number || s.number > endScene.number) continue;
-            let inScene = s.shots;
-            if (s.number === startScene.number) inScene = inScene.filter((sh) => sh.number >= from);
-            if (s.number === endScene.number) inScene = inScene.filter((sh) => sh.number <= to);
-            for (const sh of inScene) rangeShots.push({ id: sh.id, dialogue: sh.dialogue, label: `Sc${s.number} S${sh.number}` });
-          }
-          rangeDesc = `episode ${ep.number} (Sc${startScene.number} S${from} → Sc${endScene.number} S${to})`;
-        } else {
-          const scene = await resolveScene(projectId, args.sceneNumber);
-          if (!scene) {
-            return { status: "ERROR", result: "No scene with shots exists yet - break down a scene first." };
-          }
-          const shots = await db.shot.findMany({ where: { sceneId: scene.id }, orderBy: { number: "asc" }, select: { id: true, number: true, dialogue: true } });
-          if (shots.length === 0) {
-            return { status: "ERROR", result: `Scene ${scene.number} has no shots.` };
-          }
-          const nums = shots.map((s) => s.number);
-          const from = args.shotFrom !== undefined && args.shotFrom !== null ? Number(args.shotFrom) : nums[0];
-          const to = args.shotTo !== undefined && args.shotTo !== null ? Number(args.shotTo) : nums[nums.length - 1];
-          if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) {
-            return { status: "ERROR", result: `Invalid shot range ${String(args.shotFrom)}-${String(args.shotTo)} (shotFrom must be <= shotTo). Scene ${scene.number} shots: ${nums.join(", ")}.` };
-          }
-          const range = shots.filter((s) => s.number >= from && s.number <= to);
-          if (range.length === 0) {
-            return { status: "ERROR", result: `No shots ${from}-${to} in scene ${scene.number}. Shots: ${nums.join(", ")}.` };
-          }
-          for (const sh of range) rangeShots.push({ id: sh.id, dialogue: sh.dialogue, label: String(sh.number) });
-          rangeDesc = `scene ${scene.number} shots ${from}-${to}`;
-        }
-
         for (const shot of rangeShots) {
           const lines = parseDialogue(shot.dialogue);
           for (const l of lines) if (l.speaker.trim()) speakersSeen.add(l.speaker.trim());
@@ -1348,13 +1408,88 @@ export async function executeTool(projectId: string, name: string, args: Record<
           if (speakerLines === 0) {
             const seen = [...speakersSeen];
             result += seen.length
-              ? `No ${ch.name} lines in that range (speakers present: ${seen.join(", ")}) - nothing was written; check the character name or widen the range. `
-              : `That range has no dialogue at all - nothing was written. `;
-          } else {
-            result += `All ${speakerLines} ${ch.name} line(s) in the range already carry ${stateLabel ? `"${stateLabel}"` : "no override"} - nothing to change. `;
+              ? `No ${ch.name} lines in that range (speakers present: ${seen.join(", ")}) - nothing was written; check the character name or widen the range. No take moved, so no re-render is needed.`
+              : `That range has no dialogue at all - nothing was written. No take moved, so no re-render is needed.`;
+            return { status: "OK", result };
           }
+          result += `All ${speakerLines} ${ch.name} line(s) in the range already carry ${stateLabel ? `"${stateLabel}"` : "no override"} - nothing to change. No take moved, so no re-render is needed.`;
+          return { status: "OK", result };
         }
-        result += "Each stamped line now performs with the state's variant voice, hints and register; takes rendered before the arc are stale - run diff_episode_direction with reRender:true to apply it to the stems.";
+        result += "Each stamped line now performs with the state's variant voice, hints and register.";
+        result += await directionImpactFor(range.episode);
+        return { status: "OK", result };
+      }
+
+      case "apply_arc_template": {
+        const ch = await characterByName(projectId, String(args.characterName ?? ""));
+        if (!ch) {
+          const known = await db.character.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `Character '${String(args.characterName)}' not found. Cast: ${known.map((c) => c.name).join(", ") || "none"}.` };
+        }
+        const template = arcTemplateByName(String(args.template ?? ""));
+        if (!template) {
+          return { status: "ERROR", result: `No arc template named '${String(args.template)}'. Registry: ${ARC_TEMPLATES.map((t) => `"${t.name}" (${t.segments.map((s) => s.kind).join(" -> ")})`).join(", ")}.` };
+        }
+        const labelArg = String(args.stateLabel ?? "").trim();
+        if (!labelArg) {
+          return { status: "ERROR", result: `Arc templates need a stateLabel: the template's state segments (${template.segments.filter((s) => s.kind === "state").length} of ${template.segments.length} in "${template.name}") force the matched state's variant voice, hints and register.` };
+        }
+        const states = await db.characterState.findMany({
+          where: { characterId: ch.id },
+          orderBy: [{ episodeNumber: "desc" }, { createdAt: "desc" }],
+        });
+        if (states.length === 0) {
+          return { status: "ERROR", result: `${ch.name} has no development states - record one with create_character_state first.` };
+        }
+        const state = states.find((s) => s.label.toLowerCase().includes(labelArg.toLowerCase())) ?? null;
+        if (!state) {
+          return { status: "ERROR", result: `No state of ${ch.name} matches '${labelArg}'. States: ${states.map((s) => `"${s.label}"${s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}`).join(", ")}.` };
+        }
+
+        const range = await resolveArcRange(projectId, args);
+        if (!range.ok) return { status: "ERROR", result: range.error };
+        const { rangeShots, rangeDesc } = range;
+
+        let stamped = 0;
+        const touched: string[] = [];
+        const speakersSeen = new Set<string>();
+        const parsed = rangeShots.map((shot) => {
+          const lines = parseDialogue(shot.dialogue);
+          for (const l of lines) if (l.speaker.trim()) speakersSeen.add(l.speaker.trim());
+          return { shotId: shot.id, lines };
+        });
+        const [nextShots, nStamped, report] = applyArcTemplate(parsed, ch.name, template, state.label);
+        for (let i = 0; i < rangeShots.length; i += 1) {
+          if (!nextShots[i].changed) continue;
+          await db.shot.update({ where: { id: rangeShots[i].id }, data: { dialogue: serializeDialogue(nextShots[i].lines) } });
+          touched.push(rangeShots[i].label);
+        }
+        stamped = nStamped;
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "STATE_CHANGE",
+            summary: `DSH applied arc template "${template.name}" (${state.label}) on ${ch.name} across ${rangeDesc}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}`,
+          },
+        });
+        let result = `Arc template "${template.name}" on ${ch.name} with "${state.label}" across ${rangeDesc}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}. Shape: ${formatTemplateReport(report, state.label)}. `;
+        if (stamped === 0) {
+          const speakerLines = rangeShots.reduce(
+            (acc, s) => acc + parseDialogue(s.dialogue).filter((l) => l.speaker.trim().toLowerCase() === ch.name.trim().toLowerCase()).length, 0,
+          );
+          if (speakerLines === 0) {
+            const seen = [...speakersSeen];
+            result += seen.length
+              ? `No ${ch.name} lines in that range (speakers present: ${seen.join(", ")}) - nothing was written; check the character name or widen the range. No take moved, so no re-render is needed.`
+              : `That range has no dialogue at all - nothing was written. No take moved, so no re-render is needed.`;
+            return { status: "OK", result };
+          }
+          result += `All ${speakerLines} ${ch.name} line(s) in the range already carry the template's shape - nothing to change. No take moved, so no re-render is needed.`;
+          return { status: "OK", result };
+        }
+        result += "The template carries the shape; the state carries the voice: every stamped line now performs with its variant voice, hints and register.";
+        result += await directionImpactFor(range.episode);
         return { status: "OK", result };
       }
 

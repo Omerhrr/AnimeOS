@@ -115,3 +115,81 @@ export function describeArcPosition(startsHere: boolean, endsHere: boolean): str
   if (endsHere) return "ends here";
   return "runs through";
 }
+
+// ─────────────────────────────────────────────────────────────
+// Season layer: the same run logic walked across the WHOLE season
+// (every episode's shots in order). A span that survives an episode
+// boundary (same speaker + state on both sides) becomes ONE season
+// arc, so the arc ruler can draw the beat across episode segments.
+// ─────────────────────────────────────────────────────────────
+
+export interface SeasonArcShotInput extends ArcShotInput {
+  episodeNumber: number;
+}
+
+export interface SeasonArcSpan extends ArcSpan {
+  startEpisode: number;
+  endEpisode: number;
+  crossesEpisode: boolean;
+}
+
+/**
+ * Season-wide spans from episode-ordered shots (episode number, then
+ * scene number, then shot number). Runs merge across episode
+ * boundaries exactly like they merge across scene boundaries: only
+ * the span speaker speaking an auto (or different-state) line ends
+ * the run. `shots` must carry episodeNumber for every shot.
+ */
+export function computeSeasonArcSpans(shots: SeasonArcShotInput[]): SeasonArcSpan[] {
+  const episodeByShotId = new Map<string, number>();
+  for (const s of shots) episodeByShotId.set(s.id, s.episodeNumber);
+  const spans = computeArcSpans(shots);
+  return spans.map((s) => {
+    const startEpisode = episodeByShotId.get(s.startShotId) ?? 0;
+    const endEpisode = episodeByShotId.get(s.endShotId) ?? 0;
+    return {
+      ...s,
+      startEpisode,
+      endEpisode,
+      crossesEpisode: startEpisode !== endEpisode,
+    };
+  });
+}
+
+/** Season range label: "Ep07 Sc12 S1 → Sc13 S2" in-episode, "Ep07 Sc13 S2 → Ep08 Sc12 S1" across episodes. */
+export function formatSeasonArcRange(span: {
+  startEpisode: number; startScene: number; startShot: number;
+  endEpisode: number; endScene: number; endShot: number;
+}): string {
+  if (span.startEpisode === span.endEpisode) {
+    if (span.startScene === span.endScene) {
+      if (span.startShot === span.endShot) return `Ep${span.startEpisode} Sc${span.startScene} shot ${span.startShot}`;
+      return `Ep${span.startEpisode} Sc${span.startScene} shots ${span.startShot}-${span.endShot}`;
+    }
+    return `Ep${span.startEpisode} Sc${span.startScene} S${span.startShot} → Sc${span.endScene} S${span.endShot}`;
+  }
+  return `Ep${span.startEpisode} Sc${span.startScene} S${span.startShot} → Ep${span.endEpisode} Sc${span.endScene} S${span.endShot}`;
+}
+
+/**
+ * Greedy lane packing for ruler bars: each span gets the first lane
+ * whose previous bar ends before this one starts, so overlapping
+ * beats stack without covering each other. Returns one lane index
+ * per input span (input order preserved).
+ */
+export function packSpanLanes<T extends { start: number; end: number }>(spans: T[]): number[] {
+  const order = spans.map((s, i) => ({ i, s })).sort((a, b) => a.s.start - b.s.start || a.s.end - b.s.end);
+  const laneEnds: number[] = [];
+  const lanes = new Array<number>(spans.length);
+  for (const { i, s } of order) {
+    let lane = laneEnds.findIndex((end) => end < s.start);
+    if (lane === -1) {
+      laneEnds.push(s.end);
+      lane = laneEnds.length - 1;
+    } else {
+      laneEnds[lane] = s.end;
+    }
+    lanes[i] = lane;
+  }
+  return lanes;
+}

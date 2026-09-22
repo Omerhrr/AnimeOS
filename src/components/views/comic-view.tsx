@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, BookOpenCheck, CheckSquare, FileDown, Layers, MoveRight, Music, SlidersHorizontal, Sparkles, Loader2, MessageSquarePlus, Scissors, TriangleAlert, Users, X, Zap } from "lucide-react";
+import { BookOpen, BookOpenCheck, CheckSquare, FileDown, Layers, MoveRight, Music, Route, SlidersHorizontal, Sparkles, Loader2, MessageSquarePlus, Scissors, TriangleAlert, Users, X, Zap } from "lucide-react";
 import type { StudioProject, SceneWithShots, ShotRow } from "@/lib/api-client";
 import { api } from "@/lib/api-client";
 import {
@@ -17,6 +17,8 @@ import {
 import { exportWebtoonSlices } from "@/lib/comic/export-slices";
 import { PanelArt } from "@/components/views/comic-panel-art";
 import { SpeechBubbles, DialogueEditor } from "@/components/views/comic-bubbles";
+import { ArcRuler } from "@/components/views/arc-ruler";
+import { ArcTemplateDialog } from "@/components/views/arc-template-dialog";
 import { StyleDirectionDialog } from "@/components/views/style-direction-dialog";
 import { LoraStudioDialog } from "@/components/views/lora-studio-dialog";
 import { ArtistsDialog } from "@/components/views/artists-dialog";
@@ -354,6 +356,7 @@ export function ComicView({ project }: { project: StudioProject }) {
     unrendered: number;
   } | null>(null);
   const [artistFilter, setArtistFilter] = useState<"ALL" | "NONE" | string>("ALL");
+  const [rulerOpen, setRulerOpen] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkArtist, setBulkArtist] = useState<string>("");
@@ -651,6 +654,22 @@ export function ComicView({ project }: { project: StudioProject }) {
         </div>
         <p className="text-[11px] text-muted-foreground xl:ml-2">{cfg.blurb}</p>
         <div className="xl:ml-auto flex items-center gap-2 flex-wrap">
+          <Button
+            size="sm" variant={rulerOpen ? "default" : "outline"}
+            className={cn("h-7 text-[11px] print:hidden", rulerOpen ? "bg-violet-500/90 hover:bg-violet-500" : "border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20")}
+            onClick={() => setRulerOpen((o) => !o)}
+            title="Season-wide arc ruler: every state arc drawn across the season's episodes"
+          >
+            <Route className="h-3 w-3 mr-1" /> Arc ruler
+          </Button>
+          <ArcTemplateDialog
+            projectId={project.id}
+            characters={project.characters.map((c) => ({
+              name: c.name,
+              states: c.states.map((s) => ({ label: s.label, episodeNumber: s.episodeNumber, variantVoice: s.voiceVariant ?? null })),
+            }))}
+            episode={episode}
+          />
           <StyleDirectionDialog project={project} />
           <LoraStudioDialog project={project} />
           <ArtistsDialog project={project} />
@@ -686,6 +705,18 @@ export function ComicView({ project }: { project: StudioProject }) {
           </Button>
         </div>
       </div>
+
+      {/* season-wide arc ruler: spans drawn across the season's episodes */}
+      {rulerOpen && (
+        <ArcRuler
+          episodes={episodes}
+          activeEpisodeNumber={episode?.number ?? null}
+          onPickEpisode={(epNumber) => {
+            const idx = episodes.findIndex((e) => e.number === epNumber);
+            if (idx >= 0) setEpisodeIdx(idx);
+          }}
+        />
+      )}
 
       {/* export pre-flight: stems flagged stale or blocked before anything downloads */}
       {preflight && (
