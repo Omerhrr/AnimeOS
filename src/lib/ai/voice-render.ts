@@ -69,6 +69,7 @@ export interface RenderTakeResult {
     variant: { voiceId: string; stateLabel: string } | null; // state voice variant that overrode the cast voice, if any
   };
   hints: { stateLabel: string; speed: number | null; pitch: number | null } | null; // state performance hints active on this take
+  stateOverride: string | null; // per-line state override the dialogue line forces (null = auto)
   pitch: number; // effective pitch factor the take was bent by (1 = natural)
   direction: {
     note: string | null;
@@ -130,6 +131,11 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
   const maxSlot = Math.max(50, timelineMs - cue.startMs);
   const durationMs = actualMs && actualMs > cue.durationMs ? Math.min(maxSlot, actualMs) : cue.durationMs;
 
+  const stateLabel = plan.stateOverride
+    ? [plan.variant ? `${plan.variant.stateLabel} (voice variant)` : plan.delivery.stateLabel, "line override"]
+        .filter(Boolean).join(" - ")
+    : plan.variant ? `${plan.variant.stateLabel} (voice variant)` : plan.delivery.stateLabel;
+
   const updated = await db.audioCue.update({
     where: { id: cueId },
     data: {
@@ -139,7 +145,7 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
       voiceSpeed: plan.baseSpeed, // base only; effective speed = base x delivery multiplier
       voiceDurationMs: actualMs,
       voiceState: plan.delivery.id,
-      voiceStateLabel: plan.variant ? `${plan.variant.stateLabel} (voice variant)` : plan.delivery.stateLabel,
+      voiceStateLabel: stateLabel,
       voiceSig: JSON.stringify(plan.sig), // snapshot for the direction diff
       durationMs,
     },
@@ -165,6 +171,7 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
     hints: plan.hints
       ? { stateLabel: plan.hints.stateLabel, speed: plan.hints.speed, pitch: plan.hints.pitch }
       : null,
+    stateOverride: plan.stateOverride,
     pitch: plan.pitch,
     direction: {
       note: cue.voiceNote,

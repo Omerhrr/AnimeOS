@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send, Loader2, Brain, ListChecks, Wrench, CircleCheck, CircleX, User,
-  Sparkles, ChevronDown, ChevronUp,
+  Sparkles, ChevronDown, ChevronUp, Volume2,
 } from "lucide-react";
 import { api, parseTrace, type DshMessageRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -71,6 +71,24 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
                     </pre>
                   )}
                   <div className="text-[11px] text-foreground/70 whitespace-pre-wrap leading-relaxed">{a.result}</div>
+                  {/* same-turn audition proposal: a variant bind renders a preview of the new performance */}
+                  {a.audition && (
+                    <div className="rounded-md border border-emerald-400/25 bg-emerald-400/[0.06] p-2 space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-300">
+                        <Volume2 className="h-3 w-3" />
+                        Audition - {a.audition.characterName} &quot;{a.audition.stateLabel}&quot;
+                      </div>
+                      <audio controls preload="none" src={a.audition.url} className="w-full h-8" />
+                      <div className="text-[10px] leading-relaxed text-muted-foreground">
+                        <span className="italic">&quot;{a.audition.text}&quot;</span>
+                        {" "}· {a.audition.voiceId}
+                        {a.audition.speed !== 1 && ` · x${a.audition.speed} pace`}
+                        {a.audition.pitch !== 1 && ` · pitch x${a.audition.pitch}`}
+                        {a.audition.durationMs ? ` · ${(a.audition.durationMs / 1000).toFixed(1)}s` : ""}
+                        {` · ${a.audition.source}`}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

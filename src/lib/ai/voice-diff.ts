@@ -48,6 +48,7 @@ export interface DiffCueRow {
     deliveryLabel: string;
     source: string;
     stateLabel: string | null;
+    stateOverride: string | null; // per-line state override the dialogue line forces (null = auto)
     voiceId: string;
     castArtistName: string | null;
     variant: { voiceId: string; stateLabel: string } | null;
@@ -142,6 +143,7 @@ export async function diffEpisode(ep: EpisodeWithCues): Promise<EpisodeDiff> {
               deliveryLabel: deliveryProfile(plan.delivery.id).label,
               source: plan.delivery.source,
               stateLabel: plan.delivery.stateLabel,
+              stateOverride: plan.stateOverride,
               voiceId: plan.voiceId,
               castArtistName: plan.cast.artistName,
               variant: plan.variant ? { voiceId: plan.variant.voiceId, stateLabel: plan.variant.stateLabel } : null,

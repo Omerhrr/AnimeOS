@@ -79,3 +79,5 @@ tool-results/
 # Generated voice renders (regenerable)
 public/voices/*.wav
 !public/voices/.gitkeep
+public/auditions/*.wav
+!public/auditions/.gitkeep

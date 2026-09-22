@@ -91,16 +91,40 @@ function candidateStates(states: StateCandidate[], episodeNumber: number | null)
 }
 
 /**
+ * Best state matching a per-line override (exact > prefix > contains,
+ * case-insensitive). A deliberate line-level override ignores episode
+ * eligibility: the director wants THIS beat even if the state's
+ * episode timing does not line up. null when nothing matches.
+ */
+function matchStateOverride(states: StateCandidate[], override: string): StateCandidate | null {
+  const want = override.trim().toLowerCase();
+  if (!want) return null;
+  let best: { state: StateCandidate; score: number } | null = null;
+  for (const state of states) {
+    const label = state.label.trim().toLowerCase();
+    const score = label === want ? 3 : label.startsWith(want) ? 2 : label.includes(want) ? 1 : 0;
+    if (score > 0 && (!best || score > best.score)) best = { state, score };
+  }
+  return best ? best.state : null;
+}
+
+/**
  * One pass over the speaker's states: the first classifiable state
  * sets the delivery, the first state carrying a voiceVariant sets the
  * variant voice. Both are independent: a state can swap the voice
  * without pinning a register, and a register can come from a state
  * that has no variant.
+ *
+ * `stateOverride` forces ONE of the speaker's states to perform the
+ * line (per-line direction from the dialogue editor): variant voice,
+ * hints and the state-classified delivery all come from it. When no
+ * state matches the override the resolution falls back to auto.
  */
 export async function resolveStatePerformance(
   speaker: string,
   episodeNumber: number | null,
   projectId: string,
+  stateOverride?: string | null,
 ): Promise<ResolvedPerformance> {
   const fallback: ResolvedPerformance = {
     delivery: { id: "NEUTRAL", source: "auto", stateLabel: null },
@@ -116,7 +140,9 @@ export async function resolveStatePerformance(
     const character = characters.find((c) => c.name.trim().toLowerCase() === speaker.toLowerCase());
     if (!character) return fallback;
 
-    const candidates = candidateStates(character.states, episodeNumber);
+    const allStates = character.states as StateCandidate[];
+    const forced = stateOverride ? matchStateOverride(allStates, stateOverride) : null;
+    const candidates = forced ? [forced] : candidateStates(allStates, episodeNumber);
 
     let delivery: ResolvedDelivery | null = null;
     for (const state of candidates) {

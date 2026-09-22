@@ -451,6 +451,19 @@ export function ComicView({ project }: { project: StudioProject }) {
     return [...names];
   }, [project.characters, allShots]);
 
+  // speaker name (lowercase) -> development states, for the dialogue editor's per-line state overrides
+  const speakerStates = useMemo(() => {
+    const map: Record<string, Array<{ label: string; episodeNumber: number | null; variantVoice: string | null }>> = {};
+    for (const c of project.characters) {
+      map[c.name.trim().toLowerCase()] = c.states.map((s) => ({
+        label: s.label,
+        episodeNumber: s.episodeNumber,
+        variantVoice: s.voiceVariant ?? null,
+      }));
+    }
+    return map;
+  }, [project.characters]);
+
   if (!episode) {
     return (
       <div>
@@ -733,6 +746,7 @@ export function ComicView({ project }: { project: StudioProject }) {
         <DialogueEditor
           shot={editingShot}
           characterNames={characterNames}
+          speakerStates={speakerStates}
           open
           onClose={() => setEditingShot(null)}
           onSaved={invalidate}

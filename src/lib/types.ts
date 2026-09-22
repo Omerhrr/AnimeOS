@@ -1,10 +1,26 @@
 // Shared types for the AI-Native Animation Production Platform
 
+/** An audition preview attached to a DSH tool result (rendered, playable). */
+export interface AuditionPreview {
+  url: string; // static WAV under /auditions/, cache-busted
+  mimeType: string;
+  durationMs: number | null;
+  text: string; // the line that was read
+  source: "character line" | "sample";
+  voiceId: string; // the voice that performed (variant or cast)
+  deliveryId: string;
+  speed: number; // effective pace incl. state hint
+  pitch: number; // effective pitch factor (1 = natural)
+  stateLabel: string; // the state whose performance was auditioned
+  characterName: string;
+}
+
 export interface TraceAction {
   tool: string;
   args: Record<string, unknown>;
   result: string;
   status: "OK" | "ERROR";
+  audition?: AuditionPreview | null; // attached when the call renders an audition preview
 }
 
 export interface TraceStep {

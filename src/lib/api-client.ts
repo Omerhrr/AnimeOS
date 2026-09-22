@@ -177,10 +177,14 @@ export interface VoiceDiffRow {
     deliveryLabel: string;
     source: string;
     stateLabel: string | null;
+    stateOverride: string | null; // per-line state override the dialogue line forces (null = auto)
     voiceId: string;
     castArtistName: string | null;
+    variant: { voiceId: string; stateLabel: string } | null;
+    hints: { stateLabel: string; speed: number | null; pitch: number | null } | null;
     baseSpeed: number;
     effectiveSpeed: number;
+    pitch: number;
   } | null;
   taken: { voiceId: string; deliveryId: string; baseSpeed: number } | null;
   takeInfo: {

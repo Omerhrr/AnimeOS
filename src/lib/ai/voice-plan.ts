@@ -1,7 +1,7 @@
 import {
   deliveryProfile, isDeliveryId, shapeLineForDelivery,
 } from "@/lib/comic/delivery";
-import { dialogueDeliveryForCue } from "@/lib/comic/dialogue";
+import { dialogueDeliveryForCue, dialogueStateForCue } from "@/lib/comic/dialogue";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
 import {
   resolveStatePerformance, resolveVoiceCast,
@@ -109,6 +109,7 @@ export interface TakePlan {
   cast: ResolvedCast;
   variant: ResolvedVariant | null; // state voice variant overriding the cast voice for this line
   hints: ResolvedHints | null; // state speed/pitch hints bending the performance
+  stateOverride: string | null; // per-line state override the line forces (null = auto state resolution)
   voiceId: string; // effective voice: variant when active, else the cast voice
   delivery: ResolvedDelivery & { source: DeliverySource };
   baseSpeed: number;
@@ -145,8 +146,11 @@ export async function resolveTakePlan(
   const cast = await resolveVoiceCast(speaker, projectId, overrides.voice);
 
   // state performance: delivery + voice variant from the speaker's
-  // episode-resolved states (one lookup for both)
-  const performance = await resolveStatePerformance(speaker, episodeNumber, projectId);
+  // episode-resolved states (one lookup for both). A per-line state
+  // override (dialogue editor / set_shot_dialogue) forces ONE of the
+  // speaker's states to perform this line
+  const stateOverride = dialogueStateForCue(cue.shot?.dialogue ?? null, cue.label);
+  const performance = await resolveStatePerformance(speaker, episodeNumber, projectId, stateOverride);
   // an explicit request override performs with the requested voice; a
   // state variant otherwise outranks the cast voice while it is effective
   const variant = isVoiceId(overrides.voice) ? null : performance.variant;
@@ -186,6 +190,7 @@ export async function resolveTakePlan(
     cast,
     variant,
     hints: performance.hints,
+    stateOverride,
     voiceId,
     delivery,
     baseSpeed,

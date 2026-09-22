@@ -101,12 +101,15 @@ export function SpeechBubbles({ lines, rtl, ink }: { lines: DialogueLine[]; rtl:
 export function DialogueEditor({
   shot,
   characterNames,
+  speakerStates = {},
   open,
   onClose,
   onSaved,
 }: {
   shot: { id: string; number: number; dialogue?: string | null; artworkUrl?: string | null };
   characterNames: string[];
+  /** speaker name (lowercase) -> their development states, for per-line state overrides */
+  speakerStates?: Record<string, Array<{ label: string; episodeNumber: number | null; variantVoice: string | null }>>;
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -124,6 +127,16 @@ export function DialogueEditor({
 
   const update = (i: number, patch: Partial<DialogueLine>) =>
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  /** State options for a line's speaker; keeps a stored override selectable even after a speaker edit. */
+  const stateOptionsFor = (line: DialogueLine) => {
+    const opts = speakerStates[line.speaker.trim().toLowerCase()] ?? [];
+    const override = line.state?.trim().toLowerCase();
+    if (override && !opts.some((o) => o.label.toLowerCase() === override)) {
+      return [...opts, { label: line.state as string, episodeNumber: null, variantVoice: null }];
+    }
+    return opts;
+  };
 
   const save = async () => {
     setSaving(true);
@@ -161,7 +174,7 @@ export function DialogueEditor({
             Dialogue - Shot {String(shot.number).padStart(3, "0")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Bubbles render on every comic format. Order = reading order; 8 lines max. Per-line delivery directs voice takes line by line inside the shot (auto = state-aware).
+            Bubbles render on every comic format. Order = reading order; 8 lines max. Per-line delivery directs voice takes line by line inside the shot (auto = state-aware), and a per-line State forces one of the speaker&apos;s development states (its variant voice + speed/pitch hints) to perform just that line.
           </DialogDescription>
         </DialogHeader>
 
@@ -172,7 +185,7 @@ export function DialogueEditor({
                 <Input
                   list="comic-speakers"
                   value={line.speaker}
-                  onChange={(e) => update(i, { speaker: e.target.value })}
+                  onChange={(e) => update(i, { speaker: e.target.value, state: null })}
                   placeholder="Speaker (optional)"
                   className="h-8 bg-white/5 border-white/10 text-xs"
                 />
@@ -216,6 +229,26 @@ export function DialogueEditor({
                     <SelectItem value="AUTO" className="text-[11px]">Auto · state-aware</SelectItem>
                     {DELIVERIES.map((d) => (
                       <SelectItem key={d.id} value={d.id} className="text-[11px]">{d.label} · {d.blurb}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* line-level state override: force one of the speaker's development states onto this line */}
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground shrink-0">State</span>
+                <Select
+                  value={line.state ?? "AUTO"}
+                  onValueChange={(v) => update(i, { state: v === "AUTO" ? null : v })}
+                >
+                  <SelectTrigger className="h-7 flex-1 bg-white/5 border-white/10 text-[11px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="studio-root bg-[#12121a] border-white/10">
+                    <SelectItem value="AUTO" className="text-[11px]">Auto · episode-resolved</SelectItem>
+                    {stateOptionsFor(line).map((o) => (
+                      <SelectItem key={o.label} value={o.label} className="text-[11px]">
+                        {o.label}{o.episodeNumber != null ? ` · Ep${o.episodeNumber}` : ""}{o.variantVoice ? ` · ${o.variantVoice}` : ""}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -273,6 +306,7 @@ function parseSafe(raw: string | null | undefined): DialogueLine[] {
       text: typeof l?.text === "string" ? l.text : "",
       kind: (["SPEECH", "THOUGHT", "SFX"].includes(l?.kind) ? l.kind : "SPEECH") as BubbleKind,
       delivery: DELIVERIES.some((d) => d.id === l?.delivery) ? (l.delivery as DeliveryId) : null,
+      state: typeof l?.state === "string" && l.state.trim() ? l.state.trim().slice(0, 80) : null,
     }));
   } catch {
     return [];

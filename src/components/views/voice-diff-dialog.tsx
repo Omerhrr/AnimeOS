@@ -223,6 +223,7 @@ export function VoiceDiffDialog({
                           now: {row.current.deliveryLabel.toLowerCase()}
                           <span className="font-mono">
                             {row.current.source === "line" ? " (line delivery)" : row.current.source === "direction" ? " (standing)" : row.current.source === "auto" ? " (state)" : " (manual)"}
+                            {row.current.stateOverride ? " (line override)" : ""}
                             {row.current.stateLabel ? ` · ${row.current.stateLabel}` : ""}
                             {" "}· x{row.current.effectiveSpeed.toFixed(2)} · {row.current.voiceId}
                           </span>

@@ -77,6 +77,9 @@ export async function runDshTurn(projectId: string, userMessage: string): Promis
         args: action.args ?? {},
         result: outcome.result,
         status: outcome.status,
+        // a variant bind renders an audition preview of the new
+        // performance; keep it on the trace so the console can play it
+        ...(outcome.audition ? { audition: outcome.audition } : {}),
       });
       await db.productionEvent.create({
         data: {

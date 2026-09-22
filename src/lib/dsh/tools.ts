@@ -3,12 +3,14 @@ import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { createRenderJob } from "@/lib/engine/render";
 import { serializeDialogue, type DialogueLine } from "@/lib/comic/dialogue";
 import { generateShotPanelArt, generateCharacterModelSheet } from "@/lib/ai/art";
-import { isDeliveryId } from "@/lib/comic/delivery";
+import { classifyStateDelivery, isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId, defaultVoiceFor } from "@/lib/comic/voice-catalog";
-import { resolveAutoDelivery } from "@/lib/ai/voice-casting";
+import { resolveAutoDelivery, resolveVoiceCast } from "@/lib/ai/voice-casting";
+import { renderVariantAudition } from "@/lib/ai/audition";
 import {
   diffEpisodeById, diffProjectEpisodes, reRenderStaleTakes, reRenderStaleAcrossProject,
 } from "@/lib/ai/voice-diff";
+import type { AuditionPreview } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
 // DSH PRODUCTION TOOL API (§6/§7)
@@ -154,11 +156,11 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_shot_dialogue",
-    description: "Author speech-bubble dialogue for a shot (replaces existing lines). Kinds: SPEECH (tailed bubble), THOUGHT (cloudy), SFX (stylized sound text). Speaker names should match cast characters. Max 8 lines, each ≤300 chars.",
+    description: "Author speech-bubble dialogue for a shot (replaces existing lines). Kinds: SPEECH (tailed bubble), THOUGHT (cloudy), SFX (stylized sound text). Speaker names should match cast characters. Max 8 lines, each ≤300 chars. Per-line direction: a line may carry delivery (NEUTRAL | EXCITED | INJURED) to pin its register and/or state (a state-label fragment of the speaker's, e.g. \"Possessed\") to force one of their development states to perform that line - its variant voice, speed/pitch hints and state-classified delivery apply to that line only.",
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
-      lines: "JSON array string, e.g. [{\"speaker\":\"Lin Yue\",\"text\":\"The sword chose me.\",\"kind\":\"SPEECH\"}] - empty array clears dialogue",
+      lines: "JSON array string, e.g. [{\"speaker\":\"Lin Yue\",\"text\":\"The sword chose me.\",\"kind\":\"SPEECH\",\"delivery\":\"EXCITED\"}] - optional per-line delivery and state; empty array clears dialogue",
     },
   },
   {
@@ -262,7 +264,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_state_voice_variant",
-    description: "State voice performance: bind a DIFFERENT TTS voice to one of a character's development states and/or set its speed/pitch hints, so lines spoken while that state is episode-effective perform with the variant voice and bent pace/pitch instead of the cast artist's flat read (possession, transformation, clone, corrupted, child form, exhausted...). Casting beyond delivery registers: the state changes WHO the character sounds like and HOW the variant performs; the delivery register only changes the read's punctuation shape. Takes rendered before the change are flagged stale by the direction diff; pass voice as empty string to clear the variant, speedHint/pitchHint as null to clear a hint.",
+    description: "State voice performance: bind a DIFFERENT TTS voice to one of a character's development states and/or set its speed/pitch hints, so lines spoken while that state is episode-effective perform with the variant voice and bent pace/pitch instead of the cast artist's flat read (possession, transformation, clone, corrupted, child form, exhausted...). Casting beyond delivery registers: the state changes WHO the character sounds like and HOW the variant performs; the delivery register only changes the read's punctuation shape. The result carries an AUDITION of the new performance (rendered on the character's own first line and playable from the trace), so point the creator to it in your reply the same turn. Takes rendered before the change are flagged stale by the direction diff; pass voice as empty string to clear the variant, speedHint/pitchHint as null to clear a hint.",
     args: {
       characterName: "string",
       stateLabel: "string - matches a state by name (contains, case-insensitive); defaults to the character's latest episode-resolved state",
@@ -273,7 +275,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
-type ActionResult = { status: "OK" | "ERROR"; result: string };
+type ActionResult = { status: "OK" | "ERROR"; result: string; audition?: AuditionPreview };
 
 async function findProject(projectId: string) {
   const p = await db.project.findUnique({ where: { id: projectId } });
@@ -606,6 +608,9 @@ export async function executeTool(projectId: string, name: string, args: Record<
           speaker: typeof l.speaker === "string" ? l.speaker : "",
           text: typeof l.text === "string" ? l.text : "",
           kind: (l.kind === "THOUGHT" || l.kind === "SFX") ? l.kind : "SPEECH",
+          // per-line direction: delivery register and/or a forced state
+          ...(isDeliveryId(l.delivery) ? { delivery: l.delivery } : {}),
+          ...(typeof l.state === "string" && l.state.trim() ? { state: l.state.trim().slice(0, 80) } : {}),
         }));
         const counts = lines.reduce<Record<string, number>>((acc, l) => ({ ...acc, [l.kind]: (acc[l.kind] ?? 0) + 1 }), {});
         await db.shot.update({
@@ -1152,9 +1157,33 @@ export async function executeTool(projectId: string, name: string, args: Record<
             summary: `DSH set state voice performance on ${ch.name} "${state.label}": ${changes.join(", ")}`,
           },
         });
+        // same-turn audition proposal: hear the NEW performance before
+        // committing to a re-render (bind stays successful on failure)
+        const effVoice = data.voiceVariant !== undefined ? (data.voiceVariant as string | null) : state.voiceVariant;
+        const effSpeed = data.speedHint !== undefined ? (data.speedHint as number | null) : state.speedHint;
+        const effPitch = data.pitchHint !== undefined ? (data.pitchHint as number | null) : state.pitchHint;
+        const auditionVoiceId = effVoice && isVoiceId(effVoice) ? effVoice : (await resolveVoiceCast(ch.name, projectId)).voiceId;
+        const audition = await renderVariantAudition({
+          projectId,
+          characterName: ch.name,
+          stateId: state.id,
+          stateLabel: state.label,
+          voiceId: auditionVoiceId,
+          deliveryId: classifyStateDelivery(state.label) ?? "NEUTRAL",
+          speedHint: effSpeed,
+          pitchHint: effPitch,
+        });
+        let result = `State voice performance set on ${ch.name} "${state.label}"${state.episodeNumber ? ` (Ep${state.episodeNumber})` : ""}: ${changes.join(", ")}. While that state is episode-effective, lines perform with ${data.voiceVariant ? `'${String(data.voiceVariant)}' instead of ${castLine}` : castLine}${data.speedHint != null ? ` at x${String(data.speedHint)} pace` : ""}${data.pitchHint != null ? ` and pitch x${String(data.pitchHint)}` : ""}. `;
+        if (audition) {
+          result += `Audition attached to this call: "${audition.text}" performed by ${audition.voiceId}${audition.speed !== 1 ? ` at x${audition.speed} pace` : ""}${audition.pitch !== 1 ? ` with pitch x${audition.pitch}` : ""} - tell the creator to play the preview in this trace to hear the new performance before re-rendering. `;
+        } else {
+          result += "Audition preview failed to render (the binding is saved) - audition the state from the casting board instead. ";
+        }
+        result += "Existing takes for those episodes are now stale: run diff_episode_direction (or diff_all_episodes) with reRender:true to re-render them with the new performance.";
         return {
           status: "OK",
-          result: `State voice performance set on ${ch.name} "${state.label}"${state.episodeNumber ? ` (Ep${state.episodeNumber})` : ""}: ${changes.join(", ")}. While that state is episode-effective, lines perform with ${data.voiceVariant ? `'${String(data.voiceVariant)}' instead of ${castLine}` : castLine}${data.speedHint != null ? ` at x${String(data.speedHint)} pace` : ""}${data.pitchHint != null ? ` and pitch x${String(data.pitchHint)}` : ""}. Existing takes for those episodes are now stale: run diff_episode_direction (or diff_all_episodes) with reRender:true to re-render them with the new performance.`,
+          result,
+          ...(audition ? { audition } : {}),
         };
       }
 
