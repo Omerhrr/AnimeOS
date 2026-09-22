@@ -3,7 +3,7 @@
 // Speech bubbles and the dialogue editor for Comic Mode panels.
 
 import { useEffect, useState } from "react";
-import { MessageSquarePlus, Plus, Trash2, Loader2 } from "lucide-react";
+import { ArrowDownToLine, MessageSquarePlus, Plus, Trash2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import {
   BUBBLE_KINDS, bubbleSpots, serializeDialogue,
@@ -105,6 +105,7 @@ export function DialogueEditor({
   open,
   onClose,
   onSaved,
+  onExtendArc,
 }: {
   shot: { id: string; number: number; dialogue?: string | null; artworkUrl?: string | null };
   characterNames: string[];
@@ -113,9 +114,12 @@ export function DialogueEditor({
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  /** state arc: stamp this line's state onto the speaker's following lines across the scene (omit to hide the control) */
+  onExtendArc?: (lineIndex: number, state: string | null) => Promise<void>;
 }) {
   const [lines, setLines] = useState<DialogueLine[]>([]);
   const [saving, setSaving] = useState(false);
+  const [arcBusy, setArcBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -153,6 +157,22 @@ export function DialogueEditor({
     }
   };
 
+  /** State arc: extend this line's picked state (or Auto = clear) to the speaker's last line in the scene. */
+  const extendArc = async (i: number) => {
+    if (!onExtendArc) return;
+    setArcBusy(i);
+    setError(null);
+    try {
+      await onExtendArc(i, lines[i].state ?? null);
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to extend the state arc");
+    } finally {
+      setArcBusy(null);
+    }
+  };
+
   const removeArt = async () => {
     setSaving(true);
     try {
@@ -174,7 +194,7 @@ export function DialogueEditor({
             Dialogue - Shot {String(shot.number).padStart(3, "0")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Bubbles render on every comic format. Order = reading order; 8 lines max. Per-line delivery directs voice takes line by line inside the shot (auto = state-aware), and a per-line State forces one of the speaker&apos;s development states (its variant voice + speed/pitch hints) to perform just that line.
+            Bubbles render on every comic format. Order = reading order; 8 lines max. Per-line delivery directs voice takes line by line inside the shot (auto = state-aware), and a per-line State forces one of the speaker&apos;s development states (its variant voice + speed/pitch hints) to perform just that line. The arrow button turns a state into an arc: it stamps the picked state onto the speaker&apos;s every following line across the scene.
           </DialogDescription>
         </DialogHeader>
 
@@ -233,7 +253,8 @@ export function DialogueEditor({
                   </SelectContent>
                 </Select>
               </div>
-              {/* line-level state override: force one of the speaker's development states onto this line */}
+              {/* line-level state override: force one of the speaker's development states onto this line,
+                  or extend it as an arc across the scene */}
               <div className="flex items-center gap-2">
                 <span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground shrink-0">State</span>
                 <Select
@@ -252,6 +273,18 @@ export function DialogueEditor({
                     ))}
                   </SelectContent>
                 </Select>
+                {onExtendArc && (
+                  <button
+                    onClick={() => void extendArc(i)}
+                    disabled={arcBusy !== null}
+                    title={`State arc: apply ${line.state ? `"${line.state}"` : "Auto (clear)"} to this line and every following line of ${line.speaker.trim() || "this speaker"} in this scene`}
+                    className="h-7 w-7 flex items-center justify-center rounded-md border border-violet-400/25 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20 transition-colors shrink-0"
+                  >
+                    {arcBusy === i
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <ArrowDownToLine className="h-3 w-3" />}
+                  </button>
+                )}
               </div>
             </div>
           ))}

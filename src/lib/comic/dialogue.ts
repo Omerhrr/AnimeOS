@@ -69,6 +69,32 @@ export function serializeDialogue(lines: DialogueLine[]): string {
 }
 
 /**
+ * State arc: stamp a state override onto ONE speaker's lines from
+ * fromIndex onward (a beat that lasts, e.g. possessed from the moment
+ * she draws the blade until the scene ends). A line is stamped only
+ * when it actually changes, so re-running the same arc is a no-op and
+ * the returned count reflects real edits. state null clears overrides.
+ * Returns [newLines, stampedCount]; the caller persists newLines.
+ */
+export function stampStateArc(
+  lines: DialogueLine[],
+  speaker: string,
+  fromIndex: number,
+  state: string | null,
+): [DialogueLine[], number] {
+  const want = speaker.trim().toLowerCase();
+  let stamped = 0;
+  const next = lines.map((l, i) => {
+    if (i < fromIndex) return l;
+    if (!l.speaker || l.speaker.trim().toLowerCase() !== want) return l;
+    if ((l.state ?? null) === (state ?? null)) return l;
+    stamped += 1;
+    return { ...l, state };
+  });
+  return [next, stamped];
+}
+
+/**
  * Match a VOICE cue's "Speaker: text" label back to its dialogue line.
  * Returns the line's per-line fields (delivery register and state
  * override), or nulls when the line is state-aware (or unmatched).

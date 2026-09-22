@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { createRenderJob } from "@/lib/engine/render";
-import { serializeDialogue, type DialogueLine } from "@/lib/comic/dialogue";
+import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
 import { generateShotPanelArt, generateCharacterModelSheet } from "@/lib/ai/art";
 import { classifyStateDelivery, isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId, defaultVoiceFor } from "@/lib/comic/voice-catalog";
@@ -271,6 +271,17 @@ export const TOOL_DEFS: ToolDef[] = [
       voice: "string - TTS voice id: tongtong | chuichui | xiaochen | jam | kazi | douji | luodo (empty string clears the variant; omit to leave unchanged)",
       speedHint: "number 0.5-2.0 - multiplier on the base speed while this state is effective (e.g. 0.85 = slower, drained; null clears; omit to leave unchanged)",
       pitchHint: "number 0.5-2.0 - playback pitch factor while this state is effective (0.8 = deeper/possessed, 1.2 = higher; null clears; omit to leave unchanged)",
+    },
+  },
+  {
+    name: "set_state_arc",
+    description: "State arc: force one of a character's development states across a RANGE of shots (a fight beat, a possession sequence, a corruption spread) instead of line by line. Stamps the state override on every line the character speaks from shot shotFrom through shotTo (inclusive) within one scene; each stamped line then performs with that state's variant voice, speed/pitch hints and state-classified delivery, exactly like a per-line override but for the whole beat. Deliberately ignores episode timing: a forced beat is a directorial decision. Empty stateLabel clears the arc on the range. Takes rendered before the change are flagged stale by the direction diff; run it after stamping.",
+    args: {
+      characterName: "string",
+      stateLabel: "string - matches a state by name (contains, case-insensitive); empty string clears the arc on the range",
+      sceneNumber: "number (defaults to the latest scene with shots)",
+      shotFrom: "number - first shot number of the arc (defaults to the scene's first shot)",
+      shotTo: "number - last shot number of the arc, inclusive (defaults to the scene's last shot)",
     },
   },
 ];
@@ -1055,6 +1066,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           }
         } else if (diff.stale > 0) {
           result += " Pass reRender:true to re-render just these stale takes.";
+          result += ` Export pre-flight: with ${diff.stale} stale take(s) the webtoon slice export will stop at its gate and name each one before downloading - propose this re-render to the creator in the same turn so they export fresh stems.`;
         }
         return { status: "OK", result };
       }
@@ -1087,6 +1099,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           }
         } else if (totals.stale > 0) {
           result += ` ${totals.stale} stale take(s) across the season; pass reRender:true (limit caps each batch, default 16) to re-render the affected takes only.`;
+          result += " Export pre-flight: episodes with stale takes will stop the webtoon slice export at its gate until they are re-rendered - propose the batch re-render to the creator in the same turn.";
         }
         return { status: "OK", result };
       }
@@ -1189,6 +1202,85 @@ export async function executeTool(projectId: string, name: string, args: Record<
           result,
           ...(audition ? { audition } : {}),
         };
+      }
+
+      case "set_state_arc": {
+        const ch = await characterByName(projectId, String(args.characterName ?? ""));
+        if (!ch) {
+          const known = await db.character.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `Character '${String(args.characterName)}' not found. Cast: ${known.map((c) => c.name).join(", ") || "none"}.` };
+        }
+        const labelArg = String(args.stateLabel ?? "").trim();
+        let stateLabel: string | null = null;
+        if (labelArg) {
+          const states = await db.characterState.findMany({
+            where: { characterId: ch.id },
+            orderBy: [{ episodeNumber: "desc" }, { createdAt: "desc" }],
+          });
+          if (states.length === 0) {
+            return { status: "ERROR", result: `${ch.name} has no development states - record one with create_character_state first.` };
+          }
+          const state = states.find((s) => s.label.toLowerCase().includes(labelArg.toLowerCase())) ?? null;
+          if (!state) {
+            return { status: "ERROR", result: `No state of ${ch.name} matches '${labelArg}'. States: ${states.map((s) => `"${s.label}"${s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}`).join(", ")}. Pass an empty stateLabel to clear an arc.` };
+          }
+          stateLabel = state.label; // stamp the FULL label so the override stays exact
+        }
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) {
+          return { status: "ERROR", result: "No scene with shots exists yet - break down a scene first." };
+        }
+        const shots = await db.shot.findMany({ where: { sceneId: scene.id }, orderBy: { number: "asc" }, select: { id: true, number: true, dialogue: true } });
+        if (shots.length === 0) {
+          return { status: "ERROR", result: `Scene ${scene.number} has no shots.` };
+        }
+        const nums = shots.map((s) => s.number);
+        const from = args.shotFrom !== undefined && args.shotFrom !== null ? Number(args.shotFrom) : nums[0];
+        const to = args.shotTo !== undefined && args.shotTo !== null ? Number(args.shotTo) : nums[nums.length - 1];
+        if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) {
+          return { status: "ERROR", result: `Invalid shot range ${String(args.shotFrom)}-${String(args.shotTo)} (shotFrom must be <= shotTo). Scene ${scene.number} shots: ${nums.join(", ")}.` };
+        }
+        const range = shots.filter((s) => s.number >= from && s.number <= to);
+        if (range.length === 0) {
+          return { status: "ERROR", result: `No shots ${from}-${to} in scene ${scene.number}. Shots: ${nums.join(", ")}.` };
+        }
+        let stamped = 0;
+        const touched: number[] = [];
+        const speakersSeen = new Set<string>();
+        for (const shot of range) {
+          const lines = parseDialogue(shot.dialogue);
+          for (const l of lines) if (l.speaker.trim()) speakersSeen.add(l.speaker.trim());
+          const [next, n] = stampStateArc(lines, ch.name, 0, stateLabel);
+          if (n > 0) {
+            await db.shot.update({ where: { id: shot.id }, data: { dialogue: serializeDialogue(next) } });
+            stamped += n;
+            touched.push(shot.number);
+          }
+        }
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "STATE_CHANGE",
+            summary: `DSH ${stateLabel ? `set state arc "${stateLabel}"` : "cleared state arc"} on ${ch.name} across scene ${scene.number} shots ${from}-${to}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}`,
+          },
+        });
+        let result = `State arc ${stateLabel ? `"${stateLabel}"` : "cleared"} on ${ch.name} across scene ${scene.number} shots ${from}-${to}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}. `;
+        if (stamped === 0) {
+          const speakerLines = range.reduce(
+            (acc, s) => acc + parseDialogue(s.dialogue).filter((l) => l.speaker.trim().toLowerCase() === ch.name.trim().toLowerCase()).length, 0,
+          );
+          if (speakerLines === 0) {
+            const seen = [...speakersSeen];
+            result += seen.length
+              ? `No ${ch.name} lines in that range (speakers present: ${seen.join(", ")}) - nothing was written; check the character name or widen the range. `
+              : `That range has no dialogue at all - nothing was written. `;
+          } else {
+            result += `All ${speakerLines} ${ch.name} line(s) in the range already carry ${stateLabel ? `"${stateLabel}"` : "no override"} - nothing to change. `;
+          }
+        }
+        result += "Each stamped line now performs with the state's variant voice, hints and register; takes rendered before the arc are stale - run diff_episode_direction with reRender:true to apply it to the stems.";
+        return { status: "OK", result };
       }
 
       default:

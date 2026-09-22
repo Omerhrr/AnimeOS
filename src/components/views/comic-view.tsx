@@ -9,7 +9,7 @@ import {
   COMIC_FORMATS, layoutScene, stripHeight,
   type ComicFormat, type PanelPlacement, type ComicPage,
 } from "@/lib/comic/layout";
-import { parseDialogue } from "@/lib/comic/dialogue";
+import { parseDialogue, serializeDialogue, stampStateArc } from "@/lib/comic/dialogue";
 import { exportWebtoonSlices } from "@/lib/comic/export-slices";
 import { PanelArt } from "@/components/views/comic-panel-art";
 import { SpeechBubbles, DialogueEditor } from "@/components/views/comic-bubbles";
@@ -494,6 +494,25 @@ export function ComicView({ project }: { project: StudioProject }) {
     return map;
   }, [project.characters]);
 
+  // state arc: stamp a line's picked state (or clear) onto the speaker's every following line in this scene
+  const extendStateArc = async (shot: ShotRow, lineIndex: number, state: string | null) => {
+    const speaker = parseDialogue(shot.dialogue)[lineIndex]?.speaker?.trim();
+    if (!speaker) throw new Error("The arc needs a speaker on that line");
+    const sceneShots = allShots.filter((s) => s.sceneId === shot.sceneId).sort((a, b) => a.number - b.number);
+    let stamping = false;
+    let stamped = 0;
+    for (const s of sceneShots) {
+      if (s.id === shot.id) stamping = true;
+      if (!stamping) continue;
+      const [next, n] = stampStateArc(parseDialogue(s.dialogue), speaker, s.id === shot.id ? lineIndex : 0, state);
+      if (n > 0) {
+        await api.patchShot({ id: s.id, dialogue: serializeDialogue(next) });
+        stamped += n;
+      }
+    }
+    if (stamped > 0) invalidate();
+  };
+
   if (!episode) {
     return (
       <div>
@@ -818,6 +837,7 @@ export function ComicView({ project }: { project: StudioProject }) {
           open
           onClose={() => setEditingShot(null)}
           onSaved={invalidate}
+          onExtendArc={(lineIndex, state) => extendStateArc(editingShot, lineIndex, state)}
         />
       )}
 
