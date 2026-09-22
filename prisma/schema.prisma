@@ -1,0 +1,286 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// PRODUCTION HIERARCHY: Project → Season → Episode → Scene → Shot
+// ─────────────────────────────────────────────────────────────
+
+model Project {
+  id               String   @id @default(cuid())
+  title            String
+  logline          String?
+  format           String   @default("SERIES") // FEATURE | SERIES | SHORT
+  animationType    String   @default("3D") // 3D | 2D | HYBRID
+  visualStyle      String   @default("DONGHUA") // DONGHUA | ANIME | KOREAN | WESTERN | CUSTOM
+  originalLanguage String   @default("zh-CN")
+  subtitleLanguages String  @default("[]") // JSON string[]
+  fps              Int      @default(24)
+  resolution       String   @default("1920x1080")
+  status           String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  seasons          Season[]
+  characters       Character[]
+  environments     Environment[]
+  assets           Asset[]
+  terminology      Terminology[]
+  renderJobs       RenderJob[]
+  productionEvents ProductionEvent[]
+  continuityEvents ContinuityEvent[]
+  dshMessages      DshMessage[]
+}
+
+model Season {
+  id        String    @id @default(cuid())
+  projectId String
+  number    Int
+  title     String
+  createdAt DateTime  @default(now())
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  episodes  Episode[]
+
+  @@unique([projectId, number])
+}
+
+model Episode {
+  id        String   @id @default(cuid())
+  seasonId  String
+  number    Int
+  title     String
+  synopsis  String?
+  status    String   @default("DRAFT") // DRAFT | IN_PRODUCTION | REVIEW | RENDERED
+  createdAt DateTime @default(now())
+  season    Season   @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  scenes    Scene[]
+
+  @@unique([seasonId, number])
+}
+
+model Environment {
+  id          String  @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  timeOfDay   String?
+  weather     String?
+  atmosphere  String? // JSON string[]
+  lighting    String?
+  createdAt   DateTime @default(now())
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenes      Scene[]
+
+  @@unique([projectId, name])
+}
+
+model Scene {
+  id                 String   @id @default(cuid())
+  episodeId          String
+  number             Int
+  title              String
+  description        String?
+  environmentId      String?
+  timeOfDay          String?
+  weather            String?
+  atmosphere         String? // JSON string[]
+  lighting           String?
+  // Live render params the DSH evaluation loop can tune (bridge driver reads these)
+  fogDensity         Float    @default(0.45)
+  lightningIntensity Float    @default(0.55)
+  energyIntensity    Float    @default(0.6)
+  cameraDistance     Float    @default(1.0)
+  rimLightIntensity  Float    @default(0.5)
+  status             String   @default("DRAFT") // DRAFT | BUILDING | PREVIEW | REVIEW | APPROVED | RENDERED
+  createdAt          DateTime @default(now())
+  episode            Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  environment        Environment? @relation(fields: [environmentId], references: [id])
+  shots              Shot[]
+
+  @@unique([episodeId, number])
+}
+
+model Shot {
+  id          String   @id @default(cuid())
+  sceneId     String
+  number      Int
+  description String
+  shotType    String   @default("MEDIUM") // ESTABLISHING | WIDE | MEDIUM | CLOSEUP | EXTREME_CLOSEUP | LOW_ANGLE
+  lens        String?  // e.g. "50mm"
+  movement    String?  // ORBIT | DOLLY_IN | STATIC | PAN | TRACKING | CRANE
+  duration    Float    @default(4.0)
+  lighting    String?
+  status      String   @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED
+  createdAt   DateTime @default(now())
+  scene       Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  renderJobs  RenderJob[]
+
+  @@unique([sceneId, number])
+}
+
+// ─────────────────────────────────────────────────────────────
+// CHARACTER UNIVERSE (persistent entities, not just meshes)
+// ─────────────────────────────────────────────────────────────
+
+model Character {
+  id             String   @id @default(cuid())
+  projectId      String
+  name           String
+  role           String?  // PROTAGONIST | RIVAL | MENTOR | ANTAGONIST | SUPPORTING
+  age            String?
+  personality    String?
+  backstory      String?
+  appearance     String?  // JSON {face, body, hair, skin, features}
+  wardrobe       String?  // JSON [{name, slot, description}]
+  abilities      String?  // JSON string[]
+  animationLib   String?  // JSON string[]
+  canonicalState String?  // JSON summary of current canonical condition (injuries etc.)
+  parentId       String?  // derivative source character
+  derivativeType String?  // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
+  createdAt      DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent         Character?  @relation("Derivatives", fields: [parentId], references: [id])
+  derivatives    Character[] @relation("Derivatives")
+  states         CharacterState[]
+  relationsFrom  Relationship[] @relation("RelFrom")
+  relationsTo    Relationship[] @relation("RelTo")
+}
+
+model CharacterState {
+  id            String  @id @default(cuid())
+  characterId   String
+  label         String
+  episodeNumber Int?
+  stateType     String  @default("PERMANENT") // PERMANENT | TEMPORARY | VARIANT
+  cultivation   String?
+  weapon        String?
+  clothing      String?
+  abilities     String? // JSON string[]
+  createdAt     DateTime @default(now())
+  character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+}
+
+model Relationship {
+  id      String @id @default(cuid())
+  fromId  String
+  toId    String
+  type    String // MASTER | RIVAL | BROTHER | ENEMY | CLONE | AVATAR | REINCARNATION | ALLY ...
+  from    Character @relation("RelFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to      Character @relation("RelTo", fields: [toId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// ASSET SYSTEM with versioning
+// ─────────────────────────────────────────────────────────────
+
+model Asset {
+  id             String   @id @default(cuid())
+  projectId      String
+  category       String   // CHARACTER | ENVIRONMENT | PROP | CREATURE | VEHICLE | EFFECT
+  name           String
+  description    String?
+  status         String   @default("DRAFT") // DRAFT | BUILDING | REVIEW | APPROVED
+  currentVersion Int      @default(1)
+  linkedEntity   String?  // e.g. "character:<id>" or "environment:<id>"
+  createdAt      DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions       AssetVersion[]
+}
+
+model AssetVersion {
+  id        String   @id @default(cuid())
+  assetId   String
+  version   Int
+  note      String?
+  createdAt DateTime @default(now())
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// RENDER PIPELINE + DSH EVALUATION LOOP
+// ─────────────────────────────────────────────────────────────
+
+model RenderJob {
+  id         String    @id @default(cuid())
+  projectId  String
+  shotId     String?
+  mode       String    @default("PREVIEW") // PREVIEW | FINAL
+  status     String    @default("QUEUED") // QUEUED | RENDERING | REVIEW | APPROVED | NEEDS_REVISION | FAILED
+  progress   Float     @default(0)
+  stage      String    @default("Queued")
+  attempt    Int       @default(1)
+  durationMs Int       @default(16000)
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shot       Shot?     @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  evaluation Evaluation?
+}
+
+model Evaluation {
+  id          String   @id @default(cuid())
+  renderJobId String   @unique
+  verdict     String   // APPROVED | NEEDS_REVISION
+  summary     String
+  findings    String   // JSON [{aspect, status, note}]
+  actions     String   // JSON [{type, target, param, from, to, reason}]
+  applied     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  renderJob   RenderJob @relation(fields: [renderJobId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// CONTINUITY ENGINE + TRANSLATION MEMORY + HISTORY + DSH
+// ─────────────────────────────────────────────────────────────
+
+model ContinuityEvent {
+  id            String   @id @default(cuid())
+  projectId     String
+  entityType    String   // PROP | CHARACTER | ENVIRONMENT | ABILITY
+  entityName    String
+  kind          String   // DESTROYED | INJURED | GAINED | LOST | TRANSFORMED | CUSTOM
+  episodeNumber Int?
+  description   String
+  severity      String   @default("INFO") // INFO | WARNING | CRITICAL
+  createdAt     DateTime @default(now())
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Terminology {
+  id           String   @id @default(cuid())
+  projectId    String
+  term         String
+  category     String?  // CHARACTER_NAME | TECHNIQUE | LOCATION | REALM | ORGANIZATION | ITEM
+  translations String   // JSON {lang: translation}
+  createdAt    DateTime @default(now())
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, term])
+}
+
+model ProductionEvent {
+  id        String   @id @default(cuid())
+  projectId String?
+  actor     String   @default("DSH") // DSH | USER | SYSTEM
+  type      String   // TOOL_CALL | RENDER | EVALUATION | CONTINUITY | PROJECT | STATE_CHANGE
+  summary   String
+  payload   String?  // JSON detail
+  createdAt DateTime @default(now())
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model DshMessage {
+  id        String   @id @default(cuid())
+  projectId String
+  role      String   // user | dsh
+  content   String
+  trace     String?  // JSON [{step, thought, plan, actions:[{tool,args,result,status}]}]
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}

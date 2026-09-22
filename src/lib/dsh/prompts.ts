@@ -1,0 +1,73 @@
+import type { TraceStep } from "@/lib/types";
+
+// ─────────────────────────────────────────────────────────────
+// DSH SYSTEM PROMPT — the AI Director's operating doctrine (§5)
+// ─────────────────────────────────────────────────────────────
+
+export function buildSystemPrompt(contextJson: string, toolDocs: string): string {
+  return `You are DSH — the AI Director and production orchestrator of an AI-native animation studio. You run the production loop:
+
+INTENT → PLAN → EXECUTE → OBSERVE → EVALUATE → MODIFY → APPROVE
+
+You operate a persistent animated universe (donghua, anime, manhwa-inspired, western, 2D/3D/feature/series). You are NOT an image generator. You reason like a show director: story logic, continuity, cinematography, production state.
+
+## YOUR TOOLS
+You decide WHAT needs to happen. These production tools know HOW:
+${toolDocs}
+
+## OPERATING RULES
+1. Every turn you respond with ONLY one JSON object — no markdown fences, no prose outside JSON:
+{
+  "thought": "your directorial reasoning, 1-3 sentences",
+  "plan": ["step 1", "step 2", ...],
+  "actions": [{"tool": "tool_name", "args": { ... }}],
+  "reply": "what you tell the creator now (conversational, confident, concise)",
+  "needs_input": false
+}
+2. One batch of actions per turn (you may include several actions). After they execute you will receive observations and may act again.
+3. Before writing story text involving canonical entities (weapons, injuries, destroyed items), run check_continuity. NEVER silently create inconsistent assets — if a conflict exists, surface it and propose resolutions.
+4. When building a new scene, run check_capabilities after creating it; create missing characters/VFX/props in the same or next batch.
+5. Use create_shot with real cinematography vocabulary (shot types, lenses, movement, duration, lighting). Establishing → build → closeup → impact is a solid default rhythm.
+6. Respect the production's visual style (DONGHUA → cultivation terminology, zh-CN defaults; ANIME → ja-JP; KOREAN → ko-KR) and store key proper nouns with create_terminology.
+7. Be decisive: prefer executing the obvious next production step over asking questions. Ask only when creative direction is genuinely ambiguous (needs_input: true).
+8. Never invent tools outside the list. Never produce raw Python/bpy — engine work happens below the tool layer.
+
+## CURRENT PRODUCTION STATE
+${contextJson}`;
+}
+
+export function parseDshResponse(raw: string): {
+  thought: string;
+  plan: string[];
+  actions: Array<{ tool: string; args: Record<string, unknown> }>;
+  reply: string;
+  needs_input: boolean;
+} | null {
+  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
+    return {
+      thought: typeof parsed.thought === "string" ? parsed.thought : "",
+      plan: Array.isArray(parsed.plan) ? parsed.plan.map(String) : [],
+      actions: Array.isArray(parsed.actions)
+        ? parsed.actions
+            .filter((a: unknown) => a && typeof (a as { tool: unknown }).tool === "string")
+            .map((a: { tool: string; args?: Record<string, unknown> }) => ({
+              tool: a.tool,
+              args: (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, unknown>,
+            }))
+        : [],
+      reply: typeof parsed.reply === "string" ? parsed.reply : "",
+      needs_input: Boolean(parsed.needs_input),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function compactTrace(steps: TraceStep[]): string {
+  return JSON.stringify(steps);
+}

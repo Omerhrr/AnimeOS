@@ -1,0 +1,153 @@
+"use client";
+
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2,
+} from "lucide-react";
+import { api, parseActions, parseFindings } from "@/lib/api-client";
+import { useStudio } from "@/lib/store";
+import { SectionHeader, StatusBadge } from "@/components/views/shared";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
+
+export function RenderView({ project }: { project: StudioProject }) {
+  const qc = useQueryClient();
+  const { projectId, openPreview } = useStudio();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const jobsQ = useQuery({
+    queryKey: ["renderJobs", projectId],
+    queryFn: () => api.renderJobs(projectId!),
+    enabled: Boolean(projectId),
+    refetchInterval: 2000,
+  });
+
+  async function act(fn: () => Promise<unknown>, id: string) {
+    setBusyId(id);
+    try {
+      await fn();
+      qc.invalidateQueries({ queryKey: ["renderJobs", projectId] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const jobs = jobsQ.data ?? [];
+
+  return (
+    <div>
+      <SectionHeader
+        title="Render Queue"
+        sub="Simulated engine workers with live stages. Completed previews go straight to DSH for inspection — approve, apply its modifications and re-render, or override."
+      />
+
+      {jobs.length === 0 && (
+        <div className="studio-panel p-10 text-center text-sm text-muted-foreground">
+          Queue is empty. Trigger previews from Story &amp; Scenes, or tell DSH to render a shot.
+        </div>
+      )}
+
+      <div className="space-y-3 max-h-[calc(100vh-13rem)] overflow-y-auto studio-scroll pr-1">
+        {jobs.map((job) => {
+          const findings = parseFindings(job.evaluation?.findings);
+          const actions = parseActions(job.evaluation?.actions);
+          const active = ["RENDERING", "QUEUED", "INSPECTING"].includes(job.status);
+          return (
+            <div key={job.id} className={cn(
+              "studio-panel p-4",
+              job.status === "NEEDS_REVISION" && "border-violet-400/25",
+              job.status === "APPROVED" && "border-emerald-400/25"
+            )}>
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap text-sm font-medium">
+                    <MonitorPlay className="h-4 w-4 text-primary" />
+                    {job.shot?.scene ? `Scene ${job.shot.scene.number} · ` : ""}
+                    {job.shot ? `Shot ${String(job.shot.number).padStart(3, "0")}` : "Production master"}
+                    <span className="text-[11px] font-normal text-muted-foreground">{job.mode} · attempt {job.attempt}</span>
+                    <StatusBadge status={job.status} />
+                  </div>
+                  {job.shot && <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed line-clamp-1">{job.shot.description}</p>}
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {job.shot?.scene && (
+                    <Button size="sm" variant="outline" className="h-7 text-[11px] border-white/12 bg-white/5" onClick={() => openPreview(job.shot!.scene!.id, job.shot!.number)}>
+                      View in 3D
+                    </Button>
+                  )}
+                  {job.status === "NEEDS_REVISION" && (
+                    <Button size="sm" className="h-7 text-[11px]" disabled={busyId === job.id}
+                      onClick={() => act(() => api.renderApply(job.evaluation!.id), job.id)}>
+                      {busyId === job.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3 mr-1" />}
+                      Apply DSH fixes &amp; re-render
+                    </Button>
+                  )}
+                  {["NEEDS_REVISION", "REVIEW"].includes(job.status) && (
+                    <Button size="sm" variant="outline" className="h-7 text-[11px] border-white/12 bg-white/5" disabled={busyId === job.id}
+                      onClick={() => act(() => api.renderRetry(job.id), job.id)}>
+                      <RotateCcw className="h-3 w-3 mr-1" /> Retry
+                    </Button>
+                  )}
+                  {["NEEDS_REVISION", "REVIEW", "APPROVED"].includes(job.status) && job.shot && job.status !== "APPROVED" && (
+                    <Button size="sm" variant="outline" className="h-7 text-[11px] border-emerald-400/30 bg-emerald-400/5 text-emerald-200" disabled={busyId === job.id}
+                      onClick={() => act(() => api.renderApprove(job.id), job.id)}>
+                      <ThumbsUp className="h-3 w-3 mr-1" /> Creator approve
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {active && (
+                <div className="mt-3">
+                  <Progress value={job.progress} className="h-1.5" />
+                  <div className="flex justify-between mt-1.5 text-[10px] text-muted-foreground">
+                    <span>{job.stage}</span>
+                    <span className="tabular-nums">{Math.round(job.progress)}%</span>
+                  </div>
+                </div>
+              )}
+
+              {job.evaluation && !active && (
+                <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    {job.evaluation.verdict === "APPROVED" ? (
+                      <><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /> DSH inspection — Approved</>
+                    ) : (
+                      <><ShieldX className="h-3.5 w-3.5 text-violet-300" /> DSH inspection — Needs revision</>
+                    )}
+                    {job.evaluation.applied && <span className="text-[10px] font-normal text-muted-foreground">(modifications applied)</span>}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mt-1.5">{job.evaluation.summary}</p>
+                  <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 mt-2.5">
+                    {findings.map((f, i) => (
+                      <div key={i} className="text-[11px] leading-relaxed flex gap-1.5">
+                        <span className={f.status === "GOOD" ? "text-emerald-400" : "text-amber-400"}>{f.status === "GOOD" ? "●" : "▲"}</span>
+                        <span><b className="font-medium">{f.aspect}:</b> <span className="text-muted-foreground">{f.note}</span></span>
+                      </div>
+                    ))}
+                  </div>
+                  {actions.length > 0 && !job.evaluation.applied && (
+                    <div className="mt-2.5 pt-2.5 border-t border-white/8">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Proposed modifications</div>
+                      <div className="space-y-1">
+                        {actions.map((a, i) => (
+                          <div key={i} className="text-[11px] font-mono text-teal-200/90">
+                            {a.param}: {String(a.from)} → <b>{String(a.to)}</b>
+                            <span className="text-muted-foreground font-sans"> — {a.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

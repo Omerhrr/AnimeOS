@@ -1,0 +1,2002 @@
+     1→# AI-Native Animation Production Platform
+     2→
+     3→> **An AI-native production system for creating, managing, and operating complete animated productions using DSH, Blender, and open-source infrastructure.**
+     4→
+     5→---
+     6→
+     7→# 1. Vision
+     8→
+     9→Build a production platform where a creator can describe an animated production in natural language and **DSH orchestrates the entire production pipeline**.
+    10→
+    11→The platform should support:
+    12→
+    13→* Donghua
+    14→* Anime
+    15→* Korean / manhwa-inspired animation
+    16→* General animation
+    17→* 3D animation
+    18→* 2D animation
+    19→* Hybrid 2D/3D animation
+    20→* Feature films
+    21→* Series
+    22→* Short films
+    23→* Episodic productions
+    24→* Multilingual subtitles
+    25→* Optional dubbing
+    26→
+    27→The system should not merely generate isolated images or clips.
+    28→
+    29→It should maintain a **persistent animated universe** containing:
+    30→
+    31→* Characters
+    32→* Character development
+    33→* Character variants
+    34→* Clones
+    35→* Avatars
+    36→* Transformations
+    37→* Reincarnations
+    38→* Possession states
+    39→* Environments
+    40→* Props
+    41→* Creatures
+    42→* Abilities
+    43→* Animation libraries
+    44→* Scenes
+    45→* Shots
+    46→* Story state
+    47→* Continuity
+    48→* Audio
+    49→* Localization
+    50→* Rendering
+    51→* Production history
+    52→
+    53→The central idea:
+    54→
+    55→> **DSH is the brain. Blender is the production engine. The platform is the production environment.**
+    56→
+    57→---
+    58→
+    59→# 2. Core Thesis
+    60→
+    61→This is not an "AI image generator."
+    62→
+    63→It is not simply:
+    64→
+    65→```text
+    66→Prompt
+    67→  ↓
+    68→AI
+    69→  ↓
+    70→Video
+    71→```
+    72→
+    73→Instead:
+    74→
+    75→```text
+    76→Creative Intent
+    77→      ↓
+    78→     DSH
+    79→      ↓
+    80→Planning
+    81→      ↓
+    82→Production Tools
+    83→      ↓
+    84→Asset / Scene Construction
+    85→      ↓
+    86→Blender
+    87→      ↓
+    88→Animation / Lighting / VFX / Rendering
+    89→      ↓
+    90→Inspection
+    91→      ↓
+    92→DSH Evaluation
+    93→      ↓
+    94→Revision
+    95→      ↓
+    96→Approved Production
+    97→```
+    98→
+    99→The system should behave more like an **AI-native animation studio**.
+   100→
+   101→---
+   102→
+   103→# 3. Product Separation
+   104→
+   105→This project is independent.
+   106→
+   107→It is **not Py8n**.
+   108→
+   109→It does not depend on Py8n's architecture, runtime, graph system, or product model.
+   110→
+   111→The core stack is:
+   112→
+   113→```text
+   114→DSH
+   115→Blender
+   116→FastAPI
+   117→PostgreSQL
+   118→Redis
+   119→MinIO
+   120→FFmpeg
+   121→Nuxt
+   122→Vue
+   123→TypeScript
+   124→Three.js
+   125→Docker
+   126→```
+   127→
+   128→All major production components should remain replaceable.
+   129→
+   130→---
+   131→
+   132→# 4. Core Architecture
+   133→
+   134→```text
+   135→                         ANIMATION PLATFORM
+   136→                                │
+   137→                                ▼
+   138→                         ┌─────────────┐
+   139→                         │     DSH     │
+   140→                         │ AI Director │
+   141→                         │ Orchestrator│
+   142→                         └──────┬──────┘
+   143→                                │
+   144→                           Tool Calling
+   145→                                │
+   146→              ┌─────────────────┼─────────────────┐
+   147→              ▼                 ▼                 ▼
+   148→        Production API      Asset System      Media System
+   149→              │                 │                 │
+   150→              ▼                 ▼                 ▼
+   151→           FastAPI          PostgreSQL          FFmpeg
+   152→              │                 │                 │
+   153→              └─────────────────┼─────────────────┘
+   154→                                │
+   155→                         Blender Bridge
+   156→                                │
+   157→                                ▼
+   158→                            BLENDER
+   159→                                │
+   160→              ┌─────────────────┼─────────────────┐
+   161→              ▼                 ▼                 ▼
+   162→           Modeling          Animation         Rendering
+   163→              │                 │                 │
+   164→              └─────────────────┼─────────────────┘
+   165→                                ▼
+   166→                           Render Output
+   167→                                │
+   168→                                ▼
+   169→                         DSH Evaluation
+   170→                                │
+   171→                         ┌──────┴──────┐
+   172→                         │             │
+   173→                       Approve       Revise
+   174→                                       │
+   175→                                       └──────→ Blender
+   176→```
+   177→
+   178→---
+   179→
+   180→# 5. DSH: The Brain
+   181→
+   182→DSH is responsible for:
+   183→
+   184→* Understanding user intent
+   185→* Planning production tasks
+   186→* Calling tools
+   187→* Maintaining context
+   188→* Maintaining production state
+   189→* Maintaining character state
+   190→* Maintaining story state
+   191→* Detecting missing assets
+   192→* Detecting continuity conflicts
+   193→* Coordinating Blender
+   194→* Coordinating media tools
+   195→* Evaluating previews
+   196→* Deciding when to retry
+   197→* Deciding when to modify
+   198→* Deciding when a shot is complete
+   199→* Managing long-running production workflows
+   200→
+   201→The core loop is:
+   202→
+   203→```text
+   204→INTENT
+   205→  ↓
+   206→PLAN
+   207→  ↓
+   208→EXECUTE
+   209→  ↓
+   210→OBSERVE
+   211→  ↓
+   212→EVALUATE
+   213→  ↓
+   214→MODIFY
+   215→  ↓
+   216→EXECUTE
+   217→  ↓
+   218→APPROVE
+   219→```
+   220→
+   221→---
+   222→
+   223→# 6. DSH Should Not Directly Write Random Blender Scripts
+   224→
+   225→Avoid making the architecture:
+   226→
+   227→```text
+   228→User
+   229→ ↓
+   230→LLM
+   231→ ↓
+   232→Huge Blender Python script
+   233→ ↓
+   234→Blender
+   235→```
+   236→
+   237→Instead:
+   238→
+   239→```text
+   240→User
+   241→ ↓
+   242→DSH
+   243→ ↓
+   244→Domain Tool
+   245→ ↓
+   246→Production API
+   247→ ↓
+   248→Blender Bridge
+   249→ ↓
+   250→Blender Python API
+   251→```
+   252→
+   253→DSH operates at a high production level.
+   254→
+   255→For example:
+   256→
+   257→```text
+   258→character.create()
+   259→scene.create()
+   260→character.add_to_scene()
+   261→camera.create()
+   262→lighting.create()
+   263→animation.apply()
+   264→vfx.create()
+   265→render.preview()
+   266→render.final()
+   267→```
+   268→
+   269→The Blender bridge handles the actual `bpy` operations.
+   270→
+   271→This creates a stable abstraction layer between DSH and Blender.
+   272→
+   273→---
+   274→
+   275→# 7. Production Tool API
+   276→
+   277→Initial tool categories:
+   278→
+   279→## Project Tools
+   280→
+   281→```text
+   282→create_project
+   283→update_project
+   284→get_project
+   285→create_season
+   286→create_episode
+   287→get_production_context
+   288→```
+   289→
+   290→## Story Tools
+   291→
+   292→```text
+   293→create_story
+   294→create_script
+   295→create_scene
+   296→create_shot
+   297→create_storyboard
+   298→update_story
+   299→analyze_story
+   300→```
+   301→
+   302→## Character Tools
+   303→
+   304→```text
+   305→create_character
+   306→modify_character
+   307→create_character_variant
+   308→create_character_state
+   309→update_character_state
+   310→create_clone
+   311→create_avatar
+   312→create_transformation
+   313→create_disguise
+   314→create_reincarnation
+   315→create_possession_state
+   316→```
+   317→
+   318→## Asset Tools
+   319→
+   320→```text
+   321→create_environment
+   322→create_prop
+   323→create_creature
+   324→find_asset
+   325→modify_asset
+   326→version_asset
+   327→approve_asset
+   328→```
+   329→
+   330→## Scene Tools
+   331→
+   332→```text
+   333→create_scene
+   334→add_character
+   335→add_prop
+   336→add_environment
+   337→set_character_state
+   338→set_camera
+   339→set_lighting
+   340→set_atmosphere
+   341→```
+   342→
+   343→## Animation Tools
+   344→
+   345→```text
+   346→apply_animation
+   347→create_animation
+   348→blend_animation
+   349→animate_character
+   350→animate_camera
+   351→animate_cloth
+   352→animate_hair
+   353→animate_face
+   354→choreograph_action
+   355→```
+   356→
+   357→## VFX Tools
+   358→
+   359→```text
+   360→create_fire
+   361→create_smoke
+   362→create_rain
+   363→create_lightning
+   364→create_energy
+   365→create_magic
+   366→create_sword_effect
+   367→create_destruction
+   368→create_particles
+   369→```
+   370→
+   371→## Rendering Tools
+   372→
+   373→```text
+   374→render_preview
+   375→render_frame
+   376→render_shot
+   377→render_sequence
+   378→render_final
+   379→inspect_render
+   380→```
+   381→
+   382→## Media Tools
+   383→
+   384→```text
+   385→generate_voice
+   386→transcribe_audio
+   387→generate_lip_sync
+   388→mix_audio
+   389→create_sound_effect
+   390→assemble_episode
+   391→encode_video
+   392→```
+   393→
+   394→## Localization Tools
+   395→
+   396→```text
+   397→translate_script
+   398→generate_subtitles
+   399→translate_subtitles
+   400→generate_dub
+   401→sync_subtitles
+   402→```
+   403→
+   404→---
+   405→
+   406→# 8. Production Types
+   407→
+   408→When creating a production:
+   409→
+   410→```text
+   411→CREATE NEW PRODUCTION
+   412→
+   413→Title:
+   414→[________________]
+   415→
+   416→Format:
+   417→○ Feature Film
+   418→○ Series
+   419→○ Short Film
+   420→
+   421→Animation:
+   422→○ 3D
+   423→○ 2D
+   424→○ Hybrid
+   425→
+   426→Visual Style:
+   427→○ Donghua
+   428→○ Anime
+   429→○ Korean Animation / Manhwa-inspired
+   430→○ Western Animation
+   431→○ Custom
+   432→
+   433→Original Language:
+   434→[________________]
+   435→
+   436→Subtitle Languages:
+   437→[________________]
+   438→
+   439→Frame Rate:
+   440→[24]
+   441→
+   442→Resolution:
+   443→[1920 × 1080]
+   444→```
+   445→
+   446→The production configuration becomes part of the DSH context.
+   447→
+   448→---
+   449→
+   450→# 9. Donghua
+   451→
+   452→For a Donghua production:
+   453→
+   454→```text
+   455→style = donghua
+   456→original_language = zh-CN
+   457→```
+   458→
+   459→The system can use:
+   460→
+   461→* Chinese dialogue
+   462→* Chinese terminology
+   463→* Donghua-oriented character design
+   464→* Cinematic 3D rendering
+   465→* Martial arts choreography
+   466→* Cultivation effects
+   467→* Stylized environments
+   468→* Chinese localization rules
+   469→
+   470→---
+   471→
+   472→# 10. Anime
+   473→
+   474→For an anime production:
+   475→
+   476→```text
+   477→style = anime
+   478→original_language = ja-JP
+   479→```
+   480→
+   481→The production can use:
+   482→
+   483→* Japanese dialogue
+   484→* Anime-oriented proportions
+   485→* Cel shading
+   486→* Anime timing
+   487→* 2D/3D hybrid techniques
+   488→* Stylized effects
+   489→* Anime cinematography
+   490→
+   491→---
+   492→
+   493→# 11. Korean Animation
+   494→
+   495→Use a configuration such as:
+   496→
+   497→```text
+   498→style = korean_animation
+   499→original_language = ko-KR
+   500→```
+   501→
+   502→"Manhwa" should be treated primarily as the comic medium or an artistic influence rather than a strict animation format.
+   503→
+   504→---
+   505→
+   506→# 12. General Animation
+   507→
+   508→General animation can use any original language:
+   509→
+   510→```text
+   511→style = custom
+   512→original_language = user_selected_language
+   513→```
+   514→
+   515→This allows:
+   516→
+   517→* English
+   518→* French
+   519→* Arabic
+   520→* Spanish
+   521→* Portuguese
+   522→* Hausa
+   523→* Yoruba
+   524→* Igbo
+   525→* Chinese
+   526→* Japanese
+   527→* Korean
+   528→* Any supported language
+   529→
+   530→---
+   531→
+   532→# 13. Localization
+   533→
+   534→Original language and subtitle language must be independent.
+   535→
+   536→Example:
+   537→
+   538→```text
+   539→Original:
+   540→Chinese
+   541→
+   542→Subtitles:
+   543→English
+   544→Japanese
+   545→Korean
+   546→French
+   547→Arabic
+   548→Spanish
+   549→```
+   550→
+   551→Production structure:
+   552→
+   553→```text
+   554→episode_01/
+   555→├── audio/
+   556→│   └── zh-CN.wav
+   557→│
+   558→└── subtitles/
+   559→    ├── en-US.srt
+   560→    ├── ja-JP.srt
+   561→    ├── ko-KR.srt
+   562→    ├── fr-FR.srt
+   563→    ├── ar-SA.srt
+   564→    └── es-ES.srt
+   565→```
+   566→
+   567→Dubbing can be an additional layer:
+   568→
+   569→```text
+   570→audio/
+   571→├── zh-CN/
+   572→├── en-US/
+   573→├── ja-JP/
+   574→└── ko-KR/
+   575→```
+   576→
+   577→---
+   578→
+   579→# 14. Translation Memory
+   580→
+   581→The system should maintain a canonical terminology database.
+   582→
+   583→Example:
+   584→
+   585→```text
+   586→TERM
+   587→    Azure Flame
+   588→
+   589→Chinese
+   590→    青焰
+   591→
+   592→English
+   593→    Azure Flame
+   594→
+   595→Japanese
+   596→    蒼炎
+   597→
+   598→Korean
+   599→    창염
+   600→```
+   601→
+   602→The glossary can contain:
+   603→
+   604→* Character names
+   605→* Locations
+   606→* Cultivation realms
+   607→* Techniques
+   608→* Organizations
+   609→* Weapons
+   610→* Titles
+   611→* Honorifics
+   612→* Special terminology
+   613→
+   614→This prevents inconsistent translation across hundreds of episodes.
+   615→
+   616→---
+   617→
+   618→# 15. Project Structure
+   619→
+   620→For a feature film:
+   621→
+   622→```text
+   623→My Production/
+   624→├── project.json
+   625→├── story/
+   626→├── assets/
+   627→│   ├── characters/
+   628→│   ├── environments/
+   629→│   ├── props/
+   630→│   ├── creatures/
+   631→│   └── vehicles/
+   632→├── scenes/
+   633→├── animation/
+   634→├── audio/
+   635→├── subtitles/
+   636→├── renders/
+   637→└── final/
+   638→```
+   639→
+   640→For a series:
+   641→
+   642→```text
+   643→My Production/
+   644→├── project.json
+   645→│
+   646→├── seasons/
+   647→│   ├── season_01/
+   648→│   │   ├── season.json
+   649→│   │   │
+   650→│   │   ├── episode_01/
+   651→│   │   │   ├── episode.json
+   652→│   │   │   ├── scenes/
+   653→│   │   │   ├── renders/
+   654→│   │   │   └── final/
+   655→│   │   │
+   656→│   │   ├── episode_02/
+   657→│   │   ├── episode_03/
+   658→│   │   └── ...
+   659→│   │
+   660→│   └── season_02/
+   661→│
+   662→├── assets/
+   663→│   ├── characters/
+   664→│   ├── environments/
+   665→│   ├── props/
+   666→│   ├── creatures/
+   667→│   └── vehicles/
+   668→│
+   669→├── audio/
+   670→├── music/
+   671→├── subtitles/
+   672→└── shared/
+   673→```
+   674→
+   675→---
+   676→
+   677→# 16. Shared Assets
+   678→
+   679→Assets should generally be project-level.
+   680→
+   681→If Lin Yue is created in Episode 1:
+   682→
+   683→```text
+   684→assets/characters/lin_yue/
+   685→```
+   686→
+   687→Episode 7 references the same character.
+   688→
+   689→Do not duplicate the character into every episode.
+   690→
+   691→This provides continuity.
+   692→
+   693→---
+   694→
+   695→# 17. Character System
+   696→
+   697→Characters are not just Blender meshes.
+   698→
+   699→A character is a persistent production entity.
+   700→
+   701→```text
+   702→CHARACTER
+   703→│
+   704→├── Identity
+   705→│   ├── Name
+   706→│   ├── Age
+   707→│   ├── Personality
+   708→│   ├── Backstory
+   709→│   └── Relationships
+   710→│
+   711→├── Appearance
+   712→│   ├── Face
+   713→│   ├── Body
+   714→│   ├── Hair
+   715→│   ├── Skin
+   716→│   └── Canonical Features
+   717→│
+   718→├── Wardrobe
+   719→│   ├── Casual
+   720→│   ├── Battle
+   721→│   ├── Formal
+   722→│   └── Special
+   723→│
+   724→├── Abilities
+   725→│   ├── Techniques
+   726→│   ├── Combat
+   727→│   └── Special Powers
+   728→│
+   729→├── Animation
+   730→│   ├── Idle
+   731→│   ├── Walk
+   732→│   ├── Run
+   733→│   ├── Combat
+   734→│   └── Special
+   735→│
+   736→├── Expressions
+   737→│
+   738→├── Equipment
+   739→│
+   740→├── Relationships
+   741→│
+   742→├── Development
+   743→│
+   744→└── Production Assets
+   745→```
+   746→
+   747→---
+   748→
+   749→# 18. Character Development
+   750→
+   751→Characters must evolve.
+   752→
+   753→Example:
+   754→
+   755→```text
+   756→Episode 01
+   757→
+   758→Cultivation:
+   759→Qi Condensation
+   760→
+   761→Weapon:
+   762→Wooden Sword
+   763→
+   764→Clothing:
+   765→Disciple Robes
+   766→
+   767→Abilities:
+   768→Basic Swordsmanship
+   769→```
+   770→
+   771→Later:
+   772→
+   773→```text
+   774→Episode 15
+   775→
+   776→Cultivation:
+   777→Foundation Establishment
+   778→
+   779→Weapon:
+   780→Jade Sword
+   781→
+   782→Clothing:
+   783→Battle Robes
+   784→
+   785→Abilities:
+   786→Advanced Swordsmanship
+   787→Azure Flame
+   788→```
+   789→
+   790→Later:
+   791→
+   792→```text
+   793→Episode 40
+   794→
+   795→Cultivation:
+   796→Core Formation
+   797→
+   798→Weapon:
+   799→Celestial Sword
+   800→
+   801→Clothing:
+   802→Sect Elder Robes
+   803→
+   804→Abilities:
+   805→Sword Domain
+   806→Azure Heaven Flame
+   807→```
+   808→
+   809→The system must preserve the historical states.
+   810→
+   811→```text
+   812→Lin Yue
+   813→│
+   814→├── State S01
+   815→│   └── Episode 01
+   816→│
+   817→├── State S02
+   818→│   └── Episode 15
+   819→│
+   820→└── State S03
+   821→    └── Episode 40
+   822→```
+   823→
+   824→---
+   825→
+   826→# 19. Character State Types
+   827→
+   828→DSH must distinguish:
+   829→
+   830→## Permanent Development
+   831→
+   832→Example:
+   833→
+   834→```text
+   835→Lin Yue loses his left arm.
+   836→```
+   837→
+   838→This changes his canonical state from that point onward.
+   839→
+   840→## Temporary Scene State
+   841→
+   842→Example:
+   843→
+   844→```text
+   845→Lin Yue is covered in blood.
+   846→```
+   847→
+   848→This applies to the scene but does not permanently alter the character.
+   849→
+   850→## Variant
+   851→
+   852→Example:
+   853→
+   854→```text
+   855→Lin Yue wears formal robes.
+   856→```
+   857→
+   858→This is an appearance variant.
+   859→
+   860→---
+   861→
+   862→# 20. Character Derivatives
+   863→
+   864→The system must support:
+   865→
+   866→```text
+   867→clone_of
+   868→avatar_of
+   869→incarnation_of
+   870→possessed_by
+   871→disguised_as
+   872→transformation_of
+   873→alternate_form_of
+   874→derived_from
+   875→```
+   876→
+   877→Example:
+   878→
+   879→```text
+   880→                    LIN YUE
+   881→                       │
+   882→        ┌──────────────┼──────────────┐
+   883→        │              │              │
+   884→     Original        Clone          Avatar
+   885→        │              │              │
+   886→        │          Clone 001      Projection
+   887→        │
+   888→        ├── Awakened Form
+   889→        ├── Disguise
+   890→        ├── Possessed State
+   891→        └── Reincarnation
+   892→```
+   893→
+   894→---
+   895→
+   896→# 21. Clones
+   897→
+   898→If Lin Yue creates 1,000 clones, the system should not create 1,000 completely independent assets.
+   899→
+   900→Instead:
+   901→
+   902→```text
+   903→Lin Yue
+   904→   │
+   905→   └── Clone Technique
+   906→         │
+   907→         ├── Clone 001
+   908→         ├── Clone 002
+   909→         ├── Clone 003
+   910→         └── ...
+   911→```
+   912→
+   913→They can share:
+   914→
+   915→* Model
+   916→* Rig
+   917→* Materials
+   918→* Animation library
+   919→* Base clothing
+   920→
+   921→while having unique:
+   922→
+   923→* Position
+   924→* State
+   925→* Equipment
+   926→* Damage
+   927→* Abilities
+   928→* Temporary effects
+   929→
+   930→This dramatically reduces production overhead.
+   931→
+   932→---
+   933→
+   934→# 22. Avatars and Projections
+   935→
+   936→An avatar can be modeled as a derived entity:
+   937→
+   938→```text
+   939→Lin Yue
+   940→ │
+   941→ └── Projection
+   942→       ├── Visual Identity → Lin Yue
+   943→       ├── Consciousness → Lin Yue
+   944→       ├── Abilities → Subset
+   945→       ├── Location → Imperial City
+   946→       └── Duration → 30 minutes
+   947→```
+   948→
+   949→---
+   950→
+   951→# 23. Possession
+   952→
+   953→Possession should separate:
+   954→
+   955→```text
+   956→BODY
+   957→   │
+   958→   └── Lin Yue
+   959→          │
+   960→          └── Current Controller
+   961→                  │
+   962→                  └── Demon Lord
+   963→```
+   964→
+   965→The system can change:
+   966→
+   967→* Facial expression
+   968→* Posture
+   969→* Animation
+   970→* Voice
+   971→* Aura
+   972→* Eye effects
+   973→* Abilities
+   974→
+   975→without destroying the underlying character identity.
+   976→
+   977→---
+   978→
+   979→# 24. Reincarnation
+   980→
+   981→The system can model:
+   982→
+   983→```text
+   984→SOUL / IDENTITY
+   985→      │
+   986→      ├── Life 01
+   987→      │     └── Body A
+   988→      │
+   989→      ├── Life 02
+   990→      │     └── Body B
+   991→      │
+   992→      └── Life 03
+   993→            └── Body C
+   994→```
+   995→
+   996→Inheritance can be defined for:
+   997→
+   998→* Memories
+   999→* Personality
+  1000→* Abilities
+  1001→* Techniques
+  1002→* Relationships
+  1003→* Appearance
+  1004→
+  1005→---
+  1006→
+  1007→# 25. Character Relationship Graph
+  1008→
+  1009→Characters should have persistent relationships.
+  1010→
+  1011→```text
+  1012→Lin Yue
+  1013→│
+  1014→├── Master
+  1015→│
+  1016→├── Rival
+  1017→│
+  1018→├── Brother
+  1019→│
+  1020→├── Clone
+  1021→│
+  1022→├── Avatar
+  1023→│
+  1024→├── Enemy
+  1025→│
+  1026→└── Reincarnation
+  1027→```
+  1028→
+  1029→DSH can query these relationships when generating scenes.
+  1030→
+  1031→---
+  1032→
+  1033→# 26. Missing Capability Detection
+  1034→
+  1035→When DSH receives a scene requirement, it should compare the story requirement against the current production state.
+  1036→
+  1037→Example:
+  1038→
+  1039→```text
+  1040→SCENE REQUIREMENTS
+  1041→
+  1042→Character:
+  1043→    Lin Yue ✓
+  1044→
+  1045→Environment:
+  1046→    Battlefield ✓
+  1047→
+  1048→Weapon:
+  1049→    Jade Sword ✓
+  1050→
+  1051→Combat Animation:
+  1052→    ✓
+  1053→
+  1054→Azure Flame:
+  1055→    ✗
+  1056→
+  1057→Azure Flame VFX:
+  1058→    ✗
+  1059→```
+  1060→
+  1061→DSH then determines what must be created.
+  1062→
+  1063→```text
+  1064→create_ability()
+  1065→create_animation()
+  1066→create_vfx()
+  1067→```
+  1068→
+  1069→This is how the system can intelligently expand a character over time.
+  1070→
+  1071→---
+  1072→
+  1073→# 27. Continuity Engine
+  1074→
+  1075→Continuity is a first-class system.
+  1076→
+  1077→Example:
+  1078→
+  1079→```text
+  1080→Episode 29:
+  1081→Jade Sword destroyed.
+  1082→```
+  1083→
+  1084→Episode 32:
+  1085→
+  1086→```text
+  1087→Script:
+  1088→Lin Yue draws Jade Sword.
+  1089→```
+  1090→
+  1091→DSH should detect:
+  1092→
+  1093→```text
+  1094→CONTINUITY CONFLICT
+  1095→
+  1096→Required:
+  1097→Jade Sword
+  1098→
+  1099→Canonical history:
+  1100→Jade Sword destroyed in Episode 29.
+  1101→
+  1102→Possible resolutions:
+  1103→1. Script error
+  1104→2. Flashback
+  1105→3. Sword restored
+  1106→4. Alternate weapon
+  1107→```
+  1108→
+  1109→The system should not silently create an inconsistent asset.
+  1110→
+  1111→---
+  1112→
+  1113→# 28. Environment System
+  1114→
+  1115→Environments should also be persistent assets.
+  1116→
+  1117→Examples:
+  1118→
+  1119→```text
+  1120→Azure Mountain
+  1121→Heavenly Sect
+  1122→Imperial City
+  1123→Demon Realm
+  1124→Ancient Temple
+  1125→Spirit Forest
+  1126→```
+  1127→
+  1128→Each environment can contain:
+  1129→
+  1130→```text
+  1131→Environment
+  1132→├── Terrain
+  1133→├── Architecture
+  1134→├── Vegetation
+  1135→├── Props
+  1136→├── Lighting
+  1137→├── Atmosphere
+  1138→├── Weather
+  1139→├── Variants
+  1140→└── Versions
+  1141→```
+  1142→
+  1143→---
+  1144→
+  1145→# 29. Scene Construction
+  1146→
+  1147→DSH should be able to translate a narrative description into production requirements.
+  1148→
+  1149→Example:
+  1150→
+  1151→> "Lin Yue enters an ancient ruined temple during a storm."
+  1152→
+  1153→DSH can derive:
+  1154→
+  1155→```text
+  1156→Characters
+  1157→    Lin Yue
+  1158→
+  1159→Environment
+  1160→    Ancient Temple
+  1161→
+  1162→Weather
+  1163→    Storm
+  1164→
+  1165→Atmosphere
+  1166→    Rain
+  1167→    Fog
+  1168→    Wind
+  1169→
+  1170→Lighting
+  1171→    Lightning
+  1172→    Moonlight
+  1173→    Interior shadows
+  1174→
+  1175→Camera
+  1176→    Establishing shot
+  1177→    Tracking shot
+  1178→    Close-up
+  1179→
+  1180→Animation
+  1181→    Walking
+  1182→    Looking around
+  1183→    Clothing movement
+  1184→```
+  1185→
+  1186→---
+  1187→
+  1188→# 30. Shot System
+  1189→
+  1190→A scene consists of shots.
+  1191→
+  1192→Example:
+  1193→
+  1194→```text
+  1195→Scene 12
+  1196→│
+  1197→├── Shot 001
+  1198→│   └── Establishing shot
+  1199→│
+  1200→├── Shot 002
+  1201→│   └── Lin Yue enters
+  1202→│
+  1203→├── Shot 003
+  1204→│   └── Close-up
+  1205→│
+  1206→├── Shot 004
+  1207→│   └── Enemy revealed
+  1208→│
+  1209→├── Shot 005
+  1210→│   └── Sword draw
+  1211→│
+  1212→└── Shot 006
+  1213→    └── Combat impact
+  1214→```
+  1215→
+  1216→Each shot should have:
+  1217→
+  1218→* Camera
+  1219→* Characters
+  1220→* Environment
+  1221→* Animation
+  1222→* Lighting
+  1223→* VFX
+  1224→* Audio
+  1225→* Duration
+  1226→* Render status
+  1227→
+  1228→---
+  1229→
+  1230→# 31. Cinematography System
+  1231→
+  1232→DSH should understand cinematic concepts such as:
+  1233→
+  1234→* Establishing shots
+  1235→* Wide shots
+  1236→* Medium shots
+  1237→* Close-ups
+  1238→* Extreme close-ups
+  1239→* Tracking
+  1240→* Dolly
+  1241→* Crane
+  1242→* Orbit
+  1243→* Pan
+  1244→* Tilt
+  1245→* Depth of field
+  1246→* Composition
+  1247→* Focus
+  1248→* Lens selection
+  1249→
+  1250→Example:
+  1251→
+  1252→```text
+  1253→Shot 05
+  1254→
+  1255→Camera:
+  1256→    50mm
+  1257→
+  1258→Movement:
+  1259→    Slow orbit
+  1260→
+  1261→Focus:
+  1262→    Lin Yue
+  1263→
+  1264→Depth of Field:
+  1265→    Medium
+  1266→
+  1267→Lighting:
+  1268→    Backlight + moonlight
+  1269→
+  1270→Duration:
+  1271→    4.2 seconds
+  1272→```
+  1273→
+  1274→---
+  1275→
+  1276→# 32. Animation System
+  1277→
+  1278→The animation system should support:
+  1279→
+  1280→* Keyframe animation
+  1281→* Procedural animation
+  1282→* Motion capture
+  1283→* Motion retargeting
+  1284→* Animation blending
+  1285→* Facial animation
+  1286→* Lip synchronization
+  1287→* Cloth simulation
+  1288→* Hair simulation
+  1289→* Physics
+  1290→* Martial arts choreography
+  1291→* Camera animation
+  1292→
+  1293→DSH should be able to compose these capabilities.
+  1294→
+  1295→---
+  1296→
+  1297→# 33. VFX System
+  1298→
+  1299→The system should eventually support:
+  1300→
+  1301→```text
+  1302→Fire
+  1303→Smoke
+  1304→Rain
+  1305→Snow
+  1306→Fog
+  1307→Lightning
+  1308→Magic
+  1309→Cultivation Energy
+  1310→Sword Trails
+  1311→Explosions
+  1312→Debris
+  1313→Destruction
+  1314→Particles
+  1315→Water
+  1316→Wind
+  1317→Aura
+  1318→```
+  1319→
+  1320→Example:
+  1321→
+  1322→```text
+  1323→Azure Flame Technique
+  1324→
+  1325→├── Character animation
+  1326→├── Hand animation
+  1327→├── Energy buildup
+  1328→├── Light emission
+  1329→├── Flame particles
+  1330→├── Smoke
+  1331→├── Environment illumination
+  1332→├── Camera shake
+  1333→└── Impact effect
+  1334→```
+  1335→
+  1336→---
+  1337→
+  1338→# 34. Blender
+  1339→
+  1340→Blender is the core 3D production engine.
+  1341→
+  1342→It handles:
+  1343→
+  1344→* Modeling
+  1345→* Rigging
+  1346→* Animation
+  1347→* Materials
+  1348→* Hair
+  1349→* Cloth
+  1350→* Physics
+  1351→* Cameras
+  1352→* Lighting
+  1353→* VFX
+  1354→* Rendering
+  1355→* Compositing
+  1356→
+  1357→Blender is controlled programmatically through its Python API.
+  1358→
+  1359→---
+  1360→
+  1361→# 35. Blender Bridge
+  1362→
+  1363→Build a dedicated bridge between our production system and Blender.
+  1364→
+  1365→```text
+  1366→animation_bridge/
+  1367→├── __init__.py
+  1368→├── characters/
+  1369→├── environments/
+  1370→├── assets/
+  1371→├── animation/
+  1372→├── cameras/
+  1373→├── lighting/
+  1374→├── materials/
+  1375→├── vfx/
+  1376→├── rendering/
+  1377→└── api/
+  1378→```
+  1379→
+  1380→The bridge translates high-level production commands into Blender operations.
+  1381→
+  1382→---
+  1383→
+  1384→# 36. Frontend
+  1385→
+  1386→Use:
+  1387→
+  1388→```text
+  1389→Nuxt
+  1390→Vue
+  1391→TypeScript
+  1392→```
+  1393→
+  1394→The frontend is the animation production workspace.
+  1395→
+  1396→Primary sections:
+  1397→
+  1398→```text
+  1399→Studio
+  1400→├── Dashboard
+  1401→├── Projects
+  1402→├── Story
+  1403→├── Characters
+  1404→├── Assets
+  1405→├── Environments
+  1406→├── Episodes
+  1407→├── Scenes
+  1408→├── Shots
+  1409→├── Timeline
+  1410→├── Render Queue
+  1411→├── Audio
+  1412→├── Subtitles
+  1413→├── Localization
+  1414→└── DSH
+  1415→```
+  1416→
+  1417→---
+  1418→
+  1419→# 37. Browser 3D Preview
+  1420→
+  1421→Use:
+  1422→
+  1423→```text
+  1424→Three.js
+  1425→```
+  1426→
+  1427→Three.js is not the production renderer.
+  1428→
+  1429→It is for:
+  1430→
+  1431→* Browser-based scene preview
+  1432→* Asset inspection
+  1433→* Character preview
+  1434→* Camera preview
+  1435→* Scene navigation
+  1436→* Production visualization
+  1437→
+  1438→Blender remains authoritative for production rendering.
+  1439→
+  1440→---
+  1441→
+  1442→# 38. Database
+  1443→
+  1444→Use:
+  1445→
+  1446→```text
+  1447→PostgreSQL
+  1448→```
+  1449→
+  1450→Postgres stores structured production state.
+  1451→
+  1452→Core entities:
+  1453→
+  1454→```text
+  1455→Project
+  1456→Production
+  1457→Season
+  1458→Episode
+  1459→Scene
+  1460→Shot
+  1461→
+  1462→Character
+  1463→CharacterState
+  1464→CharacterVariant
+  1465→CharacterRelationship
+  1466→
+  1467→Asset
+  1468→AssetVersion
+  1469→Environment
+  1470→Prop
+  1471→Creature
+  1472→Vehicle
+  1473→
+  1474→Animation
+  1475→AnimationClip
+  1476→VFX
+  1477→
+  1478→Dialogue
+  1479→AudioTrack
+  1480→SubtitleTrack
+  1481→
+  1482→Render
+  1483→RenderJob
+  1484→
+  1485→ProductionEvent
+  1486→ContinuityEvent
+  1487→```
+  1488→
+  1489→---
+  1490→
+  1491→# 39. Object Storage
+  1492→
+  1493→Use:
+  1494→
+  1495→```text
+  1496→MinIO
+  1497→```
+  1498→
+  1499→Store:
+  1500→
+  1501→```text
+  1502→.blend
+  1503→textures
+  1504→models
+  1505→HDRIs
+  1506→audio
+  1507→voice
+  1508→reference images
+  1509→animation caches
+  1510→OpenEXR
+  1511→PNG
+  1512→video
+  1513→subtitle files
+  1514→```
+  1515→
+  1516→PostgreSQL stores metadata.
+  1517→
+  1518→MinIO stores large binary artifacts.
+  1519→
+  1520→---
+  1521→
+  1522→# 40. Redis
+  1523→
+  1524→Use Redis for:
+  1525→
+  1526→* Job queues
+  1527→* Render progress
+  1528→* Caching
+  1529→* WebSocket state
+  1530→* DSH coordination
+  1531→* Temporary state
+  1532→* Event delivery
+  1533→
+  1534→Example:
+  1535→
+  1536→```text
+  1537→DSH
+  1538→ ↓
+  1539→Render Job
+  1540→ ↓
+  1541→Redis
+  1542→ ↓
+  1543→Worker
+  1544→ ↓
+  1545→Blender
+  1546→ ↓
+  1547→Render
+  1548→```
+  1549→
+  1550→---
+  1551→
+  1552→# 41. Workers
+  1553→
+  1554→Heavy operations must run asynchronously.
+  1555→
+  1556→Examples:
+  1557→
+  1558→```text
+  1559→Asset generation
+  1560→Rigging
+  1561→Animation baking
+  1562→Rendering
+  1563→Video encoding
+  1564→Audio generation
+  1565→Subtitle generation
+  1566→Localization
+  1567→```
+  1568→
+  1569→Architecture:
+  1570→
+  1571→```text
+  1572→FastAPI
+  1573→   ↓
+  1574→Queue
+  1575→   ↓
+  1576→Worker
+  1577→   ↓
+  1578→Blender / FFmpeg / AI Tool
+  1579→```
+  1580→
+  1581→Celery can be used initially, with the worker architecture kept replaceable.
+  1582→
+  1583→---
+  1584→
+  1585→# 42. FFmpeg
+  1586→
+  1587→FFmpeg is the media backbone.
+  1588→
+  1589→Use it for:
+  1590→
+  1591→* Video encoding
+  1592→* Episode assembly
+  1593→* Audio mixing
+  1594→* Subtitle muxing
+  1595→* Format conversion
+  1596→* Preview generation
+  1597→* Frame extraction
+  1598→* Audio processing
+  1599→
+  1600→Typical pipeline:
+  1601→
+  1602→```text
+  1603→Blender
+  1604→ ↓
+  1605→Image Sequence
+  1606→ ↓
+  1607→Compositing
+  1608→ ↓
+  1609→FFmpeg
+  1610→ ↓
+  1611→Episode Master
+  1612→```
+  1613→
+  1614→---
+  1615→
+  1616→# 43. OpenEXR
+  1617→
+  1618→High-quality production renders should preserve high dynamic range and production information.
+  1619→
+  1620→Use:
+  1621→
+  1622→```text
+  1623→Blender
+  1624→ ↓
+  1625→OpenEXR
+  1626→ ↓
+  1627→Compositing
+  1628→ ↓
+  1629→Final Video
+  1630→```
+  1631→
+  1632→PNG can be used for previews and simpler outputs.
+  1633→
+  1634→---
+  1635→
+  1636→# 44. Audio Architecture
+  1637→
+  1638→Keep audio modular.
+  1639→
+  1640→Capabilities:
+  1641→
+  1642→```text
+  1643→generate_voice
+  1644→transcribe
+  1645→generate_lip_sync
+  1646→generate_music
+  1647→generate_sfx
+  1648→mix_audio
+  1649→```
+  1650→
+  1651→Do not hard-code the platform around one AI provider.
+  1652→
+  1653→DSH should be able to choose available tools.
+  1654→
+  1655→---
+  1656→
+  1657→# 45. AI Model Layer
+  1658→
+  1659→The AI layer should remain model-agnostic.
+  1660→
+  1661→```text
+  1662→                         DSH
+  1663→                          │
+  1664→              ┌───────────┼───────────┐
+  1665→              ▼           ▼           ▼
+  1666→             LLM        Vision       Audio
+  1667→              │           │           │
+  1668→           Model A      Model B      Model C
+  1669→```
+  1670→
+  1671→Different tasks can use different models.
+  1672→
+  1673→Examples:
+  1674→
+  1675→```text
+  1676→Story reasoning → LLM
+  1677→Render inspection → Vision model
+  1678→Speech → Audio model
+  1679→Lip sync → Specialized model
+  1680→Asset generation → Specialized model
+  1681→```
+  1682→
+  1683→DSH decides which capability is needed.
+  1684→
+  1685→---
+  1686→
+  1687→# 46. Storage and Versioning
+  1688→
+  1689→Never use:
+  1690→
+  1691→```text
+  1692→final.blend
+  1693→final2.blend
+  1694→final_final.blend
+  1695→final_final2.blend
+  1696→```
+  1697→
+  1698→Instead:
+  1699→
+  1700→```text
+  1701→Scene 12
+  1702→├── v001
+  1703→├── v002
+  1704→├── v003
+  1705→└── v004
+  1706→
+  1707→Current:
+  1708→v004
+  1709→```
+  1710→
+  1711→Every important production object should have versioning.
+  1712→
+  1713→---
+  1714→
+  1715→# 47. Production Context
+  1716→
+  1717→DSH needs persistent context.
+  1718→
+  1719→Example:
+  1720→
+  1721→```text
+  1722→Project:
+  1723→Immortal Path
+  1724→
+  1725→Season:
+  1726→Season 1
+  1727→
+  1728→Episode:
+  1729→Episode 7
+  1730→
+  1731→Scene:
+  1732→Scene 12
+  1733→
+  1734→Characters:
+  1735→Lin Yue
+  1736→Chen Hao
+  1737→
+  1738→Environment:
+  1739→Azure Mountain
+  1740→
+  1741→Current Assets:
+  1742→Lin Yue / Battle Robes
+  1743→Jade Sword
+  1744→
+  1745→Previous Scene:
+  1746→Lin Yue entered temple.
+  1747→
+  1748→Next Scene:
+  1749→Elder appears.
+  1750→```
+  1751→
+  1752→This allows commands such as:
+  1753→
+  1754→> "Continue the scene."
+  1755→
+  1756→to have actual meaning.
+  1757→
+  1758→---
+  1759→
+  1760→# 48. Render Pipeline
+  1761→
+  1762→Rendering should be a proper production system.
+  1763→
+  1764→```text
+  1765→Scene
+  1766→ ↓
+  1767→Shot
+  1768→ ↓
+  1769→Validation
+  1770→ ↓
+  1771→Preview Render
+  1772→ ↓
+  1773→DSH Inspection
+  1774→ ↓
+  1775→Revision
+  1776→ ↓
+  1777→Approved
+  1778→ ↓
+  1779→Final Render
+  1780→ ↓
+  1781→OpenEXR
+  1782→ ↓
+  1783→Compositing
+  1784→ ↓
+  1785→FFmpeg
+  1786→ ↓
+  1787→Episode
+  1788→```
+  1789→
+  1790→---
+  1791→
+  1792→# 49. Render Queue
+  1793→
+  1794→Example:
+  1795→
+  1796→```text
+  1797→RENDER QUEUE
+  1798→
+  1799→Shot 001    Complete
+  1800→Shot 002    Complete
+  1801→Shot 003    Rendering 72%
+  1802→Shot 004    Waiting
+  1803→Shot 005    Waiting
+  1804→```
+  1805→
+  1806→Each render should be resumable.
+  1807→
+  1808→---
+  1809→
+  1810→# 50. DSH Evaluation Loop
+  1811→
+  1812→A major differentiator should be automated review.
+  1813→
+  1814→```text
+  1815→Create
+  1816→ ↓
+  1817→Render Preview
+  1818→ ↓
+  1819→Inspect
+  1820→ ↓
+  1821→Evaluate
+  1822→ ↓
+  1823→Identify Problem
+  1824→ ↓
+  1825→Modify
+  1826→ ↓
+  1827→Render Again
+  1828→```
+  1829→
+  1830→Example:
+  1831→
+  1832→```text
+  1833→DSH:
+  1834→
+  1835→The character is visually correct.
+  1836→
+  1837→Problems:
+  1838→- Camera is too wide.
+  1839→- Character is underexposed.
+  1840→- Sword effect lacks intensity.
+  1841→- Background fog is too dense.
+  1842→
+  1843→Actions:
+  1844→- Move camera 1.5m closer.
+  1845→- Increase rim light.
+  1846→- Increase sword energy emission.
+  1847→- Reduce fog density by 20%.
+  1848→```
+  1849→
+  1850→Then DSH calls the appropriate tools.
+  1851→
+  1852→---
+  1853→
+  1854→# 51. Production State Machine
+  1855→
+  1856→Production objects should have explicit states.
+  1857→
+  1858→Example:
+  1859→
+  1860→```text
+  1861→Draft
+  1862→ ↓
+  1863→Building
+  1864→ ↓
+  1865→Preview
+  1866→ ↓
+  1867→Review
+  1868→ ↓
+  1869→Approved
+  1870→ ↓
+  1871→Rendered
+  1872→ ↓
+  1873→Final
+  1874→```
+  1875→
+  1876→Other states:
+  1877→
+  1878→```text
+  1879→Failed
+  1880→Paused
+  1881→NeedsRevision
+  1882→Archived
+  1883→```
+  1884→
+  1885→This prevents uncontrolled production state.
+  1886→
+  1887→---
+  1888→
+  1889→# 52. Long-Running Production
+  1890→
+  1891→A series can remain active for months or years.
+  1892→
+  1893→Therefore:
+  1894→
+  1895→```text
+  1896→Project
+  1897→ ↓
+  1898→Season
+  1899→ ↓
+  1900→Episode
+  1901→ ↓
+  1902→Scene
+  1903→ ↓
+  1904→Shot
+  1905→```
+  1906→
+  1907→must be persistent.
+  1908→
+  1909→DSH should be able to resume production later.
+  1910→
+  1911→Example:
+  1912→
+  1913→> "Continue Episode 14."
+  1914→
+  1915→DSH retrieves the production state and resumes.
+  1916→
+  1917→---
+  1918→
+  1919→# 53. First MVP
+  1920→
+  1921→Do not start by attempting a complete 22-minute episode.
+  1922→
+  1923→The first milestone should prove the core loop.
+  1924→
+  1925→## MVP Goal
+  1926→
+  1927→Produce one impressive cinematic scene.
+  1928→
+  1929→Example:
+  1930→
+  1931→> A lone cultivator stands on a mountain at night. Clouds move beneath him. His robes react to the wind. He draws his sword. Energy gathers around the blade. Lightning illuminates the mountain. The camera orbits around him before the sword strike.
+  1932→
+  1933→The system must be able to:
+  1934→
+  1935→1. Create project
+  1936→2. Create character
+  1937→3. Create environment
+  1938→4. Create scene
+  1939→5. Create camera
+  1940→6. Create lighting
+  1941→7. Apply animation
+  1942→8. Create VFX
+  1943→9. Render preview
+  1944→10. Let DSH inspect it
+  1945→11. Modify the scene
+  1946→12. Render again
+  1947→13. Produce final shot
+  1948→
+  1949→This proves the fundamental architecture.
+  1950→
+  1951→---
+  1952→
+  1953→# 54. Phase 1
+  1954→
+  1955→## Production Foundation
+  1956→
+  1957→Build:
+  1958→
+  1959→```text
+  1960→Project
+  1961→Season
+  1962→Episode
+  1963→Scene
+  1964→Shot
+  1965→Asset
+  1966→Character
+  1967→Environment
+  1968→```
+  1969→
+  1970→Implement:
+  1971→
+  1972→* PostgreSQL schema
+  1973→* FastAPI
+  1974→* Nuxt frontend
+  1975→* MinIO
+  1976→* Redis
+  1977→* DSH integration
+  1978→* Production context
+  1979→* Basic versioning
+  1980→
+  1981→---
+  1982→
+  1983→# 55. Phase 2
+  1984→
+  1985→## Blender Integration
+  1986→
+  1987→Build:
+  1988→
+  1989→```text
+  1990→Blender Bridge
+  1991→```
+  1992→
+  1993→Implement:
+  1994→
+  1995→* Scene creation
+  1996→* Object creation
+  1997→* Asset import
+  1998→* Character placement
+  1999→* Camera creation
+  2000→* Lighting
+
+[showing lines 1-2000 of 2542; use offset=2001 with limit to continue reading]

@@ -1,0 +1,2541 @@
+# AI-Native Animation Production Platform
+
+> **An AI-native production system for creating, managing, and operating complete animated productions using DSH, Blender, and open-source infrastructure.**
+
+---
+
+# 1. Vision
+
+Build a production platform where a creator can describe an animated production in natural language and **DSH orchestrates the entire production pipeline**.
+
+The platform should support:
+
+* Donghua
+* Anime
+* Korean / manhwa-inspired animation
+* General animation
+* 3D animation
+* 2D animation
+* Hybrid 2D/3D animation
+* Feature films
+* Series
+* Short films
+* Episodic productions
+* Multilingual subtitles
+* Optional dubbing
+
+The system should not merely generate isolated images or clips.
+
+It should maintain a **persistent animated universe** containing:
+
+* Characters
+* Character development
+* Character variants
+* Clones
+* Avatars
+* Transformations
+* Reincarnations
+* Possession states
+* Environments
+* Props
+* Creatures
+* Abilities
+* Animation libraries
+* Scenes
+* Shots
+* Story state
+* Continuity
+* Audio
+* Localization
+* Rendering
+* Production history
+
+The central idea:
+
+> **DSH is the brain. Blender is the production engine. The platform is the production environment.**
+
+---
+
+# 2. Core Thesis
+
+This is not an "AI image generator."
+
+It is not simply:
+
+```text
+Prompt
+  ↓
+AI
+  ↓
+Video
+```
+
+Instead:
+
+```text
+Creative Intent
+      ↓
+     DSH
+      ↓
+Planning
+      ↓
+Production Tools
+      ↓
+Asset / Scene Construction
+      ↓
+Blender
+      ↓
+Animation / Lighting / VFX / Rendering
+      ↓
+Inspection
+      ↓
+DSH Evaluation
+      ↓
+Revision
+      ↓
+Approved Production
+```
+
+The system should behave more like an **AI-native animation studio**.
+
+---
+
+# 3. Product Separation
+
+This project is independent.
+
+It is **not Py8n**.
+
+It does not depend on Py8n's architecture, runtime, graph system, or product model.
+
+The core stack is:
+
+```text
+DSH
+Blender
+FastAPI
+PostgreSQL
+Redis
+MinIO
+FFmpeg
+Nuxt
+Vue
+TypeScript
+Three.js
+Docker
+```
+
+All major production components should remain replaceable.
+
+---
+
+# 4. Core Architecture
+
+```text
+                         ANIMATION PLATFORM
+                                │
+                                ▼
+                         ┌─────────────┐
+                         │     DSH     │
+                         │ AI Director │
+                         │ Orchestrator│
+                         └──────┬──────┘
+                                │
+                           Tool Calling
+                                │
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                 ▼
+        Production API      Asset System      Media System
+              │                 │                 │
+              ▼                 ▼                 ▼
+           FastAPI          PostgreSQL          FFmpeg
+              │                 │                 │
+              └─────────────────┼─────────────────┘
+                                │
+                         Blender Bridge
+                                │
+                                ▼
+                            BLENDER
+                                │
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                 ▼
+           Modeling          Animation         Rendering
+              │                 │                 │
+              └─────────────────┼─────────────────┘
+                                ▼
+                           Render Output
+                                │
+                                ▼
+                         DSH Evaluation
+                                │
+                         ┌──────┴──────┐
+                         │             │
+                       Approve       Revise
+                                       │
+                                       └──────→ Blender
+```
+
+---
+
+# 5. DSH: The Brain
+
+DSH is responsible for:
+
+* Understanding user intent
+* Planning production tasks
+* Calling tools
+* Maintaining context
+* Maintaining production state
+* Maintaining character state
+* Maintaining story state
+* Detecting missing assets
+* Detecting continuity conflicts
+* Coordinating Blender
+* Coordinating media tools
+* Evaluating previews
+* Deciding when to retry
+* Deciding when to modify
+* Deciding when a shot is complete
+* Managing long-running production workflows
+
+The core loop is:
+
+```text
+INTENT
+  ↓
+PLAN
+  ↓
+EXECUTE
+  ↓
+OBSERVE
+  ↓
+EVALUATE
+  ↓
+MODIFY
+  ↓
+EXECUTE
+  ↓
+APPROVE
+```
+
+---
+
+# 6. DSH Should Not Directly Write Random Blender Scripts
+
+Avoid making the architecture:
+
+```text
+User
+ ↓
+LLM
+ ↓
+Huge Blender Python script
+ ↓
+Blender
+```
+
+Instead:
+
+```text
+User
+ ↓
+DSH
+ ↓
+Domain Tool
+ ↓
+Production API
+ ↓
+Blender Bridge
+ ↓
+Blender Python API
+```
+
+DSH operates at a high production level.
+
+For example:
+
+```text
+character.create()
+scene.create()
+character.add_to_scene()
+camera.create()
+lighting.create()
+animation.apply()
+vfx.create()
+render.preview()
+render.final()
+```
+
+The Blender bridge handles the actual `bpy` operations.
+
+This creates a stable abstraction layer between DSH and Blender.
+
+---
+
+# 7. Production Tool API
+
+Initial tool categories:
+
+## Project Tools
+
+```text
+create_project
+update_project
+get_project
+create_season
+create_episode
+get_production_context
+```
+
+## Story Tools
+
+```text
+create_story
+create_script
+create_scene
+create_shot
+create_storyboard
+update_story
+analyze_story
+```
+
+## Character Tools
+
+```text
+create_character
+modify_character
+create_character_variant
+create_character_state
+update_character_state
+create_clone
+create_avatar
+create_transformation
+create_disguise
+create_reincarnation
+create_possession_state
+```
+
+## Asset Tools
+
+```text
+create_environment
+create_prop
+create_creature
+find_asset
+modify_asset
+version_asset
+approve_asset
+```
+
+## Scene Tools
+
+```text
+create_scene
+add_character
+add_prop
+add_environment
+set_character_state
+set_camera
+set_lighting
+set_atmosphere
+```
+
+## Animation Tools
+
+```text
+apply_animation
+create_animation
+blend_animation
+animate_character
+animate_camera
+animate_cloth
+animate_hair
+animate_face
+choreograph_action
+```
+
+## VFX Tools
+
+```text
+create_fire
+create_smoke
+create_rain
+create_lightning
+create_energy
+create_magic
+create_sword_effect
+create_destruction
+create_particles
+```
+
+## Rendering Tools
+
+```text
+render_preview
+render_frame
+render_shot
+render_sequence
+render_final
+inspect_render
+```
+
+## Media Tools
+
+```text
+generate_voice
+transcribe_audio
+generate_lip_sync
+mix_audio
+create_sound_effect
+assemble_episode
+encode_video
+```
+
+## Localization Tools
+
+```text
+translate_script
+generate_subtitles
+translate_subtitles
+generate_dub
+sync_subtitles
+```
+
+---
+
+# 8. Production Types
+
+When creating a production:
+
+```text
+CREATE NEW PRODUCTION
+
+Title:
+[________________]
+
+Format:
+○ Feature Film
+○ Series
+○ Short Film
+
+Animation:
+○ 3D
+○ 2D
+○ Hybrid
+
+Visual Style:
+○ Donghua
+○ Anime
+○ Korean Animation / Manhwa-inspired
+○ Western Animation
+○ Custom
+
+Original Language:
+[________________]
+
+Subtitle Languages:
+[________________]
+
+Frame Rate:
+[24]
+
+Resolution:
+[1920 × 1080]
+```
+
+The production configuration becomes part of the DSH context.
+
+---
+
+# 9. Donghua
+
+For a Donghua production:
+
+```text
+style = donghua
+original_language = zh-CN
+```
+
+The system can use:
+
+* Chinese dialogue
+* Chinese terminology
+* Donghua-oriented character design
+* Cinematic 3D rendering
+* Martial arts choreography
+* Cultivation effects
+* Stylized environments
+* Chinese localization rules
+
+---
+
+# 10. Anime
+
+For an anime production:
+
+```text
+style = anime
+original_language = ja-JP
+```
+
+The production can use:
+
+* Japanese dialogue
+* Anime-oriented proportions
+* Cel shading
+* Anime timing
+* 2D/3D hybrid techniques
+* Stylized effects
+* Anime cinematography
+
+---
+
+# 11. Korean Animation
+
+Use a configuration such as:
+
+```text
+style = korean_animation
+original_language = ko-KR
+```
+
+"Manhwa" should be treated primarily as the comic medium or an artistic influence rather than a strict animation format.
+
+---
+
+# 12. General Animation
+
+General animation can use any original language:
+
+```text
+style = custom
+original_language = user_selected_language
+```
+
+This allows:
+
+* English
+* French
+* Arabic
+* Spanish
+* Portuguese
+* Hausa
+* Yoruba
+* Igbo
+* Chinese
+* Japanese
+* Korean
+* Any supported language
+
+---
+
+# 13. Localization
+
+Original language and subtitle language must be independent.
+
+Example:
+
+```text
+Original:
+Chinese
+
+Subtitles:
+English
+Japanese
+Korean
+French
+Arabic
+Spanish
+```
+
+Production structure:
+
+```text
+episode_01/
+├── audio/
+│   └── zh-CN.wav
+│
+└── subtitles/
+    ├── en-US.srt
+    ├── ja-JP.srt
+    ├── ko-KR.srt
+    ├── fr-FR.srt
+    ├── ar-SA.srt
+    └── es-ES.srt
+```
+
+Dubbing can be an additional layer:
+
+```text
+audio/
+├── zh-CN/
+├── en-US/
+├── ja-JP/
+└── ko-KR/
+```
+
+---
+
+# 14. Translation Memory
+
+The system should maintain a canonical terminology database.
+
+Example:
+
+```text
+TERM
+    Azure Flame
+
+Chinese
+    青焰
+
+English
+    Azure Flame
+
+Japanese
+    蒼炎
+
+Korean
+    창염
+```
+
+The glossary can contain:
+
+* Character names
+* Locations
+* Cultivation realms
+* Techniques
+* Organizations
+* Weapons
+* Titles
+* Honorifics
+* Special terminology
+
+This prevents inconsistent translation across hundreds of episodes.
+
+---
+
+# 15. Project Structure
+
+For a feature film:
+
+```text
+My Production/
+├── project.json
+├── story/
+├── assets/
+│   ├── characters/
+│   ├── environments/
+│   ├── props/
+│   ├── creatures/
+│   └── vehicles/
+├── scenes/
+├── animation/
+├── audio/
+├── subtitles/
+├── renders/
+└── final/
+```
+
+For a series:
+
+```text
+My Production/
+├── project.json
+│
+├── seasons/
+│   ├── season_01/
+│   │   ├── season.json
+│   │   │
+│   │   ├── episode_01/
+│   │   │   ├── episode.json
+│   │   │   ├── scenes/
+│   │   │   ├── renders/
+│   │   │   └── final/
+│   │   │
+│   │   ├── episode_02/
+│   │   ├── episode_03/
+│   │   └── ...
+│   │
+│   └── season_02/
+│
+├── assets/
+│   ├── characters/
+│   ├── environments/
+│   ├── props/
+│   ├── creatures/
+│   └── vehicles/
+│
+├── audio/
+├── music/
+├── subtitles/
+└── shared/
+```
+
+---
+
+# 16. Shared Assets
+
+Assets should generally be project-level.
+
+If Lin Yue is created in Episode 1:
+
+```text
+assets/characters/lin_yue/
+```
+
+Episode 7 references the same character.
+
+Do not duplicate the character into every episode.
+
+This provides continuity.
+
+---
+
+# 17. Character System
+
+Characters are not just Blender meshes.
+
+A character is a persistent production entity.
+
+```text
+CHARACTER
+│
+├── Identity
+│   ├── Name
+│   ├── Age
+│   ├── Personality
+│   ├── Backstory
+│   └── Relationships
+│
+├── Appearance
+│   ├── Face
+│   ├── Body
+│   ├── Hair
+│   ├── Skin
+│   └── Canonical Features
+│
+├── Wardrobe
+│   ├── Casual
+│   ├── Battle
+│   ├── Formal
+│   └── Special
+│
+├── Abilities
+│   ├── Techniques
+│   ├── Combat
+│   └── Special Powers
+│
+├── Animation
+│   ├── Idle
+│   ├── Walk
+│   ├── Run
+│   ├── Combat
+│   └── Special
+│
+├── Expressions
+│
+├── Equipment
+│
+├── Relationships
+│
+├── Development
+│
+└── Production Assets
+```
+
+---
+
+# 18. Character Development
+
+Characters must evolve.
+
+Example:
+
+```text
+Episode 01
+
+Cultivation:
+Qi Condensation
+
+Weapon:
+Wooden Sword
+
+Clothing:
+Disciple Robes
+
+Abilities:
+Basic Swordsmanship
+```
+
+Later:
+
+```text
+Episode 15
+
+Cultivation:
+Foundation Establishment
+
+Weapon:
+Jade Sword
+
+Clothing:
+Battle Robes
+
+Abilities:
+Advanced Swordsmanship
+Azure Flame
+```
+
+Later:
+
+```text
+Episode 40
+
+Cultivation:
+Core Formation
+
+Weapon:
+Celestial Sword
+
+Clothing:
+Sect Elder Robes
+
+Abilities:
+Sword Domain
+Azure Heaven Flame
+```
+
+The system must preserve the historical states.
+
+```text
+Lin Yue
+│
+├── State S01
+│   └── Episode 01
+│
+├── State S02
+│   └── Episode 15
+│
+└── State S03
+    └── Episode 40
+```
+
+---
+
+# 19. Character State Types
+
+DSH must distinguish:
+
+## Permanent Development
+
+Example:
+
+```text
+Lin Yue loses his left arm.
+```
+
+This changes his canonical state from that point onward.
+
+## Temporary Scene State
+
+Example:
+
+```text
+Lin Yue is covered in blood.
+```
+
+This applies to the scene but does not permanently alter the character.
+
+## Variant
+
+Example:
+
+```text
+Lin Yue wears formal robes.
+```
+
+This is an appearance variant.
+
+---
+
+# 20. Character Derivatives
+
+The system must support:
+
+```text
+clone_of
+avatar_of
+incarnation_of
+possessed_by
+disguised_as
+transformation_of
+alternate_form_of
+derived_from
+```
+
+Example:
+
+```text
+                    LIN YUE
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+     Original        Clone          Avatar
+        │              │              │
+        │          Clone 001      Projection
+        │
+        ├── Awakened Form
+        ├── Disguise
+        ├── Possessed State
+        └── Reincarnation
+```
+
+---
+
+# 21. Clones
+
+If Lin Yue creates 1,000 clones, the system should not create 1,000 completely independent assets.
+
+Instead:
+
+```text
+Lin Yue
+   │
+   └── Clone Technique
+         │
+         ├── Clone 001
+         ├── Clone 002
+         ├── Clone 003
+         └── ...
+```
+
+They can share:
+
+* Model
+* Rig
+* Materials
+* Animation library
+* Base clothing
+
+while having unique:
+
+* Position
+* State
+* Equipment
+* Damage
+* Abilities
+* Temporary effects
+
+This dramatically reduces production overhead.
+
+---
+
+# 22. Avatars and Projections
+
+An avatar can be modeled as a derived entity:
+
+```text
+Lin Yue
+ │
+ └── Projection
+       ├── Visual Identity → Lin Yue
+       ├── Consciousness → Lin Yue
+       ├── Abilities → Subset
+       ├── Location → Imperial City
+       └── Duration → 30 minutes
+```
+
+---
+
+# 23. Possession
+
+Possession should separate:
+
+```text
+BODY
+   │
+   └── Lin Yue
+          │
+          └── Current Controller
+                  │
+                  └── Demon Lord
+```
+
+The system can change:
+
+* Facial expression
+* Posture
+* Animation
+* Voice
+* Aura
+* Eye effects
+* Abilities
+
+without destroying the underlying character identity.
+
+---
+
+# 24. Reincarnation
+
+The system can model:
+
+```text
+SOUL / IDENTITY
+      │
+      ├── Life 01
+      │     └── Body A
+      │
+      ├── Life 02
+      │     └── Body B
+      │
+      └── Life 03
+            └── Body C
+```
+
+Inheritance can be defined for:
+
+* Memories
+* Personality
+* Abilities
+* Techniques
+* Relationships
+* Appearance
+
+---
+
+# 25. Character Relationship Graph
+
+Characters should have persistent relationships.
+
+```text
+Lin Yue
+│
+├── Master
+│
+├── Rival
+│
+├── Brother
+│
+├── Clone
+│
+├── Avatar
+│
+├── Enemy
+│
+└── Reincarnation
+```
+
+DSH can query these relationships when generating scenes.
+
+---
+
+# 26. Missing Capability Detection
+
+When DSH receives a scene requirement, it should compare the story requirement against the current production state.
+
+Example:
+
+```text
+SCENE REQUIREMENTS
+
+Character:
+    Lin Yue ✓
+
+Environment:
+    Battlefield ✓
+
+Weapon:
+    Jade Sword ✓
+
+Combat Animation:
+    ✓
+
+Azure Flame:
+    ✗
+
+Azure Flame VFX:
+    ✗
+```
+
+DSH then determines what must be created.
+
+```text
+create_ability()
+create_animation()
+create_vfx()
+```
+
+This is how the system can intelligently expand a character over time.
+
+---
+
+# 27. Continuity Engine
+
+Continuity is a first-class system.
+
+Example:
+
+```text
+Episode 29:
+Jade Sword destroyed.
+```
+
+Episode 32:
+
+```text
+Script:
+Lin Yue draws Jade Sword.
+```
+
+DSH should detect:
+
+```text
+CONTINUITY CONFLICT
+
+Required:
+Jade Sword
+
+Canonical history:
+Jade Sword destroyed in Episode 29.
+
+Possible resolutions:
+1. Script error
+2. Flashback
+3. Sword restored
+4. Alternate weapon
+```
+
+The system should not silently create an inconsistent asset.
+
+---
+
+# 28. Environment System
+
+Environments should also be persistent assets.
+
+Examples:
+
+```text
+Azure Mountain
+Heavenly Sect
+Imperial City
+Demon Realm
+Ancient Temple
+Spirit Forest
+```
+
+Each environment can contain:
+
+```text
+Environment
+├── Terrain
+├── Architecture
+├── Vegetation
+├── Props
+├── Lighting
+├── Atmosphere
+├── Weather
+├── Variants
+└── Versions
+```
+
+---
+
+# 29. Scene Construction
+
+DSH should be able to translate a narrative description into production requirements.
+
+Example:
+
+> "Lin Yue enters an ancient ruined temple during a storm."
+
+DSH can derive:
+
+```text
+Characters
+    Lin Yue
+
+Environment
+    Ancient Temple
+
+Weather
+    Storm
+
+Atmosphere
+    Rain
+    Fog
+    Wind
+
+Lighting
+    Lightning
+    Moonlight
+    Interior shadows
+
+Camera
+    Establishing shot
+    Tracking shot
+    Close-up
+
+Animation
+    Walking
+    Looking around
+    Clothing movement
+```
+
+---
+
+# 30. Shot System
+
+A scene consists of shots.
+
+Example:
+
+```text
+Scene 12
+│
+├── Shot 001
+│   └── Establishing shot
+│
+├── Shot 002
+│   └── Lin Yue enters
+│
+├── Shot 003
+│   └── Close-up
+│
+├── Shot 004
+│   └── Enemy revealed
+│
+├── Shot 005
+│   └── Sword draw
+│
+└── Shot 006
+    └── Combat impact
+```
+
+Each shot should have:
+
+* Camera
+* Characters
+* Environment
+* Animation
+* Lighting
+* VFX
+* Audio
+* Duration
+* Render status
+
+---
+
+# 31. Cinematography System
+
+DSH should understand cinematic concepts such as:
+
+* Establishing shots
+* Wide shots
+* Medium shots
+* Close-ups
+* Extreme close-ups
+* Tracking
+* Dolly
+* Crane
+* Orbit
+* Pan
+* Tilt
+* Depth of field
+* Composition
+* Focus
+* Lens selection
+
+Example:
+
+```text
+Shot 05
+
+Camera:
+    50mm
+
+Movement:
+    Slow orbit
+
+Focus:
+    Lin Yue
+
+Depth of Field:
+    Medium
+
+Lighting:
+    Backlight + moonlight
+
+Duration:
+    4.2 seconds
+```
+
+---
+
+# 32. Animation System
+
+The animation system should support:
+
+* Keyframe animation
+* Procedural animation
+* Motion capture
+* Motion retargeting
+* Animation blending
+* Facial animation
+* Lip synchronization
+* Cloth simulation
+* Hair simulation
+* Physics
+* Martial arts choreography
+* Camera animation
+
+DSH should be able to compose these capabilities.
+
+---
+
+# 33. VFX System
+
+The system should eventually support:
+
+```text
+Fire
+Smoke
+Rain
+Snow
+Fog
+Lightning
+Magic
+Cultivation Energy
+Sword Trails
+Explosions
+Debris
+Destruction
+Particles
+Water
+Wind
+Aura
+```
+
+Example:
+
+```text
+Azure Flame Technique
+
+├── Character animation
+├── Hand animation
+├── Energy buildup
+├── Light emission
+├── Flame particles
+├── Smoke
+├── Environment illumination
+├── Camera shake
+└── Impact effect
+```
+
+---
+
+# 34. Blender
+
+Blender is the core 3D production engine.
+
+It handles:
+
+* Modeling
+* Rigging
+* Animation
+* Materials
+* Hair
+* Cloth
+* Physics
+* Cameras
+* Lighting
+* VFX
+* Rendering
+* Compositing
+
+Blender is controlled programmatically through its Python API.
+
+---
+
+# 35. Blender Bridge
+
+Build a dedicated bridge between our production system and Blender.
+
+```text
+animation_bridge/
+├── __init__.py
+├── characters/
+├── environments/
+├── assets/
+├── animation/
+├── cameras/
+├── lighting/
+├── materials/
+├── vfx/
+├── rendering/
+└── api/
+```
+
+The bridge translates high-level production commands into Blender operations.
+
+---
+
+# 36. Frontend
+
+Use:
+
+```text
+Nuxt
+Vue
+TypeScript
+```
+
+The frontend is the animation production workspace.
+
+Primary sections:
+
+```text
+Studio
+├── Dashboard
+├── Projects
+├── Story
+├── Characters
+├── Assets
+├── Environments
+├── Episodes
+├── Scenes
+├── Shots
+├── Timeline
+├── Render Queue
+├── Audio
+├── Subtitles
+├── Localization
+└── DSH
+```
+
+---
+
+# 37. Browser 3D Preview
+
+Use:
+
+```text
+Three.js
+```
+
+Three.js is not the production renderer.
+
+It is for:
+
+* Browser-based scene preview
+* Asset inspection
+* Character preview
+* Camera preview
+* Scene navigation
+* Production visualization
+
+Blender remains authoritative for production rendering.
+
+---
+
+# 38. Database
+
+Use:
+
+```text
+PostgreSQL
+```
+
+Postgres stores structured production state.
+
+Core entities:
+
+```text
+Project
+Production
+Season
+Episode
+Scene
+Shot
+
+Character
+CharacterState
+CharacterVariant
+CharacterRelationship
+
+Asset
+AssetVersion
+Environment
+Prop
+Creature
+Vehicle
+
+Animation
+AnimationClip
+VFX
+
+Dialogue
+AudioTrack
+SubtitleTrack
+
+Render
+RenderJob
+
+ProductionEvent
+ContinuityEvent
+```
+
+---
+
+# 39. Object Storage
+
+Use:
+
+```text
+MinIO
+```
+
+Store:
+
+```text
+.blend
+textures
+models
+HDRIs
+audio
+voice
+reference images
+animation caches
+OpenEXR
+PNG
+video
+subtitle files
+```
+
+PostgreSQL stores metadata.
+
+MinIO stores large binary artifacts.
+
+---
+
+# 40. Redis
+
+Use Redis for:
+
+* Job queues
+* Render progress
+* Caching
+* WebSocket state
+* DSH coordination
+* Temporary state
+* Event delivery
+
+Example:
+
+```text
+DSH
+ ↓
+Render Job
+ ↓
+Redis
+ ↓
+Worker
+ ↓
+Blender
+ ↓
+Render
+```
+
+---
+
+# 41. Workers
+
+Heavy operations must run asynchronously.
+
+Examples:
+
+```text
+Asset generation
+Rigging
+Animation baking
+Rendering
+Video encoding
+Audio generation
+Subtitle generation
+Localization
+```
+
+Architecture:
+
+```text
+FastAPI
+   ↓
+Queue
+   ↓
+Worker
+   ↓
+Blender / FFmpeg / AI Tool
+```
+
+Celery can be used initially, with the worker architecture kept replaceable.
+
+---
+
+# 42. FFmpeg
+
+FFmpeg is the media backbone.
+
+Use it for:
+
+* Video encoding
+* Episode assembly
+* Audio mixing
+* Subtitle muxing
+* Format conversion
+* Preview generation
+* Frame extraction
+* Audio processing
+
+Typical pipeline:
+
+```text
+Blender
+ ↓
+Image Sequence
+ ↓
+Compositing
+ ↓
+FFmpeg
+ ↓
+Episode Master
+```
+
+---
+
+# 43. OpenEXR
+
+High-quality production renders should preserve high dynamic range and production information.
+
+Use:
+
+```text
+Blender
+ ↓
+OpenEXR
+ ↓
+Compositing
+ ↓
+Final Video
+```
+
+PNG can be used for previews and simpler outputs.
+
+---
+
+# 44. Audio Architecture
+
+Keep audio modular.
+
+Capabilities:
+
+```text
+generate_voice
+transcribe
+generate_lip_sync
+generate_music
+generate_sfx
+mix_audio
+```
+
+Do not hard-code the platform around one AI provider.
+
+DSH should be able to choose available tools.
+
+---
+
+# 45. AI Model Layer
+
+The AI layer should remain model-agnostic.
+
+```text
+                         DSH
+                          │
+              ┌───────────┼───────────┐
+              ▼           ▼           ▼
+             LLM        Vision       Audio
+              │           │           │
+           Model A      Model B      Model C
+```
+
+Different tasks can use different models.
+
+Examples:
+
+```text
+Story reasoning → LLM
+Render inspection → Vision model
+Speech → Audio model
+Lip sync → Specialized model
+Asset generation → Specialized model
+```
+
+DSH decides which capability is needed.
+
+---
+
+# 46. Storage and Versioning
+
+Never use:
+
+```text
+final.blend
+final2.blend
+final_final.blend
+final_final2.blend
+```
+
+Instead:
+
+```text
+Scene 12
+├── v001
+├── v002
+├── v003
+└── v004
+
+Current:
+v004
+```
+
+Every important production object should have versioning.
+
+---
+
+# 47. Production Context
+
+DSH needs persistent context.
+
+Example:
+
+```text
+Project:
+Immortal Path
+
+Season:
+Season 1
+
+Episode:
+Episode 7
+
+Scene:
+Scene 12
+
+Characters:
+Lin Yue
+Chen Hao
+
+Environment:
+Azure Mountain
+
+Current Assets:
+Lin Yue / Battle Robes
+Jade Sword
+
+Previous Scene:
+Lin Yue entered temple.
+
+Next Scene:
+Elder appears.
+```
+
+This allows commands such as:
+
+> "Continue the scene."
+
+to have actual meaning.
+
+---
+
+# 48. Render Pipeline
+
+Rendering should be a proper production system.
+
+```text
+Scene
+ ↓
+Shot
+ ↓
+Validation
+ ↓
+Preview Render
+ ↓
+DSH Inspection
+ ↓
+Revision
+ ↓
+Approved
+ ↓
+Final Render
+ ↓
+OpenEXR
+ ↓
+Compositing
+ ↓
+FFmpeg
+ ↓
+Episode
+```
+
+---
+
+# 49. Render Queue
+
+Example:
+
+```text
+RENDER QUEUE
+
+Shot 001    Complete
+Shot 002    Complete
+Shot 003    Rendering 72%
+Shot 004    Waiting
+Shot 005    Waiting
+```
+
+Each render should be resumable.
+
+---
+
+# 50. DSH Evaluation Loop
+
+A major differentiator should be automated review.
+
+```text
+Create
+ ↓
+Render Preview
+ ↓
+Inspect
+ ↓
+Evaluate
+ ↓
+Identify Problem
+ ↓
+Modify
+ ↓
+Render Again
+```
+
+Example:
+
+```text
+DSH:
+
+The character is visually correct.
+
+Problems:
+- Camera is too wide.
+- Character is underexposed.
+- Sword effect lacks intensity.
+- Background fog is too dense.
+
+Actions:
+- Move camera 1.5m closer.
+- Increase rim light.
+- Increase sword energy emission.
+- Reduce fog density by 20%.
+```
+
+Then DSH calls the appropriate tools.
+
+---
+
+# 51. Production State Machine
+
+Production objects should have explicit states.
+
+Example:
+
+```text
+Draft
+ ↓
+Building
+ ↓
+Preview
+ ↓
+Review
+ ↓
+Approved
+ ↓
+Rendered
+ ↓
+Final
+```
+
+Other states:
+
+```text
+Failed
+Paused
+NeedsRevision
+Archived
+```
+
+This prevents uncontrolled production state.
+
+---
+
+# 52. Long-Running Production
+
+A series can remain active for months or years.
+
+Therefore:
+
+```text
+Project
+ ↓
+Season
+ ↓
+Episode
+ ↓
+Scene
+ ↓
+Shot
+```
+
+must be persistent.
+
+DSH should be able to resume production later.
+
+Example:
+
+> "Continue Episode 14."
+
+DSH retrieves the production state and resumes.
+
+---
+
+# 53. First MVP
+
+Do not start by attempting a complete 22-minute episode.
+
+The first milestone should prove the core loop.
+
+## MVP Goal
+
+Produce one impressive cinematic scene.
+
+Example:
+
+> A lone cultivator stands on a mountain at night. Clouds move beneath him. His robes react to the wind. He draws his sword. Energy gathers around the blade. Lightning illuminates the mountain. The camera orbits around him before the sword strike.
+
+The system must be able to:
+
+1. Create project
+2. Create character
+3. Create environment
+4. Create scene
+5. Create camera
+6. Create lighting
+7. Apply animation
+8. Create VFX
+9. Render preview
+10. Let DSH inspect it
+11. Modify the scene
+12. Render again
+13. Produce final shot
+
+This proves the fundamental architecture.
+
+---
+
+# 54. Phase 1
+
+## Production Foundation
+
+Build:
+
+```text
+Project
+Season
+Episode
+Scene
+Shot
+Asset
+Character
+Environment
+```
+
+Implement:
+
+* PostgreSQL schema
+* FastAPI
+* Nuxt frontend
+* MinIO
+* Redis
+* DSH integration
+* Production context
+* Basic versioning
+
+---
+
+# 55. Phase 2
+
+## Blender Integration
+
+Build:
+
+```text
+Blender Bridge
+```
+
+Implement:
+
+* Scene creation
+* Object creation
+* Asset import
+* Character placement
+* Camera creation
+* Lighting
+* Basic materials
+* Render control
+
+Goal:
+
+```text
+DSH
+ ↓
+Tool
+ ↓
+Blender
+ ↓
+Scene
+ ↓
+Render
+```
+
+---
+
+# 56. Phase 3
+
+## Character Pipeline
+
+Implement:
+
+* Character creation
+* Character variants
+* Character states
+* Rigging
+* Clothing
+* Hair
+* Facial expressions
+* Animation library
+* Character versioning
+* Character continuity
+
+Goal:
+
+Create one reusable protagonist and use the same character across multiple scenes.
+
+---
+
+# 57. Phase 4
+
+## Environment Pipeline
+
+Implement:
+
+* Procedural environments
+* Modular architecture
+* Terrain
+* Vegetation
+* Props
+* Weather
+* Atmosphere
+* Lighting presets
+
+Goal:
+
+Create reusable environments that can appear throughout a series.
+
+---
+
+# 58. Phase 5
+
+## Animation
+
+Implement:
+
+* Basic movement
+* Combat
+* Camera animation
+* Facial animation
+* Lip sync
+* Motion blending
+* Cloth
+* Hair
+* Physics
+
+Goal:
+
+Create a complete short cinematic sequence.
+
+---
+
+# 59. Phase 6
+
+## VFX
+
+Implement:
+
+* Fire
+* Smoke
+* Rain
+* Lightning
+* Energy
+* Magic
+* Sword trails
+* Explosions
+* Particles
+* Destruction
+
+Goal:
+
+Create convincing high-energy action sequences.
+
+---
+
+# 60. Phase 7
+
+## DSH Evaluation
+
+Implement:
+
+* Render inspection
+* Scene validation
+* Character validation
+* Continuity checks
+* Visual quality checks
+* Automatic revision
+* Retry logic
+
+This creates the autonomous loop:
+
+```text
+Create
+ ↓
+Render
+ ↓
+Evaluate
+ ↓
+Correct
+ ↓
+Render
+ ↓
+Approve
+```
+
+---
+
+# 61. Phase 8
+
+## Story and Character Intelligence
+
+Implement:
+
+* Character development
+* Character history
+* Relationship graph
+* Story state
+* Ability progression
+* Equipment progression
+* Transformations
+* Clones
+* Avatars
+* Possession
+* Reincarnation
+* Continuity validation
+
+This is where the platform begins to understand an entire animated universe.
+
+---
+
+# 62. Phase 9
+
+## Audio and Localization
+
+Implement:
+
+* Dialogue
+* Voice generation
+* Voice management
+* Lip sync
+* Sound effects
+* Music
+* Audio mixing
+* Subtitle generation
+* Translation
+* Terminology management
+* Optional dubbing
+
+---
+
+# 63. Phase 10
+
+## Full Episode Pipeline
+
+Target:
+
+```text
+Script
+ ↓
+Storyboard
+ ↓
+Scenes
+ ↓
+Shots
+ ↓
+Assets
+ ↓
+Animation
+ ↓
+VFX
+ ↓
+Audio
+ ↓
+Rendering
+ ↓
+Compositing
+ ↓
+Subtitles
+ ↓
+Episode Master
+```
+
+DSH should coordinate the entire process.
+
+---
+
+# 64. Phase 11
+
+## Series Production
+
+Support:
+
+```text
+Season 1
+├── Episode 01
+├── Episode 02
+├── Episode 03
+├── ...
+└── Episode 24
+```
+
+Shared assets:
+
+```text
+Characters
+Environments
+Props
+Creatures
+Vehicles
+Animations
+Music
+Terminology
+```
+
+This enables long-running productions.
+
+---
+
+# 65. Visual Quality Target
+
+The objective is not:
+
+> "Make something that looks like an AI-generated video."
+
+The objective is:
+
+> **Produce cinematic animation with consistent characters, environments, animation, cinematography, lighting, VFX, and continuity.**
+
+High-quality donghua such as *Soul Land* or *Renegade Immortal* should be considered a **long-term production-quality target**, not a promise for the first version.
+
+The quality ceiling depends on:
+
+* Asset quality
+* Character modeling
+* Rigging
+* Animation
+* Cinematography
+* Lighting
+* VFX
+* Compositing
+* Audio
+* Iteration
+* Rendering infrastructure
+
+Blender provides the production foundation.
+
+DSH provides orchestration and intelligence.
+
+---
+
+# 66. What We Are Not Building
+
+We are not building:
+
+```text
+❌ An image generator
+❌ A simple text-to-video application
+❌ A Blender macro recorder
+❌ A chatbot that writes Blender scripts
+❌ A Py8n application
+❌ An Unreal Engine application
+❌ A single-purpose donghua generator
+```
+
+We are building:
+
+```text
+✓ AI-native animation production infrastructure
+✓ Persistent animated universes
+✓ Autonomous production orchestration
+✓ Programmatic Blender production
+✓ Character development
+✓ Scene and shot generation
+✓ Asset management
+✓ Continuity management
+✓ Rendering orchestration
+✓ Localization
+✓ Episode production
+✓ Series production
+```
+
+---
+
+# 67. Final Stack
+
+| Layer                  | Technology                             |
+| ---------------------- | -------------------------------------- |
+| AI orchestration       | **DSH**                                |
+| Backend                | **Python + FastAPI**                   |
+| Database               | **PostgreSQL**                         |
+| Cache / coordination   | **Redis**                              |
+| Workers                | **Celery / async workers**             |
+| 3D production          | **Blender**                            |
+| Blender automation     | **Blender Python API + custom bridge** |
+| Frontend               | **Nuxt + Vue + TypeScript**            |
+| Browser 3D             | **Three.js**                           |
+| Object storage         | **MinIO / S3-compatible storage**      |
+| Media processing       | **FFmpeg**                             |
+| Production render      | **OpenEXR / PNG**                      |
+| Containers             | **Docker**                             |
+| Realtime communication | **WebSockets**                         |
+| AI models              | **Pluggable / model-agnostic**         |
+| Audio                  | **Modular open-source tooling**        |
+| Subtitles              | **Internal localization pipeline**     |
+
+---
+
+# 68. Core Architecture Principle
+
+The most important architectural rule is:
+
+```text
+                         DSH
+                          │
+                   Makes decisions
+                          │
+                          ▼
+                    TOOL INTERFACE
+                          │
+             ┌────────────┼────────────┐
+             ▼            ▼            ▼
+         Production     Blender       Media
+             │            │            │
+             └────────────┼────────────┘
+                          ▼
+                       OUTPUT
+                          │
+                          ▼
+                     DSH REVIEW
+                          │
+                          └──────→ ITERATE
+```
+
+DSH should know **what needs to happen**.
+
+The production tools know **how to perform it**.
+
+Blender knows **how to construct and render the 3D world**.
+
+FFmpeg and the media systems know **how to assemble the final production**.
+
+---
+
+# 69. The Ultimate Workflow
+
+Eventually, the user should be able to say:
+
+> "Create a 24-episode cultivation anime. Japanese language. Cinematic 3D style. The protagonist starts as a powerless village boy and eventually becomes a powerful swordsman. Create Season 1, develop the main cast, establish the world, and begin Episode 1."
+
+DSH should turn that into:
+
+```text
+PROJECT
+│
+├── Story
+│
+├── World
+│
+├── Characters
+│
+├── Relationships
+│
+├── Abilities
+│
+├── Environments
+│
+├── Props
+│
+├── Season 01
+│   │
+│   ├── Episode 01
+│   │   ├── Scenes
+│   │   ├── Shots
+│   │   ├── Animation
+│   │   ├── VFX
+│   │   ├── Audio
+│   │   └── Rendering
+│   │
+│   ├── Episode 02
+│   └── ...
+│
+├── Localization
+│
+└── Production History
+```
+
+DSH then operates the production incrementally.
+
+---
+
+# 70. The Long-Term Vision
+
+The final system should make this possible:
+
+```text
+                         CREATOR
+                            │
+                     Natural Language
+                            │
+                            ▼
+                         DSH
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+      STORY              CHARACTERS          WORLD
+        │                   │                   │
+        └───────────────────┼───────────────────┘
+                            ▼
+                         SCENES
+                            │
+                            ▼
+                          SHOTS
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+          Animation       Camera          VFX
+              │             │             │
+              └─────────────┼─────────────┘
+                            ▼
+                         BLENDER
+                            │
+                            ▼
+                         RENDER
+                            │
+                            ▼
+                       EVALUATION
+                            │
+                       ┌────┴────┐
+                       ▼         ▼
+                    APPROVE    REVISE
+                                │
+                                └──────→ DSH
+```
+
+The creator remains the **creative authority**.
+
+DSH becomes the **AI director and production orchestrator**.
+
+Blender becomes the **3D production engine**.
+
+The platform maintains the **persistent animated universe**.
+
+And the production can evolve from:
+
+```text
+30-second cinematic
+        ↓
+Short film
+        ↓
+5-minute sequence
+        ↓
+Full episode
+        ↓
+Season
+        ↓
+Feature film
+        ↓
+Multi-season animated universe
+```
+
+---
+
+# 71. First Concrete Milestone
+
+The first build should not attempt to solve the entire platform.
+
+The first target is:
+
+## "DSH creates and renders one genuinely impressive cinematic scene in Blender."
+
+Success criteria:
+
+```text
+✓ Create project
+✓ Create character
+✓ Store character
+✓ Create environment
+✓ Create scene
+✓ Place character
+✓ Create camera
+✓ Create lighting
+✓ Apply animation
+✓ Create VFX
+✓ Render preview
+✓ DSH evaluates preview
+✓ DSH modifies scene
+✓ Render again
+✓ Approve final shot
+✓ Store all production state
+```
+
+Once this works reliably, we have proven the core thesis.
+
+Everything else becomes an expansion of that production loop.
+
+---
+
+# 72. Final Product Definition
+
+> **An open-source, AI-native animation production platform powered by DSH and Blender, capable of orchestrating the creation of characters, worlds, scenes, animation, VFX, audio, localization, and complete episodic or cinematic productions while maintaining persistent story, character, asset, and continuity state.**
+
+The core philosophy:
+
+> **DSH decides.
+> Production tools execute.
+> Blender creates the world.
+> The production state remembers everything.
+> The system evaluates and improves its own work.**
