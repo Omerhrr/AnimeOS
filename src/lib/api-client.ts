@@ -416,12 +416,24 @@ export const api = {
   // vs the snapshot it was made with; POST re-renders only stale takes
   voiceDiff: (episodeId: string) =>
     j<{ episodes: VoiceDiffEpisode[] }>(`/api/voice-diffs?episodeId=${episodeId}`),
+  voiceDiffAll: (projectId: string) =>
+    j<{ episodes: VoiceDiffEpisode[] }>(`/api/voice-diffs?projectId=${projectId}`),
   reRenderStaleVoices: (episodeId: string) =>
     j<{
       reRendered: Array<{ cueId: string; speaker: string; deliveryId: string; changed: string[] }>;
       failed: Array<{ cueId: string; error: string }>;
+      staleCount: number;
+      remaining: number;
       summary: string;
     }>("/api/voice-diffs", { method: "POST", body: JSON.stringify({ episodeId }) }),
+  reRenderStaleVoicesAll: (projectId: string) =>
+    j<{
+      episodes: Array<{ episodeId: string; number: number; title: string; staleCount: number; reRendered: number; failed: number }>;
+      reRenderedCount: number;
+      failedCount: number;
+      remaining: number;
+      summary: string;
+    }>("/api/voice-diffs", { method: "POST", body: JSON.stringify({ projectId }) }),
 
   // casting-board audition: throwaway TTS render of one line with a voice,
   // optionally the character's own first line; nothing is persisted

@@ -505,7 +505,7 @@ export function ComicView({ project }: { project: StudioProject }) {
           <LoraStudioDialog project={project} />
           <ArtistsDialog project={project} />
           <ArtistWorkloadDialog project={project} shots={allShots} />
-          <VoiceDiffDialog episode={episode ? { id: episode.id, number: episode.number, title: episode.title } : null} />
+          <VoiceDiffDialog episode={episode ? { id: episode.id, number: episode.number, title: episode.title } : null} projectId={project.id} />
           <Button
             size="sm" variant="outline"
             className="h-7 text-[11px] border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 print:hidden"

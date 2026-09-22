@@ -6,6 +6,9 @@ import { generateShotPanelArt, generateCharacterModelSheet } from "@/lib/ai/art"
 import { isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId, defaultVoiceFor } from "@/lib/comic/voice-catalog";
 import { resolveAutoDelivery } from "@/lib/ai/voice-casting";
+import {
+  diffEpisodeById, diffProjectEpisodes, reRenderStaleTakes, reRenderStaleAcrossProject,
+} from "@/lib/ai/voice-diff";
 
 // ─────────────────────────────────────────────────────────────
 // DSH PRODUCTION TOOL API (§6/§7)
@@ -239,6 +242,22 @@ export const TOOL_DEFS: ToolDef[] = [
       characterName: "string - the character to cast",
       artistName: "string - artist on the production roster (empty string clears the casting)",
       voice: "string, optional TTS voice id for the artist: tongtong | chuichui | xiaochen | jam | kazi | douji | luodo",
+    },
+  },
+  {
+    name: "diff_episode_direction",
+    description: "Direction diff for ONE episode: re-resolves what every VOICE cue would render as today (delivery chain, cast, line text, speed) and diffs it against the snapshot stamped on each take at render time. Classifies takes fresh / stale / unrendered and reports exactly which inputs moved. With reRender:true it re-renders ONLY the stale takes, so one state beat or line-level delivery edit never re-renders the whole episode. Run after any dialogue, casting, standing-direction or character-state change.",
+    args: {
+      episodeNumber: "number (defaults to latest episode)",
+      reRender: "boolean (default false) - after reporting the diff, re-render only the stale takes",
+    },
+  },
+  {
+    name: "diff_all_episodes",
+    description: "Batch direction diff across ALL episodes of the production: per-episode fresh/stale/unrendered tallies for every voice take plus the overall counts. With reRender:true it batch re-renders stale takes across the whole season, capped per call (limit, default 16, max 32) so TTS is not hammered; the result reports how many stale takes remain for a follow-up call.",
+    args: {
+      reRender: "boolean (default false) - batch re-render stale takes across all episodes (capped)",
+      limit: "number, max takes to re-render in one batch call (default 16, max 32)",
     },
   },
 ];
@@ -978,6 +997,80 @@ export async function executeTool(projectId: string, name: string, args: Record<
           status: "OK",
           result: `${ch.name} is now voiced by ${artist.name}${voiceLine}. Every VOICE cue for ${ch.name} renders with this artist's voice${artist.voiceId ? ` (${artist.voiceId})` : ""}; re-render the takes to hear the new performance.`,
         };
+      }
+
+      case "diff_episode_direction": {
+        const ep = args.episodeNumber
+          ? await db.episode.findFirst({
+              where: { season: { projectId }, number: Number(args.episodeNumber) },
+              orderBy: { season: { number: "asc" } },
+            })
+          : await latestEpisode(projectId);
+        if (!ep) {
+          const known = await db.episode.findMany({ where: { season: { projectId } }, select: { number: true }, orderBy: { number: "asc" } });
+          return { status: "ERROR", result: known.length === 0
+            ? "No episode exists yet - create one with create_episode first."
+            : `No episode ${String(args.episodeNumber)} in this production. Episodes: ${known.map((e) => e.number).join(", ")}.` };
+        }
+        const diff = await diffEpisodeById(ep.id);
+        if (!diff) return { status: "ERROR", result: `Episode ${ep.number} could not be loaded.` };
+
+        const staleRows = diff.cues.filter((c) => c.status === "stale");
+        const blockedRows = diff.cues.filter((c) => c.status === "blocked");
+        const staleLines = staleRows.map((c) => {
+          const was = c.taken ? `was ${c.taken.deliveryId.toLowerCase()} x${c.taken.baseSpeed.toFixed(2)} / ${c.taken.voiceId}` : "was unversioned";
+          const now = c.current ? `now ${c.current.deliveryLabel.toLowerCase()} / ${c.current.voiceId}` : "now unresolved";
+          return `shot ${String(c.shotNumber).padStart(3, "0")} "${c.speaker || "narration"}": moved ${c.changed.join(" + ")} (${was}; ${now})`;
+        });
+
+        let result = `Episode ${diff.number} "${diff.title}" direction diff: ${diff.total} VOICE cue(s), ${diff.fresh} fresh, ${diff.stale} stale, ${diff.unrendered} unrendered.`;
+        result += staleLines.length ? ` Stale takes: ${staleLines.join("; ")}.` : " Every rendered take matches the current direction.";
+        if (diff.unrendered > 0) result += ` ${diff.unrendered} cue(s) have no take yet (score them on the sound timeline or render takes first).`;
+        if (blockedRows.length > 0) result += ` ${blockedRows.length} cue(s) blocked (no speakable text).`;
+
+        if (args.reRender) {
+          const outcome = await reRenderStaleTakes(ep.id, { actor: "DSH" });
+          if (!outcome) return { status: "ERROR", result: `Episode ${ep.number} could not be loaded for re-render.` };
+          result += ` Re-render: ${outcome.summary}.`;
+          if (outcome.failed.length > 0) {
+            result += ` Failed: ${outcome.failed.map((f) => `${f.cueId.slice(-6)} (${f.error})`).join("; ")}.`;
+          }
+        } else if (diff.stale > 0) {
+          result += " Pass reRender:true to re-render just these stale takes.";
+        }
+        return { status: "OK", result };
+      }
+
+      case "diff_all_episodes": {
+        const diffs = await diffProjectEpisodes(projectId);
+        if (diffs.length === 0) {
+          return { status: "ERROR", result: "No episodes exist yet - create one with create_episode first." };
+        }
+        const totals = diffs.reduce(
+          (acc, d) => ({ total: acc.total + d.total, fresh: acc.fresh + d.fresh, stale: acc.stale + d.stale, unrendered: acc.unrendered + d.unrendered }),
+          { total: 0, fresh: 0, stale: 0, unrendered: 0 },
+        );
+        const perEp = diffs
+          .map((d) => `Ep${String(d.number).padStart(2, "0")} "${d.title}": ${d.total} cue(s), ${d.fresh} fresh, ${d.stale} stale, ${d.unrendered} unrendered`)
+          .join(" | ");
+
+        let result = `Direction diff across ${diffs.length} episode(s): ${totals.total} VOICE cue(s) total, ${totals.fresh} fresh, ${totals.stale} stale, ${totals.unrendered} unrendered. ${perEp}.`;
+
+        if (args.reRender) {
+          const limitArg = args.limit === undefined ? undefined : Number(args.limit);
+          if (limitArg !== undefined && !Number.isFinite(limitArg)) {
+            return { status: "ERROR", result: "limit must be a number (default 16, max 32)." };
+          }
+          const outcome = await reRenderStaleAcrossProject(projectId, { actor: "DSH", limit: limitArg });
+          result += ` Batch re-render: ${outcome.summary}.`;
+          const touched = outcome.episodes.filter((e) => e.failed > 0);
+          if (touched.length > 0) {
+            result += ` Failures: ${touched.map((e) => `Ep${String(e.number).padStart(2, "0")} x${e.failed}`).join(", ")}.`;
+          }
+        } else if (totals.stale > 0) {
+          result += ` ${totals.stale} stale take(s) across the season; pass reRender:true (limit caps each batch, default 16) to re-render the affected takes only.`;
+        }
+        return { status: "OK", result };
       }
 
       default:
