@@ -30,6 +30,9 @@ export interface StudioProject {
   subtitleLanguages: string[];
   fps: number;
   resolution: string;
+  artStylePrompt: string | null;
+  artPalettePrompt: string | null;
+  artNegativePrompt: string | null;
   status: string;
   seasons: Array<{
     id: string;
@@ -240,6 +243,7 @@ export const api = {
 
   // commands
   createProject: (body: Record<string, unknown>) => j<{ id: string }>("/api/projects", { method: "POST", body: JSON.stringify(body) }),
+  updateProject: (id: string, body: Record<string, unknown>) => j<{ id: string }>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   createEpisode: (body: Record<string, unknown>) => j<{ id: string }>("/api/episodes", { method: "POST", body: JSON.stringify(body) }),
   createScene: (body: Record<string, unknown>) => j<{ id: string }>("/api/scenes", { method: "POST", body: JSON.stringify(body) }),
   createShot: (body: Record<string, unknown>) => j<{ id: string }>("/api/shots", { method: "POST", body: JSON.stringify(body) }),
@@ -257,6 +261,8 @@ export const api = {
 
   renderCreate: (shotId: string, mode: "PREVIEW" | "FINAL") =>
     j<{ id: string }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "create", shotId, mode }) }),
+  renderBatch: (episodeIds: string[], mode: "PREVIEW" | "FINAL") =>
+    j<{ created: number; skipped: number; episodes: number }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "batch", episodeIds, mode }) }),
   renderApply: (evaluationId: string) =>
     j<{ ok: boolean }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "apply", evaluationId }) }),
   renderRetry: (jobId: string) =>

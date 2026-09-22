@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import {
@@ -31,7 +31,7 @@ const CinematicPreview = dynamic(
   { ssr: false }
 );
 
-const NAV: Array<{ id: StudioView; label: string; icon: typeof Clapperboard; group: string }> = [
+const NAV: Array<{ id: StudioView; label: string; icon: React.ComponentType<{ className?: string }>; group: string }> = [
   { id: "dashboard", label: "Dashboard", icon: GaugeIcon, group: "Studio" },
   { id: "dsh", label: "DSH Director", icon: MessageSquareDot, group: "Studio" },
   { id: "productions", label: "Productions", icon: FolderKanban, group: "Production" },

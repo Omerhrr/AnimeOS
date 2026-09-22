@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, BookOpenCheck, FileDown, Layers, MoveRight, Sparkles, Loader2, MessageSquarePlus } from "lucide-react";
+import { BookOpen, BookOpenCheck, FileDown, Layers, MoveRight, Sparkles, Loader2, MessageSquarePlus, Scissors } from "lucide-react";
 import type { StudioProject, SceneWithShots, ShotRow } from "@/lib/api-client";
 import { api } from "@/lib/api-client";
 import {
@@ -10,8 +10,10 @@ import {
   type ComicFormat, type PanelPlacement, type ComicPage,
 } from "@/lib/comic/layout";
 import { parseDialogue } from "@/lib/comic/dialogue";
+import { exportWebtoonSlices } from "@/lib/comic/export-slices";
 import { PanelArt } from "@/components/views/comic-panel-art";
 import { SpeechBubbles, DialogueEditor } from "@/components/views/comic-bubbles";
+import { StyleDirectionDialog } from "@/components/views/style-direction-dialog";
 import { SectionHeader } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -105,6 +107,7 @@ function PanelFrame({
 
   return (
     <figure
+      data-shot-id={shot.id}
       className={cn("comic-panel relative overflow-hidden bg-white", panel.emphasis && "comic-splash")}
       style={{
         gridColumn: `${panel.colStart} / span ${panel.colSpan}`,
@@ -183,7 +186,7 @@ function WebtoonPanel({
   const lines = parseDialogue(shot.dialogue).slice(0, 3);
   const loading = actions.genStatus[shot.id] === "loading";
   return (
-    <figure className="comic-panel relative overflow-hidden bg-white" style={{ border: `2px solid ${cfg.ink}`, height: stripHeight(shot.shotType) }}>
+    <figure data-shot-id={shot.id} className="comic-panel relative overflow-hidden bg-white" style={{ border: `2px solid ${cfg.ink}`, height: stripHeight(shot.shotType) }}>
       {shot.artworkUrl ? (
         <img src={shot.artworkUrl} alt={shot.description} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
       ) : (
@@ -219,6 +222,7 @@ export function ComicView({ project }: { project: StudioProject }) {
   const [episodeIdx, setEpisodeIdx] = useState(0);
   const [editingShot, setEditingShot] = useState<ShotRow | null>(null);
   const [genStatus, setGenStatus] = useState<Record<string, "loading" | "error">>({});
+  const [exporting, setExporting] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const cfg = COMIC_FORMATS[format];
 
@@ -263,6 +267,29 @@ export function ComicView({ project }: { project: StudioProject }) {
     const targets = withoutArt.map((s) => s.id);
     for (let i = 0; i < targets.length; i += 2) {
       await Promise.allSettled(targets.slice(i, i + 2).map((id) => generateArt(id)));
+    }
+  };
+
+  const runSliceExport = async () => {
+    if (!episode || format !== "MANHWA" || allShots.length === 0) return;
+    setExporting("Preparing…");
+    try {
+      const slices = await exportWebtoonSlices({
+        projectName: project.title,
+        episodeNumber: episode.number,
+        episodeTitle: episode.title,
+        shots: allShots.map((s) => ({
+          id: s.id, number: s.number, description: s.description,
+          shotType: s.shotType, artworkUrl: s.artworkUrl, dialogue: s.dialogue,
+        })),
+        onProgress: (msg) => setExporting(msg),
+      });
+      setExporting(`${slices} slice${slices === 1 ? "" : "s"} downloaded ✓`);
+      setTimeout(() => setExporting(null), 3500);
+    } catch (err) {
+      console.error("Webtoon slice export failed:", err);
+      setExporting("Export failed — see console");
+      setTimeout(() => setExporting(null), 4000);
     }
   };
 
@@ -344,6 +371,7 @@ export function ComicView({ project }: { project: StudioProject }) {
         </div>
         <p className="text-[11px] text-muted-foreground xl:ml-2">{cfg.blurb}</p>
         <div className="xl:ml-auto flex items-center gap-2 flex-wrap">
+          <StyleDirectionDialog project={project} />
           <Button
             size="sm" variant="outline"
             className="h-7 text-[11px] border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 print:hidden"
@@ -358,6 +386,17 @@ export function ComicView({ project }: { project: StudioProject }) {
             {cfg.readingDirection === "RTL" && <><MoveRight className="h-3 w-3 rotate-180" /> right-to-left</>}
             {cfg.readingDirection === "VERTICAL" && <><MoveRight className="h-3 w-3 rotate-90" /> vertical scroll</>}
           </span>
+          <Button
+            size="sm" variant="outline"
+            className="h-7 text-[11px] border-white/12 bg-white/5 print:hidden"
+            title={format === "MANHWA" ? "Export 800px-wide platform slices (ZIP)" : "Switch to Manhwa / Webtoon format to export slices"}
+            disabled={format !== "MANHWA" || exporting !== null || allShots.length === 0}
+            onClick={() => void runSliceExport()}
+          >
+            {exporting !== null
+              ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> {exporting}</>
+              : <><Scissors className="h-3 w-3 mr-1" /> Export slices</>}
+          </Button>
           <Button size="sm" variant="outline" className="h-7 text-[11px] border-white/12 bg-white/5 print:hidden" onClick={() => window.print()}>
             <FileDown className="h-3 w-3 mr-1" /> Print / PDF
           </Button>
@@ -454,6 +493,7 @@ export function ComicView({ project }: { project: StudioProject }) {
       <p className="text-[11px] text-muted-foreground mt-8 print:hidden">
         Panel sizing follows shot grammar: establishing shots claim splash pages, close-ups pack tight, dynamic movements get speed lines.
         Hit the ✦ on any panel to generate AI artwork in the current style, or the ✎ to author speech bubbles, thoughts and SFX.
+        In webtoon format, Export slices packages the strip into 800px-wide platform-ready PNG slices with a manifest.
       </p>
 
       {editingShot && (

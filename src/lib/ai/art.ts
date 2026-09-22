@@ -54,6 +54,34 @@ const STYLE_TOKENS: Record<string, string> = {
 
 const NEGATIVE_TAIL = "no text, no speech bubbles, no captions, no watermark, no border, no panel frame";
 
+// ─── Per-production style tuning ────────────────────────────
+// A production can override/augment its visualStyle preset with
+// free-text directives. These helpers compile the DB fields into
+// the exact token strings injected into every art prompt.
+
+interface StyleTunableProject {
+  visualStyle: string;
+  artStylePrompt?: string | null;
+  artPalettePrompt?: string | null;
+  artNegativePrompt?: string | null;
+}
+
+/** Style tokens for a production: custom directive wins over the preset, palette is appended. */
+export function productionStyleTokens(project: StyleTunableProject): string {
+  const custom = project.artStylePrompt?.trim();
+  const palette = project.artPalettePrompt?.trim();
+  return [
+    custom || STYLE_TOKENS[project.visualStyle] || STYLE_TOKENS.CUSTOM,
+    palette,
+  ].filter(Boolean).join(", ");
+}
+
+/** Negative tokens for a production: base tail + any custom negatives. */
+export function productionNegativeTokens(project: StyleTunableProject): string {
+  const custom = project.artNegativePrompt?.trim();
+  return custom ? `${NEGATIVE_TAIL}, ${custom}` : NEGATIVE_TAIL;
+}
+
 interface CastMember {
   id: string;
   name: string;
@@ -116,7 +144,8 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
 
   const project = shot.scene.episode.season.project;
   const scene = shot.scene;
-  const styleTokens = STYLE_TOKENS[project.visualStyle] ?? STYLE_TOKENS.CUSTOM;
+  const styleTokens = productionStyleTokens(project);
+  const negativeTail = productionNegativeTokens(project);
 
   const cast = detectCast(project.characters, shot.description)
     .map((c) => {
@@ -137,7 +166,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
     shot.lighting ? `Lighting: ${shot.lighting}` : null,
     cast ? `Characters:\n${cast}` : null,
     "single comic panel",
-    NEGATIVE_TAIL,
+    negativeTail,
   ];
 
   const prompt = promptParts.filter(Boolean).join(". ");
@@ -205,7 +234,7 @@ export async function generateCharacterModelSheet(characterId: string) {
     latestState?.weapon ?? null,
     latestState?.cultivation ?? null
   );
-  const styleTokens = STYLE_TOKENS[character.project.visualStyle] ?? STYLE_TOKENS.CUSTOM;
+  const styleTokens = productionStyleTokens(character.project);
 
   const sheetPrompt = [
     styleTokens,

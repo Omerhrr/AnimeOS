@@ -72,7 +72,7 @@ export const STAGE_LADDER = [
 ] as const;
 
 export function stageFor(progress: number): string {
-  let label = STAGE_LADDER[0].label;
+  let label: string = STAGE_LADDER[0].label;
   for (const s of STAGE_LADDER) if (progress >= s.at) label = s.label;
   return label;
 }

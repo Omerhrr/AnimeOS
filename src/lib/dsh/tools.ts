@@ -169,6 +169,15 @@ export const TOOL_DEFS: ToolDef[] = [
     description: "Generate a character model sheet (turnaround reference image) and store the canonical visual anchor used to keep that character's face/wardrobe consistent across all future panel art. Call this for important characters before generating their panel art.",
     args: { characterName: "string" },
   },
+  {
+    name: "set_art_style",
+    description: "Tune this production's art style direction — a custom style directive (overrides the visualStyle preset tokens), palette tokens and extra negative tokens that are injected into every future panel-art and model-sheet prompt. Pass empty strings to reset a field back to the preset. Use this when the creator asks for a specific look (e.g. 'ink-wash with gold accents', 'pastel webtoon palette').",
+    args: {
+      styleDirective: "string (optional) — full art style directive, e.g. 'wuxia ink-wash style, gold rim lighting, misty mountain palette'",
+      paletteTokens: "string (optional) — colour/mood tokens, e.g. 'jade green, ink black, warm gold highlights'",
+      negativePrompt: "string (optional) — extra things to avoid, e.g. 'no modern clothing, no western architecture'",
+    },
+  },
 ];
 
 type ActionResult = { status: "OK" | "ERROR"; result: string };
@@ -345,7 +354,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
       }
 
       case "create_scene": {
-        let episode = null;
+        let episode: Awaited<ReturnType<typeof latestEpisode>> = null;
         if (args.episodeNumber) {
           episode = await db.episode.findFirst({
             where: { season: { projectId }, number: Number(args.episodeNumber) },
@@ -376,7 +385,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
       }
 
       case "create_shot": {
-        let scene = null;
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
           const scenes = await db.scene.findMany({
             where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
@@ -449,7 +458,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
       }
 
       case "check_capabilities": {
-        let scene = null;
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
           const scenes = await db.scene.findMany({
             where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
@@ -466,7 +475,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
       }
 
       case "render_shot": {
-        let scene = null;
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
           const scenes = await db.scene.findMany({
             where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
@@ -552,6 +561,36 @@ export async function executeTool(projectId: string, name: string, args: Record<
         }
       }
 
+      case "set_art_style": {
+        const project = await findProject(projectId);
+        const data: Record<string, string | null> = {};
+        for (const [key, arg] of [["artStylePrompt", "styleDirective"], ["artPalettePrompt", "paletteTokens"], ["artNegativePrompt", "negativePrompt"]] as const) {
+          if (args[arg] !== undefined) {
+            const v = String(args[arg] ?? "").trim();
+            data[key] = v.length > 0 ? v.slice(0, 600) : null;
+          }
+        }
+        if (Object.keys(data).length === 0) {
+          return { status: "ERROR", result: "Nothing to change — pass styleDirective, paletteTokens and/or negativePrompt." };
+        }
+        const updated = await db.project.update({ where: { id: project.id }, data });
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "STATE_CHANGE",
+            summary: `DSH tuned the art style direction of '${project.title}'`,
+            payload: JSON.stringify(data),
+          },
+        });
+        const parts = [
+          updated.artStylePrompt ? `style: "${updated.artStylePrompt}"` : null,
+          updated.artPalettePrompt ? `palette: "${updated.artPalettePrompt}"` : null,
+          updated.artNegativePrompt ? `negatives: "${updated.artNegativePrompt}"` : null,
+        ].filter(Boolean).join(" · ");
+        return { status: "OK", result: `Art style direction updated — ${parts}. Every future panel-art and model-sheet prompt in this production now carries it.` };
+      }
+
       default:
         return { status: "ERROR", result: `Unknown tool: ${name}` };
     }
@@ -580,6 +619,11 @@ export async function buildCompactContext(projectId: string) {
       format: project.format,
       animation: project.animationType,
       style: project.visualStyle,
+      artStyleTuning: {
+        styleDirective: project.artStylePrompt,
+        paletteTokens: project.artPalettePrompt,
+        negativePrompt: project.artNegativePrompt,
+      },
       language: project.originalLanguage,
       subtitles: JSON.parse(project.subtitleLanguages || "[]"),
     },

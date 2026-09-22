@@ -53,6 +53,28 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   if (body.fps !== undefined) data.fps = Number(body.fps);
   if (body.subtitleLanguages !== undefined) data.subtitleLanguages = JSON.stringify(body.subtitleLanguages);
+  // Per-production art style tuning (nullable free-text directives)
+  for (const key of ["artStylePrompt", "artPalettePrompt", "artNegativePrompt"]) {
+    if (body[key] !== undefined) {
+      const v = String(body[key] ?? "").trim();
+      data[key] = v.length > 0 ? v.slice(0, 600) : null;
+    }
+  }
   const project = await db.project.update({ where: { id }, data });
+  if (Object.keys(data).some((k) => k.startsWith("art"))) {
+    await db.productionEvent.create({
+      data: {
+        projectId: project.id,
+        actor: "USER",
+        type: "STATE_CHANGE",
+        summary: `Art style direction updated — new panel art & model sheets will follow it`,
+        payload: JSON.stringify({
+          artStylePrompt: project.artStylePrompt,
+          artPalettePrompt: project.artPalettePrompt,
+          artNegativePrompt: project.artNegativePrompt,
+        }),
+      },
+    });
+  }
   return NextResponse.json({ id: project.id });
 }

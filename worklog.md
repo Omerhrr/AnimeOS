@@ -83,3 +83,25 @@ Stage Summary:
 - Casting consistency mechanism shipped: model sheet → stored anchor → injected into every panel prompt
 - DSH is now a full art/dialogue director (18 tools); Blender bridge is live-attachable with transparent simulator fallback
 - GitHub main pushed with this iteration; next horizons: batch rendering, style LoRA per production, webtoon slice export
+
+---
+Task ID: 5
+Agent: Super Z (main agent)
+Task: Iteration 5 — batch rendering across episodes + webtoon slice export + per-production art style tuning (user: "proceed with batch rendering across episodes, webtoon slice export, and per-production style tuning for the art prompts")
+
+Work Log:
+- Schema: Project.artStylePrompt/artPalettePrompt/artNegativePrompt (nullable free-text style directives); db push + client regen + clean dev-server restart (found stale orphan `next dev` child holding :3000 after parent kill — killed tree, restarted, EADDRINUSE resolved)
+- src/lib/ai/art.ts: productionStyleTokens()/productionNegativeTokens() compile the DB fields (custom directive overrides visualStyle preset tokens, palette appended, negatives appended to base tail); injected into BOTH panel-art and model-sheet prompts so the whole cast stays in one visual language
+- API: PATCH /api/projects/[id] accepts the three fields (trim, 600-char cap, empty→null) + production event; POST /api/episodes hardened (400/400/404 guards — my own malformed test curl exposed a raw FK-violation 500)
+- Style Direction dialog (style-direction-dialog.tsx) in Comic Mode toolbar: 3 fields + live "compiled into every prompt" preview (client mirror of the server compile), CUSTOM badge on the button, reset-fields, save → PATCH + query invalidate
+- DSH: tool #19 set_art_style (styleDirective/paletteTokens/negativePrompt, empty string resets) + artStyleTuning block in get_production_context + doctrine rule 9 (style direction via tool, not restated per message); fixed the pre-existing `let x = null` inference errors in tools.ts (create_scene/create_shot/render_shot/check_capabilities) and stageFor in types.ts, plus dsh-console setProject destructure + studio-shell NAV icon type — src/ now fully tsc-clean
+- Batch rendering: POST /api/render-jobs action "batch" { episodeIds[], mode } → one render job per non-FINAL shot across episodes, DRAFT episodes bumped IN_PRODUCTION, production event with counts; GET inspections capped at 2/tick (a 9-job batch completing at once must not turn one poll into 9 sequential LLM calls — remainder picked up on subsequent 2s polls)
+- Render Queue UI: BatchRenderCard (episode chips with shot/FINAL counts, All-episodes toggle, PREVIEW/FINAL segmented mode, live result line) + aggregate stats row (active/in review/approved) + status filter (All/Rendering/Needs review/Approved)
+- Webtoon slice export: src/lib/comic/export-slices.ts — client-side canvas compositor at 800px (panel art cover-cropped from AI artwork or live-DOM-serialized procedural SVG, border, shot chip, speech bubbles w/ tails mirrored from the DOM spot pool, SFX outline text, narration caption), boundary-aware packing into ≤1280px slices, jszip packaging with manifest.json (slice→panel mapping), auto-download; data-shot-id anchors added to panel figures; Export slices button (enabled only in MANHWA, progress states in-button)
+- Verified E2E: style dialog save persisted (detail API returns all 3 fields); slice ZIP = EP07_slice_01.png 800×1280 + EP07_slice_02.png 800×606 + manifest, slice visually confirmed (AI art, bubbles w/ speaker labels + tails, captions, chips); batch "9 renders queued across 2 episodes" (E07+E08) → 21 jobs spanning both episodes, evaluations flowing under the cap; live DSH turn autonomously called set_art_style (moonlit silver-blue palette + "no warm gold" negatives written correctly); console clean, eslint clean, src tsc-clean
+- README: feature map (19 tools, batch, style direction, slice export), new screenshot rows (batch-render.png, webtoon-slice-1.png), Try-the-loop steps 5-6, status paragraph
+
+Stage Summary:
+- GitHub main pushed with this iteration (5 commits + this one)
+- Studio now: batch-renders whole episodes with throttled DSH inspection; exports webtoon platform slices (800px, boundary-aware, manifest) from the live strip; art prompts are per-production tunable from UI and by DSH itself
+- Next horizons: per-shot style LoRA fine-tuning, multi-artist shot assignment, sound/SFX timing for motion panels

@@ -22,6 +22,12 @@ model Project {
   subtitleLanguages String  @default("[]") // JSON string[]
   fps              Int      @default(24)
   resolution       String   @default("1920x1080")
+  // Per-production art style tuning — injected into every art prompt
+  // (panel art + model sheets). Empty fields fall back to the preset
+  // tokens derived from visualStyle.
+  artStylePrompt    String? // custom style directive (overrides preset tokens)
+  artPalettePrompt  String? // palette / colour-mood tokens
+  artNegativePrompt String? // extra negative tokens appended to the negative tail
   status           String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

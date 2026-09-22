@@ -82,7 +82,7 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
 }
 
 export function DshConsole() {
-  const { projectId } = useStudio();
+  const { projectId, setProject } = useStudio();
   const qc = useQueryClient();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
