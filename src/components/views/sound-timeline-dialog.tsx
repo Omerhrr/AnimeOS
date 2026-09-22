@@ -6,10 +6,11 @@
 // WebAudio CuePlayer (synthesized - no audio files needed).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Loader2, Music, Play, Plus, Square, Trash2, Wand2 } from "lucide-react";
+import { AudioLines, Drama, Loader2, Music, Play, Plus, Square, Trash2, Wand2 } from "lucide-react";
 import { api, type AudioCueKind, type AudioCueRow, type ShotRow } from "@/lib/api-client";
 import { parseDialogue } from "@/lib/comic/dialogue";
 import { CUE_KIND_META, CuePlayer } from "@/lib/comic/audio";
+import { DELIVERIES, deliveryProfile } from "@/lib/comic/delivery";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
@@ -42,6 +43,13 @@ function defaultVoiceFor(speaker: string): string {
   return VOICES[(h >>> 0) % VOICES.length].id;
 }
 
+/** The speed a take was actually performed at: stored base x its delivery multiplier. */
+function effectiveTakeSpeed(cue: AudioCueRow): number {
+  const base = cue.voiceSpeed ?? 1.0;
+  const mul = deliveryProfile(cue.voiceState).speedMul;
+  return Math.round(base * mul * 100) / 100;
+}
+
 export function SoundTimelineDialog({
   shot, open, onClose, onChanged,
 }: {
@@ -58,6 +66,8 @@ export function SoundTimelineDialog({
   const [labelDraft, setLabelDraft] = useState<string>("");
   const [voiceDraft, setVoiceDraft] = useState<string>("tongtong");
   const [speedDraft, setSpeedDraft] = useState(1.0);
+  const [deliveryDraft, setDeliveryDraft] = useState<string>("AUTO");
+  const [deliveryInfo, setDeliveryInfo] = useState<{ id: string; label: string; source: string; stateLabel: string | null; speed: number } | null>(null);
   const [renderingIds, setRenderingIds] = useState<Set<string>>(new Set());
   const [batchMsg, setBatchMsg] = useState<string | null>(null);
   const playerRef = useRef<CuePlayer | null>(null);
@@ -103,7 +113,19 @@ export function SoundTimelineDialog({
     const speaker = selected.label.includes(": ") ? selected.label.split(":")[0].trim() : "";
     setVoiceDraft(selected.voiceActor ?? defaultVoiceFor(speaker || selected.label));
     setSpeedDraft(selected.voiceSpeed ?? 1.0);
-  }, [selected?.id, selected?.kind, selected?.voiceActor, selected?.voiceSpeed]);
+    setDeliveryDraft("AUTO");
+    setDeliveryInfo(
+      selected.voiceUrl
+        ? {
+            id: selected.voiceState ?? "NEUTRAL",
+            label: (DELIVERIES.find((d) => d.id === (selected.voiceState ?? "NEUTRAL")) ?? DELIVERIES[0]).label,
+            source: "last take",
+            stateLabel: selected.voiceStateLabel,
+            speed: effectiveTakeSpeed(selected),
+          }
+        : null,
+    );
+  }, [selected?.id, selected?.kind, selected?.voiceActor, selected?.voiceSpeed, selected?.voiceUrl]);
 
   function ensurePlayer(): CuePlayer {
     if (!playerRef.current) playerRef.current = new CuePlayer();
@@ -152,12 +174,13 @@ export function SoundTimelineDialog({
     }
   }
 
-  const renderCueVoice = useCallback(async (cue: AudioCueRow, voice?: string, speed?: number) => {
+  const renderCueVoice = useCallback(async (cue: AudioCueRow, voice?: string, speed?: number, delivery?: string) => {
     setRenderingIds((s) => new Set(s).add(cue.id));
     setBatchMsg(null);
     try {
-      const res = await api.renderVoice(cue.id, voice, speed);
+      const res = await api.renderVoice(cue.id, voice, speed, delivery);
       setCues((cs) => cs.map((c) => (c.id === res.cue.id ? res.cue : c)).sort((a, b) => a.startMs - b.startMs));
+      if (selectedId === cue.id) setDeliveryInfo(res.delivery);
       onChanged();
       return res;
     } catch (err) {
@@ -170,7 +193,7 @@ export function SoundTimelineDialog({
         return next;
       });
     }
-  }, [onChanged]);
+  }, [onChanged, selectedId]);
 
   const renderAllVoices = useCallback(async () => {
     const pending = cues.filter((c) => c.kind === "VOICE" && !c.voiceUrl);
@@ -179,6 +202,7 @@ export function SoundTimelineDialog({
       return;
     }
     let done = 0;
+    let stateAware = 0;
     // small pool so the TTS service is not hammered
     const queue = [...pending];
     const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
@@ -186,12 +210,18 @@ export function SoundTimelineDialog({
         const cue = queue.shift();
         if (!cue) break;
         const speaker = cue.label.includes(": ") ? cue.label.split(":")[0].trim() : "";
-        const res = await renderCueVoice(cue, defaultVoiceFor(speaker || cue.label), 1.0);
-        if (res) done++;
+        // AUTO delivery: the server resolves the speaker's character state
+        const res = await renderCueVoice(cue, defaultVoiceFor(speaker || cue.label), 1.0, "AUTO");
+        if (res) {
+          done++;
+          if (res.delivery.id !== "NEUTRAL") stateAware++;
+        }
       }
     });
     await Promise.all(workers);
-    setBatchMsg(`Rendered ${done} voice take${done === 1 ? "" : "s"} with auto-cast voices`);
+    setBatchMsg(
+      `Rendered ${done} voice take${done === 1 ? "" : "s"} (auto-cast, character-state delivery)${stateAware > 0 ? ` · ${stateAware} in a non-neutral state` : ""}`,
+    );
   }, [cues, renderCueVoice]);
 
   const voiceStats = useMemo(() => {
@@ -326,7 +356,7 @@ export function SoundTimelineDialog({
                     background: `${meta.color}33`,
                     borderColor: meta.color,
                   }}
-                  title={`${meta.label}: ${cue.label} (${cue.startMs}ms +${cue.durationMs}ms)${cue.kind === "VOICE" && cue.voiceUrl ? ` · TTS take ${cue.voiceActor ?? ""} ${((cue.voiceDurationMs ?? 0) / 1000).toFixed(1)}s` : ""}`}
+                  title={`${meta.label}: ${cue.label} (${cue.startMs}ms +${cue.durationMs}ms)${cue.kind === "VOICE" && cue.voiceUrl ? ` · TTS take ${cue.voiceActor ?? ""} ${((cue.voiceDurationMs ?? 0) / 1000).toFixed(1)}s${cue.voiceState && cue.voiceState !== "NEUTRAL" ? ` · ${cue.voiceState.toLowerCase()} delivery` : ""}` : ""}`}
                 >
                   <span className="block text-[8px] font-semibold leading-tight truncate text-white">
                     {cue.kind === "VOICE" && cue.voiceUrl && <span className="text-cyan-300 mr-0.5">●</span>}
@@ -430,13 +460,14 @@ export function SoundTimelineDialog({
               <Label className="text-[11px] flex items-center gap-1.5 text-cyan-200"><AudioLines className="h-3.5 w-3.5" /> Real voice render</Label>
               {selected.voiceUrl ? (
                 <span className="text-[9px] font-mono text-cyan-300/90">
-                  take: {selected.voiceActor} · {((selected.voiceDurationMs ?? 0) / 1000).toFixed(1)}s · x{(selected.voiceSpeed ?? 1).toFixed(2)}
+                  take: {selected.voiceActor} · {((selected.voiceDurationMs ?? 0) / 1000).toFixed(1)}s · x{effectiveTakeSpeed(selected).toFixed(2)}
+                  {selected.voiceState && selected.voiceState !== "NEUTRAL" && ` · ${selected.voiceState.toLowerCase()}`}
                 </span>
               ) : (
                 <span className="text-[9px] text-muted-foreground">no take yet, preview speaks via browser TTS</span>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="grid gap-1.5">
                 <Label className="text-[10px]">Voice actor (TTS)</Label>
                 <select
@@ -450,6 +481,19 @@ export function SoundTimelineDialog({
                 </select>
               </div>
               <div className="grid gap-1.5">
+                <Label className="text-[10px]">Delivery (character state)</Label>
+                <select
+                  value={deliveryDraft}
+                  onChange={(e) => setDeliveryDraft(e.target.value)}
+                  className="h-8 rounded-md border border-white/10 bg-white/5 px-2 text-xs text-foreground"
+                >
+                  <option value="AUTO" className="bg-[#12121a]">auto · from character state</option>
+                  {DELIVERIES.map((d) => (
+                    <option key={d.id} value={d.id} className="bg-[#12121a]">{d.label} · {d.blurb}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-1.5">
                 <div className="flex items-center justify-between">
                   <Label className="text-[10px]">Speed</Label>
                   <span className="text-[10px] font-mono tabular-nums text-cyan-300">x{speedDraft.toFixed(2)}</span>
@@ -459,10 +503,18 @@ export function SoundTimelineDialog({
                 </div>
               </div>
             </div>
+            {deliveryInfo && (
+              <p className="flex items-center gap-1.5 text-[10px] text-cyan-200/90">
+                <Drama className="h-3 w-3 shrink-0" />
+                delivery: {deliveryInfo.label.toLowerCase()}
+                {deliveryInfo.stateLabel && <span className="text-muted-foreground">(from “{deliveryInfo.stateLabel}”)</span>}
+                <span className="font-mono text-muted-foreground">· speed x{deliveryInfo.speed.toFixed(2)} · {deliveryInfo.source}</span>
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <Button
                 size="sm" className="h-8"
-                onClick={() => void renderCueVoice(selected, voiceDraft, speedDraft)}
+                onClick={() => void renderCueVoice(selected, voiceDraft, speedDraft, deliveryDraft)}
                 disabled={renderingIds.has(selected.id)}
               >
                 {renderingIds.has(selected.id)

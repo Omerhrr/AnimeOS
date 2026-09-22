@@ -400,6 +400,7 @@ export function ComicView({ project }: { project: StudioProject }) {
           audioCues: (s.audioCues ?? []).map((c) => ({
             kind: c.kind, label: c.label, startMs: c.startMs, durationMs: c.durationMs, volume: c.volume,
             voiceUrl: c.voiceUrl, voiceActor: c.voiceActor, voiceDurationMs: c.voiceDurationMs,
+            voiceState: c.voiceState, voiceStateLabel: c.voiceStateLabel,
           })),
         })),
         onProgress: (msg) => setExporting(msg),

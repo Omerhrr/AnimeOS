@@ -165,3 +165,23 @@ Stage Summary:
 - GitHub main pushed with this iteration (8 commits + this one)
 - VOICE stems now carry real speech (rendered takes mixed into slice exports and the live preview), style adapters are trainable from approved panels with a full simulated run readout, and the roster board ranks which artist clicks with which style
 - The repo (source, docs, worklog, database, DSH prompts) is em-dash-free and the prompts now enforce it for all future generated text
+
+---
+Task ID: 9
+Agent: Super Z (main agent)
+Task: Iteration 9 - voice takes per character state, batch-train all adapters, affinity-driven pool distribution (user: "proceed with voice takes per character state (excited/injured delivery), batch-train all adapters, and affinity-driven pool distribution where 'Distribute pool' prefers the highest-affinity artist per panel")
+
+Work Log:
+- Schema: AudioCue gains voiceState (delivery profile: NEUTRAL | EXCITED | INJURED) + voiceStateLabel (the character state the delivery resolved from); db push + client regen + dev restart
+- Shared delivery module src/lib/comic/delivery.ts (client + server import the same catalog): three delivery profiles (Excited 1.18x quickened/bright, Injured 0.82x strained/trailing, Neutral), keyword classifier over state labels (battle-damaged/injured/blooded -> INJURED; breakthrough/triumphant/furious -> EXCITED), and light punctuation shaping (excited lands on "!", injured trails on "...", lines with terminal punctuation untouched)
+- Voice takes per character state: POST /api/voice-renders accepts delivery AUTO | explicit profile; AUTO resolution loads the speaker's CharacterState rows effective at the shot's episode (same-episode TEMPORARY beats win over the latest PERMANENT progression), classifies the label, falls back to Character.canonicalState, else NEUTRAL; effective TTS speed = base speed x delivery multiplier, cue keeps the BASE speed (first implementation stored the multiplied speed, which compounded on every re-render, 1.18 -> 0.97 -> 0.79; fixed by storing base + deriving effective speed from voiceState, verified stable across two identical renders)
+- Sound timeline UI: "Delivery (character state)" select (auto from character state / Neutral / Excited / Injured), resolved-delivery readout "delivery: injured (from "Battle-damaged (temple fight)") . speed x0.82 . last take", take line shows effective speed + state chip, batch "Render voices" now AUTO-renders per speaker state and reports non-neutral counts; offline voice blips in stems.ts follow the delivery pace too
+- Batch-train all adapters: POST /api/lora-train {projectId, batch: true} starts simulated runs for every idle adapter (skips ones already TRAINING/RUNNING with reasons, 409 when nothing can start, take raised to 60 runs); LoRA studio gains a "Train all" button with dataset tooltip + batch result line ("Batch training: 5 runs started")
+- Affinity-driven pool distribution: workload dialog builds the raw (non-normalized) artist x LoRA affinity matrix; "Distribute pool (affinity-first)" routes each LoRA-bound panel to the artist with the highest raw delivery score on that adapter (ties broken by lower production-wide load), unbound panels rotate across the least-loaded roster, result message splits the routing ("3 pool panels distributed across 3 artists (2 affinity-first, 1 load-balanced)")
+- Manifest/stems plumbing: SliceAudioCue carries voiceState/voiceStateLabel, exported manifest voiceTakes gains delivery + stateLabel per take, stem cues carry the delivery for the offline blip
+- Verified E2E: AUTO take on shot 001 resolved INJURED from Lin Yue's "Battle-damaged (temple fight)" (TEMPORARY @ ep7) at speed x0.82 (DB voiceState/voiceStateLabel verified), manual EXCITED override renders at x1.18; batch-train started 5 runs, all completed with TRAINED badges in the UI; pool test (unassigned ep7 shots 1/4/6) routed azure-flame-fx -> Su Qing and spirit-beast-form -> Dao Zhang affinity-first and the unbound shot load-balanced, DB confirmed; webtoon slice export ZIP re-verified: manifest voiceTakes carry delivery INJURED + stateLabel and NEUTRAL for the speakerless seeded cue, both stems RIFF-valid; console clean; tsc src-clean; eslint clean; zero em dashes repo-wide
+
+Stage Summary:
+- GitHub main pushed with this iteration (9 commits + this one)
+- Voice takes are now performed, not just spoken: the speaker's episode-resolved character state drives delivery, speed and punctuation shaping through the live preview, the exported stems and the authoring manifest
+- The whole adapter registry trains in one click and the pool distributor routes by demonstrated style affinity first, load second

@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FlaskConical, Loader2, Plus, Trash2, Zap } from "lucide-react";
+import { FlaskConical, Layers, Loader2, Plus, Trash2, Zap } from "lucide-react";
 import { api, type LoraTrainRunRow, type StudioProject } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +32,8 @@ export function LoraStudioDialog({ project }: { project: StudioProject }) {
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<LoraTrainRunRow[]>([]);
   const [training, setTraining] = useState<string | null>(null);
+  const [batchTraining, setBatchTraining] = useState(false);
+  const [batchMsg, setBatchMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) { setError(null); }
@@ -86,6 +88,7 @@ export function LoraStudioDialog({ project }: { project: StudioProject }) {
   async function train(id: string) {
     setTraining(id);
     setError(null);
+    setBatchMsg(null);
     try {
       await api.trainLora(id);
       const rows = await api.loraRuns(project.id);
@@ -94,6 +97,26 @@ export function LoraStudioDialog({ project }: { project: StudioProject }) {
       setError(err instanceof Error ? err.message : "Failed to start training run");
     } finally {
       setTraining(null);
+    }
+  }
+
+  async function trainAll() {
+    setBatchTraining(true);
+    setError(null);
+    setBatchMsg(null);
+    try {
+      const res = await api.trainAllLoras(project.id);
+      const rows = await api.loraRuns(project.id);
+      setRuns(rows);
+      const parts = [
+        `${res.started.length} run${res.started.length === 1 ? "" : "s"} started`,
+        res.skipped.length > 0 ? `${res.skipped.length} skipped (${res.skipped.map((s) => `${s.name}: ${s.reason}`).join(", ")})` : null,
+      ].filter(Boolean);
+      setBatchMsg(`Batch training: ${parts.join(" · ")}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Batch training failed");
+    } finally {
+      setBatchTraining(false);
     }
   }
 
@@ -147,7 +170,27 @@ export function LoraStudioDialog({ project }: { project: StudioProject }) {
           </DialogHeader>
 
           {/* registry list */}
-          <div className="space-y-2 max-h-80 overflow-y-auto studio-scroll pr-1">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Registry · {project.loras.length} adapter{project.loras.length === 1 ? "" : "s"}</span>
+              <Button
+                size="sm" variant="outline"
+                className="h-7 text-[10px] border-amber-400/30 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20"
+                onClick={() => void trainAll()}
+                disabled={batchTraining || anyRunning || project.loras.length === 0}
+                title={
+                  project.loras.length === 0
+                    ? "No adapters registered yet"
+                    : anyRunning
+                      ? "Runs already in flight"
+                      : `Start a simulated fine-tune for every idle adapter from the ${dataset} approved panel${dataset === 1 ? "" : "s"}`
+                }
+              >
+                {batchTraining ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Layers className="h-3 w-3 mr-1 text-amber-300" />}
+                Train all
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-80 overflow-y-auto studio-scroll pr-1">
             {project.loras.length === 0 && (
               <p className="text-xs text-muted-foreground py-2">No adapters registered yet - add one below.</p>
             )}
@@ -232,7 +275,10 @@ export function LoraStudioDialog({ project }: { project: StudioProject }) {
                 </div>
               );
             })}
+            </div>
           </div>
+
+          {batchMsg && <p className="text-[11px] text-amber-300">{batchMsg}</p>}
 
           {/* create form */}
           <div className="rounded-lg border border-white/10 bg-black/25 p-3 space-y-3">

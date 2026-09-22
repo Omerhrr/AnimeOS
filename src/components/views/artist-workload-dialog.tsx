@@ -68,7 +68,8 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
   // per-artist style affinity: which style LoRA each artist actually
   // delivered with, production-wide. Score = usage share boosted by
   // the approval rate of that pairing, normalized to the artist's
-  // strongest pairing (100).
+  // strongest pairing (100). The raw matrix (not normalized) also
+  // drives affinity-first pool distribution below.
   const affinity = useMemo(() => {
     const allShots: ShotRow[] = [];
     for (const season of project.seasons) {
@@ -78,6 +79,7 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
     }
     const loraName = new Map(project.loras.map((l) => [l.id, l.name]));
     const isDone = (s: ShotRow) => s.status === "APPROVED" || s.status === "FINAL";
+    const rawMatrix = new Map<string, Map<string, number>>();
     const rows = project.artists.map((a) => {
       const owned = allShots.filter((s) => s.artistId === a.id);
       const pairings = project.loras
@@ -88,6 +90,8 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
             ? bound.reduce((n, s) => n + (s.loraStrength ?? l.weight), 0) / bound.length
             : 0;
           const raw = bound.length * (0.55 + 0.45 * (bound.length ? done / bound.length : 0));
+          if (!rawMatrix.has(a.id)) rawMatrix.set(a.id, new Map());
+          rawMatrix.get(a.id)!.set(l.id, raw);
           return { loraId: l.id, name: loraName.get(l.id) ?? l.name, shots: bound.length, approved: done, avgStrength, raw };
         })
         .filter((p) => p.shots > 0)
@@ -100,7 +104,7 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
         pairings: pairings.map((p) => ({ ...p, affinity: Math.round((p.raw / maxRaw) * 100) })).slice(0, 3),
       };
     });
-    return rows.filter((r) => r.pairings.length > 0);
+    return { rows: rows.filter((r) => r.pairings.length > 0), rawMatrix };
   }, [project]);
 
   async function distributePool() {
@@ -109,19 +113,57 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
     setMsg(null);
     setError(null);
     try {
-      // least-production-load-first round robin over the roster
-      const order = [...project.artists].sort((a, b) => (a._count?.shots ?? 0) - (b._count?.shots ?? 0));
+      // affinity-first routing: a LoRA-bound panel goes to the artist
+      // with the strongest delivery history on that adapter (raw score,
+      // ties broken by lower production-wide load); panels without a
+      // bound adapter rotate across the least-loaded roster members.
+      const loads = new Map(project.artists.map((a) => [a.id, a._count?.shots ?? 0]));
+      const byLoad = [...project.artists].sort(
+        (a, b) => (loads.get(a.id) ?? 0) - (loads.get(b.id) ?? 0),
+      );
       const buckets = new Map<string, string[]>();
-      stats.pool.forEach((shot, i) => {
-        const a = order[i % order.length];
-        (buckets.get(a.id) ?? buckets.set(a.id, []).get(a.id)!).push(shot.id);
-      });
+      let affinityRouted = 0;
+      let loadRouted = 0;
+      for (const shot of stats.pool) {
+        let chosen: string | null = null;
+        if (shot.loraId) {
+          let bestRaw = 0;
+          for (const a of project.artists) {
+            const raw = affinity.rawMatrix.get(a.id)?.get(shot.loraId) ?? 0;
+            const load = loads.get(a.id) ?? 0;
+            const bestLoad = chosen ? loads.get(chosen) ?? 0 : Infinity;
+            if (raw > bestRaw || (raw === bestRaw && raw > 0 && load < bestLoad)) {
+              bestRaw = raw;
+              chosen = a.id;
+            }
+          }
+          if (chosen && bestRaw > 0) affinityRouted++;
+          else chosen = null;
+        }
+        if (!chosen) {
+          chosen = byLoad[0]?.id ?? null;
+          if (chosen) {
+            loadRouted++;
+            // keep the rotation honest: re-sort so the least-loaded stays first
+            byLoad.sort((x, y) => (loads.get(x.id) ?? 0) - (loads.get(y.id) ?? 0));
+          }
+        }
+        if (!chosen) continue;
+        loads.set(chosen, (loads.get(chosen) ?? 0) + 1);
+        (buckets.get(chosen) ?? buckets.set(chosen, []).get(chosen)!).push(shot.id);
+      }
       let updated = 0;
       for (const [artistId, ids] of buckets) {
         const res = await api.patchShot({ ids, artistId });
         updated += res.updated ?? ids.length;
       }
-      setMsg(`${updated} pool panel${updated === 1 ? "" : "s"} distributed across ${buckets.size} artist${buckets.size === 1 ? "" : "s"} ✓`);
+      const parts = [
+        affinityRouted > 0 && `${affinityRouted} affinity-first`,
+        loadRouted > 0 && `${loadRouted} load-balanced`,
+      ].filter(Boolean).join(", ");
+      setMsg(
+        `${updated} pool panel${updated === 1 ? "" : "s"} distributed across ${buckets.size} artist${buckets.size === 1 ? "" : "s"} (${parts}) ✓`,
+      );
       await invalidate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to distribute the pool");
@@ -153,7 +195,7 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
               <Scale className="h-4 w-4 text-primary" /> Artist workload balance
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Panel ownership across this episode vs the production-wide load. Route the pool with one click, or ask DSH to auto-staff a scene with <span className="font-mono text-[10px]">auto_assign_scene_team</span>.
+              Panel ownership across this episode vs the production-wide load. Route the pool affinity-first, or ask DSH to auto-staff a scene with <span className="font-mono text-[10px]">auto_assign_scene_team</span>.
             </DialogDescription>
           </DialogHeader>
 
@@ -221,13 +263,13 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
           {/* per-artist style affinity */}
           <div className="pt-1">
             <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-2">Style affinity</div>
-            {affinity.length === 0 ? (
+            {affinity.rows.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">
                 No style pairings yet: assign artists and LoRAs to panels (or let DSH auto-staff a scene) and their affinity history will surface here.
               </p>
             ) : (
               <div className="space-y-2 max-h-56 overflow-y-auto studio-scroll pr-1">
-                {affinity.map((row) => {
+                {affinity.rows.map((row) => {
                   const top = row.pairings[0];
                   return (
                     <div key={row.artist.id} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
@@ -260,7 +302,7 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
                   );
                 })}
                 <p className="text-[9px] text-muted-foreground leading-relaxed">
-                  Affinity = LoRA usage share boosted by the pairing's approval rate, normalized to each artist's strongest style (100). Route new panels to the artist whose affinity bar is highest for that adapter.
+                  Affinity = LoRA usage share boosted by the pairing's approval rate, normalized to each artist's strongest style (100). "Distribute pool" routes each LoRA-bound panel to the artist whose affinity for that adapter is highest, and rotates the rest by load.
                 </p>
               </div>
             )}
@@ -274,10 +316,10 @@ export function ArtistWorkloadDialog({ project, shots }: { project: StudioProjec
               size="sm" className="h-8"
               onClick={() => void distributePool()}
               disabled={busy || stats.pool.length === 0 || project.artists.length === 0}
-              title={stats.pool.length === 0 ? "No unassigned panels in this episode" : "Route every unassigned panel to the least-loaded artists"}
+              title={stats.pool.length === 0 ? "No unassigned panels in this episode" : "LoRA-bound panels go to the highest-affinity artist for that adapter; unbound panels rotate across the least-loaded roster"}
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Wand2 className="h-3.5 w-3.5 mr-1" />}
-              Distribute pool
+              Distribute pool (affinity-first)
             </Button>
           </DialogFooter>
         </DialogContent>

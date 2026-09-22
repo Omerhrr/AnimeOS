@@ -5,10 +5,18 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
+import {
+  classifyStateDelivery, deliveryProfile, isDeliveryId, shapeLineForDelivery,
+  type DeliveryId,
+} from "@/lib/comic/delivery";
 
 // Real TTS voice renders for VOICE audio cues. A rendered take is a
 // 24kHz mono WAV stored under public/voices/{cueId}.wav; the cue keeps
 // the actual duration so stems and manifests can carry real speech.
+// Takes are performed in the speaker's current character state:
+// the delivery (neutral / excited / injured) resolves from the
+// character's episode-effective CharacterState label unless the
+// caller overrides it.
 
 export const VOICES = [
   { id: "tongtong", blurb: "Warm, gentle" },
@@ -64,6 +72,61 @@ function wavDurationMs(buf: Buffer): number | null {
   }
 }
 
+// ── character-state delivery resolution ──
+
+interface ResolvedDelivery {
+  id: DeliveryId;
+  source: "auto" | "manual";
+  stateLabel: string | null; // character state the delivery came from
+}
+
+/**
+ * Resolve the speaker's current state for this shot's episode and
+ * classify it into a delivery profile. Same-episode TEMPORARY states
+ * (dramatic beats like "Battle-damaged (temple fight)") win over the
+ * latest PERMANENT progression state; no match reads neutral.
+ */
+async function resolveAutoDelivery(
+  speaker: string,
+  episodeNumber: number | null,
+  projectId: string,
+): Promise<ResolvedDelivery> {
+  const fallback: ResolvedDelivery = { id: "NEUTRAL", source: "auto", stateLabel: null };
+  if (!speaker) return fallback;
+  try {
+    const characters = await db.character.findMany({
+      where: { projectId },
+      include: { states: true },
+    });
+    const character = characters.find((c) => c.name.trim().toLowerCase() === speaker.toLowerCase());
+    if (!character) return fallback;
+
+    const candidates = character.states.filter((s) => {
+      if (s.episodeNumber == null) return false;
+      if (s.stateType === "TEMPORARY") return s.episodeNumber === episodeNumber;
+      return episodeNumber == null || s.episodeNumber <= episodeNumber;
+    });
+    // temporary beats first, then the latest episode-resolved state
+    candidates.sort((a, b) => {
+      const ta = a.stateType === "TEMPORARY" ? 1 : 0;
+      const tb = b.stateType === "TEMPORARY" ? 1 : 0;
+      if (ta !== tb) return tb - ta;
+      return (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1);
+    });
+
+    for (const state of candidates) {
+      const hit = classifyStateDelivery(state.label);
+      if (hit) return { id: hit, source: "auto", stateLabel: state.label };
+    }
+    // no classified state: fall back to the canonical condition summary
+    const canonical = classifyStateDelivery(character.canonicalState ?? "");
+    if (canonical) return { id: canonical, source: "auto", stateLabel: character.canonicalState?.slice(0, 80) ?? null };
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function POST(req: Request) {
   let body: Record<string, unknown>;
   try {
@@ -75,31 +138,58 @@ export async function POST(req: Request) {
   const cueId = body.cueId ? String(body.cueId) : "";
   if (!cueId) return NextResponse.json({ error: "cueId required" }, { status: 400 });
 
-  const cue = await db.audioCue.findUnique({ where: { id: cueId }, include: { shot: true } });
+  const cue = await db.audioCue.findUnique({
+    where: { id: cueId },
+    include: {
+      shot: { include: { scene: { include: { episode: { include: { season: true } } } } } },
+    },
+  });
   if (!cue) return NextResponse.json({ error: "Cue not found" }, { status: 404 });
   if (cue.kind !== "VOICE") {
     return NextResponse.json({ error: "Voice renders apply to VOICE cues only" }, { status: 400 });
   }
 
   // VOICE labels may carry a "Speaker: line" prefix: speak only the line
-  const text = (cue.label.includes(": ") ? cue.label.split(": ").slice(1).join(": ") : cue.label).trim();
+  const rawLabel = cue.label;
+  const text = (rawLabel.includes(": ") ? rawLabel.split(": ").slice(1).join(": ") : rawLabel).trim();
   if (!text) return NextResponse.json({ error: "Cue label has no speakable text" }, { status: 400 });
   if (text.length > 1024) {
     return NextResponse.json({ error: `Line is ${text.length} chars, TTS accepts up to 1024` }, { status: 400 });
   }
 
-  const speaker = cue.label.includes(": ") ? cue.label.split(":")[0].trim() : "";
+  const speaker = rawLabel.includes(": ") ? rawLabel.split(":")[0].trim() : "";
+
+  // delivery: manual override wins, otherwise resolve from the
+  // speaker's character state at this shot's episode
+  let delivery: ResolvedDelivery;
+  if (isDeliveryId(body.delivery)) {
+    delivery = { id: body.delivery, source: "manual", stateLabel: null };
+  } else {
+    delivery = await resolveAutoDelivery(
+      speaker,
+      cue.shot.scene.episode?.number ?? null,
+      cue.shot.scene.episode.season.projectId,
+    );
+  }
+  const profile = deliveryProfile(delivery.id);
+
   const voice = (VOICE_IDS.has(String(body.voice))
     ? String(body.voice)
-    : defaultVoiceFor(speaker || cue.label)) as VoiceId;
+    : defaultVoiceFor(speaker || rawLabel)) as VoiceId;
   const speedNum = Number(body.speed);
-  const speed = Number.isFinite(speedNum) ? Math.min(2, Math.max(0.5, speedNum)) : 1.0;
+  const baseSpeed = Number.isFinite(speedNum) ? Math.min(2, Math.max(0.5, speedNum)) : 1.0;
+  // the delivery bends the performance; the cue keeps the user's base
+  // speed so re-renders never compound the multiplier
+  const speed = Math.min(2, Math.max(0.5, Math.round(baseSpeed * profile.speedMul * 100) / 100));
+
+  // performance shaping leans the read into the state
+  const spoken = shapeLineForDelivery(text, profile.id);
 
   let wav: Buffer;
   try {
     const zai = await ZAI.create();
     const res = await zai.audio.tts.create({
-      input: text,
+      input: spoken,
       voice,
       speed,
       response_format: "wav",
@@ -132,8 +222,10 @@ export async function POST(req: Request) {
     data: {
       voiceUrl: `/voices/${file}?v=${Date.now()}`,
       voiceActor: voice,
-      voiceSpeed: speed,
+      voiceSpeed: baseSpeed, // base only; effective speed = base x delivery multiplier
       voiceDurationMs: actualMs,
+      voiceState: profile.id,
+      voiceStateLabel: delivery.stateLabel,
       durationMs,
     },
   });
@@ -141,6 +233,13 @@ export async function POST(req: Request) {
   return NextResponse.json({
     cue: updated,
     bytes: wav.length,
-    text,
+    text: spoken,
+    delivery: {
+      id: profile.id,
+      label: profile.label,
+      source: delivery.source,
+      stateLabel: delivery.stateLabel,
+      speed,
+    },
   });
 }

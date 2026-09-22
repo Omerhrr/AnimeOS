@@ -218,6 +218,8 @@ model AudioCue {
   voiceActor       String?   // TTS voice name used for the render
   voiceSpeed       Float?    // speed used for the render (0.5..2.0)
   voiceDurationMs  Int?      // actual rendered audio duration
+  voiceState       String?   // delivery profile: NEUTRAL | EXCITED | INJURED
+  voiceStateLabel  String?   // character state the delivery was resolved from
   createdAt  DateTime @default(now())
   shot       Shot    @relation(fields: [shotId], references: [id], onDelete: Cascade)
 }

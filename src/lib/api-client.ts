@@ -153,6 +153,8 @@ export interface AudioCueRow {
   voiceActor: string | null;
   voiceSpeed: number | null;
   voiceDurationMs: number | null;
+  voiceState: string | null;      // delivery profile: NEUTRAL | EXCITED | INJURED
+  voiceStateLabel: string | null; // character state the delivery resolved from
 }
 
 export interface BridgeStatusInfo {
@@ -337,15 +339,25 @@ export const api = {
   patchAudioCue: (id: string, body: Record<string, unknown>) => j<AudioCueRow>(`/api/audio-cues/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAudioCue: (id: string) => j<{ ok: boolean }>(`/api/audio-cues/${id}`, { method: "DELETE" }),
 
-  // real TTS voice renders for VOICE cues
-  renderVoice: (cueId: string, voice?: string, speed?: number) =>
-    j<{ cue: AudioCueRow; bytes: number; text: string }>("/api/voice-renders", {
-      method: "POST", body: JSON.stringify({ cueId, voice, speed }),
+  // real TTS voice renders for VOICE cues (per character-state delivery)
+  renderVoice: (cueId: string, voice?: string, speed?: number, delivery?: string) =>
+    j<{
+      cue: AudioCueRow;
+      bytes: number;
+      text: string;
+      delivery: { id: string; label: string; source: "auto" | "manual"; stateLabel: string | null; speed: number };
+    }>("/api/voice-renders", {
+      method: "POST", body: JSON.stringify({ cueId, voice, speed, delivery }),
     }),
 
   // simulated LoRA training runs from approved panels
   trainLora: (loraId: string) =>
     j<{ runId: string; totalSteps: number; panelCount: number }>("/api/lora-train", { method: "POST", body: JSON.stringify({ loraId }) }),
+  trainAllLoras: (projectId: string) =>
+    j<{
+      started: Array<{ loraId: string; name: string; runId: string; totalSteps: number; panelCount: number }>;
+      skipped: Array<{ loraId: string; name: string; reason: string }>;
+    }>("/api/lora-train", { method: "POST", body: JSON.stringify({ projectId, batch: true }) }),
   loraRuns: (projectId: string) => j<LoraTrainRunRow[]>(`/api/lora-train?projectId=${projectId}`),
   createAsset: (body: Record<string, unknown>) => j<{ id: string }>("/api/assets", { method: "POST", body: JSON.stringify(body) }),
   addContinuityEvent: (body: Record<string, unknown>) => j<{ id: string }>("/api/continuity", { method: "POST", body: JSON.stringify(body) }),
