@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Drama, Loader2, Music, Play, Plus, Square, Trash2, Wand2 } from "lucide-react";
 import { api, type AudioCueKind, type AudioCueRow, type ShotRow } from "@/lib/api-client";
-import { parseDialogue } from "@/lib/comic/dialogue";
+import { parseDialogue, dialogueDeliveryForCue } from "@/lib/comic/dialogue";
 import { CUE_KIND_META, CuePlayer } from "@/lib/comic/audio";
 import { DELIVERIES, deliveryProfile } from "@/lib/comic/delivery";
 import { VOICES, defaultVoiceFor } from "@/lib/comic/voice-catalog";
@@ -263,6 +263,8 @@ export function SoundTimelineDialog({
 
   const pct = (ms: number) => `${(ms / totalMs) * 100}%`;
   const rulerTicks = Array.from({ length: Math.floor(totalMs / 500) + 1 }, (_, i) => i * 500);
+  // line-level direction authored in the dialogue editor outranks the standing direction
+  const lineDelivery = selected && selected.kind === "VOICE" ? dialogueDeliveryForCue(shot.dialogue, selected.label) : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) { playerRef.current?.stop(); onClose(); } }}>
@@ -515,6 +517,11 @@ export function SoundTimelineDialog({
                 delivery: {deliveryInfo.label.toLowerCase()}
                 {deliveryInfo.stateLabel && <span className="text-muted-foreground">(from “{deliveryInfo.stateLabel}”)</span>}
                 <span className="font-mono text-muted-foreground">· speed x{deliveryInfo.speed.toFixed(2)} · {deliveryInfo.source}</span>
+              </p>
+            )}
+            {lineDelivery && (
+              <p className="text-[10px] text-amber-200/90">
+                line direction: {lineDelivery.toLowerCase()} · authored on this dialogue line, it outranks the standing direction when the take renders
               </p>
             )}
             <div className="flex items-center gap-2">

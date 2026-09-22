@@ -227,6 +227,7 @@ model AudioCue {
   voiceDelivery    String?   // standing direction: null = auto per render, else NEUTRAL | EXCITED | INJURED
   voiceNote        String?   // directorial note attached to the delivery
   voiceCast        String?   // cast artist name that performed the last take
+  voiceSig         String?   // take-input snapshot at render time (JSON: text/voice/delivery/speed) - diffs re-render only takes whose inputs moved
   createdAt  DateTime @default(now())
   shot       Shot    @relation(fields: [shotId], references: [id], onDelete: Cascade)
 }

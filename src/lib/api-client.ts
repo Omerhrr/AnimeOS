@@ -159,7 +159,59 @@ export interface AudioCueRow {
   voiceDelivery: string | null;   // standing direction: null = auto per render, else a pinned profile
   voiceNote: string | null;       // directorial note on the delivery
   voiceCast: string | null;       // cast artist name that performed the last take
+  voiceSig?: string | null;       // take-input snapshot (JSON) stamped at render time for direction diffs
   cast?: { artistName: string; voiceId: string | null } | null; // resolved standing cast (VOICE cues)
+}
+
+export interface VoiceDiffRow {
+  cueId: string;
+  shotId: string;
+  sceneNumber: number;
+  shotNumber: number;
+  speaker: string;
+  text: string;
+  status: "fresh" | "stale" | "unrendered" | "blocked";
+  changed: string[];
+  current: {
+    deliveryId: string;
+    deliveryLabel: string;
+    source: string;
+    stateLabel: string | null;
+    voiceId: string;
+    castArtistName: string | null;
+    baseSpeed: number;
+    effectiveSpeed: number;
+  } | null;
+  taken: { voiceId: string; deliveryId: string; baseSpeed: number } | null;
+  takeInfo: {
+    rendered: boolean;
+    voiceActor: string | null;
+    voiceState: string | null;
+    voiceCast: string | null;
+  };
+}
+
+export interface VoiceDiffEpisode {
+  episodeId: string;
+  number: number;
+  title: string;
+  total: number;
+  fresh: number;
+  stale: number;
+  unrendered: number;
+  cues: VoiceDiffRow[];
+}
+
+export interface AuditionResult {
+  audio: string; // base64 WAV
+  mimeType: string;
+  durationMs: number | null;
+  text: string;
+  spoken: string;
+  source: "custom" | "character line" | "sample";
+  delivery: { id: string; label: string; speed: number };
+  voiceId: string;
+  speaker: string | null;
 }
 
 export interface BridgeStatusInfo {
@@ -353,12 +405,28 @@ export const api = {
       cue: AudioCueRow;
       bytes: number;
       text: string;
-      delivery: { id: string; label: string; source: "auto" | "manual" | "direction"; stateLabel: string | null; speed: number };
+      delivery: { id: string; label: string; source: "auto" | "manual" | "direction" | "line"; stateLabel: string | null; speed: number };
       cast: { artistName: string | null; voiceId: string; source: "cast" | "auto" | "manual" };
-      direction: { note: string | null; standingDelivery: string | null };
+      direction: { note: string | null; standingDelivery: string | null; lineDelivery: string | null };
     }>("/api/voice-renders", {
       method: "POST", body: JSON.stringify({ cueId, voice, speed, delivery }),
     }),
+
+  // per-episode voice direction diff: what a take would render as today
+  // vs the snapshot it was made with; POST re-renders only stale takes
+  voiceDiff: (episodeId: string) =>
+    j<{ episodes: VoiceDiffEpisode[] }>(`/api/voice-diffs?episodeId=${episodeId}`),
+  reRenderStaleVoices: (episodeId: string) =>
+    j<{
+      reRendered: Array<{ cueId: string; speaker: string; deliveryId: string; changed: string[] }>;
+      failed: Array<{ cueId: string; error: string }>;
+      summary: string;
+    }>("/api/voice-diffs", { method: "POST", body: JSON.stringify({ episodeId }) }),
+
+  // casting-board audition: throwaway TTS render of one line with a voice,
+  // optionally the character's own first line; nothing is persisted
+  auditionVoice: (body: { projectId: string; voiceId: string; delivery?: string; text?: string; speaker?: string }) =>
+    j<AuditionResult>("/api/voice-auditions", { method: "POST", body: JSON.stringify(body) }),
 
   // simulated LoRA training runs from approved panels
   trainLora: (loraId: string) =>

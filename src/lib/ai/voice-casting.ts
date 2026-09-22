@@ -17,7 +17,7 @@ import { defaultVoiceFor, isVoiceId } from "@/lib/comic/voice-catalog";
 
 export interface ResolvedDelivery {
   id: DeliveryId;
-  source: "auto" | "manual" | "direction";
+  source: "auto" | "manual" | "direction" | "line";
   stateLabel: string | null; // character state the delivery came from
 }
 

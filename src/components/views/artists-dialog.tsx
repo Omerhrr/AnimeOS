@@ -5,12 +5,18 @@
 // TTS voice and can be cast as the speaking voice of characters.
 // Deleting an artist unassigns their shots and clears their voice
 // castings (FK is SetNull).
+//
+// Casting-board auditions: any roster voice can be auditioned with a
+// throwaway TTS render (a board line, or the character's own first
+// dialogue line) before committing a casting - no cue or take is
+// created.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Loader2, Plus, Trash2, Users } from "lucide-react";
+import { AudioLines, Loader2, Play, Plus, Square, Trash2, Users } from "lucide-react";
 import { api, type StudioProject } from "@/lib/api-client";
-import { VOICES, voiceById } from "@/lib/comic/voice-catalog";
+import { VOICES, defaultVoiceFor, voiceById } from "@/lib/comic/voice-catalog";
+import { DELIVERIES, type DeliveryId } from "@/lib/comic/delivery";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -28,9 +34,25 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   const [color, setColor] = useState(ROSTER_COLORS[0]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // casting-board audition state (throwaway renders, nothing persisted)
+  const [auditionDelivery, setAuditionDelivery] = useState<DeliveryId>("EXCITED");
+  const [auditionLine, setAuditionLine] = useState("");
+  const [auditionBusy, setAuditionBusy] = useState<string | null>(null);
+  const [auditionPlaying, setAuditionPlaying] = useState<string | null>(null);
+  const [auditionMsg, setAuditionMsg] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (open) setError(null);
+  }, [open]);
+
+  // stop any audition clip when the dialog closes
+  useEffect(() => {
+    if (!open) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setAuditionPlaying(null);
+    }
   }, [open]);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["project", project.id] });
@@ -74,6 +96,49 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       await invalidate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to cast voice");
+    }
+  }
+
+  function stopAudition() {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setAuditionPlaying(null);
+  }
+
+  /** Throwaway TTS audition: renders one line with a voice and plays it; no cue or take is stored. */
+  async function playAudition(key: string, voiceId: string, speaker?: string) {
+    stopAudition();
+    setAuditionBusy(key);
+    setAuditionMsg(null);
+    setError(null);
+    try {
+      const res = await api.auditionVoice({
+        projectId: project.id,
+        voiceId,
+        delivery: auditionDelivery,
+        text: auditionLine.trim() || undefined,
+        speaker: auditionLine.trim() ? undefined : speaker,
+      });
+      const bin = atob(res.audio);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      setAuditionPlaying(key);
+      audio.onended = () => {
+        setAuditionPlaying(null);
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+      setAuditionMsg(
+        `audition: ${res.voiceId} · ${res.delivery.label.toLowerCase()}${res.speaker ? ` · ${res.speaker}'s line` : ` · ${res.source}`}${res.durationMs ? ` · ${(res.durationMs / 1000).toFixed(1)}s` : ""} · not saved as a take`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Audition failed");
+      setAuditionPlaying(null);
+    } finally {
+      setAuditionBusy(null);
     }
   }
 
@@ -143,6 +208,18 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
                       <option key={v.id} value={v.id} className="bg-[#12121a]">{v.id} · {v.blurb}</option>
                     ))}
                   </select>
+                  <button
+                    onClick={() => void playAudition(`artist:${a.id}`, a.voiceId ?? defaultVoiceFor(a.name))}
+                    disabled={auditionBusy === `artist:${a.id}`}
+                    title={`Audition ${a.voiceId ?? defaultVoiceFor(a.name)} on the board's line (throwaway render, nothing is saved)`}
+                    className="h-6 w-6 flex items-center justify-center rounded-md border border-cyan-400/25 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 transition-colors shrink-0"
+                  >
+                    {auditionBusy === `artist:${a.id}`
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : auditionPlaying === `artist:${a.id}`
+                        ? <Square className="h-2.5 w-2.5" />
+                        : <Play className="h-2.5 w-2.5" />}
+                  </button>
                 </div>
               </div>
             ))}
@@ -159,13 +236,41 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
             <p className="text-[10px] text-muted-foreground">
               Bind a character to the roster artist who speaks for them. Their VOICE cues render with that artist&apos;s voice; DSH can also cast via <span className="font-mono text-[9px]">cast_voice_actor</span>.
             </p>
+            {/* audition controls: register + optional line, applied to every audition button below */}
+            <div className="flex items-center gap-2">
+              <select
+                value={auditionDelivery}
+                onChange={(e) => setAuditionDelivery(e.target.value as DeliveryId)}
+                className="h-7 w-24 shrink-0 rounded-md border border-white/10 bg-black/30 px-1.5 text-[10px] text-foreground"
+                title="Register the audition is performed in"
+              >
+                {DELIVERIES.map((d) => (
+                  <option key={d.id} value={d.id} className="bg-[#12121a]">{d.label}</option>
+                ))}
+              </select>
+              <input
+                value={auditionLine}
+                onChange={(e) => setAuditionLine(e.target.value)}
+                placeholder="Audition line (empty = the character's own first line)"
+                className="h-7 flex-1 rounded-md border border-white/10 bg-black/30 px-2 text-[10px] text-foreground placeholder:text-muted-foreground/70"
+              />
+              {auditionPlaying && (
+                <button
+                  onClick={stopAudition}
+                  className="h-7 w-7 flex items-center justify-center rounded-md border border-white/15 bg-white/5 text-muted-foreground hover:text-foreground shrink-0"
+                  title="Stop the audition clip"
+                >
+                  <Square className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </div>
             {project.characters.length === 0 && (
               <p className="text-[11px] text-muted-foreground">No characters yet - cast voices once the cast exists.</p>
             )}
             <div className="space-y-1.5 max-h-40 overflow-y-auto studio-scroll pr-1">
               {project.characters.map((c) => (
                 <div key={c.id} className="flex items-center gap-2">
-                  <div className="w-28 shrink-0 min-w-0">
+                  <div className="w-24 shrink-0 min-w-0">
                     <div className="text-[11px] text-foreground truncate">{c.name}</div>
                     {c.role && <div className="text-[9px] text-muted-foreground truncate">{c.role.toLowerCase()}</div>}
                   </div>
@@ -186,9 +291,27 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
                       {c.voiceArtist.voiceId ? "cast" : "voice missing"}
                     </span>
                   )}
+                  <button
+                    onClick={() => {
+                      const artist = c.voiceArtist && artistById.get(c.voiceArtist.id);
+                      void playAudition(`char:${c.id}`, artist?.voiceId ?? defaultVoiceFor(c.name), c.name);
+                    }}
+                    disabled={auditionBusy === `char:${c.id}`}
+                    title={`Audition ${c.name}'s voice (their own first line when the board line is empty)`}
+                    className="h-7 w-7 flex items-center justify-center rounded-md border border-cyan-400/25 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 transition-colors shrink-0"
+                  >
+                    {auditionBusy === `char:${c.id}`
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : auditionPlaying === `char:${c.id}`
+                        ? <Square className="h-2.5 w-2.5" />
+                        : <Play className="h-2.5 w-2.5" />}
+                  </button>
                 </div>
               ))}
             </div>
+            {auditionMsg && (
+              <p className="text-[10px] font-mono text-cyan-300/90">{auditionMsg}</p>
+            )}
           </div>
 
           <div className="rounded-lg border border-white/10 bg-black/25 p-3 space-y-3">

@@ -1,15 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
-import ZAI from "z-ai-web-dev-sdk";
-import { db } from "@/lib/db";
-import {
-  deliveryProfile, isDeliveryId, shapeLineForDelivery,
-} from "@/lib/comic/delivery";
-import { isVoiceId } from "@/lib/comic/voice-catalog";
-import { resolveAutoDelivery, resolveVoiceCast } from "@/lib/ai/voice-casting";
+import { VoiceRenderError, renderVoiceTake } from "@/lib/ai/voice-render";
 
 // Real TTS voice renders for VOICE audio cues. A rendered take is a
 // 24kHz mono WAV stored under public/voices/{cueId}.wav; the cue keeps
@@ -20,40 +12,17 @@ import { resolveAutoDelivery, resolveVoiceCast } from "@/lib/ai/voice-casting";
 // voice; uncast speakers fall back to the deterministic hash voice.
 //
 // HOW the line is played: state-aware delivery. Priority is an
-// explicit request override, then the cue's standing direction
-// (voiceDelivery, set by the creator or DSH), then the speaker's
-// episode-effective CharacterState.
+// explicit request override, then the dialogue line's own delivery
+// (line-level direction inside the shot), then the cue's standing
+// direction (voiceDelivery, set by the creator or DSH), then the
+// speaker's episode-effective CharacterState.
+//
+// Every take stamps its input snapshot (voiceSig) so the direction
+// diff can re-render only takes whose inputs moved.
 
 export async function GET() {
   const { VOICES } = await import("@/lib/comic/voice-catalog");
   return NextResponse.json({ voices: VOICES });
-}
-
-/** Parse the real playback duration (ms) out of a standard WAV file buffer. */
-function wavDurationMs(buf: Buffer): number | null {
-  try {
-    if (buf.length < 44 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") return null;
-    let off = 12;
-    let byteRate = 0;
-    let dataSize = 0;
-    while (off + 8 <= buf.length) {
-      const id = buf.toString("ascii", off, off + 4);
-      const size = buf.readUInt32LE(off + 4);
-      if (id === "fmt ") {
-        // fmt body: audioFormat(2) channels(2) sampleRate(4) byteRate(4)
-        byteRate = buf.readUInt32LE(off + 8 + 8);
-      }
-      if (id === "data") {
-        dataSize = size;
-        break;
-      }
-      off += 8 + size + (size % 2);
-    }
-    if (byteRate <= 0 || dataSize <= 0) return null;
-    return Math.round((dataSize / byteRate) * 1000);
-  } catch {
-    return null;
-  }
 }
 
 export async function POST(req: Request) {
@@ -67,120 +36,13 @@ export async function POST(req: Request) {
   const cueId = body.cueId ? String(body.cueId) : "";
   if (!cueId) return NextResponse.json({ error: "cueId required" }, { status: 400 });
 
-  const cue = await db.audioCue.findUnique({
-    where: { id: cueId },
-    include: {
-      shot: { include: { scene: { include: { episode: { include: { season: true } } } } } },
-    },
-  });
-  if (!cue) return NextResponse.json({ error: "Cue not found" }, { status: 404 });
-  if (cue.kind !== "VOICE") {
-    return NextResponse.json({ error: "Voice renders apply to VOICE cues only" }, { status: 400 });
-  }
-
-  const projectId = cue.shot.scene.episode.season.projectId;
-  const episodeNumber = cue.shot.scene.episode?.number ?? null;
-
-  // VOICE labels may carry a "Speaker: line" prefix: speak only the line
-  const rawLabel = cue.label;
-  const text = (rawLabel.includes(": ") ? rawLabel.split(": ").slice(1).join(": ") : rawLabel).trim();
-  if (!text) return NextResponse.json({ error: "Cue label has no speakable text" }, { status: 400 });
-  if (text.length > 1024) {
-    return NextResponse.json({ error: `Line is ${text.length} chars, TTS accepts up to 1024` }, { status: 400 });
-  }
-
-  const speaker = rawLabel.includes(": ") ? rawLabel.split(":")[0].trim() : "";
-
-  // voice: explicit request > cast artist on the character > hash default
-  const cast = await resolveVoiceCast(speaker, projectId, body.voice);
-
-  // delivery: manual override > standing direction on the cue > the
-  // speaker's character state at this shot's episode
-  let delivery;
-  if (isDeliveryId(body.delivery)) {
-    delivery = { id: body.delivery, source: "manual" as const, stateLabel: null };
-  } else if (isDeliveryId(cue.voiceDelivery)) {
-    // a pinned standing direction is its own source: no character-state attribution
-    delivery = { id: cue.voiceDelivery, source: "direction" as const, stateLabel: null };
-  } else {
-    delivery = await resolveAutoDelivery(speaker, episodeNumber, projectId);
-  }
-  const profile = deliveryProfile(delivery.id);
-
-  const speedNum = Number(body.speed);
-  const baseSpeed = Number.isFinite(speedNum) ? Math.min(2, Math.max(0.5, speedNum)) : 1.0;
-  // the delivery bends the performance; the cue keeps the user's base
-  // speed so re-renders never compound the multiplier
-  const speed = Math.min(2, Math.max(0.5, Math.round(baseSpeed * profile.speedMul * 100) / 100));
-
-  // performance shaping leans the read into the state
-  const spoken = shapeLineForDelivery(text, profile.id);
-
-  let wav: Buffer;
   try {
-    const zai = await ZAI.create();
-    const res = await zai.audio.tts.create({
-      input: spoken,
-      voice: cast.voiceId,
-      speed,
-      response_format: "wav",
-      stream: false,
-    });
-    const arrayBuffer = await res.arrayBuffer();
-    wav = Buffer.from(new Uint8Array(arrayBuffer));
+    const result = await renderVoiceTake(cueId, { voice: body.voice, speed: body.speed, delivery: body.delivery });
+    return NextResponse.json(result);
   } catch (err) {
-    return NextResponse.json(
-      { error: `TTS render failed: ${err instanceof Error ? err.message : "unknown error"}` },
-      { status: 502 },
-    );
+    if (err instanceof VoiceRenderError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    return NextResponse.json({ error: `Voice render failed: ${err instanceof Error ? err.message : "unknown error"}` }, { status: 500 });
   }
-  if (wav.length < 100) return NextResponse.json({ error: "TTS returned an empty take" }, { status: 502 });
-
-  const dir = path.join(process.cwd(), "public", "voices");
-  await mkdir(dir, { recursive: true });
-  const file = `${cueId}.wav`;
-  await writeFile(path.join(dir, file), wav);
-
-  const actualMs = wavDurationMs(wav) ?? Math.round((wav.length / (24000 * 2)) * 1000);
-
-  // Widen the cue slot when the real take needs more room (stays inside the shot timeline)
-  const timelineMs = Math.max(1, Math.round((cue.shot.duration ?? 4) * 1000));
-  const maxSlot = Math.max(50, timelineMs - cue.startMs);
-  const durationMs = actualMs && actualMs > cue.durationMs ? Math.min(maxSlot, actualMs) : cue.durationMs;
-
-  const updated = await db.audioCue.update({
-    where: { id: cueId },
-    data: {
-      voiceUrl: `/voices/${file}?v=${Date.now()}`,
-      voiceActor: cast.voiceId,
-      voiceCast: cast.artistName,
-      voiceSpeed: baseSpeed, // base only; effective speed = base x delivery multiplier
-      voiceDurationMs: actualMs,
-      voiceState: profile.id,
-      voiceStateLabel: delivery.stateLabel,
-      durationMs,
-    },
-  });
-
-  return NextResponse.json({
-    cue: updated,
-    bytes: wav.length,
-    text: spoken,
-    delivery: {
-      id: profile.id,
-      label: profile.label,
-      source: delivery.source,
-      stateLabel: delivery.stateLabel,
-      speed,
-    },
-    cast: {
-      artistName: cast.artistName,
-      voiceId: cast.voiceId,
-      source: cast.source,
-    },
-    direction: {
-      note: cue.voiceNote,
-      standingDelivery: cue.voiceDelivery,
-    },
-  });
 }

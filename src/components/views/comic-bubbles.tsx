@@ -9,6 +9,7 @@ import {
   BUBBLE_KINDS, bubbleSpots, serializeDialogue,
   type BubbleKind, type BubbleSpot, type DialogueLine,
 } from "@/lib/comic/dialogue";
+import { DELIVERIES, type DeliveryId } from "@/lib/comic/delivery";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -160,7 +161,7 @@ export function DialogueEditor({
             Dialogue - Shot {String(shot.number).padStart(3, "0")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Bubbles render on every comic format. Order = reading order; 8 lines max.
+            Bubbles render on every comic format. Order = reading order; 8 lines max. Per-line delivery directs voice takes line by line inside the shot (auto = state-aware).
           </DialogDescription>
         </DialogHeader>
 
@@ -201,6 +202,24 @@ export function DialogueEditor({
                 rows={2}
                 className="bg-white/5 border-white/10 text-xs resize-none"
               />
+              {/* line-level delivery: each line inside the shot can play in its own register */}
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground shrink-0">Delivery</span>
+                <Select
+                  value={line.delivery ?? "AUTO"}
+                  onValueChange={(v) => update(i, { delivery: v === "AUTO" ? null : (v as DeliveryId) })}
+                >
+                  <SelectTrigger className="h-7 flex-1 bg-white/5 border-white/10 text-[11px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="studio-root bg-[#12121a] border-white/10">
+                    <SelectItem value="AUTO" className="text-[11px]">Auto · state-aware</SelectItem>
+                    {DELIVERIES.map((d) => (
+                      <SelectItem key={d.id} value={d.id} className="text-[11px]">{d.label} · {d.blurb}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           ))}
 
@@ -253,6 +272,7 @@ function parseSafe(raw: string | null | undefined): DialogueLine[] {
       speaker: typeof l?.speaker === "string" ? l.speaker : "",
       text: typeof l?.text === "string" ? l.text : "",
       kind: (["SPEECH", "THOUGHT", "SFX"].includes(l?.kind) ? l.kind : "SPEECH") as BubbleKind,
+      delivery: DELIVERIES.some((d) => d.id === l?.delivery) ? (l.delivery as DeliveryId) : null,
     }));
   } catch {
     return [];

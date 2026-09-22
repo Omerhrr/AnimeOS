@@ -17,6 +17,7 @@ import { StyleDirectionDialog } from "@/components/views/style-direction-dialog"
 import { LoraStudioDialog } from "@/components/views/lora-studio-dialog";
 import { ArtistsDialog } from "@/components/views/artists-dialog";
 import { ArtistWorkloadDialog } from "@/components/views/artist-workload-dialog";
+import { VoiceDiffDialog } from "@/components/views/voice-diff-dialog";
 import { PanelInspectorDialog } from "@/components/views/panel-inspector-dialog";
 import { SoundTimelineDialog } from "@/components/views/sound-timeline-dialog";
 import { SectionHeader } from "@/components/views/shared";
@@ -504,6 +505,7 @@ export function ComicView({ project }: { project: StudioProject }) {
           <LoraStudioDialog project={project} />
           <ArtistsDialog project={project} />
           <ArtistWorkloadDialog project={project} shots={allShots} />
+          <VoiceDiffDialog episode={episode ? { id: episode.id, number: episode.number, title: episode.title } : null} />
           <Button
             size="sm" variant="outline"
             className="h-7 text-[11px] border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 print:hidden"
