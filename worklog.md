@@ -44,3 +44,21 @@ Stage Summary:
 - GitHub: https://github.com/Omerhrr/AnimeOS main @ ccaa18a (3 commits)
 - Platform now natively covers animation (donghua/anime pipeline) AND comics (manhua/manhwa/manga Comic Mode)
 - Next horizons: image-generation-backed panel art, speech-bubble/dialogue authoring, live Blender bridge, batch rendering
+
+---
+Task ID: 3
+Agent: Super Z (main agent)
+Task: Iteration 3 — AI panel art generation + speech-bubble dialogue authoring (user: "proceed with both")
+
+Work Log:
+- Loaded fullstack-dev + image-generation skills; extended prisma Shot model (artworkUrl, dialogue JSON), db push + client regen, dev server restart
+- Built POST /api/panel-art: z-ai SDK image generation, prompts from shot-type framing + scene environment/weather/lighting + style preset + characters' episode-resolved states (appearance/clothing/weapon/cultivation); saves public/panels/{shotId}.png, artworkUrl with cache-busting version
+- PATCH /api/shots: dialogue validation (array, ≤8 lines, text required), artworkUrl set/clear
+- Comic Mode UI: per-panel toolbar (generate art, edit dialogue, AI badge), batch "Generate art" with concurrency-2 pool + live counts, AI art layer with procedural sketch fallback, stats "AI art ready n/n"
+- Speech bubbles (comic-bubbles.tsx + dialogue.ts): SPEECH (tailed) / THOUGHT (dashed + dots) / SFX (stroked italic), deterministic spot pool mirrored for manga RTL; DialogueEditor dialog with speaker autocomplete from cast + kind select + add/remove lines
+- Genericized layout engine (PanelPlacement<T>/ComicPage<T>) so panels carry full ShotRow
+- Verified E2E via agent-browser: single + batch generation → 6/6 panels AI-illustrated; dialogue saved via editor and bubble renders over art in manhua/manga(RTL)/webtoon; fixed a React border/borderStyle dev warning; console clean; tsc+eslint clean on changed files
+
+Stage Summary:
+- GitHub main @ 6aa1a62 (7 commits total); Comic Mode now produces AI-illustrated, dialogue-authored comic pages in all 3 formats
+- Remaining horizons: Blender bridge, per-character model sheets for casting consistency, DSH tool access to art/dialogue, batch rendering
