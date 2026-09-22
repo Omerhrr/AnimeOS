@@ -88,6 +88,18 @@ export interface ShotRow {
   dialogue?: string | null;
 }
 
+export interface BridgeStatusInfo {
+  mode: "LIVE_BLENDER" | "SIMULATOR";
+  source: "env" | "spawned" | null;
+  host: string | null;
+  reachable: boolean;
+  blenderVersion: string | null;
+  scene: string | null;
+  busy: boolean;
+  detail: string;
+  envHint: string | null;
+}
+
 export interface CharacterFull {
   id: string;
   projectId: string;
@@ -101,6 +113,8 @@ export interface CharacterFull {
   abilities: string | null;
   animationLib: string | null;
   canonicalState: string | null;
+  modelSheetUrl: string | null;
+  modelSheetPrompt: string | null;
   parentId: string | null;
   derivativeType: string | null;
   states: Array<{
@@ -179,6 +193,7 @@ export interface RenderJobRow {
   progress: number;
   stage: string;
   attempt: number;
+  driver: string;
   createdAt: string;
   shot?: (ShotRow & { scene?: { id: string; number: number; title: string } }) | null;
   evaluation: {
@@ -221,6 +236,7 @@ export const api = {
   sceneAnalysis: (id: string) => j<SceneAnalysis>(`/api/scenes?id=${id}`),
   renderJobs: (projectId: string) => j<RenderJobRow[]>(`/api/render-jobs?projectId=${projectId}`),
   dshMessages: (projectId: string) => j<DshMessageRow[]>(`/api/dsh?projectId=${projectId}`),
+  bridgeStatus: () => j<BridgeStatusInfo>("/api/bridge"),
 
   // commands
   createProject: (body: Record<string, unknown>) => j<{ id: string }>("/api/projects", { method: "POST", body: JSON.stringify(body) }),
@@ -230,6 +246,8 @@ export const api = {
   patchShot: (body: Record<string, unknown>) => j<{ id: string }>("/api/shots", { method: "PATCH", body: JSON.stringify(body) }),
   generatePanelArt: (shotId: string, format: string) =>
     j<{ artworkUrl: string; prompt: string }>("/api/panel-art", { method: "POST", body: JSON.stringify({ shotId, format }) }),
+  generateCharacterSheet: (characterId: string) =>
+    j<{ modelSheetUrl: string; prompt: string; anchor: string }>("/api/character-sheet", { method: "POST", body: JSON.stringify({ characterId }) }),
   createCharacter: (body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "POST", body: JSON.stringify(body) }),
   createEnvironment: (body: Record<string, unknown>) => j<{ id: string }>("/api/environments", { method: "POST", body: JSON.stringify(body) }),
   createAsset: (body: Record<string, unknown>) => j<{ id: string }>("/api/assets", { method: "POST", body: JSON.stringify(body) }),

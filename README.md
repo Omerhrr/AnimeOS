@@ -16,8 +16,9 @@ Every step writes to a persistent production universe: projects, seasons, episod
 
 | Area | What it does |
 |------|--------------|
-| **DSH Director** | 15-tool production API behind a 4-round INTENT → PLAN → EXECUTE → OBSERVE orchestrator. Mid-turn project switching, full execution trace rendered in the console. |
-| **Render pipeline** | Staged engine pipeline (validate → build → light → simulate → render → composite → encode), LLM render evaluator that proposes *bounded* parameter fixes, apply-fixes → auto re-render (attempt 2), approve → FINAL. |
+| **DSH Director** | 18-tool production API behind a 4-round INTENT → PLAN → EXECUTE → OBSERVE orchestrator. Mid-turn project switching, full execution trace rendered in the console. The director authors **dialogue** (`set_shot_dialogue`), **panel art** (`generate_panel_art`) and **character model sheets** (`generate_model_sheet`) itself. |
+| **Render pipeline** | **Live Blender bridge** when attached (jobs submitted over HTTP to the `animeos_bridge.py` add-on, progress polled, frames pulled back), built-in simulator otherwise — same job lifecycle, same LLM render evaluator with *bounded* parameter fixes, apply-fixes → auto re-render, approve → FINAL. |
+| **Casting consistency** | Per-character **AI model sheets** (turnaround reference images) plus a stored **canonical visual anchor** — the exact prompt tokens re-injected into every panel featuring that character, keeping faces/wardrobe coherent across panels and episodes. |
 | **Continuity engine** | Universe-level conflict detection (e.g. destroyed artefact reappearing in Ep 29) with proposed resolutions, plus missing-capability analysis per scene. |
 | **Comic Mode** | Shot breakdowns re-composed as sequential art — **manhua** pages, **manhwa/webtoon** vertical scroll, **manga** right-to-left pages. Deterministic panel-layout engine, **AI-generated panel artwork** (style-aware prompts seeded with shot type, environment, weather and character states), **speech-bubble authoring** (speech / thought / SFX, RTL-aware placement), print/PDF export. |
 | **3D cinematic preview** | Three.js procedural MVP scene driven by live scene parameters and shot camera presets (movement-aware), with auto shot advance. |
@@ -30,6 +31,12 @@ Every step writes to a persistent production universe: projects, seasons, episod
 | Manhua | Manga (RTL) | Webtoon |
 |--------|-------------|---------|
 | ![Manhua mode](docs/screenshots/comic-mode-manhua.png) | ![Manga mode](docs/screenshots/comic-mode-manga.png) | ![Webtoon mode](docs/screenshots/comic-mode-webtoon.png) |
+
+**Casting consistency & the live bridge** — Lin Yue's AI model sheet (turnaround anchor), DSH-authored dialogue rendered as bubbles over anchor-consistent AI art, and the engine-driver card:
+
+| Model sheet | DSH-authored art + thought bubble | Engine driver |
+|--------|-------------|---------|
+| ![Model sheet](docs/screenshots/model-sheet-linyue.png) | ![DSH bubble](docs/screenshots/comic-bubbles-fixed.png) | ![Bridge](docs/screenshots/bridge-driver-card.png) |
 
 ## Native format support
 
@@ -45,8 +52,8 @@ Every step writes to a persistent production universe: projects, seasons, episod
 ```
 src/
 ├── app/
-│   ├── api/            # 13 route handlers (projects, characters, scenes, shots,
-│   │                   #   render-jobs, dsh, continuity, terminology, …)
+│   ├── api/            # 15 route handlers (projects, characters, scenes, shots,
+│   │                   #   render-jobs, dsh, panel-art, character-sheet, bridge, …)
 │   └── page.tsx        # single-route studio SPA
 ├── components/
 │   ├── views/          # studio views (dashboard, dsh-console, comic, …)
@@ -54,15 +61,29 @@ src/
 │   └── studio/         # app shell (zustand + TanStack Query)
 └── lib/
     ├── dsh/            # tools, prompts, orchestrator, evaluator
-    ├── engine/         # render engine simulator (bridge interface for a real engine)
-    ├── comic/          # deterministic panel layout engine
+    ├── ai/             # art service: panel art + character model sheets
+    ├── bridge/         # live Blender bridge (HTTP transport, simulator fallback)
+    ├── engine/         # render pipeline (Blender driver ⇄ simulator driver)
+    ├── comic/          # deterministic panel layout engine + dialogue model
     ├── continuity.ts   # conflict + capability checking
     └── seed.ts         # "Immortal Path" demo universe
+bridges/blender/       # animeos_bridge.py — run this INSIDE Blender
 ```
 
 **Stack:** Next.js 16 · TypeScript · Prisma/SQLite · TanStack Query · zustand · Tailwind · shadcn/ui · Three.js.
 
-Per the platform's replaceability principle, the render engine is a simulated driver behind a bridge interface — swap in Blender/Unreal/custom renderers without touching the brain. Same for the queue layer.
+Per the replaceability principle, the render engine is a **pluggable driver**: attach a live Blender (below) or let the built-in simulator drive — the production state machine, queue and DSH evaluation loop are identical.
+
+### Attach a live Blender
+
+```bash
+# inside any Blender ≥ 3.x (GUI or headless):
+blender -b -P bridges/blender/animeos_bridge.py -- --port 8100
+# then point the studio at it and restart the dev server:
+ANIMEOS_BLENDER_HOST=127.0.0.1:8100 bun run dev
+```
+
+The add-on exposes `GET /status`, `GET /progress`, `POST /render`, `POST /ping` on `127.0.0.1`. AnimeOS maps its tunable scene parameters (fog, lightning, energy, rim light, camera distance) onto bpy equivalents, frames the camera per shot grammar (ESTABLISHING→24mm wide … EXTREME_CLOSEUP→100mm), renders the frame, and reports progress into the same queue UI; the frame lands in `public/renders/`. If the bridge drops mid-job the simulator takes over transparently.
 
 ## Run it
 
@@ -77,12 +98,12 @@ The database auto-seeds on first request with the **Immortal Path** demo product
 
 ### Try the loop
 
-1. Open **Render Queue**, trigger a render on any shot.
+1. Open **Render Queue**, trigger a render on any shot — the **Engine driver** card shows whether a live Blender or the simulator is driving; the job badge shows `BLENDER` or `SIM`.
 2. Watch the evaluation come back `NEEDS_REVISION` with bounded parameter fixes → **Apply fixes** auto-queues attempt 2.
-3. Open **DSH Director** and talk to the studio: *"Create a new wuxia production called Azure Sky with a sword forge environment"* — watch the 15-tool execution trace.
-4. Open **Comic Mode** and flip the same episode between manhua / webtoon / manga layouts. Hit **Generate art** to produce AI panel artwork in the active style (prompts are built from shot grammar, environment, weather and the characters' current development states), and the ✎ tool to author speech bubbles — panel 001 ships with a demo line.
-5. **Print / PDF** exports the pages with chrome hidden and page breaks kept inside panels.
+3. Open **DSH Director** and talk to the studio: *"For scene 12 shot 3: author the dialogue, generate a model sheet for any new character, then paint the panel in manhua style"* — the 18-tool trace shows the director doing it itself.
+4. Open **Characters** — hit ✦ on a character to generate their **model sheet**; the stored anchor then steers every panel they appear in (cards show an `ANCHOR` badge once locked).
+5. Open **Comic Mode** and flip the same episode between manhua / webtoon / manga layouts. Bubbles (speech / thought / SFX) place themselves around the art — mirrored for manga RTL — and **Print / PDF** exports pages with chrome hidden.
 
 ## Status
 
-MVP — the thesis is proven end-to-end with a simulated engine, and Comic Mode already produces AI-illustrated, dialogue-authored pages. Next horizons: live engine driver (Blender bridge), per-character model-sheet reference images for consistent casting, DSH tool access to panel art + dialogue authoring, multi-episode batch rendering.
+The full thesis now runs end-to-end: DSH directs dialogue, panel art, model sheets and renders through 18 production tools; a live Blender can drive the engine via the bridge; Comic Mode produces AI-illustrated, dialogue-authored, casting-consistent pages in all three native formats. Next horizons: multi-episode batch rendering, per-shot style LoRA fine-tuning, webtoon slice export.

@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 300; // DSH turns may include art generation (image models are slow)
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";

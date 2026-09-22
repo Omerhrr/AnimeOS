@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { MessageSquarePlus, Plus, Trash2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import {
-  BUBBLE_KINDS, bubbleSpots, mirrorSpot, serializeDialogue,
+  BUBBLE_KINDS, bubbleSpots, serializeDialogue,
   type BubbleKind, type BubbleSpot, type DialogueLine,
 } from "@/lib/comic/dialogue";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,9 @@ function BubbleTail({ kind, spot, rtl, ink }: { kind: BubbleKind; spot: BubbleSp
 }
 
 export function SpeechBubbles({ lines, rtl, ink }: { lines: DialogueLine[]; rtl: boolean; ink: string }) {
-  const spots = bubbleSpots(lines.length).map((s) => (rtl ? mirrorSpot(s) : s));
+  // RTL mirroring happens in the style switch below (right: instead of left:) —
+  // mirroring the spot values as well would double-flip and push bubbles off-panel.
+  const spots = bubbleSpots(lines.length);
   return (
     <>
       {lines.map((line, i) => {
@@ -53,7 +55,7 @@ export function SpeechBubbles({ lines, rtl, ink }: { lines: DialogueLine[]; rtl:
           return (
             <span
               key={i}
-              className="pointer-events-none absolute z-10 select-none whitespace-nowrap text-[13px] font-black italic tracking-wider"
+              className="pointer-events-none absolute z-20 select-none whitespace-nowrap text-[13px] font-black italic tracking-wider"
               style={{
                 top: spot.top,
                 [rtl ? "right" : "left"]: spot.left,
@@ -69,7 +71,7 @@ export function SpeechBubbles({ lines, rtl, ink }: { lines: DialogueLine[]; rtl:
         return (
           <div
             key={i}
-            className="pointer-events-none absolute z-10"
+            className="pointer-events-none absolute z-20"
             style={{ top: spot.top, [rtl ? "right" : "left"]: spot.left, maxWidth: "58%" }}
           >
             <div

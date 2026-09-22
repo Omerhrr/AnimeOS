@@ -3,14 +3,62 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2,
+  MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable,
 } from "lucide-react";
-import { api, parseActions, parseFindings } from "@/lib/api-client";
+import { api, parseActions, parseFindings, type StudioProject } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+
+function EngineDriverCard() {
+  const bridgeQ = useQuery({ queryKey: ["bridge"], queryFn: api.bridgeStatus, refetchInterval: 5000 });
+  const s = bridgeQ.data;
+  const live = s?.mode === "LIVE_BLENDER" && s.reachable;
+
+  return (
+    <div className={cn(
+      "studio-panel p-4 mb-5 flex flex-col sm:flex-row sm:items-center gap-3",
+      live ? "border-emerald-400/25" : ""
+    )}>
+      <div className={cn(
+        "h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border",
+        live ? "bg-emerald-400/10 border-emerald-400/30" : "bg-white/5 border-white/12"
+      )}>
+        <Cable className={cn("h-4.5 w-4.5", live ? "text-emerald-300" : "text-muted-foreground")} />
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          Engine driver
+          <span className={cn(
+            "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-widest border",
+            live ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-300" : "bg-white/5 border-white/12 text-muted-foreground"
+          )}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", live ? "bg-emerald-400 dsh-pulse" : "bg-neutral-500")} />
+            {live ? "LIVE BLENDER" : "SIMULATOR"}
+          </span>
+          {s?.busy && live && (
+            <span className="rounded bg-amber-400/10 border border-amber-400/30 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-amber-300">RENDERING</span>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">
+          {live
+            ? `Blender ${s?.blenderVersion ?? ""} attached at ${s?.host}${s?.scene ? ` · scene “${s.scene}”` : ""} — jobs render in the real engine and flow back into the queue.`
+            : s?.detail ?? "Probing bridge…"}
+        </p>
+        {!live && s?.envHint && (
+          <p className="text-[10px] text-muted-foreground/80 mt-1 font-mono">ANIMEOS_BLENDER_HOST={s.envHint}</p>
+        )}
+      </div>
+      {!live && (
+        <p className="sm:ml-auto text-[10px] leading-relaxed text-muted-foreground/80 sm:max-w-[290px] sm:text-right">
+          Attach one: run <span className="font-mono">bridges/blender/animeos_bridge.py</span> inside Blender, then set <span className="font-mono">ANIMEOS_BLENDER_HOST=127.0.0.1:8100</span>.
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function RenderView({ project }: { project: StudioProject }) {
   const qc = useQueryClient();
@@ -41,8 +89,10 @@ export function RenderView({ project }: { project: StudioProject }) {
     <div>
       <SectionHeader
         title="Render Queue"
-        sub="Simulated engine workers with live stages. Completed previews go straight to DSH for inspection — approve, apply its modifications and re-render, or override."
+        sub="Live Blender when attached, built-in simulator otherwise — same job lifecycle, same DSH inspection loop. Completed previews go straight to DSH for inspection."
       />
+
+      <EngineDriverCard />
 
       {jobs.length === 0 && (
         <div className="studio-panel p-10 text-center text-sm text-muted-foreground">
@@ -68,6 +118,17 @@ export function RenderView({ project }: { project: StudioProject }) {
                     {job.shot?.scene ? `Scene ${job.shot.scene.number} · ` : ""}
                     {job.shot ? `Shot ${String(job.shot.number).padStart(3, "0")}` : "Production master"}
                     <span className="text-[11px] font-normal text-muted-foreground">{job.mode} · attempt {job.attempt}</span>
+                    <span
+                      title={job.driver === "BLENDER" ? "Rendered by the live Blender bridge" : "Rendered by the built-in simulator"}
+                      className={cn(
+                        "rounded px-1 py-[1px] text-[8px] font-bold tracking-widest border",
+                        job.driver === "BLENDER"
+                          ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-300"
+                          : "bg-white/5 border-white/12 text-muted-foreground"
+                      )}
+                    >
+                      {job.driver === "BLENDER" ? "BLENDER" : "SIM"}
+                    </span>
                     <StatusBadge status={job.status} />
                   </div>
                   {job.shot && <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed line-clamp-1">{job.shot.description}</p>}

@@ -62,3 +62,24 @@ Work Log:
 Stage Summary:
 - GitHub main @ 6aa1a62 (7 commits total); Comic Mode now produces AI-illustrated, dialogue-authored comic pages in all 3 formats
 - Remaining horizons: Blender bridge, per-character model sheets for casting consistency, DSH tool access to art/dialogue, batch rendering
+
+---
+Task ID: 4
+Agent: Super Z (main agent)
+Task: Iteration 4 — per-character model sheets + DSH dialogue/art authoring tools + live Blender render bridge (user: "proceed with this")
+
+Work Log:
+- Schema: Character.modelSheetUrl/modelSheetPrompt (canonical visual anchor), RenderJob.driver; db push + client regen + dev server restart
+- src/lib/ai/art.ts: shared art service — extracted panel-art from the route, added generateCharacterModelSheet (turnaround sheet prompt from appearance JSON + latest dev state + per-style tokens) storing the anchor prompt; generateShotPanelArt now re-injects each detected character's anchor ("match established character design") for cross-panel consistency; retry wrapper on SDK calls
+- API: /api/panel-art thin wrapper; new POST /api/character-sheet; new GET /api/bridge (live driver status + env hint)
+- Live Blender bridge: src/lib/bridge/blender.ts (status probe of ANIMEOS_BLENDER_HOST or auto-spawned local `blender -b -P animeos_bridge.py`, submit + progress polling, graceful offline); bridges/blender/animeos_bridge.py — self-contained bpy add-on (ThreadingHTTPServer on 127.0.0.1:8100, /status /progress /render /ping; maps AnimeOS scene params to bpy fog/world/sun/area lights, camera framing per shot type/lens, timer-chunked render so HTTP stays live, returns base64 frame); py_compile clean
+- Render pipeline: createRenderJob submits to live Blender when reachable (driver=BLENDER) else simulator; tickRenderJob polls bridge progress/stage, pulls finished PNG into public/renders/, mid-job bridge loss degrades to simulator cleanly; verified fallback (SIM badge, job progressed, DSH inspection unchanged)
+- DSH: 18 tools now — set_shot_dialogue (validated lines, replace/clear), generate_panel_art (format-aware), generate_model_sheet (anchor store); context enrichment (dialogueLines/art per shot, modelSheet per character); doctrine rewritten (director directs art/dialogue via tools, model-sheet-before-panel-art rule); maxDuration 300 on /api/dsh
+- UI: Characters view (model-sheet thumbnails, ANCHOR badge, per-card ✦ generate, detail sheet image + canonical anchor display); Render view (Engine driver card LIVE BLENDER/SIMULATOR with attach instructions, per-job BLENDER/SIM badge); api-client typed additions
+- Fixed two real bubble bugs found in browser E2E: (1) caption overpainting bubbles in small panels → top-heavy spot pool + z-20 bubbles + line-clamped captions; (2) manga RTL double-mirroring pushed bubbles off-panel → removed mirrorSpot (the left→right style switch already mirrors)
+- Verified E2E: real Lin Yue model sheet generated (30s, donghua turnaround, anchor stored + served), live DSH turn autonomously called set_shot_dialogue + generate_panel_art (75s, thought bubble "This ends today." renders over anchor-consistent art in manhua + manga RTL), bridge card + fallback verified, console clean, tsc/eslint clean on changed files (tools.ts errors pre-exist on HEAD, confirmed via stash)
+
+Stage Summary:
+- Casting consistency mechanism shipped: model sheet → stored anchor → injected into every panel prompt
+- DSH is now a full art/dialogue director (18 tools); Blender bridge is live-attachable with transparent simulator fallback
+- GitHub main pushed with this iteration; next horizons: batch rendering, style LoRA per production, webtoon slice export

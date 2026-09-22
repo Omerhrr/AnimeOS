@@ -64,5 +64,14 @@ db/*
 download/
 upload/
 
-# Generated panel art (regenerable)
+# Generated art (regenerable)
 public/panels/*.png
+public/sheets/*.png
+public/renders/*.png
+!public/panels/.gitkeep
+!public/sheets/.gitkeep
+!public/renders/.gitkeep
+
+# Python + tooling artifacts
+__pycache__/
+tool-results/

@@ -58,19 +58,15 @@ export interface BubbleSpot {
   tail: "bl" | "br" | "none";
 }
 
-// Logical zones that avoid the narration caption (top-left in LTR / top-right in RTL)
+// Logical zones, top-heavy so bubbles never collide with the bottom narration
+// caption — even in short panels (~112px). Caption zone = bottom ~25%.
 const SPOT_POOL: BubbleSpot[] = [
-  { top: "38%", left: "6%", tail: "bl" },
-  { top: "62%", left: "44%", tail: "br" },
-  { top: "12%", left: "52%", tail: "none" },
-  { top: "72%", left: "8%", tail: "bl" },
+  { top: "8%", left: "6%", tail: "bl" },
+  { top: "30%", left: "44%", tail: "br" },
+  { top: "46%", left: "6%", tail: "bl" },
+  { top: "44%", left: "58%", tail: "none" },
 ];
 
 export function bubbleSpots(count: number): BubbleSpot[] {
   return SPOT_POOL.slice(0, Math.min(count, SPOT_POOL.length));
-}
-
-// Mirror a spot horizontally for right-to-left reading (manga)
-export function mirrorSpot(spot: BubbleSpot): BubbleSpot {
-  return { ...spot, left: `${100 - parseFloat(spot.left)}%` };
 }

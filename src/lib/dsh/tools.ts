@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { createRenderJob } from "@/lib/engine/render";
+import { serializeDialogue, type DialogueLine } from "@/lib/comic/dialogue";
+import { generateShotPanelArt, generateCharacterModelSheet } from "@/lib/ai/art";
 
 // ─────────────────────────────────────────────────────────────
 // DSH PRODUCTION TOOL API (§6/§7)
@@ -144,6 +146,29 @@ export const TOOL_DEFS: ToolDef[] = [
     description: "Queue a render job for a shot. mode PREVIEW for inspection loop, FINAL once approved. DSH will inspect the preview when it completes.",
     args: { sceneNumber: "number", shotNumber: "number", mode: "PREVIEW | FINAL (default PREVIEW)" },
   },
+  {
+    name: "set_shot_dialogue",
+    description: "Author speech-bubble dialogue for a shot (replaces existing lines). Kinds: SPEECH (tailed bubble), THOUGHT (cloudy), SFX (stylized sound text). Speaker names should match cast characters. Max 8 lines, each ≤300 chars.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      lines: "JSON array string, e.g. [{\"speaker\":\"Lin Yue\",\"text\":\"The sword chose me.\",\"kind\":\"SPEECH\"}] — empty array clears dialogue",
+    },
+  },
+  {
+    name: "generate_panel_art",
+    description: "Generate AI panel art for a shot in a comic format (MANHUA | MANHWA | MANGA). Uses the production's visual style, scene environment and each detected character's model-sheet anchor, so faces stay consistent. Slower (~15-40s) — use for hero shots.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      format: "MANHUA | MANHWA | MANGA (default MANHUA)",
+    },
+  },
+  {
+    name: "generate_model_sheet",
+    description: "Generate a character model sheet (turnaround reference image) and store the canonical visual anchor used to keep that character's face/wardrobe consistent across all future panel art. Call this for important characters before generating their panel art.",
+    args: { characterName: "string" },
+  },
 ];
 
 type ActionResult = { status: "OK" | "ERROR"; result: string };
@@ -177,6 +202,18 @@ async function latestScene(projectId: string) {
   });
   for (const ep of eps) if (ep.scenes.length) return ep.scenes[0];
   return null;
+}
+
+async function resolveScene(projectId: string, sceneNumberArg: unknown) {
+  if (sceneNumberArg) {
+    const scenes = await db.scene.findMany({
+      where: { episode: { season: { projectId } }, number: Number(sceneNumberArg) },
+      include: { episode: true },
+      orderBy: { createdAt: "desc" },
+    });
+    if (scenes[0]) return scenes[0];
+  }
+  return latestScene(projectId);
 }
 
 export async function executeTool(projectId: string, name: string, args: Record<string, unknown>): Promise<ActionResult> {
@@ -448,6 +485,73 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} — DSH will inspect the preview when it completes.` };
       }
 
+      case "set_shot_dialogue": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+
+        let rawLines: unknown = args.lines;
+        if (typeof rawLines === "string") {
+          try { rawLines = JSON.parse(rawLines); } catch { rawLines = null; }
+        }
+        if (!Array.isArray(rawLines)) {
+          return { status: "ERROR", result: "lines must be a JSON array like [{\"speaker\":\"...\",\"text\":\"...\",\"kind\":\"SPEECH\"}]" };
+        }
+        const lines = (rawLines as Array<Record<string, unknown>>).map((l): DialogueLine => ({
+          speaker: typeof l.speaker === "string" ? l.speaker : "",
+          text: typeof l.text === "string" ? l.text : "",
+          kind: (l.kind === "THOUGHT" || l.kind === "SFX") ? l.kind : "SPEECH",
+        }));
+        const counts = lines.reduce<Record<string, number>>((acc, l) => ({ ...acc, [l.kind]: (acc[l.kind] ?? 0) + 1 }), {});
+        await db.shot.update({
+          where: { id: shot.id },
+          data: { dialogue: lines.length ? serializeDialogue(lines) : null },
+        });
+        const summary = Object.entries(counts).map(([k, n]) => `${k}×${n}`).join(", ") || "0 lines";
+        return {
+          status: "OK",
+          result: lines.length
+            ? `Dialogue set for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}): ${summary}. Bubbles render in Comic Mode.`
+            : `Dialogue cleared for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}).`,
+        };
+      }
+
+      case "generate_panel_art": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet — create a scene first." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        const format = String(args.format ?? "MANHUA").toUpperCase();
+        try {
+          const art = await generateShotPanelArt(shot.id, format);
+          return {
+            status: "OK",
+            result: `Panel art generated for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}, ${format} style) → ${art.artworkUrl}. Characters used their model-sheet anchors where available.`,
+          };
+        } catch (err) {
+          return { status: "ERROR", result: `Panel art generation failed: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      }
+
+      case "generate_model_sheet": {
+        const ch = await characterByName(projectId, String(args.characterName ?? ""));
+        if (!ch) return { status: "ERROR", result: `Character '${String(args.characterName)}' not found.` };
+        try {
+          const sheet = await generateCharacterModelSheet(ch.id);
+          return {
+            status: "OK",
+            result: `Model sheet generated for ${ch.name} → ${sheet.modelSheetUrl}. Canonical visual anchor stored: "${sheet.anchor.slice(0, 160)}" — future panel art of ${ch.name} will match it.`,
+          };
+        } catch (err) {
+          return { status: "ERROR", result: `Model sheet generation failed: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      }
+
       default:
         return { status: "ERROR", result: `Unknown tool: ${name}` };
     }
@@ -498,12 +602,15 @@ export async function buildCompactContext(projectId: string) {
           shots: sc.shots.map((sh) => ({
             shot: sh.number, type: sh.shotType, movement: sh.movement, lens: sh.lens,
             duration: sh.duration, status: sh.status, description: sh.description,
+            dialogueLines: sh.dialogue ? JSON.parse(sh.dialogue).length : 0,
+            art: Boolean(sh.artworkUrl),
           })),
         })),
       })),
     })),
     characters: project.characters.map((c) => ({
       name: c.name, role: c.role, derivative: c.derivativeType,
+      modelSheet: Boolean(c.modelSheetUrl),
       abilities: JSON.parse(c.abilities || "[]"),
       states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon })),
     })),

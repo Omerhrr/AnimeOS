@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, User, Users, Swords, Crown, Skull, Sparkles, Copy, Ghost, RefreshCcw,
-  ChevronRight, Wand2, Loader2,
+  ChevronRight, Wand2, Loader2, IdCard,
 } from "lucide-react";
 import { api, parseStringArray, type CharacterFull, type StudioProject } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -113,7 +113,14 @@ function CreateCharacterDialog() {
 
 // tiny helper to read projectId from store inside dialog
 
-function CharacterSheet({ character, project }: { character: CharacterFull; project: StudioProject }) {
+function CharacterSheet({
+  character, project, onGenerateSheet, sheetBusy,
+}: {
+  character: CharacterFull;
+  project: StudioProject;
+  onGenerateSheet: (id: string) => void;
+  sheetBusy: boolean;
+}) {
   const abilities = parseStringArray(character.abilities);
   const animLib = parseStringArray(character.animationLib);
   const Icon = ROLE_ICONS[character.role ?? "SUPPORTING"] ?? User;
@@ -142,6 +149,47 @@ function CharacterSheet({ character, project }: { character: CharacterFull; proj
       </SheetHeader>
 
       <div className="px-4 pb-6 space-y-5 text-sm">
+        {/* Model sheet — the casting-consistency reference (§16) */}
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground flex items-center gap-1.5">
+              <IdCard className="h-3.5 w-3.5" /> Model sheet
+            </h4>
+            <Button
+              size="sm" variant="outline"
+              className="h-7 text-[11px] border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+              disabled={sheetBusy}
+              onClick={() => onGenerateSheet(character.id)}
+            >
+              {sheetBusy
+                ? <><Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> Generating…</>
+                : <><Sparkles className="h-3 w-3 mr-1.5" /> {character.modelSheetUrl ? "Regenerate" : "Generate"}</>}
+            </Button>
+          </div>
+          {character.modelSheetUrl ? (
+            <figure className="overflow-hidden rounded-lg border border-white/12">
+              <img
+                src={character.modelSheetUrl}
+                alt={`${character.name} model sheet`}
+                className="aspect-square w-full object-cover"
+              />
+              <figcaption className="bg-white/5 px-2.5 py-1.5 text-[10px] text-muted-foreground">
+                Turnaround reference — injected as the canonical visual anchor into every panel featuring {character.name}.
+              </figcaption>
+            </figure>
+          ) : (
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              No sheet yet. Generating one creates a turnaround reference image and stores the canonical visual anchor that keeps {character.name}&apos;s face and wardrobe consistent across every panel and episode.
+            </p>
+          )}
+          {character.modelSheetPrompt && (
+            <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1">Canonical visual anchor</div>
+              <p className="text-[11px] font-mono leading-relaxed text-teal-200/90">{character.modelSheetPrompt}</p>
+            </div>
+          )}
+        </section>
+
         {character.personality && (
           <section>
             <h4 className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">Personality</h4>
@@ -249,9 +297,24 @@ function CharacterSheet({ character, project }: { character: CharacterFull; proj
 }
 
 export function CharactersView({ project }: { project: StudioProject }) {
+  const qc = useQueryClient();
   const [selected, setSelected] = useState<CharacterFull | null>(null);
+  const [sheetBusy, setSheetBusy] = useState<Record<string, boolean>>({});
   const core = project.characters.filter((c) => !c.derivativeType);
   const derivs = project.characters.filter((c) => c.derivativeType);
+
+  const generateSheet = async (characterId: string) => {
+    setSheetBusy((st) => ({ ...st, [characterId]: true }));
+    try {
+      await api.generateCharacterSheet(characterId);
+      await qc.invalidateQueries({ queryKey: ["project", project.id] });
+    } finally {
+      setSheetBusy((st) => {
+        const { [characterId]: _done, ...rest } = st;
+        return rest;
+      });
+    }
+  };
 
   return (
     <div>
@@ -264,6 +327,7 @@ export function CharactersView({ project }: { project: StudioProject }) {
         {[...core, ...derivs].map((c) => {
           const Icon = ROLE_ICONS[c.role ?? "SUPPORTING"] ?? User;
           const isDeriv = Boolean(c.derivativeType);
+          const busy = Boolean(sheetBusy[c.id]);
           return (
             <button
               key={c.id}
@@ -274,16 +338,41 @@ export function CharactersView({ project }: { project: StudioProject }) {
               )}
             >
               <div className="flex items-center gap-3">
-                <div className={cn(
-                  "h-10 w-10 rounded-lg flex items-center justify-center shrink-0 border",
-                  isDeriv ? "bg-violet-400/10 border-violet-400/30" : "bg-primary/12 border-primary/25"
-                )}>
-                  <Icon className={cn("h-4.5 w-4.5", isDeriv ? "text-violet-300" : "text-primary")} />
-                </div>
+                {c.modelSheetUrl ? (
+                  <img
+                    src={c.modelSheetUrl}
+                    alt={`${c.name} model sheet`}
+                    className="h-12 w-12 rounded-lg object-cover shrink-0 border border-white/15"
+                  />
+                ) : (
+                  <div className={cn(
+                    "h-10 w-10 rounded-lg flex items-center justify-center shrink-0 border",
+                    isDeriv ? "bg-violet-400/10 border-violet-400/30" : "bg-primary/12 border-primary/25"
+                  )}>
+                    <Icon className={cn("h-4.5 w-4.5", isDeriv ? "text-violet-300" : "text-primary")} />
+                  </div>
+                )}
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">{c.name}</div>
+                  <div className="text-sm font-semibold truncate flex items-center gap-1.5">
+                    {c.name}
+                    {c.modelSheetUrl && (
+                      <span title="Model sheet generated — casting anchor active" className="inline-flex items-center rounded bg-emerald-400/10 border border-emerald-400/30 px-1 text-[8px] font-bold tracking-widest text-emerald-300">
+                        ANCHOR
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[11px] text-muted-foreground">{c.derivativeType ?? c.role ?? "Cast"}</div>
                 </div>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${c.modelSheetUrl ? "Regenerate" : "Generate"} model sheet for ${c.name}`}
+                  onClick={(e) => { e.stopPropagation(); void generateSheet(c.id); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); void generateSheet(c.id); } }}
+                  className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary transition-colors hover:bg-primary/20 print:hidden"
+                >
+                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                </span>
               </div>
               {c.personality && (
                 <p className="text-[11px] text-muted-foreground mt-2.5 leading-relaxed line-clamp-2">{c.personality}</p>
@@ -304,7 +393,14 @@ export function CharactersView({ project }: { project: StudioProject }) {
       </div>
 
       <Sheet open={Boolean(selected)} onOpenChange={(o) => !o && setSelected(null)}>
-        {selected && <CharacterSheet character={project.characters.find((c) => c.id === selected.id) ?? selected} project={project} />}
+        {selected && (
+          <CharacterSheet
+            character={project.characters.find((c) => c.id === selected.id) ?? selected}
+            project={project}
+            onGenerateSheet={(id) => void generateSheet(id)}
+            sheetBusy={Boolean(sheetBusy[selected.id])}
+          />
+        )}
       </Sheet>
     </div>
   );

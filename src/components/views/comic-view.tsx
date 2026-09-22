@@ -159,9 +159,9 @@ function PanelFrame({
         </span>
       )}
 
-      {/* narration caption */}
+      {/* narration caption — clamped when bubbles share the panel (avoid overlap) */}
       <figcaption
-        className={cn("absolute bottom-6 z-10 px-1.5 py-1 text-[9px] leading-snug text-neutral-900", rtl ? "right-1 text-right" : "left-1 text-left")}
+        className={cn("absolute bottom-6 z-10 px-1.5 py-1 text-[9px] leading-snug text-neutral-900", rtl ? "right-1 text-right" : "left-1 text-left", lines.length > 0 ? "line-clamp-1" : "line-clamp-2")}
         style={{ background: "rgba(255,255,255,0.88)", border: `1px solid ${cfg.ink}`, maxWidth: "72%" }}
       >
         {shot.description}
@@ -207,7 +207,7 @@ function WebtoonPanel({
           {shot.movement}
         </span>
       )}
-      <figcaption className="absolute bottom-6 left-1 z-10 px-1.5 py-1 text-[9px] leading-snug text-neutral-900" style={{ background: "rgba(255,255,255,0.88)", border: `1px solid ${cfg.ink}`, maxWidth: "76%" }}>
+      <figcaption className={cn("absolute bottom-6 left-1 z-10 px-1.5 py-1 text-[9px] leading-snug text-neutral-900", lines.length > 0 ? "line-clamp-1" : "line-clamp-2")} style={{ background: "rgba(255,255,255,0.88)", border: `1px solid ${cfg.ink}`, maxWidth: "76%" }}>
         {shot.description}
       </figcaption>
     </figure>

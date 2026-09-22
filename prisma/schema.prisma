@@ -142,6 +142,8 @@ model Character {
   abilities      String?  // JSON string[]
   animationLib   String?  // JSON string[]
   canonicalState String?  // JSON summary of current canonical condition (injuries etc.)
+  modelSheetUrl   String?  // AI-generated character model sheet (served from /sheets/)
+  modelSheetPrompt String? // Canonical visual-anchor prompt — reused in every panel art for consistency
   parentId       String?  // derivative source character
   derivativeType String?  // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
   createdAt      DateTime @default(now())
@@ -216,6 +218,7 @@ model RenderJob {
   progress   Float     @default(0)
   stage      String    @default("Queued")
   attempt    Int       @default(1)
+  driver     String    @default("SIMULATOR") // SIMULATOR | BLENDER
   durationMs Int       @default(16000)
   startedAt  DateTime?
   finishedAt DateTime?
