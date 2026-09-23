@@ -184,3 +184,97 @@ export function formatTemplateReport(report: TemplateSegmentReport[], stateLabel
     )
     .join(", ");
 }
+
+// ─────────────────────────────────────────────────────────────
+// User-defined templates: validation, shape rendering and prose
+// matching. Creators save their own beat shapes per production
+// (Arc templates dialog or DSH), and those templates join the
+// built-in registry everywhere: the dialog, apply_arc_template and
+// suggest_arc_template.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Validate + normalize a candidate segment list (from the API body
+ * or a saved template's JSON): each item needs frac > 0 and kind
+ * "auto" | "state"; adjacent same-kind segments merge; fractions are
+ * normalized to sum to 1. Returns null when the shape is unusable.
+ */
+export function parseArcTemplateSegments(raw: unknown): ArcTemplateSegment[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const segs: ArcTemplateSegment[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const rec = item as Record<string, unknown>;
+    const frac = Number(rec.frac);
+    const kind = String(rec.kind ?? "").trim().toLowerCase();
+    if (!Number.isFinite(frac) || frac <= 0 || (kind !== "auto" && kind !== "state")) return null;
+    const last = segs[segs.length - 1];
+    if (last && last.kind === kind) last.frac += frac;
+    else segs.push({ frac, kind: kind === "state" ? "state" : "auto" });
+  }
+  const total = segs.reduce((acc, s) => acc + s.frac, 0);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  for (const s of segs) s.frac = s.frac / total;
+  return segs;
+}
+
+/** Shape as a compact readout: "auto 25% -> state 50% -> auto 25%". */
+export function formatTemplateShape(segments: ArcTemplateSegment[]): string {
+  return segments.map((s) => `${s.kind} ${Math.round(s.frac * 100)}%`).join(" -> ");
+}
+
+// prose-shape signals: what the creator's words imply about the beat
+const STARTS_NORMAL_RE =
+  /\b(starts?|begins?|opens?|settles? in|still human|not yet)\b[^.!?]{0,40}?\b(normal|calm|steady|human|themselves|herself|himself|auto|clear)\b/i;
+const ENDS_NORMAL_RE =
+  /\b(ends?|finally|closes?|lastly|returns?|comes? back|releases?|lets go)\b[^.!?]{0,30}?\b(normal|clear|auto|calm|steady|themselves|herself|himself)\b/i;
+const STATE_DOMINATES_RE =
+  /\b(takes? over|dominates?|dominant|consumes?|owns?|most of|never lets up|swallows?|overtak\w+|takes? hold)\b/i;
+const OPENS_IN_STATE_RE =
+  /\b(still|opens?|starts?|begins?|already)\b[^.!?]{0,30}?\b(possessed|injured|corrupted|controlled|transformed|under|wounded|drained)\b/i;
+
+// words too generic to score a lexical hit on their own
+const MATCH_STOP_WORDS = new Set([
+  "state", "line", "lines", "scene", "auto", "beat", "then", "over", "takes",
+  "whole", "first", "rest", "still", "around", "classic", "brief", "sibling",
+]);
+
+export interface ArcTemplateMatch {
+  template: ArcTemplate;
+  score: number;
+  reasons: string[];
+}
+
+/**
+ * Score a registry of templates against the creator's PROSE
+ * description of a beat. Two scoring axes: lexical overlap between
+ * the prose and each template's name + description, and SHAPE
+ * signals (the prose implies the beat starts normal / ends normal /
+ * the state dominates / it opens inside the state) matched against
+ * each template's segment layout. Sorted best-first.
+ */
+export function matchArcTemplates(prose: string, registry: ArcTemplate[]): ArcTemplateMatch[] {
+  const text = prose.toLowerCase();
+  if (!text.trim()) return [];
+  return registry
+    .map((template) => {
+      const reasons: string[] = [];
+      let score = 0;
+      const lexicon = `${template.name} ${template.description}`
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length >= 4 && !MATCH_STOP_WORDS.has(w));
+      const hits = [...new Set(lexicon.filter((w) => text.includes(w)))];
+      score += hits.length;
+      if (hits.length) reasons.push(`echoes ${hits.slice(0, 3).map((h) => `"${h}"`).join(", ")}`);
+      const startsAuto = template.segments[0]?.kind === "auto";
+      const endsAuto = template.segments[template.segments.length - 1]?.kind === "auto";
+      const stateFrac = template.segments.filter((s) => s.kind === "state").reduce((acc, s) => acc + s.frac, 0);
+      if (STARTS_NORMAL_RE.test(prose) && startsAuto) { score += 2; reasons.push("the beat starts normal"); }
+      if (ENDS_NORMAL_RE.test(prose) && endsAuto) { score += 2; reasons.push("the beat ends normal"); }
+      if (STATE_DOMINATES_RE.test(prose) && stateFrac >= 0.5) { score += 2; reasons.push("the state dominates"); }
+      if (OPENS_IN_STATE_RE.test(prose) && !startsAuto) { score += 2; reasons.push("opens inside the state"); }
+      return { template, score, reasons };
+    })
+    .sort((a, b) => b.score - a.score || a.template.name.localeCompare(b.template.name));
+}

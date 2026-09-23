@@ -4,13 +4,14 @@
 //   plan    - pure checks (no DB writes): template allocation math, the
 //             across-shots shape painter, season span merging across
 //             episode boundaries, lane packing, name resolution
-//   tool    - apply_arc_template on the real season (scene + episode
-//             scope, shape report, direction impact, error paths), the
-//             same-turn offer riding set_state_arc, and cross-episode
-//             spans computed from real data with a fixture Ep8; restores
-//             every dialogue it touched and removes the fixture
+//   tool    - built-in template application (scene + episode scope, shape
+//             report, direction impact, error paths), the same-turn offer
+//             riding set_state_arc, and cross-episode spans computed from
+//             real data with a fixture Ep8; the fixture runs on its own
+//             episode + a temporary fixture state, so the real season is
+//             never modified
 //   cleanup - removes the fixture and restores Sc12 dialogues (safety net)
-// The season ends fresh: every dialogue touched is restored exactly.
+// The season ends exactly as it started: Ep7 untouched (0 fresh / 0 stale / 1 unrendered).
 import { executeTool } from "@/lib/dsh/tools";
 import { parseDialogue, serializeDialogue } from "@/lib/comic/dialogue";
 import {
@@ -22,6 +23,9 @@ import {
   type SeasonArcShotInput,
 } from "@/lib/comic/arcs";
 import { diffEpisodeById } from "@/lib/ai/voice-diff";
+import { renderVoiceTake } from "@/lib/ai/voice-render";
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 
 const db = new PrismaClient();
@@ -55,22 +59,26 @@ async function sc12Shots() {
   return scene;
 }
 
+// the ONLY real dialogue in Ep7 (verified by the tool step's restore check)
 const SC12_ORIGINALS: Record<number, string> = {
-  1: '[{"speaker":"Lin Yue","text":"The Jade Sword still answers my call.","kind":"SPEECH"}]',
   3: '[{"speaker":"Lin Yue","text":"The rain... it stopped.","kind":"THOUGHT"}]',
 };
 
 const FIXTURE_EPISODE = 8;
 const FIXTURE_SCENE = 20;
+const STATE_LABEL = "E2E Possessed"; // fuzzy-matches the fixture state
 const FIXTURE_DIALOGUES: Record<number, string> = {
-  1: serializeDialogue([
-    { speaker: "Su Yan", text: "You cannot hold two swords with one soul.", kind: "SPEECH" },
-    { speaker: "Lin Yue", text: "Then the soul stretches.", kind: "SPEECH" },
-  ]),
-  2: serializeDialogue([
-    { speaker: "Lin Yue", text: "It holds. For now.", kind: "THOUGHT" },
-  ]),
+  1: serializeDialogue([{ speaker: "Lin Yue", text: "The Jade Sword still answers my call.", kind: "SPEECH" }]),
+  2: serializeDialogue([{ speaker: "Su Yan", text: "You cannot hold two swords with one soul.", kind: "SPEECH" }]),
+  3: serializeDialogue([{ speaker: "Lin Yue", text: "The rain... it stopped.", kind: "THOUGHT" }]),
+  4: serializeDialogue([{ speaker: "Lin Yue", text: "Then the soul stretches.", kind: "SPEECH" }]),
 };
+
+async function linYueId() {
+  const ch = await db.character.findFirst({ where: { projectId, name: "Lin Yue" }, select: { id: true } });
+  if (!ch) throw new Error("Lin Yue not found");
+  return ch.id;
+}
 
 async function ensureEpisodeFixture() {
   await db.episode.deleteMany({ where: { number: FIXTURE_EPISODE, season: { projectId } } });
@@ -78,19 +86,22 @@ async function ensureEpisodeFixture() {
   if (!season) throw new Error("Season 1 not found");
   const ep = await db.episode.create({ data: { seasonId: season.id, number: FIXTURE_EPISODE, title: "Ruler fixture (E2E)", status: "DRAFT" } });
   const scene = await db.scene.create({
-    data: { episodeId: ep.id, number: FIXTURE_SCENE, title: "Bridge of Blades - fixture", weather: "Rain", timeOfDay: "Night", status: "DRAFT" },
+    data: { episodeId: ep.id, number: FIXTURE_SCENE, title: "Bridge of Blades - fixture", status: "DRAFT" },
   });
-  await db.shot.create({
-    data: { sceneId: scene.id, number: 1, description: "Fixture shot - rival taunts across the bridge.", shotType: "MEDIUM", dialogue: FIXTURE_DIALOGUES[1] },
-  });
-  await db.shot.create({
-    data: { sceneId: scene.id, number: 2, description: "Fixture shot - Lin Yue keeps walking.", shotType: "CLOSEUP", dialogue: FIXTURE_DIALOGUES[2] },
-  });
-  return ep;
+  const mkShot = (number: number, description: string) =>
+    db.shot.create({ data: { sceneId: scene.id, number, description, shotType: "MEDIUM", dialogue: FIXTURE_DIALOGUES[number] } });
+  const s1 = await mkShot(1, "Fixture shot - Lin Yue calls the sword.");
+  const s2 = await mkShot(2, "Fixture shot - the rival taunts.");
+  const s3 = await mkShot(3, "Fixture shot - Lin Yue reflects.");
+  const s4 = await mkShot(4, "Fixture shot - Lin Yue endures.");
+  const cue1 = await db.audioCue.create({ data: { shotId: s1.id, kind: "VOICE", label: "Lin Yue: The Jade Sword still answers my call." } });
+  await db.audioCue.create({ data: { shotId: s3.id, kind: "VOICE", label: "Lin Yue: The rain... it stopped." } });
+  return { ep, scene, cue1 };
 }
 
-async function cleanupEpisodeFixture() {
+async function cleanupEpisodeFixture(cue1Id?: string) {
   await db.episode.deleteMany({ where: { number: FIXTURE_EPISODE, season: { projectId } } });
+  if (cue1Id) await unlink(path.join(process.cwd(), "public", "voices", `${cue1Id}.wav`)).catch(() => {});
   const scene = await sc12Shots();
   for (const s of scene.shots) {
     if (SC12_ORIGINALS[s.number] !== undefined && s.dialogue !== SC12_ORIGINALS[s.number]) {
@@ -202,78 +213,104 @@ if (step === "plan") {
 }
 
 if (step === "tool") {
-  const season = await db.season.findFirst({ where: { projectId } });
-  const epsBefore = await db.episode.findMany({
-    where: { season: { projectId } },
-    orderBy: { number: "asc" },
-    include: { scenes: { orderBy: { number: "asc" }, include: { shots: { orderBy: { number: "asc" } } } } },
+  // fixture state: TEMPORARY @Ep9 never auto-applies at Ep8, but a forced
+  // override ignores episode eligibility - its variant + pitch hint make
+  // the rendered S1 take move when a template lands on the line
+  const chId = await linYueId();
+  await db.characterState.deleteMany({ where: { characterId: chId, label: "E2E Possessed (fixture)" } });
+  await db.characterState.create({
+    data: { characterId: chId, label: "E2E Possessed (fixture)", stateType: "TEMPORARY", episodeNumber: 9, voiceVariant: "kazi", pitchHint: 0.8 },
   });
+  const fixture = await ensureEpisodeFixture();
+  const epNum = fixture.ep.number;
 
-  // 1. apply_arc_template scene scope on Sc12: 2 Lin Yue lines -> plan 1/1/0 stamps S3 only;
+  // render a real take on S1 (auto direction at Ep8: no eligible variant)
+  const rendered = await renderVoiceTake(fixture.cue1.id);
+  check("fixture: real TTS take rendered on S1", Boolean(rendered.cue.voiceUrl), `voice=${rendered.cue.voiceActor ?? "?"} bytes=${rendered.bytes}`);
+
+  // 1. apply_arc_template scene scope on Sc20: 3 Lin Yue lines -> plan 1/1/1 stamps S3 only;
   //    S3's cue is unrendered, so the direction impact is CLEAN (no rendered take moved)
   const r1 = await executeTool(projectId, "apply_arc_template", {
-    characterName: "Lin Yue", template: "possession spread", stateLabel: "Foundation Established",
-    scope: "scene", episodeNumber: 7, sceneNumber: 12,
+    characterName: "Lin Yue", template: "possession spread", stateLabel: STATE_LABEL,
+    scope: "scene", episodeNumber: epNum, sceneNumber: FIXTURE_SCENE,
   });
-  check("tool: template stamps 1 line (plan 1/1/0 over 2 lines)", r1.status === "OK" && r1.result.includes("1 line(s) stamped"), r1.result.slice(0, 200));
-  check("tool: shape report present", r1.result.includes('Shape: auto x1 (0 stamped), "S02 - Foundation Established" x1 (1 stamped)'), r1.result.slice(0, 260));
-  check("tool: clean direction impact (S3 cue unrendered)", r1.result.includes("Direction impact: episode 7 is clean (1 fresh, 1 unrendered) - no rendered take moved"), r1.result.slice(-260));
-  const sc12a = await sc12Shots();
-  const s1a = parseDialogue(sc12a.shots.find((s) => s.number === 1)!.dialogue)[0];
-  const s3a = parseDialogue(sc12a.shots.find((s) => s.number === 3)!.dialogue)[0];
-  check("tool: DB - S1 auto, S3 carries the FULL state label", s1a.state === null && s3a.state === "S02 - Foundation Established", `s1=${s1a.state} s3=${s3a.state}`);
+  check("tool: template stamps 1 line (plan 1/1/1 over 3 lines)", r1.status === "OK" && r1.result.includes("1 line(s) stamped in shot(s) 3"), r1.result.slice(0, 200));
+  check("tool: shape report present", r1.result.includes('Shape: auto x1 (0 stamped), "E2E Possessed (fixture)" x1 (1 stamped), auto x1 (0 stamped)'), r1.result.slice(0, 260));
+  check("tool: clean direction impact (S3 cue unrendered)", r1.result.includes(`Direction impact: episode ${epNum} is clean (1 fresh, 1 unrendered) - no rendered take moved`), r1.result.slice(-260));
+  const scA = await db.scene.findFirst({ where: { id: fixture.scene.id }, include: { shots: { orderBy: { number: "asc" } } } });
+  const s1a = parseDialogue(scA!.shots.find((s) => s.number === 1)!.dialogue)[0];
+  const s3a = parseDialogue(scA!.shots.find((s) => s.number === 3)!.dialogue)[0];
+  check("tool: DB - S1 auto, S3 carries the FULL state label", s1a.state === null && s3a.state === "E2E Possessed (fixture)", `s1=${s1a.state} s3=${s3a.state}`);
 
   // 1b. re-running the SAME template over the SAME shape is a no-op
   const r2 = await executeTool(projectId, "apply_arc_template", {
-    characterName: "Lin Yue", template: "possession spread", stateLabel: "Foundation Established",
-    scope: "scene", episodeNumber: 7, sceneNumber: 12,
+    characterName: "Lin Yue", template: "possession spread", stateLabel: STATE_LABEL,
+    scope: "scene", episodeNumber: epNum, sceneNumber: FIXTURE_SCENE,
   });
   check("tool: re-run no-op", r2.status === "OK" && r2.result.includes("0 line(s) stamped") && r2.result.includes("No take moved"), r2.result.slice(0, 240));
 
-  // 2. full takeover reshapes: over 2 lines the plan is 0/2/0, so the S1 auto bookend
-  //    flips to the state -> the RENDERED S1 take goes stale and the offer rides the result
+  // 2. full takeover reshapes: over 3 lines the plan is 1/2/0, so the TAIL
+  //    auto bookend is squeezed out: S4 flips to the state, the S1 auto bookend survives
   const r3 = await executeTool(projectId, "apply_arc_template", {
-    characterName: "Lin Yue", template: "full takeover", stateLabel: "Foundation",
-    scope: "scene", episodeNumber: 7, sceneNumber: 12,
+    characterName: "Lin Yue", template: "full takeover", stateLabel: STATE_LABEL,
+    scope: "scene", episodeNumber: epNum, sceneNumber: FIXTURE_SCENE,
   });
-  const sc12b = await sc12Shots();
-  const s1b = parseDialogue(sc12b.shots.find((s) => s.number === 1)!.dialogue)[0];
-  const s3b = parseDialogue(sc12b.shots.find((s) => s.number === 3)!.dialogue)[0];
-  check("tool: full takeover forces BOTH lines (state x2, only S1 changed)", s1b.state === "S02 - Foundation Established" && s3b.state === "S02 - Foundation Established" && r3.result.includes("1 line(s) stamped in shot(s) 1"), r3.result.slice(0, 220));
-  check("tool: rendered S1 take went stale", r3.result.includes("Direction impact: episode 7 now has 1 stale take(s)"), r3.result.slice(-260));
-  check("tool: same-turn offer rides the result", r3.result.includes("Offer the re-render in the same turn"), r3.result.slice(-260));
-  const d1 = await diffEpisodeById((await ep7()).id);
+  const scB = await db.scene.findFirst({ where: { id: fixture.scene.id }, include: { shots: { orderBy: { number: "asc" } } } });
+  const s1b = parseDialogue(scB!.shots.find((s) => s.number === 1)!.dialogue)[0];
+  const s3b = parseDialogue(scB!.shots.find((s) => s.number === 3)!.dialogue)[0];
+  const s4b = parseDialogue(scB!.shots.find((s) => s.number === 4)!.dialogue)[0];
+  check("tool: full takeover over 3 lines stamps S4 only (S1 auto bookend survives)", s1b.state === null && s3b.state === "E2E Possessed (fixture)" && s4b.state === "E2E Possessed (fixture)" && r3.result.includes("1 line(s) stamped in shot(s) 4"), r3.result.slice(0, 220));
+  check("tool: clean direction impact (the rendered S1 take never moved)", r3.result.includes(`Direction impact: episode ${epNum} is clean (1 fresh, 1 unrendered)`), r3.result.slice(-260));
+
+  // 2b. recovery arc forces the HEAD: over 3 lines the plan is 2/1, so S1 flips to
+  //     the state -> the RENDERED S1 take goes stale and the offer rides the result
+  const r3b = await executeTool(projectId, "apply_arc_template", {
+    characterName: "Lin Yue", template: "recovery arc", stateLabel: STATE_LABEL,
+    scope: "scene", episodeNumber: epNum, sceneNumber: FIXTURE_SCENE,
+  });
+  const scB2 = await db.scene.findFirst({ where: { id: fixture.scene.id }, include: { shots: { orderBy: { number: "asc" } } } });
+  const s1b2 = parseDialogue(scB2!.shots.find((s) => s.number === 1)!.dialogue)[0];
+  const s4b2 = parseDialogue(scB2!.shots.find((s) => s.number === 4)!.dialogue)[0];
+  check("tool: recovery arc over 3 lines stamps S1+S4 (state x2, auto x1)", s1b2.state === "E2E Possessed (fixture)" && s4b2.state === null && r3b.result.includes("2 line(s) stamped in shot(s) 1, 4"), r3b.result.slice(0, 220));
+  check("tool: rendered S1 take went stale", r3b.result.includes(`Direction impact: episode ${epNum} now has 1 stale take(s)`), r3b.result.slice(-260));
+  check("tool: same-turn offer rides the result", r3b.result.includes("Offer the re-render in the same turn"), r3b.result.slice(-260));
+  const d1 = await diffEpisodeById(fixture.ep.id);
   check("tool: diff agrees - exactly 1 stale", d1?.stale === 1 && d1?.fresh === 0, `stale=${d1?.stale} fresh=${d1?.fresh}`);
 
   // 3b. fuzzy state match keeps stamping the FULL label
-  check("tool: fuzzy state match stamps the FULL label", s1b.state === "S02 - Foundation Established", String(s1b.state));
+  check("tool: fuzzy state match stamps the FULL label", s1b2.state === "E2E Possessed (fixture)", String(s1b2.state));
 
   // 4. set_state_arc reports the same-turn re-render offer too, then clear restores clean
   const r4 = await executeTool(projectId, "set_state_arc", {
-    characterName: "Lin Yue", stateLabel: "", scope: "scene", episodeNumber: 7, sceneNumber: 12,
+    characterName: "Lin Yue", stateLabel: "", scope: "scene", episodeNumber: epNum, sceneNumber: FIXTURE_SCENE,
   });
-  check("clear: 2 lines cleared", r4.status === "OK" && r4.result.includes("2 line(s) stamped"), r4.result.slice(0, 200));
-  check("clear: direction impact clean - no offer needed", r4.result.includes("Direction impact: episode 7 is clean") && !r4.result.includes("Offer the re-render"), r4.result.slice(-220));
-  const dClear = await diffEpisodeById((await ep7()).id);
+  check("clear: S1+S3 overrides cleared (S4 already auto)", r4.status === "OK" && r4.result.includes("2 line(s) stamped in shot(s) 1, 3"), r4.result.slice(0, 200));
+  check("clear: direction impact clean - no offer needed", r4.result.includes(`Direction impact: episode ${epNum} is clean`) && !r4.result.includes("Offer the re-render"), r4.result.slice(-220));
+  const dClear = await diffEpisodeById(fixture.ep.id);
   check("clear: season fresh again", dClear?.stale === 0, `stale=${dClear?.stale}`);
 
   const r5 = await executeTool(projectId, "set_state_arc", {
-    characterName: "Lin Yue", stateLabel: "Foundation Established", scope: "scene", episodeNumber: 7, sceneNumber: 12,
+    characterName: "Lin Yue", stateLabel: STATE_LABEL, scope: "scene", episodeNumber: epNum, sceneNumber: FIXTURE_SCENE,
   });
-  check("set_state_arc: same-turn offer present", r5.status === "OK" && r5.result.includes("Direction impact: episode 7 now has 1 stale take(s)") && r5.result.includes("Offer the re-render in the same turn"), r5.result.slice(-260));
+  check("set_state_arc: same-turn offer present", r5.status === "OK" && r5.result.includes(`Direction impact: episode ${epNum} now has 1 stale take(s)`) && r5.result.includes("Offer the re-render in the same turn"), r5.result.slice(-260));
+  const r5b = await executeTool(projectId, "set_state_arc", {
+    characterName: "Lin Yue", stateLabel: "", scope: "episode", episodeNumber: epNum,
+  });
+  check("set_state_arc: episode-scope clear resets all 3 lines", r5b.status === "OK" && r5b.result.includes("3 line(s) stamped in shot(s) Sc20 S1, Sc20 S3, Sc20 S4"), r5b.result.slice(0, 240));
 
-  // 5. episode scope names the episode range; recovery arc over 2 lines = state x1 + auto x1
+  // 5. episode scope names the episode range; recovery arc with the EPISODE-RESOLVED
+  //    state (S01 @Ep1 <= Ep8) forces exactly what auto would resolve -> the take stays fresh
   const r6 = await executeTool(projectId, "apply_arc_template", {
-    characterName: "Lin Yue", template: "recovery arc", stateLabel: "Battle-damaged",
-    scope: "episode", episodeNumber: 7,
+    characterName: "Lin Yue", template: "recovery arc", stateLabel: "S01 - Village Disciple",
+    scope: "episode", episodeNumber: epNum,
   });
-  check("tool: episode scope names the range", r6.status === "OK" && r6.result.includes("across episode 7 (Sc12 S1 → Sc12 S6)"), r6.result.slice(0, 220));
-  const sc12c = await sc12Shots();
-  const s1c = parseDialogue(sc12c.shots.find((s) => s.number === 1)!.dialogue)[0];
-  const s3c = parseDialogue(sc12c.shots.find((s) => s.number === 3)!.dialogue)[0];
-  check("tool: recovery shape over 2 lines -> S1 battle-damaged, S3 back to auto", s1c.state === "Battle-damaged (temple fight)" && s3c.state === null, `s1=${s1c.state} s3=${s3c.state}`);
-  // battle-damaged IS the Ep7 auto state: the S1 take returns fresh
-  const d3 = await diffEpisodeById((await ep7()).id);
+  check("tool: episode scope names the range", r6.status === "OK" && r6.result.includes(`across episode ${epNum} (Sc20 S1 → Sc20 S4)`), r6.result.slice(0, 220));
+  const scC = await db.scene.findFirst({ where: { id: fixture.scene.id }, include: { shots: { orderBy: { number: "asc" } } } });
+  const s1c = parseDialogue(scC!.shots.find((s) => s.number === 1)!.dialogue)[0];
+  const s3c = parseDialogue(scC!.shots.find((s) => s.number === 3)!.dialogue)[0];
+  const s4c = parseDialogue(scC!.shots.find((s) => s.number === 4)!.dialogue)[0];
+  check("tool: recovery shape over 3 lines -> S1+S3 carry S01, S4 stays auto", s1c.state === "S01 - Village Disciple" && s3c.state === "S01 - Village Disciple" && s4c.state === null, `s1=${s1c.state} s3=${s3c.state} s4=${s4c.state}`);
+  const d3 = await diffEpisodeById(fixture.ep.id);
   check("tool: in-episode state stamp keeps the take fresh", d3?.stale === 0, `stale=${d3?.stale}`);
 
   // 6. cross-episode ruler on REAL data: fixture Ep8 + the same state stamped on BOTH
@@ -304,7 +341,7 @@ if (step === "tool") {
   check("ruler: lane packing runs on real spans", lanesReal.length === realSpans.length && lanesReal.every((l) => l >= 0), lanesReal.join(","));
 
   // 7. error paths
-  const e1 = await executeTool(projectId, "apply_arc_template", { characterName: "Lin Yue", template: "meteor shower", stateLabel: "Foundation" });
+  const e1 = await executeTool(projectId, "apply_arc_template", { characterName: "Lin Yue", template: "meteor shower", stateLabel: "E2E Possessed" });
   check("error: unknown template lists the registry", e1.status === "ERROR" && e1.result.includes("No arc template named") && e1.result.includes("possession spread"), e1.result.slice(0, 160));
   const e2 = await executeTool(projectId, "apply_arc_template", { characterName: "Lin Yue", template: "possession spread", stateLabel: "" });
   check("error: missing stateLabel", e2.status === "ERROR" && e2.result.includes("need a stateLabel"), e2.result.slice(0, 160));
@@ -312,23 +349,23 @@ if (step === "tool") {
   check("error: unknown state lists states", e3.status === "ERROR" && e3.result.includes("No state of Lin Yue matches") && e3.result.includes("Battle-damaged"), e3.result.slice(0, 200));
   const e4 = await executeTool(projectId, "apply_arc_template", { characterName: "Nobody", template: "possession spread", stateLabel: "Foundation" });
   check("error: unknown character", e4.status === "ERROR" && e4.result.includes("not found"), e4.result.slice(0, 120));
-  const e5 = await executeTool(projectId, "apply_arc_template", { characterName: "Lin Yue", template: "possession spread", stateLabel: "Foundation", scope: "scene", episodeNumber: 7, sceneNumber: 12, shotFrom: 5, shotTo: 2 });
+  const e5 = await executeTool(projectId, "apply_arc_template", { characterName: "Lin Yue", template: "possession spread", stateLabel: "E2E Possessed", scope: "scene", episodeNumber: FIXTURE_EPISODE, sceneNumber: FIXTURE_SCENE, shotFrom: 4, shotTo: 2 });
   check("error: inverted scene range", e5.status === "ERROR" && e5.result.includes("shotFrom must be <= shotTo"), e5.result.slice(0, 160));
-  const e6 = await executeTool(projectId, "apply_arc_template", { characterName: "Lin Yue", template: "possession spread", stateLabel: "Foundation", scope: "episode", episodeNumber: 7, sceneNumber: 12, shotFrom: 6, toSceneNumber: 12, shotTo: 2 });
+  const e6 = await executeTool(projectId, "apply_arc_template", { characterName: "Lin Yue", template: "possession spread", stateLabel: "E2E Possessed", scope: "episode", episodeNumber: FIXTURE_EPISODE, sceneNumber: FIXTURE_SCENE, shotFrom: 4, toSceneNumber: FIXTURE_SCENE, shotTo: 2 });
   check("error: inverted episode range", e6.status === "ERROR" && e6.result.includes("the arc must run forward"), e6.result.slice(0, 180));
 
-  // 7. restore: clear the S1+S3 stamps and every fixture trace
-  await executeTool(projectId, "set_state_arc", { characterName: "Lin Yue", stateLabel: "", scope: "episode", episodeNumber: 7 });
-  await cleanupEpisodeFixture();
+  // 8. restore: remove the fixture entirely; the real season is untouched
+  await cleanupEpisodeFixture(fixture.cue1.id);
+  await db.characterState.deleteMany({ where: { characterId: chId, label: "E2E Possessed (fixture)" } });
   const sc12d = await sc12Shots();
   const restored = sc12d.shots.every((s) => SC12_ORIGINALS[s.number] === undefined || s.dialogue === SC12_ORIGINALS[s.number]);
   check("restore: Sc12 dialogues byte-identical", restored, sc12d.shots.map((s) => `S${s.number}:${(s.dialogue ?? "null").slice(0, 30)}`).join(" | "));
   const dEnd = await diffEpisodeById((await ep7()).id);
-  check("restore: season ends fresh", dEnd?.stale === 0 && dEnd?.fresh === 1, `stale=${dEnd?.stale} fresh=${dEnd?.fresh}`);
+  check("restore: Ep7 untouched (0 fresh / 0 stale / 1 unrendered)", dEnd?.stale === 0 && dEnd?.fresh === 0 && dEnd?.unrendered === 1, `stale=${dEnd?.stale} fresh=${dEnd?.fresh}`);
   const epsAfter = await db.episode.findMany({ where: { season: { projectId } }, select: { number: true, scenes: { select: { _count: { select: { shots: true } } } } } });
   check("restore: fixture episode removed", epsAfter.every((e) => e.number !== FIXTURE_EPISODE), epsAfter.map((e) => `Ep${e.number}`).join(","));
-  void epsBefore;
-  void season;
+  const statesLeft = await db.characterState.count({ where: { characterId: chId, label: "E2E Possessed (fixture)" } });
+  check("restore: fixture state removed", statesLeft === 0);
 }
 
 if (step === "cleanup") {

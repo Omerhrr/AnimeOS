@@ -193,3 +193,32 @@ export function packSpanLanes<T extends { start: number; end: number }>(spans: T
   }
   return lanes;
 }
+
+export interface SpeakerLane<T> {
+  speakerKey: string;
+  speaker: string; // display form, as first seen
+  spans: T[]; // ordered by start
+}
+
+/**
+ * Per-speaker lane grouping for the ruler: ONE lane per speaker. A
+ * speaker's spans are disjoint by construction (a run ends when the
+ * same speaker speaks another state or auto), so every arc of a
+ * character sits on its own character's row. Lanes are ordered by
+ * each speaker's first span start, so rows read in story order.
+ * `start` is a caller-chosen positional index (shot index on the
+ * ruler axis), not a scene number.
+ */
+export function groupSpansBySpeaker<T extends { speakerKey: string; speaker: string; start: number }>(
+  spans: T[],
+): SpeakerLane<T>[] {
+  const groups = new Map<string, SpeakerLane<T>>();
+  for (const s of spans) {
+    const g = groups.get(s.speakerKey);
+    if (g) g.spans.push(s);
+    else groups.set(s.speakerKey, { speakerKey: s.speakerKey, speaker: s.speaker, spans: [s] });
+  }
+  return [...groups.values()]
+    .map((g) => ({ ...g, spans: [...g.spans].sort((a, b) => a.start - b.start) }))
+    .sort((a, b) => a.spans[0].start - b.spans[0].start);
+}

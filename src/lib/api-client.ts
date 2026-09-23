@@ -340,6 +340,14 @@ export interface DshMessageRow {
   createdAt: string;
 }
 
+// user-defined arc template saved per production (reusable beat shape)
+export interface ArcTemplateRow {
+  id: string;
+  name: string;
+  description: string | null;
+  segments: Array<{ frac: number; kind: "auto" | "state" }>;
+}
+
 export interface RenderJobRow {
   id: string;
   shotId: string | null;
@@ -423,6 +431,15 @@ export const api = {
   createArtist: (body: Record<string, unknown>) => j<{ id: string }>("/api/artists", { method: "POST", body: JSON.stringify(body) }),
   patchArtist: (id: string, body: Record<string, unknown>) => j<{ id: string }>(`/api/artists/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteArtist: (id: string) => j<{ ok: boolean }>(`/api/artists/${id}`, { method: "DELETE" }),
+
+  // user-defined arc templates saved per production (reusable beat shapes
+  // next to the built-ins: possession spread, full takeover, recovery arc)
+  listArcTemplates: (projectId: string) => j<ArcTemplateRow[]>(`/api/arc-templates?projectId=${projectId}`),
+  createArcTemplate: (body: { projectId: string; name: string; description?: string; segments: Array<{ frac: number; kind: "auto" | "state" }> }) =>
+    j<{ id: string }>("/api/arc-templates", { method: "POST", body: JSON.stringify(body) }),
+  patchArcTemplate: (id: string, body: { name?: string; description?: string | null; segments?: Array<{ frac: number; kind: "auto" | "state" }> }) =>
+    j<{ id: string }>(`/api/arc-templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteArcTemplate: (id: string) => j<{ ok: boolean }>(`/api/arc-templates/${id}`, { method: "DELETE" }),
 
   // sound-design cues
   audioCues: (shotId: string) => j<AudioCueRow[]>(`/api/audio-cues?shotId=${shotId}`),

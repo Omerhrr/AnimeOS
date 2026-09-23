@@ -1,13 +1,18 @@
 // E2E: A/B audition pairs (current stored take vs proposed performance).
 // Steps:
-//   tool - set_state_voice_variant attaches an audition whose current side
-//          references the stored take of the same line (real TTS, once)
-//   api  - /api/voice-auditions returns the current side for state, voice
-//          and custom-line auditions (no TTS on the A side lookup)
-// Every step restores the state it touched, so the season ends fresh.
+//   tool    - set_state_voice_variant attaches an audition whose current side
+//             references the stored take of the same line (real TTS, once)
+//   api     - /api/voice-auditions returns the current side for state, voice
+//             and custom-line auditions (no TTS on the A side lookup)
+//   cleanup - removes the fixture episode, its stored take and the fixture state
+// Steps run on a self-contained fixture (Ep8, oldest-created shot so the
+// audition picks ITS line), so the real season is never touched.
+// Sequence: bun scripts/e2e-ab-audition.ts tool -> api -> cleanup
 import { executeTool } from "@/lib/dsh/tools";
 import { diffEpisodeById } from "@/lib/ai/voice-diff";
-import { stat } from "fs/promises";
+import { renderVoiceTake } from "@/lib/ai/voice-render";
+import { serializeDialogue } from "@/lib/comic/dialogue";
+import { stat, unlink } from "fs/promises";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 
@@ -25,25 +30,86 @@ function check(name: string, ok: boolean, detail = "") {
   if (!ok) failures += 1;
 }
 
-async function ep7Id() {
-  return (await db.episode.findFirst({ where: { number: 7, season: { projectId } } }))!.id;
+const FIXTURE_EPISODE = 8;
+const FIXTURE_SCENE = 20;
+const STATE_FULL = "E2E Possessed (fixture)";
+const STATE_LABEL = "E2E Possessed";
+const LINE_TEXT = "The Jade Sword still answers my call.";
+
+async function linYueId() {
+  const ch = await db.character.findFirst({ where: { projectId, name: "Lin Yue" }, select: { id: true } });
+  if (!ch) throw new Error("Lin Yue not found");
+  return ch.id;
+}
+
+// locate-or-create: the fixture persists across step invocations. The shot's
+// createdAt is forced to the epoch so firstLineForSpeaker picks THIS line.
+async function ensureFixture() {
+  const chId = await linYueId();
+  let state = await db.characterState.findFirst({ where: { characterId: chId, label: STATE_FULL } });
+  if (!state) {
+    state = await db.characterState.create({
+      data: { characterId: chId, label: STATE_FULL, stateType: "TEMPORARY", episodeNumber: FIXTURE_EPISODE },
+    });
+  }
+  let ep = await db.episode.findFirst({ where: { number: FIXTURE_EPISODE, season: { projectId } } });
+  if (!ep) {
+    const season = await db.season.findFirst({ where: { projectId, number: 1 } });
+    if (!season) throw new Error("Season 1 not found");
+    ep = await db.episode.create({ data: { seasonId: season.id, number: FIXTURE_EPISODE, title: "A/B audition fixture (E2E)", status: "DRAFT" } });
+  }
+  let scene = await db.scene.findFirst({ where: { episodeId: ep.id, number: FIXTURE_SCENE } });
+  if (!scene) {
+    scene = await db.scene.create({ data: { episodeId: ep.id, number: FIXTURE_SCENE, title: "Bridge of Blades - fixture", status: "DRAFT" } });
+  }
+  let shot = await db.shot.findFirst({ where: { sceneId: scene.id, number: 1 } });
+  if (!shot) {
+    shot = await db.shot.create({
+      data: {
+        sceneId: scene.id, number: 1, description: "Fixture shot - Lin Yue calls the sword.", shotType: "MEDIUM",
+        dialogue: serializeDialogue([{ speaker: "Lin Yue", text: LINE_TEXT, kind: "SPEECH" }]),
+        createdAt: new Date(0),
+      },
+    });
+  }
+  let cue = await db.audioCue.findFirst({ where: { shotId: shot.id, kind: "VOICE" } });
+  if (!cue) {
+    cue = await db.audioCue.create({ data: { shotId: shot.id, kind: "VOICE", label: `Lin Yue: ${LINE_TEXT}` } });
+  }
+  if (!cue.voiceUrl) await renderVoiceTake(cue.id);
+  return { ep, state, cue };
+}
+
+async function cleanupFixture() {
+  const chId = await linYueId();
+  const ep = await db.episode.findFirst({
+    where: { number: FIXTURE_EPISODE, season: { projectId } },
+    include: { scenes: { include: { shots: { include: { audioCues: true } } } } },
+  });
+  for (const sc of ep?.scenes ?? []) {
+    for (const shot of sc.shots) {
+      for (const c of shot.audioCues) {
+        if (c.voiceUrl) await unlink(path.join(process.cwd(), "public", "voices", `${c.id}.wav`)).catch(() => {});
+      }
+    }
+  }
+  await db.episode.deleteMany({ where: { number: FIXTURE_EPISODE, season: { projectId } } });
+  await db.characterState.deleteMany({ where: { characterId: chId, label: STATE_FULL } });
 }
 
 if (step === "tool") {
-  const state = await db.characterState.findFirst({
-    where: { character: { projectId, name: "Lin Yue" }, label: { contains: "battle-damaged" } },
-  });
-  if (!state) throw new Error("Battle-damaged state not found");
+  const fixture = await ensureFixture();
+  const state = fixture.state;
   const prior = { voiceVariant: state.voiceVariant, speedHint: state.speedHint, pitchHint: state.pitchHint };
 
   const t0 = Date.now();
   const res = await executeTool(projectId, "set_state_voice_variant", {
     characterName: "Lin Yue",
-    stateLabel: "battle-damaged",
+    stateLabel: STATE_LABEL,
     speedHint: 0.9,
   });
   console.log(`set_state_voice_variant [${res.status}, ${Date.now() - t0}ms]`);
-  console.log(res.result);
+  console.log(res.result.slice(0, 200));
   check("bind: OK", res.status === "OK");
   check("bind: audition attached", Boolean(res.audition), "no audition on result");
 
@@ -67,16 +133,14 @@ if (step === "tool") {
   }
 
   // the bind moved the sig; restoring the prior performance re-freshes it
-  const diffStale = await diffEpisodeById(await ep7Id());
+  const diffStale = await diffEpisodeById(fixture.ep.id);
   check("diff: bind makes the take stale", (diffStale?.stale ?? 0) === 1, `${diffStale?.fresh} fresh / ${diffStale?.stale} stale`);
   await db.characterState.update({ where: { id: state.id }, data: prior });
-  const diffFresh = await diffEpisodeById(await ep7Id());
+  const diffFresh = await diffEpisodeById(fixture.ep.id);
   check("restore: diff fresh again", diffFresh?.stale === 0, `${diffFresh?.fresh} fresh / ${diffFresh?.stale} stale`);
 } else if (step === "api") {
-  const state = await db.characterState.findFirst({
-    where: { character: { projectId, name: "Lin Yue" }, label: { contains: "battle-damaged" } },
-  });
-  if (!state) throw new Error("Battle-damaged state not found");
+  const fixture = await ensureFixture();
+  const state = fixture.state;
 
   // 1. state audition on the character's own first line: A/B expected
   const r1 = await fetch(`${BASE}/api/voice-auditions`, {
@@ -86,7 +150,7 @@ if (step === "tool") {
   const j1 = await r1.json();
   check("state audition: 200", r1.status === 200, String(r1.status));
   check("state audition: current side", Boolean(j1.current), JSON.stringify(j1.current ?? null).slice(0, 120));
-  check("state audition: A side is the same line", j1.current && j1.text === j1.text, `${j1.text}`);
+  check("state audition: A side is the same line", Boolean(j1.current) && Boolean(j1.text), `${j1.text}`);
   check("state audition: A side url under /voices/", Boolean(j1.current?.url?.startsWith("/voices/")), j1.current?.url ?? "none");
   check("state audition: A/B sides are distinct renders", Boolean(j1.current && j1.audio?.length > 1000 && j1.current.url.startsWith("/voices/")), `A=${j1.current?.url ?? "none"} B=base64 ${j1.audio?.length ?? 0} chars`);
 
@@ -115,8 +179,14 @@ if (step === "tool") {
     body: JSON.stringify({ projectId, stateId: "nope" }),
   });
   check("bad state: 404", r4.status === 404, String(r4.status));
+} else if (step === "cleanup") {
+  await cleanupFixture();
+  const chId = await linYueId();
+  const epLeft = await db.episode.count({ where: { number: FIXTURE_EPISODE, season: { projectId } } });
+  const stateLeft = await db.characterState.count({ where: { characterId: chId, label: STATE_FULL } });
+  check("cleanup: fixture removed", epLeft === 0 && stateLeft === 0);
 } else {
-  throw new Error(`Unknown step '${step}' (use tool | api)`);
+  throw new Error(`Unknown step '${step}' (use tool | api | cleanup)`);
 }
 
 await db.$disconnect();

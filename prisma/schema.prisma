@@ -44,6 +44,7 @@ model Project {
   productionEvents ProductionEvent[]
   continuityEvents ContinuityEvent[]
   dshMessages      DshMessage[]
+  arcTemplates     ArcTemplate[]
 }
 
 model Season {
@@ -401,4 +402,27 @@ model DshMessage {
   trace     String?  // JSON [{step, thought, plan, actions:[{tool,args,result,status}]}]
   createdAt DateTime @default(now())
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// USER-DEFINED ARC TEMPLATES (reusable beat shapes per production)
+// ─────────────────────────────────────────────────────────────
+
+// A creator-saved arc template: a sequence of segments
+// (JSON [{frac, kind: "auto" | "state"}], fractions of the
+// speaker's own lines in the range) painted onto a range by
+// apply_arc_template or the Arc templates dialog, next to the
+// built-in shapes. Per production, so a series keeps its own
+// beat vocabulary.
+model ArcTemplate {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  segments    String   // JSON Array<{frac: number, kind: "auto" | "state"}>
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
 }
