@@ -237,6 +237,55 @@ export interface AuditionResult {
     pitchHint: number | null;
   } | null;
   current: AuditionCurrentSide | null; // the current stored take of the same line, for A/B (null = nothing to compare)
+  historyUrl?: string; // set when the audition was a STATE audition: the wav landed in the state's history
+}
+
+/** One recorded read of a development state (audition history). */
+export interface StateAuditionRow {
+  id: string;
+  stateId: string;
+  characterId: string;
+  projectId: string;
+  url: string; // wav under /auditions/, unique per render
+  text: string;
+  source: "custom" | "character line" | "sample" | string;
+  voiceId: string;
+  deliveryId: string;
+  speed: number;
+  pitch: number;
+  durationMs: number | null;
+  createdAt: string;
+}
+
+export interface StateAuditionsResponse {
+  state: {
+    id: string;
+    label: string;
+    episodeNumber: number | null;
+    voiceVariant: string | null;
+    speedHint: number | null;
+    pitchHint: number | null;
+  };
+  auditions: StateAuditionRow[];
+}
+
+/** The arc playback feed one episode serves (shots + VOICE cues in story order). */
+export interface ArcPlaybackFeed {
+  episode: { id: string; number: number; title: string };
+  shots: Array<{
+    id: string;
+    sceneNumber: number;
+    number: number;
+    dialogue: string | null;
+    audioCues: Array<{
+      kind: string;
+      label: string;
+      voiceUrl: string | null;
+      voiceDurationMs: number | null;
+      voiceActor: string | null;
+      voiceStateLabel: string | null;
+    }>;
+  }>;
 }
 
 export interface BridgeStatusInfo {
@@ -497,7 +546,9 @@ export const api = {
 
   // casting-board audition: throwaway TTS render of one line with a voice,
   // optionally the character's own first line, or a state audition
-  // (variant voice + speed/pitch hints); nothing is persisted
+  // (variant voice + speed/pitch hints); a STATE audition is recorded
+  // into the state's audition history, plain voice auditions stay
+  // throwaway
   auditionVoice: (body: { projectId: string; voiceId?: string; delivery?: string; text?: string; speaker?: string; stateId?: string }) =>
     j<AuditionResult>("/api/voice-auditions", { method: "POST", body: JSON.stringify(body) }),
 
@@ -508,6 +559,19 @@ export const api = {
   // Unresolvable entries come back in `skipped` instead of failing.
   auditionEnsemble: (body: { projectId: string; delivery?: string; text?: string; ensemble: Array<{ speaker?: string; stateId?: string }> }) =>
     j<{ ensemble: true; rows: AuditionResult[]; skipped: Array<{ entry: string; reason: string }> }>("/api/voice-auditions", { method: "POST", body: JSON.stringify(body) }),
+
+  // per-state audition history: past auditioned reads of one
+  // development state (newest first, capped), for replay + compare
+  stateAuditions: (stateId: string) =>
+    j<StateAuditionsResponse>(`/api/state-auditions?stateId=${stateId}`),
+  deleteStateAudition: (id: string) =>
+    j<{ ok: boolean }>(`/api/state-auditions?id=${id}`, { method: "DELETE" }),
+
+  // arc playback feed: one episode's shots + VOICE cues in story
+  // order, so a DSH reply's playable arc chip can collect the arc's
+  // stored takes with the same chain the ruler bars use
+  arcPlayback: (episodeId: string) =>
+    j<ArcPlaybackFeed>(`/api/episodes/${episodeId}/arc-playback`),
 
   // simulated LoRA training runs from approved panels
   trainLora: (loraId: string) =>

@@ -39,6 +39,22 @@ export interface EnsembleAuditionPreview {
   skipped: string[]; // per-speaker render failures ("- Name: reason"), never sinks the apply
 }
 
+/**
+ * A PLAYABLE ARC attached to a DSH tool result: the arc span(s) the
+ * call landed, so the reply itself carries a play chip. The console
+ * fetches the span's shots + VOICE cues, collects the STORED takes in
+ * story order (buildArcTakes / mergeArcTakes) and plays them - the
+ * same playback chain the ruler bars use, now reachable from the
+ * DSH reply.
+ */
+export interface ArcPlaybackChip {
+  episodeId: string; // the episode whose shots back the spans
+  episodeNumber: number;
+  label: string; // "Lin Yue - Battle-damaged" or "ensemble beat: Lin Yue, Ren Wu"
+  ensemble: boolean; // true = merge every span into ONE parallel-beat queue
+  spans: Array<{ speakerKey: string; state: string; shotIds: string[] }>;
+}
+
 export interface TraceAction {
   tool: string;
   args: Record<string, unknown>;
@@ -46,6 +62,7 @@ export interface TraceAction {
   status: "OK" | "ERROR";
   audition?: AuditionPreview | null; // attached when the call renders an audition preview
   ensembleAudition?: EnsembleAuditionPreview | null; // attached when an ensemble apply renders one read per speaker
+  arcPlayback?: ArcPlaybackChip | null; // attached when an arc tool lands a playable span
 }
 
 export interface TraceStep {

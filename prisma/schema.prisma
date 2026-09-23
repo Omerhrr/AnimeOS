@@ -262,6 +262,7 @@ model Character {
   parent         Character?  @relation("Derivatives", fields: [parentId], references: [id])
   derivatives    Character[] @relation("Derivatives")
   states         CharacterState[]
+  stateAuditions StateAudition[]
   relationsFrom  Relationship[] @relation("RelFrom")
   relationsTo    Relationship[] @relation("RelTo")
 }
@@ -281,6 +282,39 @@ model CharacterState {
   pitchHint     Float?  // state pitch hint: playback pitch factor for takes in this state (1 = natural pitch; <1 deeper, >1 higher)
   createdAt     DateTime @default(now())
   character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  auditions     StateAudition[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// PER-STATE AUDITION HISTORY
+// ─────────────────────────────────────────────────────────────
+
+// Every auditioned read of ONE development state, kept for
+// comparison: a state's proposed performances were throwaway renders
+// (play once, gone) - now each one lands here with its performance
+// snapshot (voice, register, speed/pitch, the line it read), so the
+// casting board can replay and compare every past read of a state.
+// Rows are written by the DSH audition chain (variant binds +
+// ensemble applies, via renderVariantAudition) and by the casting
+// board's state auditions; the latest KEEP_PER_STATE per state are
+// kept, older rows (and their WAV files) are pruned. Deleting a
+// state deletes its history.
+model StateAudition {
+  id          String   @id @default(cuid())
+  stateId     String
+  characterId String
+  projectId   String
+  url         String   // rendered WAV under /auditions/, cache-busted with ?v=
+  text        String   // the line that was read
+  source      String   // custom | character line | sample
+  voiceId     String   // TTS voice that performed the read
+  deliveryId  String   // register the read was performed in
+  speed       Float    // effective pace incl. state hint (1 = none)
+  pitch       Float    // effective pitch factor (1 = natural)
+  durationMs  Int?
+  createdAt   DateTime @default(now())
+  state       CharacterState @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  character   Character      @relation(fields: [characterId], references: [id], onDelete: Cascade)
 }
 
 model Relationship {

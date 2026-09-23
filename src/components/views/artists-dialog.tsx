@@ -20,9 +20,10 @@
 // in cast order.
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Headphones, Loader2, Play, Plus, Square, Trash2, Users } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AudioLines, Headphones, History, Loader2, Play, Plus, Square, Trash2, Users } from "lucide-react";
 import { api, type StudioProject, type AuditionResult, type AuditionCurrentSide } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { VOICES, defaultVoiceFor, voiceById } from "@/lib/comic/voice-catalog";
 import { DELIVERIES, type DeliveryId } from "@/lib/comic/delivery";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,84 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const ROSTER_COLORS = ["#e8b04b", "#5aa88f", "#b07cd8", "#d8767c", "#7c9cff", "#8fbf6a"];
+
+function shortAuditionDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * PER-STATE AUDITION HISTORY: every past proposed read of ONE state
+ * (DSH binds + ensemble applies, plus the board's own state tries),
+ * newest first, each replayable and removable - so a performance the
+ * director liked three auditions ago is still one click away.
+ */
+function StateAuditionHistory({ stateId, playing, onPlay, refreshKey }: {
+  stateId: string;
+  playing: string | null;
+  onPlay: (key: string, url: string) => void;
+  refreshKey: number;
+}) {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["state-auditions", stateId, refreshKey],
+    queryFn: () => api.stateAuditions(stateId),
+  });
+  const rows = q.data?.auditions ?? [];
+  async function remove(id: string) {
+    try {
+      await api.deleteStateAudition(id);
+      await qc.invalidateQueries({ queryKey: ["state-auditions", stateId] });
+    } catch {
+      // best-effort removal
+    }
+  }
+  return (
+    <div className="ml-6 mt-1 space-y-1 rounded border border-violet-400/20 bg-violet-400/[0.04] p-1.5">
+      <div className="text-[8px] uppercase tracking-[0.14em] text-violet-300/90">
+        audition history - {rows.length} recorded read{rows.length === 1 ? "" : "s"} (newest first)
+      </div>
+      {q.isLoading && <div className="text-[10px] text-muted-foreground">loading history...</div>}
+      {!q.isLoading && rows.length === 0 && (
+        <div className="text-[10px] text-muted-foreground">
+          no auditions recorded for this state yet - run a state try here, or let DSH bind a variant or land an arc (every proposed read lands here).
+        </div>
+      )}
+      {rows.map((row) => {
+        const key = `hist:${row.id}`;
+        const isPlaying = playing === key;
+        return (
+          <div key={row.id} className="flex items-center gap-1.5 rounded border border-white/10 bg-black/25 px-1.5 py-0.5">
+            <button
+              onClick={() => onPlay(key, row.url)}
+              title={`Play this recorded read: ${row.voiceId} in ${row.deliveryId.toLowerCase()}${row.durationMs ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}`}
+              className="h-5 w-5 flex items-center justify-center rounded-md border border-violet-400/25 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20 transition-colors shrink-0"
+            >
+              {isPlaying ? <Square className="h-2 w-2" /> : <Play className="h-2.5 w-2.5" />}
+            </button>
+            <span className="shrink-0 font-mono text-[9px] text-violet-200/90">
+              {row.voiceId}
+              {row.speed !== 1 ? ` · x${row.speed}` : ""}
+              {row.pitch !== 1 ? ` · pitch ${row.pitch}` : ""}
+              {row.durationMs ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[9px] text-muted-foreground">&quot;{row.text}&quot;</span>
+            <span className="shrink-0 text-[8px] text-muted-foreground/70">{shortAuditionDate(row.createdAt)}</span>
+            <button
+              onClick={() => void remove(row.id)}
+              title="Remove this recorded read (and its file)"
+              className="h-5 w-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-rose-300 transition-colors shrink-0"
+            >
+              <Trash2 className="h-2.5 w-2.5" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ArtistsDialog({ project }: { project: StudioProject }) {
   const qc = useQueryClient();
@@ -50,6 +129,10 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   const [auditionMsg, setAuditionMsg] = useState<string | null>(null);
   // state auditions: per-character selected development state
   const [stateSel, setStateSel] = useState<Record<string, string>>({});
+  // per-state audition history: open/closed per character + a refresh counter
+  // bumped after every new recorded read so an open history list refetches
+  const [histOpen, setHistOpen] = useState<Record<string, boolean>>({});
+  const [histRefresh, setHistRefresh] = useState(0);
   // A/B pairs from the last state audition per character: the stored take of the line + the proposed render
   const [statePairs, setStatePairs] = useState<Record<string, { proposed: AuditionResult; current: AuditionCurrentSide } | null>>(({}));
   // ensemble try: selected characters, rendered rows, batch state
@@ -172,6 +255,8 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       await playClip(`state-play-${characterId}`, res);
       const v = res.variant;
       setStatePairs((prev) => ({ ...prev, [characterId]: res.current ? { proposed: res, current: res.current } : null }));
+      // the read just landed in the state's history: refresh an open list
+      setHistRefresh((n) => n + 1);
       const bits = [
         `state audition: "${v?.stateLabel ?? "state"}"`,
         `${res.voiceId}${v?.variantVoiceId ? " (variant voice)" : " (cast voice)"}`,
@@ -251,6 +336,12 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       audio.onpause = done; // stop() pauses: resolve the waiter instead of hanging
       void audio.play().catch(done);
     });
+  }
+
+  /** Play a stored history read (a wav under /auditions/) to the end. */
+  function playHistoryRow(key: string, url: string) {
+    stopAudition();
+    void playUrlAwait(key, url, seqRef.current);
   }
 
   /** ENSEMBLE audition: one API call renders every selected speaker; rows come back with their A/B sides. */
@@ -582,7 +673,31 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
                             : <Headphones className="h-2.5 w-2.5" />}
                       </button>
                     )}
+                    <button
+                      onClick={() => setHistOpen((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}
+                      disabled={!stateSel[c.id]}
+                      title={stateSel[c.id]
+                        ? "Show this state's audition history: every past proposed read of the state, replayable"
+                        : "Pick a state first - the history is per state"}
+                      className={cn(
+                        "h-6 w-6 flex items-center justify-center rounded-md border transition-colors shrink-0",
+                        histOpen[c.id] && stateSel[c.id]
+                          ? "border-violet-400/40 bg-violet-400/15 text-violet-200"
+                          : "border-white/10 bg-white/5 text-muted-foreground hover:text-foreground",
+                        !stateSel[c.id] && "opacity-40",
+                      )}
+                    >
+                      <History className="h-2.5 w-2.5" />
+                    </button>
                   </div>
+                )}
+                {histOpen[c.id] && stateSel[c.id] && (
+                  <StateAuditionHistory
+                    stateId={stateSel[c.id]}
+                    playing={auditionPlaying}
+                    onPlay={playHistoryRow}
+                    refreshKey={histRefresh}
+                  />
                 )}
                 </Fragment>
               ))}

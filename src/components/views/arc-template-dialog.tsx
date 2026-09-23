@@ -80,6 +80,10 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
   const [notice, setNotice] = useState<string | null>(null);
   // the replaced version currently diffed against the current shape (null = no diff open)
   const [diffVersion, setDiffVersion] = useState<number | null>(null);
+  // CROSS-SCOPE diff: any two shapes (built-in / production / studio) side by side
+  const [xOpen, setXOpen] = useState(false);
+  const [xLeft, setXLeft] = useState("");
+  const [xRight, setXRight] = useState("");
 
   const speakers = useMemo(
     () => characters.filter((c) => c.states.length > 0),
@@ -110,6 +114,9 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     setNotice(null);
     setShowHistory(false);
     setDiffVersion(null);
+    setXOpen(false);
+    setXLeft("");
+    setXRight("");
     void api
       .listArcTemplates(projectId)
       .then((rows) => setTemplates(rows))
@@ -248,6 +255,41 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     setCustomSegs((segs) => segs.map((s, i) => (i === idx ? { ...s, kind } : s)));
   const setSegPct = (idx: number, pct: number) =>
     setCustomSegs((segs) => segs.map((s, i) => (i === idx ? { ...s, pct } : s)));
+
+  // ── cross-scope diff: every comparable shape in one list ──
+  type XTemplate = { key: string; name: string; segments: ArcTemplate["segments"]; scopeTag: string; version: number | null };
+  const allShapes: XTemplate[] = [
+    ...ARC_TEMPLATES.map((t) => ({ key: `builtin:${t.id}`, name: t.name, segments: t.segments, scopeTag: "built-in", version: null as number | null })),
+    ...templates.map((t) => ({
+      key: `user:${t.id}`,
+      name: t.name,
+      segments: t.segments,
+      scopeTag: t.scope === "STUDIO" ? "studio library" : "this production",
+      version: t.version as number | null,
+    })),
+  ];
+  const shapeByKey = (key: string) => allShapes.find((t) => t.key === key) ?? null;
+  const leftShape = shapeByKey(xLeft);
+  const rightShape = shapeByKey(xRight);
+  const xChanges = leftShape && rightShape ? diffTemplateShapes(leftShape.segments, rightShape.segments) : null;
+
+  /** Open (or reset) the cross picker: default to the selected saved template vs its same-name twin in the other scope. */
+  const openCrossDiff = () => {
+    if (!xOpen && xLeft && xRight) {
+      setXOpen(true);
+      return;
+    }
+    const base = selectedSaved ?? null;
+    const baseKey = base ? `user:${base.id}` : allShapes[0]?.key ?? "";
+    const otherScope = base ? (base.scope === "STUDIO" ? "PROJECT" : "STUDIO") : null;
+    const twin = base && otherScope
+      ? templates.find((t) => t.name.trim().toLowerCase() === base.name.trim().toLowerCase() && t.scope === otherScope) ?? null
+      : null;
+    const fallback = allShapes.find((t) => t.key !== baseKey)?.key ?? "";
+    setXLeft(baseKey);
+    setXRight(twin ? `user:${twin.id}` : fallback);
+    setXOpen(true);
+  };
 
   return (
     <>
@@ -424,6 +466,86 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* CROSS-SCOPE DIFF: any two shapes side by side, built-in vs production vs studio */}
+            <div className="space-y-1.5 rounded-lg border border-white/10 bg-black/25 p-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+                  <GitCompare className="h-3 w-3" /> Cross-scope diff
+                </span>
+                <button
+                  onClick={openCrossDiff}
+                  className="rounded-sm border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-200 hover:bg-amber-400/20 transition-colors"
+                >
+                  {xOpen ? "hide" : "compare two shapes"}
+                </button>
+              </div>
+              {xOpen && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] leading-snug text-muted-foreground">
+                    Diff ANY two shapes across scopes: a production fork against its studio original, a saved shape against a built-in, studio vs studio. Same human &quot;what moved&quot; list as the version diff.
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <select
+                      value={xLeft}
+                      onChange={(e) => setXLeft(e.target.value)}
+                      className="h-7 rounded border border-white/10 bg-black/30 px-1.5 text-[10px] text-foreground"
+                      title="The base shape (left side)"
+                    >
+                      {allShapes.map((t) => (
+                        <option key={t.key} value={t.key} className="bg-[#12121a]">
+                          {t.name} · {t.scopeTag}{t.version != null && t.version >= 2 ? ` · v${t.version}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={xRight}
+                      onChange={(e) => setXRight(e.target.value)}
+                      className="h-7 rounded border border-white/10 bg-black/30 px-1.5 text-[10px] text-foreground"
+                      title="The shape to compare against (right side)"
+                    >
+                      {allShapes.map((t) => (
+                        <option key={t.key} value={t.key} className="bg-[#12121a]">
+                          {t.name} · {t.scopeTag}{t.version != null && t.version >= 2 ? ` · v${t.version}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {leftShape && rightShape && (
+                    <div className="space-y-1.5 rounded border border-amber-400/25 bg-amber-400/[0.04] p-1.5">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div className="space-y-1">
+                          <div className="text-[9px] font-bold text-muted-foreground">
+                            {leftShape.name} <span className="font-sans font-medium">({leftShape.scopeTag})</span>
+                            {leftShape.version != null && leftShape.version >= 2 ? ` v${leftShape.version}` : ""}
+                          </div>
+                          <ShapeBar template={{ id: "x-left", name: leftShape.name, description: "", segments: leftShape.segments }} stateLabel={stateLabel || "state"} />
+                          <div className="font-mono text-[9px] text-muted-foreground">{formatTemplateShape(leftShape.segments)}</div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="text-[9px] font-bold text-violet-200">
+                            {rightShape.name} <span className="font-sans font-medium">({rightShape.scopeTag})</span>
+                            {rightShape.version != null && rightShape.version >= 2 ? ` v${rightShape.version}` : ""}
+                          </div>
+                          <ShapeBar template={{ id: "x-right", name: rightShape.name, description: "", segments: rightShape.segments }} stateLabel={stateLabel || "state"} />
+                          <div className="font-mono text-[9px] text-muted-foreground">{formatTemplateShape(rightShape.segments)}</div>
+                        </div>
+                      </div>
+                      <div className="space-y-0.5 border-t border-white/8 pt-1">
+                        <div className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">What moved</div>
+                        {xChanges && xChanges.length > 0 ? (
+                          xChanges.map((c, i) => (
+                            <div key={i} className="font-mono text-[10px] leading-snug text-amber-200/90">· {c}</div>
+                          ))
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground">Shapes match exactly - the difference is only where they live.</div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

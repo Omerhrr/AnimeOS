@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send, Loader2, Brain, ListChecks, Wrench, CircleCheck, CircleX, User,
-  Sparkles, ChevronDown, ChevronUp, Volume2, Play, Square,
+  Sparkles, ChevronDown, ChevronUp, Volume2, Play, Square, Route,
 } from "lucide-react";
 import { api, parseTrace, type DshMessageRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { EnsembleAuditionPreview, TraceStep } from "@/lib/types";
+import { buildArcTakes, mergeArcTakes, type ArcPlaybackShot, type ArcTakeItem } from "@/lib/comic/arc-playback";
+import type { ArcPlaybackChip, EnsembleAuditionPreview, TraceStep } from "@/lib/types";
 
 const SUGGESTIONS = [
   "Create a new donghua production called 'Azure Sky' about a cloud-riding swordswoman",
@@ -126,6 +127,130 @@ function EnsembleAuditionBlock({ preview }: { preview: EnsembleAuditionPreview }
   );
 }
 
+/**
+ * PLAYABLE ARC CHIP inside the DSH reply: an arc tool lands a span
+ * (or an ensemble beat) and the trace carries a chip that plays the
+ * arc's STORED takes in story order - the same buildArcTakes /
+ * mergeArcTakes chain the ruler bars use, now fed by the episode's
+ * arc-playback feed, fetched right here when the block mounts.
+ * One token-guarded sequential player; stop/new play/unmount cancels.
+ */
+function ArcPlaybackBlock({ chip }: { chip: ArcPlaybackChip }) {
+  const feedQ = useQuery({
+    queryKey: ["arc-playback", chip.episodeId],
+    queryFn: () => api.arcPlayback(chip.episodeId),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+  });
+  const seqRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  const takes: ArcTakeItem[] = useMemo(() => {
+    const feed = feedQ.data;
+    if (!feed) return [];
+    const shots: ArcPlaybackShot[] = feed.shots.map((s) => ({
+      id: s.id,
+      sceneNumber: s.sceneNumber,
+      number: s.number,
+      dialogue: s.dialogue,
+      audioCues: s.audioCues,
+    }));
+    if (chip.ensemble) return mergeArcTakes(chip.spans, shots);
+    return chip.spans.length > 0 ? buildArcTakes(chip.spans[0], shots) : [];
+  }, [feedQ.data, chip]);
+
+  useEffect(
+    () => () => {
+      seqRef.current += 1;
+      audioRef.current?.pause();
+      audioRef.current = null;
+    },
+    [],
+  );
+
+  function stop() {
+    seqRef.current += 1;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setPlaying(false);
+  }
+
+  async function playSequence() {
+    stop();
+    const token = seqRef.current;
+    setPlaying(true);
+    for (const t of takes) {
+      if (seqRef.current !== token) return;
+      await new Promise<void>((resolve) => {
+        const audio = new Audio(t.url);
+        audioRef.current = audio;
+        const done = () => resolve();
+        audio.onended = done;
+        audio.onerror = done;
+        audio.onpause = done; // stop() pauses: resolve instead of hanging
+        void audio.play().catch(done);
+      });
+    }
+    if (seqRef.current === token) setPlaying(false);
+  }
+
+  const takeCount = takes.length;
+  return (
+    <div className="rounded-md border border-violet-400/25 bg-violet-400/[0.06] p-2 space-y-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-violet-300">
+          <Route className="h-3 w-3" />
+          Playable arc - {chip.label} · Ep{chip.episodeNumber}
+        </span>
+        <button
+          onClick={playing ? stop : () => void playSequence()}
+          disabled={takeCount === 0 || feedQ.isLoading}
+          title={playing
+            ? "Stop the arc playback"
+            : takeCount === 0
+              ? "No rendered takes in this arc span yet"
+              : `Play this arc's ${takeCount} stored take${takeCount === 1 ? "" : "s"} in story order`}
+          className={cn(
+            "ml-auto h-6 rounded-md border px-2 text-[9px] font-bold flex items-center gap-1 transition-colors",
+            takeCount === 0 && !feedQ.isLoading
+              ? "border-white/8 text-muted-foreground/40"
+              : "border-cyan-300/40 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20",
+          )}
+        >
+          {playing ? <Square className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+          {playing ? "stop" : `play arc${takeCount > 0 ? ` · ${takeCount}` : ""}`}
+        </button>
+      </div>
+      <div className="text-[10px] leading-relaxed text-muted-foreground">
+        {feedQ.isLoading
+          ? "Loading the arc's stored takes..."
+          : feedQ.isError
+            ? "The arc playback feed failed to load."
+            : takeCount === 0
+              ? "No rendered takes in this span yet - play the chip again after the re-render lands."
+              : chip.ensemble
+                ? `${takeCount} stored take${takeCount === 1 ? "" : "s"} of the whole beat, merged in story order - the takes as they stand BEFORE the re-render.`
+                : `${takeCount} stored take${takeCount === 1 ? "" : "s"} in story order - the takes as they stand BEFORE the re-render.`}
+      </div>
+      {takeCount > 0 && !feedQ.isLoading && (
+        <div className="space-y-0.5 max-h-28 overflow-y-auto studio-scroll pr-1">
+          {takes.map((t, i) => (
+            <div key={i} className="flex items-center gap-2 rounded border border-white/8 bg-black/25 px-1.5 py-0.5 text-[10px]">
+              <span className="shrink-0 font-mono text-muted-foreground">
+                Sc{String(t.sceneNumber).padStart(2, "0")} · S{String(t.shotNumber).padStart(3, "0")}
+              </span>
+              <span className="shrink-0 font-semibold text-violet-200/90">{t.speaker}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">&quot;{t.text}&quot;</span>
+              {t.durationMs != null && <span className="shrink-0 font-mono text-muted-foreground/70">{(t.durationMs / 1000).toFixed(1)}s</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TraceBlock({ steps }: { steps: TraceStep[] }) {
   const [open, setOpen] = useState(true);
   if (!steps.length) return null;
@@ -219,6 +344,7 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
                     </div>
                   )}
                   {a.ensembleAudition && <EnsembleAuditionBlock preview={a.ensembleAudition} />}
+                  {a.arcPlayback && <ArcPlaybackBlock chip={a.arcPlayback} />}
                 </div>
               ))}
             </div>

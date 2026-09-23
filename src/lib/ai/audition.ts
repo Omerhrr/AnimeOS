@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
@@ -17,12 +17,22 @@ import type { AuditionPreview, AuditionSide } from "@/lib/types";
 // the character's own first dialogue line in the production
 // (speaker lookup), or a classic audition read.
 //
-// Two consumers:
+// Three consumers:
 //  - /api/voice-auditions (casting board): returns the WAV as base64
 //  - set_state_voice_variant (DSH): after binding a variant it renders
 //    an audition of the NEW performance, saves it under
 //    public/auditions/ and attaches a playable preview to the tool
 //    result so the proposal lives inside the same turn
+//  - ensemble applies (DSH): ONE read per engaged speaker, saved the
+//    same way and attached as A/B rows
+//
+// AUDITION HISTORY: every audition of a STATE lands in the
+// StateAudition table (with its performance snapshot), so past
+// proposed reads stay playable and comparable from the casting
+// board. Each render writes its OWN wav file (timestamped name) so
+// a history row never mutates into a later read; the table keeps
+// the latest KEEP_PER_STATE rows per state and prunes both the
+// rows and their files.
 // ─────────────────────────────────────────────────────────────
 
 const AUDITION_LINES = [
@@ -135,6 +145,61 @@ export async function renderAudition(req: AuditionRequest): Promise<AuditionRend
 }
 
 /**
+ * Save an audition WAV under /auditions/ with a TIMESTAMPED name so
+ * every render owns its file (a history row must never mutate into a
+ * later read). Returns the served path (no cache-buster: the name is
+ * already unique).
+ */
+export async function saveAuditionFile(prefix: string, key: string, wav: Buffer): Promise<string> {
+  const dir = path.join(process.cwd(), "public", "auditions");
+  await mkdir(dir, { recursive: true });
+  const file = `${prefix}-${key}-${Date.now()}.wav`;
+  await writeFile(path.join(dir, file), wav);
+  return `/auditions/${file}`;
+}
+
+/** History cap: the latest KEEP_PER_STATE auditions of one state survive. */
+const KEEP_PER_STATE = 12;
+
+/**
+ * Record ONE auditioned read of a state (best-effort: a history
+ * failure never sinks the audition itself) and prune the state's
+ * history to the latest KEEP_PER_STATE rows, unlinking pruned files.
+ */
+export async function recordStateAudition(entry: {
+  projectId: string;
+  stateId: string;
+  characterId: string;
+  url: string; // served path under /auditions/ (no query string)
+  text: string;
+  source: string;
+  voiceId: string;
+  deliveryId: string;
+  speed: number;
+  pitch: number;
+  durationMs: number | null;
+}): Promise<void> {
+  try {
+    await db.stateAudition.create({ data: entry });
+    const rows = await db.stateAudition.findMany({
+      where: { stateId: entry.stateId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, url: true },
+    });
+    const stale = rows.slice(KEEP_PER_STATE);
+    if (stale.length === 0) return;
+    await db.stateAudition.deleteMany({ where: { id: { in: stale.map((r) => r.id) } } });
+    for (const row of stale) {
+      if (row.url.startsWith("/auditions/")) {
+        await unlink(path.join(process.cwd(), "public", row.url)).catch(() => {});
+      }
+    }
+  } catch {
+    // best-effort history
+  }
+}
+
+/**
  * The CURRENT stored take of a line: the latest rendered VOICE cue whose
  * label matches "speaker: text" (the same convention the dialogue parser
  * uses to map cues to lines). Only real stored takes qualify as the A
@@ -202,6 +267,10 @@ export async function currentTakeForLine(
  * the exact line the new direction will re-render); `filePrefix`
  * namespaces the saved WAV ("variant" for binds, "arc" for ensemble
  * applies) so the two flows never clobber each other's files.
+ *
+ * HISTORY: every successful render is recorded into the state's
+ * audition history (best-effort), so the casting board can replay
+ * and compare past proposed reads of the same state.
  */
 export async function renderVariantAudition(opts: {
   projectId: string;
@@ -227,10 +296,9 @@ export async function renderVariantAudition(opts: {
     });
     if (rendered.wav.length < 100) return null;
 
-    const dir = path.join(process.cwd(), "public", "auditions");
-    await mkdir(dir, { recursive: true });
-    const file = `${opts.filePrefix ?? "variant"}-${opts.stateId}.wav`;
-    await writeFile(path.join(dir, file), rendered.wav);
+    // timestamped file: every render owns its wav, so a history row
+    // never mutates into a later read of the same state
+    const url = await saveAuditionFile(opts.filePrefix ?? "variant", opts.stateId, rendered.wav);
 
     // A/B pair: attach the stored take of the same line when one exists
     // (sample reads have no production line to compare against)
@@ -238,8 +306,30 @@ export async function renderVariantAudition(opts: {
       ? null
       : await currentTakeForLine(opts.projectId, opts.characterName, rendered.text);
 
+    // history: keep this read replayable from the casting board
+    // (best-effort; the state's characterId comes from the row itself)
+    const stateRow = await db.characterState.findUnique({
+      where: { id: opts.stateId },
+      select: { characterId: true },
+    });
+    if (stateRow) {
+      await recordStateAudition({
+        projectId: opts.projectId,
+        stateId: opts.stateId,
+        characterId: stateRow.characterId,
+        url,
+        text: rendered.text,
+        source: rendered.source,
+        voiceId: rendered.voiceId,
+        deliveryId: rendered.deliveryId,
+        speed: rendered.targetSpeed,
+        pitch: rendered.pitch,
+        durationMs: rendered.durationMs,
+      });
+    }
+
     return {
-      url: `/auditions/${file}?v=${Date.now()}`,
+      url: `${url}?v=${Date.now()}`,
       mimeType: "audio/wav",
       durationMs: rendered.durationMs,
       text: rendered.text,

@@ -16,7 +16,7 @@ import { renderVariantAudition } from "@/lib/ai/audition";
 import {
   diffEpisodeById, diffProjectEpisodes, reRenderStaleTakes, reRenderStaleAcrossProject,
 } from "@/lib/ai/voice-diff";
-import type { AuditionPreview, EnsembleAuditionPreview } from "@/lib/types";
+import type { ArcPlaybackChip, AuditionPreview, EnsembleAuditionPreview } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
 // DSH PRODUCTION TOOL API (§6/§7)
@@ -327,7 +327,39 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
-type ActionResult = { status: "OK" | "ERROR"; result: string; audition?: AuditionPreview; ensembleAudition?: EnsembleAuditionPreview };
+type ActionResult = { status: "OK" | "ERROR"; result: string; audition?: AuditionPreview; ensembleAudition?: EnsembleAuditionPreview; arcPlayback?: ArcPlaybackChip };
+
+/** The playable-arc chip for one landed arc span (speaker + state + stamped shots). */
+function arcChip(
+  episode: { id: string; number: number } | null,
+  speakerKey: string,
+  state: string,
+  shotIds: string[],
+): ArcPlaybackChip | null {
+  if (!episode || shotIds.length === 0) return null;
+  return {
+    episodeId: episode.id,
+    episodeNumber: episode.number,
+    label: `${speakerKey} - ${state}`,
+    ensemble: false,
+    spans: [{ speakerKey: speakerKey.trim().toLowerCase(), state, shotIds }],
+  };
+}
+
+/** The playable-arc chip for an ENSEMBLE beat: every engaged speaker's span, merged on play. */
+function ensembleArcChip(
+  episode: { id: string; number: number } | null,
+  spans: Array<{ name: string; stateLabel: string; shotIds: string[] }>,
+): ArcPlaybackChip | null {
+  if (!episode || spans.length === 0) return null;
+  return {
+    episodeId: episode.id,
+    episodeNumber: episode.number,
+    label: `ensemble beat: ${spans.map((s) => s.name).join(", ")}`,
+    ensemble: true,
+    spans: spans.map((s) => ({ speakerKey: s.name.trim().toLowerCase(), state: s.stateLabel, shotIds: s.shotIds })),
+  };
+}
 
 async function findProject(projectId: string) {
   const p = await db.project.findUnique({ where: { id: projectId } });
@@ -691,8 +723,18 @@ async function applyResolvedTemplate(
     return { status: "OK", result };
   }
   result += "The template carries the shape; the state carries the voice: every stamped line now performs with its variant voice, hints and register.";
+  // playable arc chip: the stamped span rides the trace, so the reply
+  // itself can play the arc's STORED takes in story order before the
+  // re-render decision
+  const chip = arcChip(
+    range.episode,
+    ch.name,
+    stateLabel,
+    rangeShots.filter((s) => stateShotIds.has(s.id)).map((s) => s.id),
+  );
+  if (chip) result += `Arc playback attached: the trace carries a play chip for this arc (${ch.name} - "${stateLabel}") - point the creator at it to hear the STORED takes in story order before re-rendering. `;
   result += await directionImpactFor(range.episode);
-  return { status: "OK", result };
+  return { status: "OK", result, ...(chip ? { arcPlayback: chip } : {}) };
 }
 
 const ENSEMBLE_MAX_SPEAKERS = 6;
@@ -753,6 +795,8 @@ type EnsembleOutcome =
       stamped: number;
       lines: number;
       report: TemplateSegmentReport[];
+      /** the shots THIS speaker's state actually moved in (range order): the playback span */
+      shotIds: string[];
       /** the first line THIS apply stamped into the state: the same-turn audition reads it */
       audition?: { stateId: string; voiceVariant: string | null; speedHint: number | null; pitchHint: number | null; text: string };
     }
@@ -860,11 +904,17 @@ async function applyEnsembleTemplate(
     const beforeStates = parsed.map((p) => p.lines.map((l) => l.state ?? null));
     const [next, stamped, report] = applyArcTemplate(parsed, ch.name, template, stateRes.label, { batchId });
     const speakerLines = report.reduce((acc, r) => acc + r.lines, 0);
+    // the shots THIS speaker's state actually moved in (range order):
+    // the playable arc chip's span for this speaker
+    const speakerStateShotIds: string[] = [];
     for (let i = 0; i < next.length; i += 1) {
       if (!next[i].changed) continue;
       changedShotIds.add(next[i].shotId);
       parsed[i] = { shotId: next[i].shotId, lines: next[i].lines };
-      if (next[i].lines.some((l, li) => (l.state ?? null) !== beforeStates[i][li])) stateShotIds.add(next[i].shotId);
+      if (next[i].lines.some((l, li) => (l.state ?? null) !== beforeStates[i][li])) {
+        stateShotIds.add(next[i].shotId);
+        speakerStateShotIds.push(next[i].shotId);
+      }
     }
     totalStamped += stamped;
     if (speakerLines === 0) outcomes.push({ kind: "noop-lines", name: ch.name });
@@ -893,6 +943,7 @@ async function applyEnsembleTemplate(
         stamped,
         lines: speakerLines,
         report,
+        shotIds: speakerStateShotIds,
         ...(auditionText
           ? { audition: { stateId: stateRes.stateId, voiceVariant: stateRes.voiceVariant, speedHint: stateRes.speedHint, pitchHint: stateRes.pitchHint, text: auditionText } }
           : {}),
@@ -955,8 +1006,20 @@ async function applyEnsembleTemplate(
     }
   }
   result += "The template carries the shape; the state carries the voice: every stamped line now performs with its variant voice, hints and register.";
+  // playable arc chip: the ENSEMBLE beat rides the trace as one chip;
+  // playing it merges every engaged speaker's span into one story-order queue
+  const chip = ensembleArcChip(
+    range.episode,
+    outcomes.flatMap((o) => (o.kind === "applied" && o.shotIds.length > 0 ? [{ name: o.name, stateLabel: o.stateLabel, shotIds: o.shotIds }] : [])),
+  );
+  if (chip) result += `Arc playback attached: the trace carries a play chip for the whole beat (${chip.label}) - point the creator at it to hear the STORED takes of every speaker in story order before re-rendering. `;
   result += await directionImpactFor(range.episode);
-  return { status: "OK", result, ...(ensembleAudition && ensembleAudition.speakers.length > 0 ? { ensembleAudition } : {}) };
+  return {
+    status: "OK",
+    result,
+    ...(ensembleAudition && ensembleAudition.speakers.length > 0 ? { ensembleAudition } : {}),
+    ...(chip ? { arcPlayback: chip } : {}),
+  };
 }
 
 export async function executeTool(projectId: string, name: string, args: Record<string, unknown>): Promise<ActionResult> {
@@ -1861,6 +1924,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
 
         let stamped = 0;
         const touched: string[] = [];
+        const stampedShotIds: string[] = [];
         const speakersSeen = new Set<string>();
         for (const shot of rangeShots) {
           const lines = parseDialogue(shot.dialogue);
@@ -1870,6 +1934,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
             await db.shot.update({ where: { id: shot.id }, data: { dialogue: serializeDialogue(next) } });
             stamped += n;
             touched.push(shot.label);
+            stampedShotIds.push(shot.id);
           }
         }
         await db.productionEvent.create({
@@ -1896,8 +1961,11 @@ export async function executeTool(projectId: string, name: string, args: Record<
           return { status: "OK", result };
         }
         result += "Each stamped line now performs with the state's variant voice, hints and register.";
+        // playable arc chip: the stamped span rides the trace
+        const chip = stateLabel ? arcChip(range.episode, ch.name, stateLabel, stampedShotIds) : null;
+        if (chip) result += `Arc playback attached: the trace carries a play chip for this arc (${ch.name} - "${stateLabel}") - point the creator at it to hear the STORED takes in story order before re-rendering. `;
         result += await directionImpactFor(range.episode);
-        return { status: "OK", result };
+        return { status: "OK", result, ...(chip ? { arcPlayback: chip } : {}) };
       }
 
       case "suggest_arc_template": {
@@ -1923,6 +1991,8 @@ export async function executeTool(projectId: string, name: string, args: Record<
         // the chained apply's same-turn ensemble audition rides the suggest
         // result too, so the creator hears the beat in the same trace
         let chainedEnsembleAudition: EnsembleAuditionPreview | undefined;
+        // ...and so does the chained apply's playable arc chip
+        let chainedArcPlayback: ArcPlaybackChip | undefined;
         if (best && strongMatch) {
           result += `Template match: ${tag(best.template)} scores ${best.score} on the creator's description. Shape: ${formatTemplateShape(best.template.segments)}. `;
           if (best.template.description) result += `${best.template.description} `;
@@ -1936,6 +2006,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
             }
             chained = true;
             chainedEnsembleAudition = applyRes.ensembleAudition;
+            chainedArcPlayback = applyRes.arcPlayback;
             result += `Applied in this batch: ${applyRes.result} `;
           } else if (singleChain) {
             // ONE-BATCH CHAIN: the matched template is applied in this very call
@@ -1953,6 +2024,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
               return { status: "ERROR", result: `Template match: ${tag(best.template)} (shape: ${formatTemplateShape(best.template.segments)}), but the chained apply failed: ${applyRes.result}` };
             }
             chained = true;
+            chainedArcPlayback = applyRes.arcPlayback;
             result += `Applied in this batch: ${applyRes.result} `;
           } else {
             result += `Propose it in this turn: apply_arc_template with template:'${best.template.name}' plus characterName, stateLabel and the range - or pass stateLabel here to apply it in this same batch. `;
@@ -2003,7 +2075,12 @@ export async function executeTool(projectId: string, name: string, args: Record<
             ? "No template truly fits? set_state_arc stamps a uniform span, and the creator can save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat."
             : "For a beat this specific: stamp a uniform span with set_state_arc, or save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat and apply in one call by name.";
         }
-        return { status: "OK", result, ...(chainedEnsembleAudition ? { ensembleAudition: chainedEnsembleAudition } : {}) };
+        return {
+          status: "OK",
+          result,
+          ...(chainedEnsembleAudition ? { ensembleAudition: chainedEnsembleAudition } : {}),
+          ...(chainedArcPlayback ? { arcPlayback: chainedArcPlayback } : {}),
+        };
       }
 
       case "apply_arc_template": {

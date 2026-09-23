@@ -91,6 +91,17 @@ async function cleanupEpisodeFixture(cueIds: string[], auditionStateIds: string[
   for (const id of cueIds) {
     await unlink(path.join(process.cwd(), "public", "voices", `${id}.wav`)).catch(() => {});
   }
+  // audition wavs are TIMESTAMPED per render (arc-<stateId>-<ts>.wav) since
+  // iteration 25: collect the recorded history urls before the cascade
+  const histRows = await db.stateAudition.findMany({
+    where: { stateId: { in: auditionStateIds } },
+    select: { url: true },
+  });
+  for (const row of histRows) {
+    if (row.url.startsWith("/auditions/")) {
+      await unlink(path.join(process.cwd(), "public", row.url)).catch(() => {});
+    }
+  }
   for (const id of auditionStateIds) {
     await unlink(path.join(process.cwd(), "public", "auditions", `arc-${id}.wav`)).catch(() => {});
   }

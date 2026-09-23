@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { deliveryProfile, isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
-import { currentTakeForLine, renderAudition } from "@/lib/ai/audition";
+import { currentTakeForLine, renderAudition, recordStateAudition, saveAuditionFile } from "@/lib/ai/audition";
 import { resolveVoiceCast } from "@/lib/ai/voice-casting";
 
 // ─────────────────────────────────────────────────────────────
@@ -18,12 +18,18 @@ import { resolveVoiceCast } from "@/lib/ai/voice-casting";
 //
 // STATE AUDITIONS: pass a characterState id to hear how that state
 // performs - its variant voice (when one is bound) plus its
-// speed/pitch hints, all without persisting anything. The render
-// core lives in lib/ai/audition.ts, shared with the DSH bind tool.
+// speed/pitch hints. The render core lives in lib/ai/audition.ts,
+// shared with the DSH bind tool.
 //
 // A/B: when the auditioned line already has a stored take, the
 // response carries it as the current side, so the board can play
 // old vs new back to back before anything is committed.
+//
+// HISTORY: auditions that audition a STATE (single, or an ensemble
+// entry with a stateId) are recorded into that state's audition
+// history (wav saved under /auditions/ + a StateAudition row with
+// the performance snapshot), so past proposed reads stay replayable
+// from the board. Plain voice auditions (no state) stay throwaway.
 //
 // ENSEMBLE AUDITIONS: pass ensemble (2..6 entries of {speaker?,
 // stateId?}) to render EVERY speaker in ONE call - each row keeps
@@ -64,6 +70,7 @@ export async function POST(req: Request) {
     const rows: Array<Record<string, unknown>> = [];
     const skipped: Array<{ entry: string; reason: string }> = [];
     const seen = new Set<string>();
+    const stateCharacterIds = new Map<string, string>();
     for (const item of list) {
       const entry = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const stateId = entry.stateId ? String(entry.stateId) : "";
@@ -81,6 +88,7 @@ export async function POST(req: Request) {
         }
         speedHint = state.speedHint != null && Number.isFinite(state.speedHint) ? Math.min(2, Math.max(0.5, state.speedHint)) : null;
         pitchHint = state.pitchHint != null && Number.isFinite(state.pitchHint) ? Math.min(2, Math.max(0.5, state.pitchHint)) : null;
+        stateCharacterIds.set(state.id, state.characterId);
         speaker = speaker || state.character?.name || "";
         variant = {
           stateId: state.id,
@@ -122,6 +130,27 @@ export async function POST(req: Request) {
           skipped.push({ entry: speaker, reason: "render came back empty" });
           continue;
         }
+        // history: state auditions land in that state's history (best-effort)
+        if (stateId && variant) {
+          try {
+            const url = await saveAuditionFile("state", stateId, rendered.wav);
+            await recordStateAudition({
+              projectId: String(body.projectId ?? ""),
+              stateId,
+              characterId: String(variant.stateId ? (stateCharacterIds.get(stateId) ?? "") : ""),
+              url,
+              text: rendered.text,
+              source: rendered.source,
+              voiceId: rendered.voiceId,
+              deliveryId: rendered.deliveryId,
+              speed: rendered.targetSpeed,
+              pitch: rendered.pitch,
+              durationMs: rendered.durationMs,
+            });
+          } catch {
+            // best-effort history
+          }
+        }
         const current = rendered.source === "sample" || !speaker
           ? null
           : await currentTakeForLine(String(body.projectId ?? ""), speaker, rendered.text);
@@ -157,6 +186,7 @@ export async function POST(req: Request) {
     pitchHint: number | null;
   } | null = null;
   let stateSpeaker = "";
+  let stateCharacterId = "";
   const stateId = body.stateId ? String(body.stateId) : "";
   if (stateId) {
     const state = await db.characterState.findUnique({ where: { id: stateId }, include: { character: true } });
@@ -172,6 +202,7 @@ export async function POST(req: Request) {
       pitchHint: pitchHint != null ? Math.min(2, Math.max(0.5, pitchHint)) : null,
     };
     stateSpeaker = state.character?.name ?? "";
+    stateCharacterId = state.characterId;
   }
 
   const projectId = body.projectId ? String(body.projectId) : "";
@@ -210,6 +241,31 @@ export async function POST(req: Request) {
   }
   if (rendered.wav.length < 100) return NextResponse.json({ error: "Audition render came back empty" }, { status: 502 });
 
+  // history: a state audition lands in that state's audition history
+  // (best-effort; plain voice auditions stay throwaway)
+  let historyUrl: string | null = null;
+  if (stateId && stateBlock) {
+    try {
+      const url = await saveAuditionFile("state", stateId, rendered.wav);
+      await recordStateAudition({
+        projectId,
+        stateId,
+        characterId: stateCharacterId,
+        url,
+        text: rendered.text,
+        source: rendered.source,
+        voiceId: rendered.voiceId,
+        deliveryId: rendered.deliveryId,
+        speed: rendered.targetSpeed,
+        pitch: rendered.pitch,
+        durationMs: rendered.durationMs,
+      });
+      historyUrl = url;
+    } catch {
+      // best-effort history
+    }
+  }
+
   // A/B side: the stored take of the same line, when one exists
   // (sample reads have no production line to compare against)
   const current = rendered.source === "sample" || !speaker
@@ -233,5 +289,6 @@ export async function POST(req: Request) {
     speaker: speaker || null,
     variant: stateBlock,
     current,
+    ...(historyUrl ? { historyUrl } : {}),
   });
 }

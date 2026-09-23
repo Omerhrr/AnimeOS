@@ -79,9 +79,11 @@ export async function runDshTurn(projectId: string, userMessage: string): Promis
         status: outcome.status,
         // a variant bind renders an audition preview of the new
         // performance; an ensemble apply renders ONE read per engaged
-        // speaker - keep both on the trace so the console can play them
+        // speaker; an arc tool lands a playable arc chip - keep all
+        // three on the trace so the console can play them
         ...(outcome.audition ? { audition: outcome.audition } : {}),
         ...(outcome.ensembleAudition ? { ensembleAudition: outcome.ensembleAudition } : {}),
+        ...(outcome.arcPlayback ? { arcPlayback: outcome.arcPlayback } : {}),
       });
       await db.productionEvent.create({
         data: {
