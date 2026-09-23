@@ -341,6 +341,13 @@ export interface DshMessageRow {
 }
 
 // user-defined arc template saved per production (reusable beat shape)
+export interface ArcTemplateVersionEntry {
+  version: number; // the version this entry REPLACED
+  segments: Array<{ frac: number; kind: "auto" | "state" }>;
+  note: string; // migration note (auto or creator-written)
+  at: string; // ISO timestamp of the update
+}
+
 export interface ArcTemplateRow {
   id: string;
   name: string;
@@ -348,6 +355,8 @@ export interface ArcTemplateRow {
   segments: Array<{ frac: number; kind: "auto" | "state" }>;
   scope: "PROJECT" | "STUDIO";
   projectId: string | null;
+  version: number; // current shape version (1 = as saved)
+  versions: ArcTemplateVersionEntry[]; // replaced shapes, newest-first
 }
 
 export interface RenderJobRow {
@@ -439,8 +448,8 @@ export const api = {
   listArcTemplates: (projectId: string) => j<ArcTemplateRow[]>(`/api/arc-templates?projectId=${projectId}`),
   createArcTemplate: (body: { projectId: string; name: string; description?: string; scope?: "PROJECT" | "STUDIO"; segments: Array<{ frac: number; kind: "auto" | "state" }> }) =>
     j<{ id: string }>("/api/arc-templates", { method: "POST", body: JSON.stringify(body) }),
-  patchArcTemplate: (id: string, body: { name?: string; description?: string | null; scope?: "PROJECT" | "STUDIO"; projectId?: string; segments?: Array<{ frac: number; kind: "auto" | "state" }> }) =>
-    j<{ id: string }>(`/api/arc-templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  patchArcTemplate: (id: string, body: { name?: string; description?: string | null; scope?: "PROJECT" | "STUDIO"; projectId?: string; segments?: Array<{ frac: number; kind: "auto" | "state" }>; note?: string }) =>
+    j<{ id: string; version: number; bumped: boolean }>(`/api/arc-templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteArcTemplate: (id: string) => j<{ ok: boolean }>(`/api/arc-templates/${id}`, { method: "DELETE" }),
 
   // sound-design cues
@@ -491,6 +500,14 @@ export const api = {
   // (variant voice + speed/pitch hints); nothing is persisted
   auditionVoice: (body: { projectId: string; voiceId?: string; delivery?: string; text?: string; speaker?: string; stateId?: string }) =>
     j<AuditionResult>("/api/voice-auditions", { method: "POST", body: JSON.stringify(body) }),
+
+  // multi-speaker ensemble audition: ONE call renders every speaker
+  // (per-speaker state or cast voice, shared board line + register);
+  // each row carries the full single-audition shape so the board can
+  // lay out A/B rows per speaker and play the ensemble in sequence.
+  // Unresolvable entries come back in `skipped` instead of failing.
+  auditionEnsemble: (body: { projectId: string; delivery?: string; text?: string; ensemble: Array<{ speaker?: string; stateId?: string }> }) =>
+    j<{ ensemble: true; rows: AuditionResult[]; skipped: Array<{ entry: string; reason: string }> }>("/api/voice-auditions", { method: "POST", body: JSON.stringify(body) }),
 
   // simulated LoRA training runs from approved panels
   trainLora: (loraId: string) =>

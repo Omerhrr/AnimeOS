@@ -424,6 +424,12 @@ model ArcTemplate {
   name        String
   description String?
   segments    String   // JSON Array<{frac: number, kind: "auto" | "state"}>
+  // Shape versioning: version counts the current shape (1 = as saved),
+  // versions holds every REPLACED shape as JSON
+  // [{version, segments, note, at}] newest-first, so an updated beat
+  // shape never silently rewrites what earlier applies stamped.
+  version     Int      @default(1)
+  versions    String   @default("[]")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)

@@ -14,6 +14,10 @@
 // voice when one is bound, plus the state's speed/pitch hints. When
 // the auditioned line has a stored take, the response carries it as
 // the A side and the board can play current vs proposed back to back.
+// ENSEMBLE TRY rows: several speakers in ONE batch - one A/B row per
+// speaker (A = the current stored take, B = the proposed read), a
+// per-row compare, and a sequence play that reads the whole ensemble
+// in cast order.
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -47,8 +51,15 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   // state auditions: per-character selected development state
   const [stateSel, setStateSel] = useState<Record<string, string>>({});
   // A/B pairs from the last state audition per character: the stored take of the line + the proposed render
-  const [statePairs, setStatePairs] = useState<Record<string, { proposed: AuditionResult; current: AuditionCurrentSide } | null>>({});
+  const [statePairs, setStatePairs] = useState<Record<string, { proposed: AuditionResult; current: AuditionCurrentSide } | null>>(({}));
+  // ensemble try: selected characters, rendered rows, batch state
+  const [ensSel, setEnsSel] = useState<Record<string, boolean>>({});
+  const [ensRows, setEnsRows] = useState<AuditionResult[] | null>(null);
+  const [ensSkips, setEnsSkips] = useState<Array<{ entry: string; reason: string }>>([]);
+  const [ensBusy, setEnsBusy] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // sequence token: bumping it cancels any running multi-clip playback
+  const seqRef = useRef(0);
 
   useEffect(() => {
     if (open) setError(null);
@@ -57,6 +68,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   // stop any audition clip when the dialog closes
   useEffect(() => {
     if (!open) {
+      seqRef.current += 1;
       audioRef.current?.pause();
       audioRef.current = null;
       setAuditionPlaying(null);
@@ -108,6 +120,7 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   }
 
   function stopAudition() {
+    seqRef.current += 1; // cancels any running ensemble sequence
     audioRef.current?.pause();
     audioRef.current = null;
     setAuditionPlaying(null);
@@ -193,6 +206,129 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       URL.revokeObjectURL(url);
     };
     await audio.play();
+  }
+
+  // ── ensemble try: multi-speaker A/B rows ─────────────────────────
+
+  function decodeAudition(res: { audio: string; mimeType: string }): string {
+    const bin = atob(res.audio);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
+  }
+
+  /** Play one decoded clip to the end (or until the sequence token moves). */
+  function playClipAwait(key: string, res: { audio: string; mimeType: string }, token: number): Promise<void> {
+    return new Promise((resolve) => {
+      const url = decodeAudition(res);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      setAuditionPlaying(key);
+      const done = () => {
+        URL.revokeObjectURL(url);
+        if (seqRef.current === token) setAuditionPlaying(null);
+        resolve();
+      };
+      audio.onended = done;
+      audio.onerror = done;
+      audio.onpause = done; // stop() pauses: resolve the waiter instead of hanging
+      void audio.play().catch(done);
+    });
+  }
+
+  /** Play a stored-take URL (the A side) to the end. */
+  function playUrlAwait(key: string, url: string, token: number): Promise<void> {
+    return new Promise((resolve) => {
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      setAuditionPlaying(key);
+      const done = () => {
+        if (seqRef.current === token) setAuditionPlaying(null);
+        resolve();
+      };
+      audio.onended = done;
+      audio.onerror = done;
+      audio.onpause = done; // stop() pauses: resolve the waiter instead of hanging
+      void audio.play().catch(done);
+    });
+  }
+
+  /** ENSEMBLE audition: one API call renders every selected speaker; rows come back with their A/B sides. */
+  async function runEnsembleAudition() {
+    const selected = project.characters.filter((c) => ensSel[c.id]);
+    if (selected.length < 2) return;
+    stopAudition();
+    setEnsBusy(true);
+    setAuditionMsg(null);
+    setError(null);
+    try {
+      const res = await api.auditionEnsemble({
+        projectId: project.id,
+        delivery: auditionDelivery,
+        text: auditionLine.trim() || undefined,
+        ensemble: selected.map((c) => ({ speaker: c.name, stateId: stateSel[c.id] || undefined })),
+      });
+      setEnsRows(res.rows);
+      setEnsSkips(res.skipped);
+      const bits = [
+        `ensemble audition: ${res.rows.length} row${res.rows.length === 1 ? "" : "s"} rendered`,
+        res.skipped.length > 0 ? `${res.skipped.length} skipped` : null,
+        "not saved as takes",
+      ].filter(Boolean);
+      setAuditionMsg(bits.join(" · "));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ensemble audition failed");
+    } finally {
+      setEnsBusy(false);
+    }
+  }
+
+  /** Play ONE side of an ensemble row: "current" (stored take) or "proposed" (throwaway render). */
+  async function playEnsSide(idx: number, side: "current" | "proposed") {
+    const row = ensRows?.[idx];
+    if (!row) return;
+    stopAudition();
+    const token = seqRef.current;
+    setAuditionBusy(`ens:${idx}:${side}`);
+    try {
+      if (side === "current" && row.current) await playUrlAwait(`ens-play-${idx}`, row.current.url, token);
+      else await playClipAwait(`ens-play-${idx}`, row, token);
+    } finally {
+      if (seqRef.current === token) setAuditionBusy(null);
+    }
+  }
+
+  /** A/B compare on one ensemble row: the current stored take first, then the proposed read. */
+  async function playEnsCompare(idx: number) {
+    const row = ensRows?.[idx];
+    if (!row?.current) return;
+    stopAudition();
+    const token = seqRef.current;
+    setAuditionBusy(`ens-ab:${idx}`);
+    try {
+      await playUrlAwait(`ens-ab-play-${idx}`, row.current.url, token);
+      if (seqRef.current !== token) return; // stopped mid-leg
+      await playClipAwait(`ens-ab-play-${idx}`, row, token);
+    } finally {
+      if (seqRef.current === token) setAuditionBusy(null);
+    }
+  }
+
+  /** Sequence play: every row's PROPOSED read in cast order - the ensemble table read. */
+  async function playEnsSequence() {
+    if (!ensRows || ensRows.length === 0) return;
+    stopAudition();
+    const token = seqRef.current;
+    setAuditionBusy("ens-seq");
+    try {
+      for (let i = 0; i < ensRows.length; i += 1) {
+        if (seqRef.current !== token) return;
+        await playClipAwait(`ens-seq-${i}`, ensRows[i], token);
+        if (seqRef.current !== token) return;
+      }
+    } finally {
+      if (seqRef.current === token) setAuditionBusy(null);
+    }
   }
 
   /** A/B compare: play the current stored take of the line, then the proposed performance, back to back. */
@@ -451,6 +587,128 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
                 </Fragment>
               ))}
             </div>
+
+            {/* ENSEMBLE TRY: multi-speaker A/B rows - one batch call, one row per speaker */}
+            {project.characters.length >= 2 && (
+              <div className="space-y-1.5 rounded-lg border border-teal-400/20 bg-teal-400/[0.04] p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-teal-200 flex items-center gap-1.5">
+                    <Users className="h-3 w-3" /> Ensemble try
+                  </div>
+                  <span className="text-[9px] font-mono text-teal-300/80">
+                    {project.characters.filter((c) => ensSel[c.id]).length} picked · A/B rows
+                  </span>
+                </div>
+                <p className="text-[10px] leading-snug text-muted-foreground">
+                  Pick two or more characters and audition them as ONE batch: the board renders every speaker with their picked state (see each row&apos;s state try above) or cast voice, and lays out one A/B row per speaker - A is the current stored take of the line, B is the proposed read. Play a side, compare a row, or run the whole ensemble in sequence.
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {project.characters.map((c) => {
+                    const on = Boolean(ensSel[c.id]);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setEnsSel((prev) => ({ ...prev, [c.id]: !prev[c.id] }))}
+                        title={on ? `Remove ${c.name} from the ensemble batch` : `Add ${c.name} to the ensemble batch (their picked state, if any, drives the audition)`}
+                        className={`rounded-full px-2 py-0.5 text-[10px] border transition-colors ${on ? "bg-teal-400/20 border-teal-400/40 text-teal-100" : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"}`}
+                      >
+                        {c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  size="sm" variant="outline"
+                  className="h-7 text-[11px] border-teal-400/30 bg-teal-400/10 text-teal-100 hover:bg-teal-400/20"
+                  disabled={ensBusy || project.characters.filter((c) => ensSel[c.id]).length < 2}
+                  onClick={() => void runEnsembleAudition()}
+                >
+                  {ensBusy ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <AudioLines className="h-3 w-3 mr-1" />}
+                  Audition ensemble
+                  {project.characters.filter((c) => ensSel[c.id]).length >= 2 && ` (${project.characters.filter((c) => ensSel[c.id]).length})`}
+                </Button>
+                {ensRows && ensRows.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[9px] uppercase tracking-[0.14em] text-teal-200/90">
+                        {ensRows.length} A/B row{ensRows.length === 1 ? "" : "s"} · {auditionDelivery.toLowerCase()}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <button
+                          onClick={() => void playEnsSequence()}
+                          disabled={auditionBusy === "ens-seq"}
+                          title="Play every row's proposed read in cast order - hear the ensemble as one scene"
+                          className="h-6 rounded-md border border-teal-400/30 bg-teal-400/10 px-2 text-[9px] font-bold text-teal-200 hover:bg-teal-400/20 transition-colors flex items-center gap-1"
+                        >
+                          {auditionBusy === "ens-seq" ? <Loader2 className="h-3 w-3 animate-spin" /> : auditionPlaying?.startsWith("ens-seq") ? <Square className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+                          play sequence
+                        </button>
+                        <button
+                          onClick={stopAudition}
+                          title="Stop playback"
+                          className="h-6 w-6 flex items-center justify-center rounded-md border border-white/15 bg-white/5 text-muted-foreground hover:text-foreground"
+                        >
+                          <Square className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    </div>
+                    {ensRows.map((row, idx) => (
+                      <div key={`${row.speaker ?? idx}-${idx}`} className="flex items-center gap-1.5 rounded border border-white/10 bg-black/25 px-2 py-1">
+                        <div className="w-24 shrink-0 min-w-0">
+                          <div className="text-[10px] text-foreground truncate">{row.speaker ?? "?"}</div>
+                          <div className="text-[8px] text-muted-foreground truncate">
+                            {row.variant?.stateLabel ?? "cast voice"} · {row.voiceId}
+                          </div>
+                        </div>
+                        {row.current ? (
+                          <button
+                            onClick={() => void playEnsSide(idx, "current")}
+                            disabled={auditionBusy === `ens:${idx}:current`}
+                            title={`A: the current stored take${row.current.voiceId ? ` by ${row.current.voiceId}` : ""}${row.current.durationMs ? ` · ${(row.current.durationMs / 1000).toFixed(1)}s` : ""}`}
+                            className="h-6 w-6 flex items-center justify-center rounded-md border border-amber-400/25 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors shrink-0 font-bold text-[9px]"
+                          >
+                            {auditionBusy === `ens:${idx}:current` ? <Loader2 className="h-3 w-3 animate-spin" /> : auditionPlaying === `ens-play-${idx}` ? <Square className="h-2.5 w-2.5" /> : "A"}
+                          </button>
+                        ) : (
+                          <span
+                            title="No stored take of the auditioned line yet - the A side stays empty"
+                            className="h-6 w-6 flex items-center justify-center rounded-md border border-white/8 text-[9px] font-bold text-muted-foreground/50 shrink-0"
+                          >
+                            A
+                          </span>
+                        )}
+                        <button
+                          onClick={() => void playEnsSide(idx, "proposed")}
+                          disabled={auditionBusy === `ens:${idx}:proposed`}
+                          title={`B: the proposed read - ${row.voiceId}${row.durationMs ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}`}
+                          className="h-6 w-6 flex items-center justify-center rounded-md border border-violet-400/25 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20 transition-colors shrink-0 font-bold text-[9px]"
+                        >
+                          {auditionBusy === `ens:${idx}:proposed` ? <Loader2 className="h-3 w-3 animate-spin" /> : auditionPlaying === `ens-play-${idx}` ? <Square className="h-2.5 w-2.5" /> : "B"}
+                        </button>
+                        {row.current && (
+                          <button
+                            onClick={() => void playEnsCompare(idx)}
+                            disabled={auditionBusy === `ens-ab:${idx}`}
+                            title={`A/B: current take first (${row.current.voiceId ?? "unknown voice"}), then the proposed ${row.voiceId} read`}
+                            className="h-6 w-6 flex items-center justify-center rounded-md border border-amber-400/25 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20 transition-colors shrink-0"
+                          >
+                            {auditionBusy === `ens-ab:${idx}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Headphones className="h-2.5 w-2.5" />}
+                          </button>
+                        )}
+                        <span className="text-[9px] font-mono text-muted-foreground truncate flex-1">
+                          &quot;{row.text}&quot;
+                        </span>
+                      </div>
+                    ))}
+                    {ensSkips.length > 0 && (
+                      <p className="text-[9px] font-mono text-amber-300/90">
+                        skipped: {ensSkips.map((s) => `${s.entry} (${s.reason})`).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {auditionMsg && (
               <p className="text-[10px] font-mono text-cyan-300/90">{auditionMsg}</p>
             )}

@@ -17,6 +17,32 @@ function safeSegments(json: string): Array<{ frac: number; kind: "auto" | "state
   }
 }
 
+type VersionEntry = { version: number; segments: Array<{ frac: number; kind: "auto" | "state" }>; note: string; at: string };
+
+function safeVersions(json: string): VersionEntry[] {
+  try {
+    const v = JSON.parse(json);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((e) => e && typeof e === "object" && Number.isFinite(Number(e.version)) && Array.isArray(e.segments))
+      .map((e) => {
+        // entries carry the shape as an array; tolerate a raw JSON string encoding
+        let segments = e.segments;
+        if (typeof segments === "string") {
+          try { segments = JSON.parse(segments); } catch { segments = []; }
+        }
+        return {
+          version: Number(e.version),
+          segments: safeSegments(JSON.stringify(segments)),
+          note: typeof e.note === "string" ? e.note : "",
+          at: typeof e.at === "string" ? e.at : "",
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
@@ -35,6 +61,8 @@ export async function GET(req: Request) {
       segments: safeSegments(r.segments),
       scope: r.scope,
       projectId: r.projectId,
+      version: r.version,
+      versions: safeVersions(r.versions),
     })),
   );
 }

@@ -527,7 +527,7 @@ async function arcTemplateRegistry(
     }
     if (segs) {
       registry.push({
-        template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs },
+        template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs, version: row.version },
         source: row.scope === "STUDIO" ? "studio" : "production",
       });
     }
@@ -535,9 +535,11 @@ async function arcTemplateRegistry(
   return registry;
 }
 
-/** "(production template)" / "(studio template)" marker for tool-facing strings. */
-function templateSourceTag(source: TemplateSource): string {
-  return source === "production" ? " (production template)" : source === "studio" ? " (studio template)" : "";
+/** "(production template)" / "(studio template)" marker for tool-facing strings; saved shapes at v2+ carry their version (" (production template v2)"). */
+function templateSourceTag(source: TemplateSource, version?: number): string {
+  const base = source === "production" ? "production template" : source === "studio" ? "studio template" : "";
+  if (!base) return "";
+  return version != null && version >= 2 ? ` (${base} v${version})` : ` (${base})`;
 }
 
 /**
@@ -575,7 +577,7 @@ async function resolveTemplateForApply(
       if (!segs) {
         return { error: `Saved template '${row.name}' has a malformed shape in the database - re-save it from the Arc templates dialog.` };
       }
-      return { template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs }, source: row.scope === "STUDIO" ? "studio" : "production" };
+      return { template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs, version: row.version }, source: row.scope === "STUDIO" ? "studio" : "production" };
     }
   }
   const registry = [
@@ -649,7 +651,7 @@ async function applyResolvedTemplate(
   for (let i = 0; i < rangeShots.length; i += 1) {
     if (stateShotIds.has(rangeShots[i].id)) touched.push(rangeShots[i].label);
   }
-  const sourceTag = templateSourceTag(templateSource);
+  const sourceTag = templateSourceTag(templateSource, template.version);
   await db.productionEvent.create({
     data: {
       projectId,
@@ -821,7 +823,7 @@ async function applyEnsembleTemplate(
     await db.shot.update({ where: { id: rangeShots[i].id }, data: { dialogue: serializeDialogue(parsed[i].lines) } });
   }
 
-  const sourceTag = templateSourceTag(templateSource);
+  const sourceTag = templateSourceTag(templateSource, template.version);
   const engaged = outcomes.filter((o) => o.kind !== "skipped").map((o) => o.name);
   await db.productionEvent.create({
     data: {
@@ -1797,7 +1799,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const registry = await arcTemplateRegistry(projectId);
         const matches = matchArcTemplates(prose, registry.map((r) => r.template));
         const sourceOf = new Map(registry.map((r) => [r.template.id, r.source]));
-        const tag = (t: ArcTemplate) => `"${t.name}"${templateSourceTag(sourceOf.get(t.id) ?? "built-in")}`;
+        const tag = (t: ArcTemplate) => `"${t.name}"${templateSourceTag(sourceOf.get(t.id) ?? "built-in", t.version)}`;
         const best = matches[0];
         const strongMatch = Boolean(best && best.score >= 3);
         const chName = String(args.characterName ?? "").trim();

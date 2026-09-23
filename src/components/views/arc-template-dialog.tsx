@@ -14,11 +14,11 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Building2, Loader2, Plus, Save, Shapes, Trash2 } from "lucide-react";
+import { Building2, History, Loader2, Plus, RefreshCw, Save, Shapes, Trash2 } from "lucide-react";
 import { api, type ArcTemplateRow } from "@/lib/api-client";
 import { parseDialogue, serializeDialogue } from "@/lib/comic/dialogue";
 import {
-  ARC_TEMPLATES, applyArcTemplate, planTemplateAssignment,
+  ARC_TEMPLATES, applyArcTemplate, formatTemplateShape, planTemplateAssignment,
   type ArcTemplate, type TemplateShotInput,
 } from "@/lib/comic/arc-templates";
 import { Button } from "@/components/ui/button";
@@ -74,6 +74,9 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
   const [speaker, setSpeaker] = useState<string>("");
   const [stateLabel, setStateLabel] = useState<string>("");
   const [target, setTarget] = useState<string>("__episode__");
+  // versioning: replaced-shape history for the selected saved template + the last update notice
+  const [showHistory, setShowHistory] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const speakers = useMemo(
     () => characters.filter((c) => c.states.length > 0),
@@ -101,6 +104,8 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
   const openDialog = () => {
     setOpen(true);
     setError(null);
+    setNotice(null);
+    setShowHistory(false);
     void api
       .listArcTemplates(projectId)
       .then((rows) => setTemplates(rows))
@@ -165,6 +170,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     if (!canSave || !template) return;
     setSaving(true);
     setError(null);
+    setNotice(null);
     try {
       const segs = template.segments.map((s) => ({ frac: Math.round(s.frac * 1000) / 1000, kind: s.kind }));
       const { id } = await api.createArcTemplate({ projectId, name: saveName.trim(), description: saveDesc.trim() || undefined, scope: saveScope, segments: segs });
@@ -194,6 +200,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
   const removeTemplate = async (row: ArcTemplateRow) => {
     if (!window.confirm(`Delete the saved template "${row.name}"${row.scope === "STUDIO" ? " from the studio library (every production loses it)" : ""}? It disappears from this dialog and from DSH's registry.`)) return;
     setError(null);
+    setNotice(null);
     try {
       await api.deleteArcTemplate(row.id);
       const rows = await api.listArcTemplates(projectId);
@@ -201,6 +208,35 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
       if (templateId === `user:${row.id}`) setTemplateId(ARC_TEMPLATES[0].id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete the template");
+    }
+  };
+
+  // shape identity at 3 decimals: whether the currently viewed shape differs from a saved row
+  const shapeKey = (segs: Array<{ frac: number; kind: string }> | undefined) =>
+    JSON.stringify((segs ?? []).map((s) => ({ frac: Math.round(s.frac * 1000) / 1000, kind: s.kind })));
+  const shapeDiffers = selectedSaved
+    ? shapeKey(template?.segments) !== shapeKey(selectedSaved.segments)
+    : false;
+
+  /** VERSIONING: overwrite a saved template's shape with the one currently viewed - the replaced shape lands in its history with a migration note, the version bumps. */
+  const updateTemplateShape = async () => {
+    if (!selectedSaved || !template) return;
+    const note = window.prompt(
+      `Migration note for the history of "${selectedSaved.name}" (optional):`,
+      `replaced ${formatTemplateShape(selectedSaved.segments)}`,
+    );
+    if (note === null) return; // cancelled
+    setError(null);
+    setNotice(null);
+    try {
+      const segs = template.segments.map((s) => ({ frac: Math.round(s.frac * 1000) / 1000, kind: s.kind }));
+      const res = await api.patchArcTemplate(selectedSaved.id, { segments: segs, note: note.trim() || undefined });
+      const rows = await api.listArcTemplates(projectId);
+      setTemplates(rows);
+      setShowHistory(true);
+      setNotice(`"${selectedSaved.name}" updated to v${res.version} - the replaced shape is archived in its history; future applies land the new shape`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update the template");
     }
   };
 
@@ -247,7 +283,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                     <SelectGroup>
                       <SelectLabel className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Studio library (shared across productions)</SelectLabel>
                       {studioTemplates.map((t) => (
-                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}</SelectItem>
+                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}{t.version >= 2 ? ` · v${t.version}` : ""}</SelectItem>
                       ))}
                     </SelectGroup>
                   )}
@@ -255,7 +291,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                     <SelectGroup>
                       <SelectLabel className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Production templates (saved)</SelectLabel>
                       {productionTemplates.map((t) => (
-                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}</SelectItem>
+                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}{t.version >= 2 ? ` · v${t.version}` : ""}</SelectItem>
                       ))}
                     </SelectGroup>
                   )}
@@ -268,33 +304,73 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
               {template && <ShapeBar template={template} stateLabel={stateLabel || "state"} />}
               {template && <p className="text-[10px] leading-snug text-muted-foreground">{template.description}</p>}
               {selectedSaved && (
-                <div className="flex items-center justify-between gap-2 rounded border border-violet-400/25 bg-violet-400/[0.06] px-2 py-1">
-                  <span className="text-[10px] text-violet-200">
-                    {selectedSaved.scope === "STUDIO"
-                      ? "Studio library: shared with every production on this lot - DSH matches and applies it on any show."
-                      : "Saved on this production - DSH applies it by name and matches it against prose."}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    <Button
-                      size="sm" variant="ghost"
-                      className="h-5 px-1.5 text-[9px] text-violet-200/80 hover:bg-violet-400/10 hover:text-violet-100"
-                      title={selectedSaved.scope === "STUDIO"
-                        ? "Move this template out of the studio library and back onto this production only"
-                        : "Share this template with every production: move it into the studio library"}
-                      onClick={() => void moveTemplate(selectedSaved, selectedSaved.scope === "STUDIO" ? "PROJECT" : "STUDIO")}
-                    >
-                      <Building2 className="h-3 w-3 mr-0.5" />
-                      {selectedSaved.scope === "STUDIO" ? "make private" : "to studio library"}
-                    </Button>
-                    <Button
-                      size="sm" variant="ghost"
-                      className="h-5 w-5 p-0 text-rose-300 hover:bg-rose-400/10 hover:text-rose-200"
-                      title={`Delete the saved template "${selectedSaved.name}"${selectedSaved.scope === "STUDIO" ? " from the studio library" : ""}`}
-                      onClick={() => void removeTemplate(selectedSaved)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </span>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2 rounded border border-violet-400/25 bg-violet-400/[0.06] px-2 py-1">
+                    <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-violet-200">
+                      {selectedSaved.version >= 2 && (
+                        <span className="shrink-0 rounded-sm bg-violet-400/25 px-1 font-mono text-[9px] font-bold text-violet-100" title="Shape version - bumped every time the saved shape is updated">v{selectedSaved.version}</span>
+                      )}
+                      <span className="min-w-0 truncate">
+                        {selectedSaved.scope === "STUDIO"
+                          ? "Studio library: shared with every production on this lot - DSH matches and applies it on any show."
+                          : "Saved on this production - DSH applies it by name and matches it against prose."}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {shapeDiffers && (
+                        <Button
+                          size="sm" variant="ghost"
+                          className="h-5 px-1.5 text-[9px] text-violet-200/80 hover:bg-violet-400/10 hover:text-violet-100"
+                          title={`Overwrite this saved template's shape with the one currently viewed (${formatTemplateShape(template?.segments ?? [])}) - the replaced shape is archived in its history and the version bumps`}
+                          onClick={() => void updateTemplateShape()}
+                        >
+                          <RefreshCw className="h-3 w-3 mr-0.5" />
+                          update to this shape
+                        </Button>
+                      )}
+                      {selectedSaved.versions.length > 0 && (
+                        <Button
+                          size="sm" variant="ghost"
+                          className="h-5 px-1.5 text-[9px] text-violet-200/80 hover:bg-violet-400/10 hover:text-violet-100"
+                          title="Show the replaced shapes this template went through (migration notes included)"
+                          onClick={() => setShowHistory((v) => !v)}
+                        >
+                          <History className="h-3 w-3 mr-0.5" />
+                          history ({selectedSaved.versions.length})
+                        </Button>
+                      )}
+                      <Button
+                        size="sm" variant="ghost"
+                        className="h-5 px-1.5 text-[9px] text-violet-200/80 hover:bg-violet-400/10 hover:text-violet-100"
+                        title={selectedSaved.scope === "STUDIO"
+                          ? "Move this template out of the studio library and back onto this production only"
+                          : "Share this template with every production: move it into the studio library"}
+                        onClick={() => void moveTemplate(selectedSaved, selectedSaved.scope === "STUDIO" ? "PROJECT" : "STUDIO")}
+                      >
+                        <Building2 className="h-3 w-3 mr-0.5" />
+                        {selectedSaved.scope === "STUDIO" ? "make private" : "to studio library"}
+                      </Button>
+                      <Button
+                        size="sm" variant="ghost"
+                        className="h-5 w-5 p-0 text-rose-300 hover:bg-rose-400/10 hover:text-rose-200"
+                        title={`Delete the saved template "${selectedSaved.name}"${selectedSaved.scope === "STUDIO" ? " from the studio library" : ""}`}
+                        onClick={() => void removeTemplate(selectedSaved)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </span>
+                  </div>
+                  {showHistory && selectedSaved.versions.length > 0 && (
+                    <div className="space-y-0.5 rounded border border-white/10 bg-black/25 px-2 py-1.5">
+                      <div className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Shape history (replaced shapes, newest first)</div>
+                      {selectedSaved.versions.map((e) => (
+                        <div key={e.version} className="text-[10px] font-mono leading-snug text-muted-foreground">
+                          <span className="font-bold text-violet-300">v{e.version}</span> {formatTemplateShape(e.segments)}
+                          {e.note ? <span className="text-foreground/70"> - {e.note}</span> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -455,6 +531,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
               />
             </div>
 
+            {notice && <p className="text-[10px] font-mono text-teal-300">{notice}</p>}
             {error && <p className="text-[11px] text-rose-300">{error}</p>}
           </div>
 

@@ -4,14 +4,15 @@
 // fine-tuning. The compiled LoRA directive shown here is the client
 // mirror of src/lib/ai/art.ts → shotLoraDirective().
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Route, SlidersHorizontal, Users, Zap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Play, Route, SlidersHorizontal, Square, Users, Zap } from "lucide-react";
 import { api, type ArtistRow, type SceneWithShots, type ShotRow, type StyleLoraRow } from "@/lib/api-client";
 import { parseDialogue } from "@/lib/comic/dialogue";
 import {
   arcSpansForShot, computeArcSpans, describeArcPosition, ensembleGroupSizes, formatArcRange,
   groupEnsembleSpans, type ArcSpan,
 } from "@/lib/comic/arcs";
+import { buildArcTakes, mergeArcTakes, type ArcPlaybackShot, type ArcTakeItem } from "@/lib/comic/arc-playback";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -35,11 +36,28 @@ type InspectorArcCard =
   | { kind: "single"; arc: InspectorArc }
   | { kind: "ensemble"; size: number; arcs: InspectorArc[] };
 
+/** Stable key for one arc span (playback queues and playing state are keyed by it). */
+function arcKey(a: ArcSpan): string {
+  return `${a.speakerKey}:${a.state}:${a.startShotId}`;
+}
+
 /**
  * One arc card: violet when it stands alone, inset teal-tinted when
- * it renders inside an ensemble cluster.
+ * it renders inside an ensemble cluster. The play button queues the
+ * arc's STORED takes in story order - a quick audition of the beat's
+ * progression without touching the stems.
  */
-function InspectorArcCard({ a, shotDialogue, inset }: { a: InspectorArc; shotDialogue: string | null | undefined; inset?: boolean }) {
+function InspectorArcCard({
+  a, shotDialogue, inset, takeCount, playing, onPlay, onStop,
+}: {
+  a: InspectorArc;
+  shotDialogue: string | null | undefined;
+  inset?: boolean;
+  takeCount: number;
+  playing: boolean;
+  onPlay: () => void;
+  onStop: () => void;
+}) {
   const arcLines = parseDialogue(shotDialogue).filter(
     (l) => l.speaker.trim().toLowerCase() === a.speakerKey && (l.state ?? null) === a.state
   );
@@ -56,6 +74,28 @@ function InspectorArcCard({ a, shotDialogue, inset }: { a: InspectorArc; shotDia
         {a.crossesScene && (
           <span className="px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase bg-violet-400/25 text-violet-200">cross-scene</span>
         )}
+        <span className="ml-auto flex items-center gap-1 shrink-0">
+          <span className="text-[9px] font-mono text-muted-foreground" title="Rendered takes on this arc's lines">
+            {takeCount} take{takeCount === 1 ? "" : "s"}
+          </span>
+          <button
+            onClick={playing ? onStop : onPlay}
+            disabled={takeCount === 0}
+            title={takeCount === 0
+              ? "No rendered takes on this arc's lines yet - render or re-render the lines first"
+              : playing
+                ? "Stop the arc playback"
+                : `Arc playback: hear this arc's ${takeCount} stored take${takeCount === 1 ? "" : "s"} in sequence (story order)`}
+            className={cn(
+              "h-6 w-6 flex items-center justify-center rounded-md border transition-colors",
+              takeCount === 0
+                ? "border-white/8 text-muted-foreground/40"
+                : "border-cyan-400/25 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20",
+            )}
+          >
+            {playing ? <Square className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+          </button>
+        </span>
       </div>
       <div className="text-[10px] font-mono text-muted-foreground">
         {formatArcRange(a)} · {a.lineCount} line{a.lineCount === 1 ? "" : "s"} across {a.shotCount} shot{a.shotCount === 1 ? "" : "s"} · {describeArcPosition(a.startsHere, a.endsHere)}
@@ -88,6 +128,11 @@ export function PanelInspectorDialog({
   const [strength, setStrength] = useState<number>(shot.loraStrength ?? shot.lora?.weight ?? 0.8);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // arc playback: one sequential player for the whole dialog; the key
+  // names the card currently playing, the token cancels the queue
+  const playTokenRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [arcPlayKey, setArcPlayKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -95,8 +140,37 @@ export function PanelInspectorDialog({
       setLoraId(shot.loraId ?? null);
       setStrength(shot.loraStrength ?? shot.lora?.weight ?? 0.8);
       setError(null);
+    } else {
+      stopArcPlayback();
     }
-  }, [open, shot.artistId, shot.loraId, shot.loraStrength, shot.lora?.weight]);
+  }, [open]);
+
+  function stopArcPlayback() {
+    playTokenRef.current += 1;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setArcPlayKey(null);
+  }
+
+  /** Play a take queue in order; any stop/close/new play bumps the token and ends this loop. */
+  async function playArcTakes(key: string, takes: ArcTakeItem[]) {
+    stopArcPlayback();
+    const token = playTokenRef.current;
+    setArcPlayKey(key);
+    for (const t of takes) {
+      if (playTokenRef.current !== token) return;
+      await new Promise<void>((resolve) => {
+        const audio = new Audio(t.url);
+        audioRef.current = audio;
+        const done = () => resolve();
+        audio.onended = done;
+        audio.onerror = done;
+        audio.onpause = done; // stop() pauses: resolve instead of hanging
+        void audio.play().catch(done);
+      });
+    }
+    if (playTokenRef.current === token) setArcPlayKey(null);
+  }
 
   const selectedLora = loras.find((l) => l.id === loraId) ?? null;
   const directive = compileLoraDirective(selectedLora, loraId ? strength : null);
@@ -145,6 +219,52 @@ export function PanelInspectorDialog({
     });
   }, [episodeScenes, shot.id]);
 
+  // ordered episode shots with their audio cues: the raw material for
+  // arc playback queues (buildArcTakes matches takes to lines by label)
+  const playbackShots = useMemo<ArcPlaybackShot[]>(
+    () =>
+      (episodeScenes ?? []).flatMap((sc) =>
+        [...sc.shots]
+          .sort((a, b) => a.number - b.number)
+          .map((sh) => ({
+            id: sh.id,
+            sceneNumber: sc.number,
+            number: sh.number,
+            dialogue: sh.dialogue ?? null,
+            audioCues: (sh.audioCues ?? []).map((c) => ({
+              kind: c.kind,
+              label: c.label,
+              voiceUrl: c.voiceUrl,
+              voiceDurationMs: c.voiceDurationMs,
+              voiceActor: c.voiceActor,
+              voiceStateLabel: c.voiceStateLabel,
+            })),
+          })),
+      ),
+    [episodeScenes],
+  );
+
+  // stored-take queues per arc card: single arcs get their own queue,
+  // ensemble clusters get a merged story-order queue (Play beat) and
+  // every member keeps a solo queue
+  const takesByKey = useMemo(() => {
+    const map = new Map<string, ArcTakeItem[]>();
+    for (const card of arcCards) {
+      if (card.kind === "single") {
+        const k = arcKey(card.arc);
+        if (!map.has(k)) map.set(k, buildArcTakes(card.arc, playbackShots));
+      } else {
+        for (const a of card.arcs) {
+          const k = arcKey(a);
+          if (!map.has(k)) map.set(k, buildArcTakes(a, playbackShots));
+        }
+        const ensKey = `beat:${card.arcs.map((a) => a.speakerKey).join(":")}`;
+        map.set(ensKey, mergeArcTakes(card.arcs, playbackShots));
+      }
+    }
+    return map;
+  }, [arcCards, playbackShots]);
+
   async function save() {
     setSaving(true);
     setError(null);
@@ -192,9 +312,13 @@ export function PanelInspectorDialog({
                   {arcCards.map((card) =>
                     card.kind === "single" ? (
                       <InspectorArcCard
-                        key={`${card.arc.speakerKey}:${card.arc.state}:${card.arc.startShotId}`}
+                        key={arcKey(card.arc)}
                         a={card.arc}
                         shotDialogue={shot.dialogue}
+                        takeCount={takesByKey.get(arcKey(card.arc))?.length ?? 0}
+                        playing={arcPlayKey === arcKey(card.arc)}
+                        onPlay={() => void playArcTakes(arcKey(card.arc), takesByKey.get(arcKey(card.arc)) ?? [])}
+                        onStop={stopArcPlayback}
                       />
                     ) : (
                       <div
@@ -206,13 +330,46 @@ export function PanelInspectorDialog({
                           <span className="text-[10px] text-teal-200/80">
                             {card.size} speaker{card.size === 1 ? "" : "s"} in parallel · {card.arcs.length} arc{card.arcs.length === 1 ? "" : "s"} on this shot
                           </span>
+                          {(() => {
+                            const beatKey = `beat:${card.arcs.map((a) => a.speakerKey).join(":")}`;
+                            const beatTakes = takesByKey.get(beatKey) ?? [];
+                            return (
+                              <span className="ml-auto flex items-center gap-1 shrink-0">
+                                <span className="text-[9px] font-mono text-teal-200/70">
+                                  {beatTakes.length} take{beatTakes.length === 1 ? "" : "s"} merged
+                                </span>
+                                <button
+                                  onClick={arcPlayKey === beatKey ? stopArcPlayback : () => void playArcTakes(beatKey, beatTakes)}
+                                  disabled={beatTakes.length === 0}
+                                  title={beatTakes.length === 0
+                                    ? "No rendered takes on this beat's lines yet"
+                                    : arcPlayKey === beatKey
+                                      ? "Stop the beat playback"
+                                      : `Play the WHOLE beat: all ${card.arcs.length} speakers' takes merged in story order (${beatTakes.length} takes)`}
+                                  className={cn(
+                                    "h-6 rounded-md border px-2 text-[9px] font-bold flex items-center gap-1 transition-colors",
+                                    beatTakes.length === 0
+                                      ? "border-white/8 text-muted-foreground/40"
+                                      : "border-teal-400/30 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20",
+                                  )}
+                                >
+                                  {arcPlayKey === beatKey ? <Square className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+                                  play beat
+                                </button>
+                              </span>
+                            );
+                          })()}
                         </div>
                         {card.arcs.map((a) => (
                           <InspectorArcCard
-                            key={`${a.speakerKey}:${a.state}:${a.startShotId}`}
+                            key={arcKey(a)}
                             a={a}
                             shotDialogue={shot.dialogue}
                             inset
+                            takeCount={takesByKey.get(arcKey(a))?.length ?? 0}
+                            playing={arcPlayKey === arcKey(a)}
+                            onPlay={() => void playArcTakes(arcKey(a), takesByKey.get(arcKey(a)) ?? [])}
+                            onStop={stopArcPlayback}
                           />
                         ))}
                       </div>

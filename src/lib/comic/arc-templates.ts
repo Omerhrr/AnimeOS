@@ -26,6 +26,8 @@ export interface ArcTemplate {
   name: string;
   description: string;
   segments: ArcTemplateSegment[];
+  /** Shape version of a SAVED template (built-ins have none): 1 = as saved, 2+ = updated. */
+  version?: number;
 }
 
 export const ARC_TEMPLATES: ArcTemplate[] = [

@@ -26,6 +26,42 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
     data.segments = JSON.stringify(segments);
   }
+  // Shape versioning: when the PATCH actually moves the shape, the
+  // replaced one is archived into `versions` (newest-first) with a
+  // migration note and the version bumps - earlier applies stay
+  // explainable against the shape they were stamped with. A PATCH
+  // that re-sends the same shape is a no-op (no bump, no history).
+  let bumped = false;
+  if (data.segments !== undefined) {
+    const row = await db.arcTemplate.findUnique({ where: { id } });
+    if (!row) return NextResponse.json({ error: "Arc template not found" }, { status: 404 });
+    const nextShape = String(data.segments);
+    if (nextShape !== row.segments) {
+      let history: Array<{ version: number; segments: string; note: string; at: string }> = [];
+      try {
+        const parsed = JSON.parse(row.versions);
+        if (Array.isArray(parsed)) history = parsed;
+      } catch {
+        history = [];
+      }
+      const note = body.note ? String(body.note).trim().slice(0, 200) : "";
+      let oldSegments: unknown = row.segments;
+      try {
+        oldSegments = JSON.parse(row.segments); // history stores the SHAPE, not its JSON encoding
+      } catch {
+        oldSegments = [];
+      }
+      history.unshift({
+        version: row.version,
+        segments: oldSegments,
+        note: note || `shape moved on update (v${row.version} -> v${row.version + 1})`,
+        at: new Date().toISOString(),
+      });
+      data.versions = JSON.stringify(history);
+      data.version = row.version + 1;
+      bumped = true;
+    }
+  }
   if (body.scope !== undefined) {
     const scope = String(body.scope).trim().toUpperCase();
     if (scope === "STUDIO") {
@@ -56,7 +92,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   try {
     const row = await db.arcTemplate.update({ where: { id }, data });
-    return NextResponse.json({ id: row.id });
+    return NextResponse.json({ id: row.id, version: row.version, bumped });
   } catch {
     return NextResponse.json({ error: "Arc template not found" }, { status: 404 });
   }
