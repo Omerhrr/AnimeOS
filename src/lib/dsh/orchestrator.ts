@@ -78,8 +78,10 @@ export async function runDshTurn(projectId: string, userMessage: string): Promis
         result: outcome.result,
         status: outcome.status,
         // a variant bind renders an audition preview of the new
-        // performance; keep it on the trace so the console can play it
+        // performance; an ensemble apply renders ONE read per engaged
+        // speaker - keep both on the trace so the console can play them
         ...(outcome.audition ? { audition: outcome.audition } : {}),
+        ...(outcome.ensembleAudition ? { ensembleAudition: outcome.ensembleAudition } : {}),
       });
       await db.productionEvent.create({
         data: {

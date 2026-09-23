@@ -196,6 +196,12 @@ export async function currentTakeForLine(
  * stems, that take rides the preview as the current side, so the
  * creator hears the OLD read next to the NEW one before committing
  * to a re-render.
+ *
+ * `text` pins the read to an EXPLICIT line (the ensemble apply passes
+ * each speaker's first line stamped into the state, so the audition is
+ * the exact line the new direction will re-render); `filePrefix`
+ * namespaces the saved WAV ("variant" for binds, "arc" for ensemble
+ * applies) so the two flows never clobber each other's files.
  */
 export async function renderVariantAudition(opts: {
   projectId: string;
@@ -206,6 +212,8 @@ export async function renderVariantAudition(opts: {
   deliveryId: DeliveryId;
   speedHint?: number | null;
   pitchHint?: number | null;
+  text?: string;
+  filePrefix?: string;
 }): Promise<AuditionPreview | null> {
   try {
     const rendered = await renderAudition({
@@ -215,12 +223,13 @@ export async function renderVariantAudition(opts: {
       deliveryId: opts.deliveryId,
       speedHint: opts.speedHint,
       pitchHint: opts.pitchHint,
+      text: opts.text,
     });
     if (rendered.wav.length < 100) return null;
 
     const dir = path.join(process.cwd(), "public", "auditions");
     await mkdir(dir, { recursive: true });
-    const file = `variant-${opts.stateId}.wav`;
+    const file = `${opts.filePrefix ?? "variant"}-${opts.stateId}.wav`;
     await writeFile(path.join(dir, file), rendered.wav);
 
     // A/B pair: attach the stored take of the same line when one exists
@@ -234,7 +243,7 @@ export async function renderVariantAudition(opts: {
       mimeType: "audio/wav",
       durationMs: rendered.durationMs,
       text: rendered.text,
-      source: rendered.source === "character line" ? "character line" : "sample",
+      source: rendered.source,
       voiceId: rendered.voiceId,
       deliveryId: rendered.deliveryId,
       speed: rendered.targetSpeed,

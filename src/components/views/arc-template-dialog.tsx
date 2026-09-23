@@ -14,15 +14,16 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Building2, History, Loader2, Plus, RefreshCw, Save, Shapes, Trash2 } from "lucide-react";
+import { Building2, GitCompare, History, Loader2, Plus, RefreshCw, Save, Shapes, Trash2 } from "lucide-react";
 import { api, type ArcTemplateRow } from "@/lib/api-client";
 import { parseDialogue, serializeDialogue } from "@/lib/comic/dialogue";
 import {
-  ARC_TEMPLATES, applyArcTemplate, formatTemplateShape, planTemplateAssignment,
+  ARC_TEMPLATES, applyArcTemplate, diffTemplateShapes, formatTemplateShape, planTemplateAssignment,
   type ArcTemplate, type TemplateShotInput,
 } from "@/lib/comic/arc-templates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -77,6 +78,8 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
   // versioning: replaced-shape history for the selected saved template + the last update notice
   const [showHistory, setShowHistory] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // the replaced version currently diffed against the current shape (null = no diff open)
+  const [diffVersion, setDiffVersion] = useState<number | null>(null);
 
   const speakers = useMemo(
     () => characters.filter((c) => c.states.length > 0),
@@ -106,6 +109,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     setError(null);
     setNotice(null);
     setShowHistory(false);
+    setDiffVersion(null);
     void api
       .listArcTemplates(projectId)
       .then((rows) => setTemplates(rows))
@@ -305,12 +309,12 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
               {template && <p className="text-[10px] leading-snug text-muted-foreground">{template.description}</p>}
               {selectedSaved && (
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between gap-2 rounded border border-violet-400/25 bg-violet-400/[0.06] px-2 py-1">
-                    <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-violet-200">
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded border border-violet-400/25 bg-violet-400/[0.06] px-2 py-1">
+                    <span className="flex min-w-0 basis-40 items-center gap-1.5 text-[10px] text-violet-200">
                       {selectedSaved.version >= 2 && (
                         <span className="shrink-0 rounded-sm bg-violet-400/25 px-1 font-mono text-[9px] font-bold text-violet-100" title="Shape version - bumped every time the saved shape is updated">v{selectedSaved.version}</span>
                       )}
-                      <span className="min-w-0 truncate">
+                      <span className="min-w-0">
                         {selectedSaved.scope === "STUDIO"
                           ? "Studio library: shared with every production on this lot - DSH matches and applies it on any show."
                           : "Saved on this production - DSH applies it by name and matches it against prose."}
@@ -361,14 +365,65 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                     </span>
                   </div>
                   {showHistory && selectedSaved.versions.length > 0 && (
-                    <div className="space-y-0.5 rounded border border-white/10 bg-black/25 px-2 py-1.5">
-                      <div className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Shape history (replaced shapes, newest first)</div>
-                      {selectedSaved.versions.map((e) => (
-                        <div key={e.version} className="text-[10px] font-mono leading-snug text-muted-foreground">
-                          <span className="font-bold text-violet-300">v{e.version}</span> {formatTemplateShape(e.segments)}
-                          {e.note ? <span className="text-foreground/70"> - {e.note}</span> : null}
-                        </div>
-                      ))}
+                    <div className="space-y-1 rounded border border-white/10 bg-black/25 px-2 py-1.5">
+                      <div className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Shape history (replaced shapes, newest first - diff any of them against the current shape)</div>
+                      {selectedSaved.versions.map((e) => {
+                        const changes = diffVersion === e.version ? diffTemplateShapes(e.segments, selectedSaved.segments) : null;
+                        return (
+                          <div key={e.version} className="space-y-1">
+                            <div className="flex items-start gap-1.5 text-[10px] font-mono leading-snug text-muted-foreground">
+                              <span className="shrink-0 font-bold text-violet-300">v{e.version}</span>
+                              <span className="min-w-0 flex-1">
+                                {formatTemplateShape(e.segments)}
+                                {e.note ? <span className="text-foreground/70"> - {e.note}</span> : null}
+                              </span>
+                              <button
+                                onClick={() => setDiffVersion((v) => (v === e.version ? null : e.version))}
+                                className={cn(
+                                  "shrink-0 rounded-sm border px-1 py-0.5 text-[9px] font-sans font-bold transition-colors",
+                                  diffVersion === e.version
+                                    ? "border-amber-400/40 bg-amber-400/15 text-amber-200"
+                                    : "border-white/12 bg-white/5 text-muted-foreground hover:text-foreground",
+                                )}
+                                title={`Side-by-side diff: v${e.version} against the current v${selectedSaved.version}`}
+                              >
+                                <GitCompare className="mr-0.5 inline h-2.5 w-2.5" />
+                                diff
+                              </button>
+                            </div>
+                            {diffVersion === e.version && (
+                              <div className="space-y-1.5 rounded border border-violet-400/25 bg-violet-400/[0.05] p-1.5">
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <div className="space-y-1">
+                                    <div className="text-[9px] font-bold text-violet-300">
+                                      v{e.version} <span className="font-sans font-medium text-muted-foreground">(replaced)</span>
+                                    </div>
+                                    <ShapeBar template={{ id: "diff-old", name: "old", description: "", segments: e.segments }} stateLabel={stateLabel || "state"} />
+                                    <div className="font-mono text-[9px] text-muted-foreground">{formatTemplateShape(e.segments)}</div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="text-[9px] font-bold text-violet-200">
+                                      v{selectedSaved.version} <span className="font-sans font-medium text-muted-foreground">(current)</span>
+                                    </div>
+                                    <ShapeBar template={{ id: "diff-new", name: "new", description: "", segments: selectedSaved.segments }} stateLabel={stateLabel || "state"} />
+                                    <div className="font-mono text-[9px] text-muted-foreground">{formatTemplateShape(selectedSaved.segments)}</div>
+                                  </div>
+                                </div>
+                                <div className="space-y-0.5 border-t border-white/8 pt-1">
+                                  <div className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">What moved</div>
+                                  {changes && changes.length > 0 ? (
+                                    changes.map((c, i) => (
+                                      <div key={i} className="font-mono text-[10px] leading-snug text-amber-200/90">· {c}</div>
+                                    ))
+                                  ) : (
+                                    <div className="text-[10px] text-muted-foreground">Shapes match exactly - only the migration note differs.</div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

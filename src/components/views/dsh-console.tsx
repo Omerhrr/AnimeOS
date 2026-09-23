@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send, Loader2, Brain, ListChecks, Wrench, CircleCheck, CircleX, User,
-  Sparkles, ChevronDown, ChevronUp, Volume2,
+  Sparkles, ChevronDown, ChevronUp, Volume2, Play, Square,
 } from "lucide-react";
 import { api, parseTrace, type DshMessageRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import type { TraceStep } from "@/lib/types";
+import type { EnsembleAuditionPreview, TraceStep } from "@/lib/types";
 
 const SUGGESTIONS = [
   "Create a new donghua production called 'Azure Sky' about a cloud-riding swordswoman",
@@ -19,6 +19,112 @@ const SUGGESTIONS = [
   "Check Scene 12 for missing capabilities and fix them",
   "Render a preview of shot 5 in scene 12 and inspect it",
 ];
+
+/**
+ * Same-turn ENSEMBLE audition block: an ensemble apply renders ONE
+ * proposed read per engaged speaker (A/B against the stored take when
+ * one exists) and attaches it to the trace, so the creator hears the
+ * whole beat right where the arc landed. The sequence player walks the
+ * proposed reads in speaker order; any stop/new play/close cancels it.
+ */
+function EnsembleAuditionBlock({ preview }: { preview: EnsembleAuditionPreview }) {
+  const seqRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(
+    () => () => {
+      seqRef.current += 1;
+      audioRef.current?.pause();
+      audioRef.current = null;
+    },
+    [],
+  );
+
+  function stop() {
+    seqRef.current += 1;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setPlaying(false);
+  }
+
+  async function playSequence() {
+    stop();
+    const token = seqRef.current;
+    setPlaying(true);
+    for (const row of preview.speakers) {
+      if (seqRef.current !== token) return;
+      await new Promise<void>((resolve) => {
+        const audio = new Audio(row.url);
+        audioRef.current = audio;
+        const done = () => resolve();
+        audio.onended = done;
+        audio.onerror = done;
+        audio.onpause = done; // stop() pauses: resolve instead of hanging
+        void audio.play().catch(done);
+      });
+    }
+    if (seqRef.current === token) setPlaying(false);
+  }
+
+  return (
+    <div className="rounded-md border border-teal-400/25 bg-teal-400/[0.06] p-2 space-y-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-teal-300">
+          <Volume2 className="h-3 w-3" />
+          Ensemble audition - {preview.speakers.length} speaker{preview.speakers.length === 1 ? "" : "s"}
+        </span>
+        <button
+          onClick={playing ? stop : () => void playSequence()}
+          disabled={preview.speakers.length === 0}
+          title={playing
+            ? "Stop the sequence"
+            : `Play every speaker's proposed read in order (${preview.speakers.length} row${preview.speakers.length === 1 ? "" : "s"})`}
+          className={cn(
+            "ml-auto h-6 rounded-md border px-2 text-[9px] font-bold flex items-center gap-1 transition-colors",
+            preview.speakers.length === 0
+              ? "border-white/8 text-muted-foreground/40"
+              : "border-teal-400/30 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20",
+          )}
+        >
+          {playing ? <Square className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
+          {playing ? "stop" : "play sequence"}
+        </button>
+      </div>
+      {preview.speakers.map((row, i) => (
+        <div key={i} className="space-y-1 rounded border border-white/8 bg-black/25 p-1.5">
+          <div className="flex items-center justify-between gap-2 text-[9px] uppercase tracking-[0.14em] text-teal-200/90">
+            <span className="truncate normal-case tracking-normal font-semibold">{row.characterName}</span>
+            <span className="font-mono tracking-normal normal-case shrink-0">
+              &quot;{row.stateLabel}&quot;
+              {row.speed !== 1 && ` · x${row.speed} pace`}
+              {row.pitch !== 1 && ` · pitch x${row.pitch}`}
+              {row.durationMs ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}
+            </span>
+          </div>
+          {row.current && (
+            <div className="space-y-0.5">
+              <div className="text-[9px] uppercase tracking-[0.14em] text-slate-300/70">current take</div>
+              <audio controls preload="none" src={row.current.url} className="w-full h-8 opacity-90" />
+            </div>
+          )}
+          <div className="space-y-0.5">
+            <div className="text-[9px] uppercase tracking-[0.14em] text-teal-300/90">{row.current ? "proposed" : "audition"}</div>
+            <audio controls preload="none" src={row.url} className="w-full h-8" />
+          </div>
+          <div className="text-[10px] leading-relaxed text-muted-foreground">
+            {row.current && <span className="text-amber-300/90">A/B: current first, then proposed. </span>}
+            <span className="italic">&quot;{row.text}&quot;</span>
+            {` · ${row.source}`}
+          </div>
+        </div>
+      ))}
+      {preview.skipped.length > 0 && (
+        <div className="text-[10px] leading-relaxed text-muted-foreground">Skipped: {preview.skipped.join(" ")}</div>
+      )}
+    </div>
+  );
+}
 
 function TraceBlock({ steps }: { steps: TraceStep[] }) {
   const [open, setOpen] = useState(true);
@@ -72,7 +178,8 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
                   )}
                   <div className="text-[11px] text-foreground/70 whitespace-pre-wrap leading-relaxed">{a.result}</div>
                   {/* same-turn audition proposal: a variant bind renders a preview of the new performance,
-                      paired with the current stored take of the same line when one exists (A/B) */}
+                      paired with the current stored take of the same line when one exists (A/B);
+                      an ensemble apply renders ONE row per engaged speaker plus a sequence player */}
                   {a.audition && (
                     <div className="rounded-md border border-emerald-400/25 bg-emerald-400/[0.06] p-2 space-y-1.5">
                       <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-300">
@@ -111,6 +218,7 @@ function TraceBlock({ steps }: { steps: TraceStep[] }) {
                       </div>
                     </div>
                   )}
+                  {a.ensembleAudition && <EnsembleAuditionBlock preview={a.ensembleAudition} />}
                 </div>
               ))}
             </div>

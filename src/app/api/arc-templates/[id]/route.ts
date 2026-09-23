@@ -37,7 +37,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (!row) return NextResponse.json({ error: "Arc template not found" }, { status: 404 });
     const nextShape = String(data.segments);
     if (nextShape !== row.segments) {
-      let history: Array<{ version: number; segments: string; note: string; at: string }> = [];
+      let history: Array<{ version: number; segments: unknown; note: string; at: string }> = [];
       try {
         const parsed = JSON.parse(row.versions);
         if (Array.isArray(parsed)) history = parsed;

@@ -18,7 +18,7 @@ export interface AuditionPreview {
   mimeType: string;
   durationMs: number | null;
   text: string; // the line that was read
-  source: "character line" | "sample";
+  source: "custom" | "character line" | "sample";
   voiceId: string; // the voice that performed (variant or cast)
   deliveryId: string;
   speed: number; // effective pace incl. state hint
@@ -28,12 +28,24 @@ export interface AuditionPreview {
   current?: AuditionSide | null; // the current stored take of the same line, for A/B (null = nothing to compare)
 }
 
+/**
+ * An ENSEMBLE audition attached to a DSH tool result: one rendered
+ * read per engaged speaker (their first line stamped into the state),
+ * so the creator hears the whole beat in one trace. Each row keeps
+ * the full single-audition shape, including its A/B current side.
+ */
+export interface EnsembleAuditionPreview {
+  speakers: AuditionPreview[];
+  skipped: string[]; // per-speaker render failures ("- Name: reason"), never sinks the apply
+}
+
 export interface TraceAction {
   tool: string;
   args: Record<string, unknown>;
   result: string;
   status: "OK" | "ERROR";
   audition?: AuditionPreview | null; // attached when the call renders an audition preview
+  ensembleAudition?: EnsembleAuditionPreview | null; // attached when an ensemble apply renders one read per speaker
 }
 
 export interface TraceStep {

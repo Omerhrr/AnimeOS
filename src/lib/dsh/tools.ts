@@ -16,7 +16,7 @@ import { renderVariantAudition } from "@/lib/ai/audition";
 import {
   diffEpisodeById, diffProjectEpisodes, reRenderStaleTakes, reRenderStaleAcrossProject,
 } from "@/lib/ai/voice-diff";
-import type { AuditionPreview } from "@/lib/types";
+import type { AuditionPreview, EnsembleAuditionPreview } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
 // DSH PRODUCTION TOOL API (§6/§7)
@@ -327,7 +327,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
-type ActionResult = { status: "OK" | "ERROR"; result: string; audition?: AuditionPreview };
+type ActionResult = { status: "OK" | "ERROR"; result: string; audition?: AuditionPreview; ensembleAudition?: EnsembleAuditionPreview };
 
 async function findProject(projectId: string) {
   const p = await db.project.findUnique({ where: { id: projectId } });
@@ -593,11 +593,20 @@ async function resolveTemplateForApply(
  * (contains, case-insensitive). Shared by apply_arc_template and
  * the one-batch chain inside suggest_arc_template. Error strings
  * are tool-facing and asserted by the E2E suite - do not reword.
+ * The success carry also exposes the state's voice performance
+ * (variant + hints) so the same-turn ensemble audition can render
+ * the EXACT performance the stamped lines will re-render with.
  */
 async function resolveCharacterState(
   ch: { id: string; name: string },
   labelArg: string,
-): Promise<{ label: string } | { error: string }> {
+): Promise<{
+  label: string;
+  stateId: string;
+  voiceVariant: string | null;
+  speedHint: number | null;
+  pitchHint: number | null;
+} | { error: string }> {
   const states = await db.characterState.findMany({
     where: { characterId: ch.id },
     orderBy: [{ episodeNumber: "desc" }, { createdAt: "desc" }],
@@ -609,7 +618,13 @@ async function resolveCharacterState(
   if (!state) {
     return { error: `No state of ${ch.name} matches '${labelArg}'. States: ${states.map((s) => `"${s.label}"${s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}`).join(", ")}.` };
   }
-  return { label: state.label }; // stamp the FULL label so the override stays exact
+  return {
+    label: state.label, // stamp the FULL label so the override stays exact
+    stateId: state.id,
+    voiceVariant: state.voiceVariant,
+    speedHint: state.speedHint,
+    pitchHint: state.pitchHint,
+  };
 }
 
 /**
@@ -731,10 +746,58 @@ function parseEnsembleCharacters(
 
 /** Per-speaker outcome of an ensemble apply, rendered as result lines. */
 type EnsembleOutcome =
-  | { kind: "applied"; name: string; stateLabel: string; stamped: number; lines: number; report: TemplateSegmentReport[] }
+  | {
+      kind: "applied";
+      name: string;
+      stateLabel: string;
+      stamped: number;
+      lines: number;
+      report: TemplateSegmentReport[];
+      /** the first line THIS apply stamped into the state: the same-turn audition reads it */
+      audition?: { stateId: string; voiceVariant: string | null; speedHint: number | null; pitchHint: number | null; text: string };
+    }
   | { kind: "noop-lines"; name: string }
   | { kind: "noop-shape"; name: string; lines: number }
   | { kind: "skipped"; name: string; reason: string };
+
+/**
+ * The same-turn ENSEMBLE audition core: render ONE read per engaged
+ * speaker of the exact line the apply stamped into the state, with
+ * that state's own voice performance (variant or cast voice, register
+ * and speed/pitch hints). A render failure skips that speaker's row
+ * and is reported - it never sinks the apply or the other rows.
+ */
+async function renderEnsembleAudition(
+  projectId: string,
+  rows: Array<{ name: string; stateLabel: string; stateId: string; voiceVariant: string | null; speedHint: number | null; pitchHint: number | null; text: string }>,
+): Promise<EnsembleAuditionPreview> {
+  const speakers: AuditionPreview[] = [];
+  const skipped: string[] = [];
+  for (const row of rows) {
+    try {
+      const voiceId = row.voiceVariant && isVoiceId(row.voiceVariant)
+        ? row.voiceVariant
+        : (await resolveVoiceCast(row.name, projectId)).voiceId;
+      const preview = await renderVariantAudition({
+        projectId,
+        characterName: row.name,
+        stateId: row.stateId,
+        stateLabel: row.stateLabel,
+        voiceId,
+        deliveryId: classifyStateDelivery(row.stateLabel) ?? "NEUTRAL",
+        speedHint: row.speedHint,
+        pitchHint: row.pitchHint,
+        text: row.text,
+        filePrefix: "arc",
+      });
+      if (preview) speakers.push(preview);
+      else skipped.push(`- ${row.name}: audition render failed (the arc is saved)`);
+    } catch {
+      skipped.push(`- ${row.name}: audition render failed (the arc is saved)`);
+    }
+  }
+  return { speakers, skipped };
+}
 
 /**
  * The ENSEMBLE apply core: paint ONE template shape onto SEVERAL
@@ -806,7 +869,35 @@ async function applyEnsembleTemplate(
     totalStamped += stamped;
     if (speakerLines === 0) outcomes.push({ kind: "noop-lines", name: ch.name });
     else if (stamped === 0) outcomes.push({ kind: "noop-shape", name: ch.name, lines: speakerLines });
-    else outcomes.push({ kind: "applied", name: ch.name, stateLabel: stateRes.label, stamped, lines: speakerLines, report });
+    else {
+      // the first line THIS apply stamped into the state (range order):
+      // the same-turn audition reads exactly the line the new
+      // direction will re-render, so its stored take (if any) is the
+      // honest A side
+      let auditionText: string | null = null;
+      outer: for (let i = 0; i < next.length; i += 1) {
+        for (let li = 0; li < next[i].lines.length; li += 1) {
+          const l = next[i].lines[li];
+          if ((l.state ?? null) !== stateRes.label) continue;
+          if (beforeStates[i][li] === stateRes.label) continue;
+          if (l.speaker.trim().toLowerCase() !== ch.name.trim().toLowerCase()) continue;
+          if (!l.text.trim()) continue;
+          auditionText = l.text.trim();
+          break outer;
+        }
+      }
+      outcomes.push({
+        kind: "applied",
+        name: ch.name,
+        stateLabel: stateRes.label,
+        stamped,
+        lines: speakerLines,
+        report,
+        ...(auditionText
+          ? { audition: { stateId: stateRes.stateId, voiceVariant: stateRes.voiceVariant, speedHint: stateRes.speedHint, pitchHint: stateRes.pitchHint, text: auditionText } }
+          : {}),
+      });
+    }
   }
 
   if (outcomes.length > 0 && outcomes.every((o) => o.kind === "skipped")) {
@@ -845,9 +936,27 @@ async function applyEnsembleTemplate(
     result += "No take moved, so no re-render is needed.";
     return { status: "OK", result };
   }
+  // same-turn ENSEMBLE audition: one rendered read per engaged speaker
+  // of the exact line the apply stamped into the state (A/B against
+  // the stored take when one exists), attached to THIS call's result
+  const auditionRows = outcomes.flatMap((o) =>
+    o.kind === "applied" && o.audition
+      ? [{ name: o.name, stateLabel: o.stateLabel, stateId: o.audition.stateId, voiceVariant: o.audition.voiceVariant, speedHint: o.audition.speedHint, pitchHint: o.audition.pitchHint, text: o.audition.text }]
+      : [],
+  );
+  const ensembleAudition = auditionRows.length > 0 ? await renderEnsembleAudition(projectId, auditionRows) : null;
+  if (ensembleAudition) {
+    if (ensembleAudition.speakers.length > 0) {
+      const names = ensembleAudition.speakers.map((s) => `${s.characterName} "${s.stateLabel}"`).join(", ");
+      result += `Ensemble audition attached to this call: ${ensembleAudition.speakers.length} proposed read${ensembleAudition.speakers.length === 1 ? "" : "s"} (${names}) - tell the creator to play the rows (or the sequence) in this trace to hear the new beat before re-rendering. `;
+      if (ensembleAudition.skipped.length > 0) result += `Audition rows skipped: ${ensembleAudition.skipped.join(" ")}. `;
+    } else {
+      result += `Ensemble audition failed to render (the arc is saved) - audition the states from the casting board instead. ${ensembleAudition.skipped.join(" ")}`;
+    }
+  }
   result += "The template carries the shape; the state carries the voice: every stamped line now performs with its variant voice, hints and register.";
   result += await directionImpactFor(range.episode);
-  return { status: "OK", result };
+  return { status: "OK", result, ...(ensembleAudition && ensembleAudition.speakers.length > 0 ? { ensembleAudition } : {}) };
 }
 
 export async function executeTool(projectId: string, name: string, args: Record<string, unknown>): Promise<ActionResult> {
@@ -1811,6 +1920,9 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const wantChain = ensembleChain || singleChain;
         let result = "";
         let chained = false;
+        // the chained apply's same-turn ensemble audition rides the suggest
+        // result too, so the creator hears the beat in the same trace
+        let chainedEnsembleAudition: EnsembleAuditionPreview | undefined;
         if (best && strongMatch) {
           result += `Template match: ${tag(best.template)} scores ${best.score} on the creator's description. Shape: ${formatTemplateShape(best.template.segments)}. `;
           if (best.template.description) result += `${best.template.description} `;
@@ -1823,6 +1935,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
               return { status: "ERROR", result: `Template match: ${tag(best.template)} (shape: ${formatTemplateShape(best.template.segments)}), but the chained apply failed: ${applyRes.result}` };
             }
             chained = true;
+            chainedEnsembleAudition = applyRes.ensembleAudition;
             result += `Applied in this batch: ${applyRes.result} `;
           } else if (singleChain) {
             // ONE-BATCH CHAIN: the matched template is applied in this very call
@@ -1890,7 +2003,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
             ? "No template truly fits? set_state_arc stamps a uniform span, and the creator can save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat."
             : "For a beat this specific: stamp a uniform span with set_state_arc, or save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat and apply in one call by name.";
         }
-        return { status: "OK", result };
+        return { status: "OK", result, ...(chainedEnsembleAudition ? { ensembleAudition: chainedEnsembleAudition } : {}) };
       }
 
       case "apply_arc_template": {

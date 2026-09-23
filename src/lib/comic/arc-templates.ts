@@ -238,6 +238,42 @@ export function formatTemplateShape(segments: ArcTemplateSegment[]): string {
   return segments.map((s) => `${s.kind} ${Math.round(s.frac * 100)}%`).join(" -> ");
 }
 
+/**
+ * Human diff between TWO shapes, position-aligned (segment i of the
+ * old shape against segment i of the new one): fraction moves, kind
+ * flips, added and dropped segments. Empty list = the shapes match
+ * exactly at 3 decimals. Pure display helper for the template
+ * dialog's side-by-side version diff.
+ */
+export function diffTemplateShapes(
+  oldSegs: ArcTemplateSegment[],
+  newSegs: ArcTemplateSegment[],
+): string[] {
+  const pct = (f: number) => `${Math.round(f * 1000) / 10}%`;
+  const lines: string[] = [];
+  const max = Math.max(oldSegs.length, newSegs.length);
+  for (let i = 0; i < max; i += 1) {
+    const o = oldSegs[i];
+    const n = newSegs[i];
+    if (o && n) {
+      const fo = Math.round(o.frac * 1000) / 1000;
+      const fn = Math.round(n.frac * 1000) / 1000;
+      if (o.kind === n.kind && fo === fn) continue;
+      if (o.kind === n.kind) {
+        const delta = Math.round((fn - fo) * 1000) / 10;
+        lines.push(`${o.kind === "state" ? "state" : "auto"} run ${pct(fo)} -> ${pct(fn)} (${delta > 0 ? "+" : ""}${delta})`);
+      } else {
+        lines.push(`segment ${i + 1} flips ${o.kind} -> ${n.kind} (${pct(fo)} -> ${pct(fn)})`);
+      }
+    } else if (o) {
+      lines.push(`${o.kind} segment dropped (${pct(o.frac)})`);
+    } else if (n) {
+      lines.push(`${n.kind} segment added (${pct(n.frac)})`);
+    }
+  }
+  return lines;
+}
+
 // prose-shape signals: what the creator's words imply about the beat
 const STARTS_NORMAL_RE =
   /\b(starts?|begins?|opens?|settles? in|still human|not yet)\b[^.!?]{0,40}?\b(normal|calm|steady|human|themselves|herself|himself|auto|clear)\b/i;
