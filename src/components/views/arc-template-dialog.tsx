@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Save, Shapes, Trash2 } from "lucide-react";
+import { Building2, Loader2, Plus, Save, Shapes, Trash2 } from "lucide-react";
 import { api, type ArcTemplateRow } from "@/lib/api-client";
 import { parseDialogue, serializeDialogue } from "@/lib/comic/dialogue";
 import {
@@ -69,6 +69,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
   ]);
   const [saveName, setSaveName] = useState("");
   const [saveDesc, setSaveDesc] = useState("");
+  const [saveScope, setSaveScope] = useState<"PROJECT" | "STUDIO">("PROJECT");
   const [saving, setSaving] = useState(false);
   const [speaker, setSpeaker] = useState<string>("");
   const [stateLabel, setStateLabel] = useState<string>("");
@@ -80,7 +81,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
   );
   const activeSpeaker = speakers.find((c) => c.name === speaker) ?? null;
 
-  // the effective shape: custom layout, a saved production template, or a built-in
+  // the effective shape: custom layout, a saved production or studio template, or a built-in
   const template: ArcTemplate | null = useMemo(() => {
     if (templateId === CUSTOM_ID) {
       const segs = customSegs.filter((s) => s.pct > 0);
@@ -93,6 +94,8 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     return ARC_TEMPLATES.find((t) => t.id === templateId) ?? ARC_TEMPLATES[0];
   }, [templateId, templates, customSegs]);
 
+  const productionTemplates = useMemo(() => templates.filter((t) => t.scope === "PROJECT"), [templates]);
+  const studioTemplates = useMemo(() => templates.filter((t) => t.scope === "STUDIO"), [templates]);
   const selectedSaved = templates.find((t) => `user:${t.id}` === templateId) ?? null;
 
   const openDialog = () => {
@@ -164,7 +167,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     setError(null);
     try {
       const segs = template.segments.map((s) => ({ frac: Math.round(s.frac * 1000) / 1000, kind: s.kind }));
-      const { id } = await api.createArcTemplate({ projectId, name: saveName.trim(), description: saveDesc.trim() || undefined, segments: segs });
+      const { id } = await api.createArcTemplate({ projectId, name: saveName.trim(), description: saveDesc.trim() || undefined, scope: saveScope, segments: segs });
       const rows = await api.listArcTemplates(projectId);
       setTemplates(rows);
       setTemplateId(`user:${id}`);
@@ -177,8 +180,19 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     }
   };
 
+  const moveTemplate = async (row: ArcTemplateRow, scope: "PROJECT" | "STUDIO") => {
+    setError(null);
+    try {
+      await api.patchArcTemplate(row.id, scope === "STUDIO" ? { scope: "STUDIO" } : { scope: "PROJECT", projectId });
+      const rows = await api.listArcTemplates(projectId);
+      setTemplates(rows);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to move the template");
+    }
+  };
+
   const removeTemplate = async (row: ArcTemplateRow) => {
-    if (!window.confirm(`Delete the saved template "${row.name}"? It disappears from this dialog and from DSH's registry.`)) return;
+    if (!window.confirm(`Delete the saved template "${row.name}"${row.scope === "STUDIO" ? " from the studio library (every production loses it)" : ""}? It disappears from this dialog and from DSH's registry.`)) return;
     setError(null);
     try {
       await api.deleteArcTemplate(row.id);
@@ -229,10 +243,18 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                       <SelectItem key={t.id} value={t.id} className="text-xs">{t.name}</SelectItem>
                     ))}
                   </SelectGroup>
-                  {templates.length > 0 && (
+                  {studioTemplates.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Studio library (shared across productions)</SelectLabel>
+                      {studioTemplates.map((t) => (
+                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {productionTemplates.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Production templates (saved)</SelectLabel>
-                      {templates.map((t) => (
+                      {productionTemplates.map((t) => (
                         <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}</SelectItem>
                       ))}
                     </SelectGroup>
@@ -246,18 +268,33 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
               {template && <ShapeBar template={template} stateLabel={stateLabel || "state"} />}
               {template && <p className="text-[10px] leading-snug text-muted-foreground">{template.description}</p>}
               {selectedSaved && (
-                <div className="flex items-center justify-between rounded border border-violet-400/25 bg-violet-400/[0.06] px-2 py-1">
+                <div className="flex items-center justify-between gap-2 rounded border border-violet-400/25 bg-violet-400/[0.06] px-2 py-1">
                   <span className="text-[10px] text-violet-200">
-                    Saved on this production - DSH applies it by name and matches it against prose.
+                    {selectedSaved.scope === "STUDIO"
+                      ? "Studio library: shared with every production on this lot - DSH matches and applies it on any show."
+                      : "Saved on this production - DSH applies it by name and matches it against prose."}
                   </span>
-                  <Button
-                    size="sm" variant="ghost"
-                    className="h-5 w-5 p-0 text-rose-300 hover:bg-rose-400/10 hover:text-rose-200"
-                    title={`Delete the saved template "${selectedSaved.name}"`}
-                    onClick={() => void removeTemplate(selectedSaved)}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  <span className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-5 px-1.5 text-[9px] text-violet-200/80 hover:bg-violet-400/10 hover:text-violet-100"
+                      title={selectedSaved.scope === "STUDIO"
+                        ? "Move this template out of the studio library and back onto this production only"
+                        : "Share this template with every production: move it into the studio library"}
+                      onClick={() => void moveTemplate(selectedSaved, selectedSaved.scope === "STUDIO" ? "PROJECT" : "STUDIO")}
+                    >
+                      <Building2 className="h-3 w-3 mr-0.5" />
+                      {selectedSaved.scope === "STUDIO" ? "make private" : "to studio library"}
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-5 w-5 p-0 text-rose-300 hover:bg-rose-400/10 hover:text-rose-200"
+                      title={`Delete the saved template "${selectedSaved.name}"${selectedSaved.scope === "STUDIO" ? " from the studio library" : ""}`}
+                      onClick={() => void removeTemplate(selectedSaved)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </span>
                 </div>
               )}
             </div>
@@ -374,11 +411,29 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
               </div>
             </div>
 
-            {/* save the current shape as a production template */}
+            {/* save the current shape as a reusable template (this production or the studio library) */}
             <div className="space-y-1.5 rounded-lg border border-violet-400/25 bg-violet-400/[0.05] p-2.5">
-              <span className="text-[9px] uppercase tracking-[0.14em] text-violet-200/90">Save this shape as a production template</span>
+              <span className="text-[9px] uppercase tracking-[0.14em] text-violet-200/90">Save this shape as a template</span>
+              <div className="flex gap-1">
+                <button
+                  className={saveScope === "PROJECT" ? "rounded bg-violet-500/80 px-2 py-1 text-[10px] font-bold text-white" : "rounded bg-white/5 px-2 py-1 text-[10px] font-bold text-muted-foreground hover:text-foreground"}
+                  onClick={() => setSaveScope("PROJECT")}
+                  title="Saved shapes stay with this production: they appear in the Shape list here and inside DSH on this show"
+                >
+                  This production
+                </button>
+                <button
+                  className={saveScope === "STUDIO" ? "rounded bg-violet-500/80 px-2 py-1 text-[10px] font-bold text-white" : "rounded bg-white/5 px-2 py-1 text-[10px] font-bold text-muted-foreground hover:text-foreground"}
+                  onClick={() => setSaveScope("STUDIO")}
+                  title="Studio templates are shared with EVERY production: save a house style once, match and apply it on any show"
+                >
+                  Studio library (all productions)
+                </button>
+              </div>
               <p className="text-[10px] leading-snug text-muted-foreground">
-                Saved shapes stay with this production: they appear in the Shape list above and inside DSH (apply_arc_template by name, suggest_arc_template matches them when you describe a beat in prose).
+                {saveScope === "STUDIO"
+                  ? "Studio templates live in the shared library: they appear in the Shape list of every show and inside DSH's registry there (matched against prose, applied by name)."
+                  : "Production templates stay with this show: they appear in the Shape list above and inside DSH (apply_arc_template by name, suggest_arc_template matches them when you describe a beat in prose)."}
               </p>
               <div className="flex gap-1.5">
                 <Input

@@ -346,6 +346,8 @@ export interface ArcTemplateRow {
   name: string;
   description: string | null;
   segments: Array<{ frac: number; kind: "auto" | "state" }>;
+  scope: "PROJECT" | "STUDIO";
+  projectId: string | null;
 }
 
 export interface RenderJobRow {
@@ -435,9 +437,9 @@ export const api = {
   // user-defined arc templates saved per production (reusable beat shapes
   // next to the built-ins: possession spread, full takeover, recovery arc)
   listArcTemplates: (projectId: string) => j<ArcTemplateRow[]>(`/api/arc-templates?projectId=${projectId}`),
-  createArcTemplate: (body: { projectId: string; name: string; description?: string; segments: Array<{ frac: number; kind: "auto" | "state" }> }) =>
+  createArcTemplate: (body: { projectId: string; name: string; description?: string; scope?: "PROJECT" | "STUDIO"; segments: Array<{ frac: number; kind: "auto" | "state" }> }) =>
     j<{ id: string }>("/api/arc-templates", { method: "POST", body: JSON.stringify(body) }),
-  patchArcTemplate: (id: string, body: { name?: string; description?: string | null; segments?: Array<{ frac: number; kind: "auto" | "state" }> }) =>
+  patchArcTemplate: (id: string, body: { name?: string; description?: string | null; scope?: "PROJECT" | "STUDIO"; projectId?: string; segments?: Array<{ frac: number; kind: "auto" | "state" }> }) =>
     j<{ id: string }>(`/api/arc-templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteArcTemplate: (id: string) => j<{ ok: boolean }>(`/api/arc-templates/${id}`, { method: "DELETE" }),
 

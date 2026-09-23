@@ -412,17 +412,24 @@ model DshMessage {
 // (JSON [{frac, kind: "auto" | "state"}], fractions of the
 // speaker's own lines in the range) painted onto a range by
 // apply_arc_template or the Arc templates dialog, next to the
-// built-in shapes. Per production, so a series keeps its own
-// beat vocabulary.
+// built-in shapes. Two scopes: PROJECT templates belong to one
+// production (that series' own beat vocabulary); STUDIO templates
+// live in the studio library (projectId null) and are shared with
+// EVERY production - a shape saved on one show is matchable and
+// applicable on any other.
 model ArcTemplate {
   id          String   @id @default(cuid())
-  projectId   String
+  projectId   String?  // null for studio-library templates shared across productions
+  scope       String   @default("PROJECT") // PROJECT | STUDIO
   name        String
   description String?
   segments    String   // JSON Array<{frac: number, kind: "auto" | "state"}>
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  // DB-level uniqueness for production templates; studio templates
+  // (projectId null) are deduped in the API because SQLite treats
+  // NULLs as distinct in unique indexes.
   @@unique([projectId, name])
 }

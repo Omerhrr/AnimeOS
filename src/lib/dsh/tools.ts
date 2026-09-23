@@ -294,18 +294,25 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "suggest_arc_template",
-    description: "Match a beat the creator described in PROSE to the arc template registry (the built-in shapes PLUS this production's saved templates). Call it BEFORE reaching for set_state_arc when the creator describes a SHAPE in words ('she starts normal, the possession takes hold mid-scene, then it releases') instead of naming a template: the result ranks the registry against their words, names the best match with its segment layout and why it fits, and hands you the apply_arc_template framing to propose in the same turn; when nothing fits it says so and points at set_state_arc or saving a custom shape from the Arc templates dialog.",
+    description: "Match a beat the creator described in PROSE to the arc template registry (the built-in shapes PLUS this production's saved templates PLUS the studio library shared across productions). Call it BEFORE reaching for set_state_arc when the creator describes a SHAPE in words ('she starts normal, the possession takes hold mid-scene, then it releases') instead of naming a template: the result ranks the registry against their words and names the best match with its segment layout and why it fits. ONE-BATCH CHAIN: when the character and state are already known, pass characterName + stateLabel (plus the range args) and a strong match is APPLIED in the very same call - the result carries the match explanation AND the stamped outcome with the direction impact, so the beat lands in one batch with no second round trip. Hold the apply (omit stateLabel) when the state is ambiguous: the result then hands you the apply_arc_template framing to propose instead; when nothing fits it says so and points at set_state_arc or saving a custom shape from the Arc templates dialog.",
     args: {
       description: "string - the creator's own words describing the beat shape",
-      characterName: "string (optional) - when given, the result lists that character's states as stateLabel candidates",
+      characterName: "string (optional) - names the character: the result lists their states as stateLabel candidates, and with stateLabel the matched template is applied in this same call",
+      stateLabel: "string (optional) - with characterName and a strong match, chain the apply into this call: the template's state segments force this state",
+      scope: "string (optional, chained apply only) - \"scene\" (default) or \"episode\", same semantics as apply_arc_template",
+      episodeNumber: "number (optional, chained apply only), episode scope only (defaults to the latest episode with shots)",
+      sceneNumber: "number (optional, chained apply only) - the scene to stamp in, or the start scene for episode scope",
+      shotFrom: "number (optional, chained apply only) - first shot number of the arc",
+      toSceneNumber: "number (optional, chained apply only), episode scope only - the scene the arc ENDS in",
+      shotTo: "number (optional, chained apply only) - last shot number of the arc, inclusive",
     },
   },
   {
     name: "apply_arc_template",
-    description: "Reusable arc template: paint a NAMED beat SHAPE onto a character's lines across a range in one call, instead of one uniform span. Templates (possession spread: auto 25% -> state 50% -> auto 25%; full takeover: auto 15% -> state 70% -> auto 15%; recovery arc: state 60% -> auto 40%, plus the production's own saved templates) are fractions of the speaker's own lines in the range, so the same shape stretches over any beat length - the early lines stay auto, the middle performs with the chosen state (variant voice + hints), the tail releases back. The template carries the shape, you choose the state (stateLabel, matched like set_state_arc). Same range args and scopes as set_state_arc. The result reports the per-segment shape actually stamped plus the episode's direction impact, so offer the re-render in the same turn.",
+    description: "Reusable arc template: paint a NAMED beat SHAPE onto a character's lines across a range in one call, instead of one uniform span. Templates (possession spread: auto 25% -> state 50% -> auto 25%; full takeover: auto 15% -> state 70% -> auto 15%; recovery arc: state 60% -> auto 40%, plus the production's own saved templates AND the studio library shared across productions) are fractions of the speaker's own lines in the range, so the same shape stretches over any beat length - the early lines stay auto, the middle performs with the chosen state (variant voice + hints), the tail releases back. The template carries the shape, you choose the state (stateLabel, matched like set_state_arc). Same range args and scopes as set_state_arc. The result reports the per-segment shape actually stamped plus the episode's direction impact, so offer the re-render in the same turn.",
     args: {
       characterName: "string",
-      template: "string - template name or id: possession spread | full takeover | recovery arc | a template saved in this production",
+      template: "string - template name or id: possession spread | full takeover | recovery arc | a template saved in this production | a studio-library template shared across productions",
       stateLabel: "string - matches a state by name (contains, case-insensitive); drives the template's state segments",
       scope: "\"scene\" (default) or \"episode\" - same semantics as set_state_arc",
       episodeNumber: "number, episode scope only (defaults to the latest episode with shots)",
@@ -493,14 +500,21 @@ async function directionImpactFor(episode: { id: string; number: number } | null
 
 /**
  * The full template registry for a production: the built-in shapes
- * plus every user-defined template saved on the project. Malformed
- * stored shapes are skipped (not fatal) - they simply drop out.
+ * plus every saved template visible from it - the production's own
+ * rows AND the studio library shared across productions (scope
+ * STUDIO, projectId null). Malformed stored shapes are skipped
+ * (not fatal) - they simply drop out.
  */
+type TemplateSource = "built-in" | "production" | "studio";
+
 async function arcTemplateRegistry(
   projectId: string,
-): Promise<Array<{ template: ArcTemplate; source: "built-in" | "production" }>> {
-  const registry: Array<{ template: ArcTemplate; source: "built-in" | "production" }> = ARC_TEMPLATES.map((t) => ({ template: t, source: "built-in" as const }));
-  const rows = await db.arcTemplate.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+): Promise<Array<{ template: ArcTemplate; source: TemplateSource }>> {
+  const registry: Array<{ template: ArcTemplate; source: TemplateSource }> = ARC_TEMPLATES.map((t) => ({ template: t, source: "built-in" as const }));
+  const rows = await db.arcTemplate.findMany({
+    where: { OR: [{ projectId }, { scope: "STUDIO" }] },
+    orderBy: { createdAt: "asc" },
+  });
   for (const row of rows) {
     let segs: ArcTemplate["segments"] | null = null;
     try {
@@ -509,31 +523,45 @@ async function arcTemplateRegistry(
       segs = null;
     }
     if (segs) {
-      registry.push({ template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs }, source: "production" });
+      registry.push({
+        template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs },
+        source: row.scope === "STUDIO" ? "studio" : "production",
+      });
     }
   }
   return registry;
 }
 
+/** "(production template)" / "(studio template)" marker for tool-facing strings. */
+function templateSourceTag(source: TemplateSource): string {
+  return source === "production" ? " (production template)" : source === "studio" ? " (studio template)" : "";
+}
+
 /**
  * Resolve the `template` arg of apply_arc_template: built-ins first
- * (name or id, exact then partial), then the production's saved
- * templates (name, exact then partial). Every error string is
- * tool-facing and asserted by the E2E suite - do not reword the
- * "No arc template named" prefix.
+ * (name or id, exact then partial), then this production's saved
+ * templates, then the studio library shared across productions (a
+ * same-named production template wins over the studio one). Every
+ * error string is tool-facing and asserted by the E2E suite - do
+ * not reword the "No arc template named" prefix.
  */
 async function resolveTemplateForApply(
   projectId: string,
   templateArg: string,
-): Promise<{ template: ArcTemplate; source: "built-in" | "production" } | { error: string }> {
+): Promise<{ template: ArcTemplate; source: TemplateSource } | { error: string }> {
   const builtin = arcTemplateByName(templateArg);
   if (builtin) return { template: builtin, source: "built-in" };
-  const rows = await db.arcTemplate.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+  const rows = await db.arcTemplate.findMany({
+    where: { OR: [{ projectId }, { scope: "STUDIO" }] },
+    orderBy: { createdAt: "asc" },
+  });
   const want = templateArg.trim().toLowerCase();
   if (want) {
     const row =
-      rows.find((r) => r.name.toLowerCase() === want) ??
-      rows.find((r) => r.name.toLowerCase().includes(want) || want.includes(r.name.toLowerCase()));
+      rows.find((r) => r.scope === "PROJECT" && r.name.toLowerCase() === want) ??
+      rows.find((r) => r.scope === "PROJECT" && (r.name.toLowerCase().includes(want) || want.includes(r.name.toLowerCase()))) ??
+      rows.find((r) => r.scope === "STUDIO" && r.name.toLowerCase() === want) ??
+      rows.find((r) => r.scope === "STUDIO" && (r.name.toLowerCase().includes(want) || want.includes(r.name.toLowerCase())));
     if (row) {
       let segs: ArcTemplate["segments"] | null = null;
       try {
@@ -544,14 +572,102 @@ async function resolveTemplateForApply(
       if (!segs) {
         return { error: `Saved template '${row.name}' has a malformed shape in the database - re-save it from the Arc templates dialog.` };
       }
-      return { template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs }, source: "production" };
+      return { template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs }, source: row.scope === "STUDIO" ? "studio" : "production" };
     }
   }
   const registry = [
     ...ARC_TEMPLATES.map((t) => `"${t.name}" (${t.segments.map((s) => s.kind).join(" -> ")})`),
-    ...rows.map((r) => `"${r.name}" (production template)`),
+    ...rows.filter((r) => r.scope === "PROJECT").map((r) => `"${r.name}" (production template)`),
+    ...rows.filter((r) => r.scope === "STUDIO").map((r) => `"${r.name}" (studio template)`),
   ];
   return { error: `No arc template named '${templateArg}'. Registry: ${registry.join(", ")}.` };
+}
+
+/**
+ * Match a stateLabel arg against a character's development states
+ * (contains, case-insensitive). Shared by apply_arc_template and
+ * the one-batch chain inside suggest_arc_template. Error strings
+ * are tool-facing and asserted by the E2E suite - do not reword.
+ */
+async function resolveCharacterState(
+  ch: { id: string; name: string },
+  labelArg: string,
+): Promise<{ label: string } | { error: string }> {
+  const states = await db.characterState.findMany({
+    where: { characterId: ch.id },
+    orderBy: [{ episodeNumber: "desc" }, { createdAt: "desc" }],
+  });
+  if (states.length === 0) {
+    return { error: `${ch.name} has no development states - record one with create_character_state first.` };
+  }
+  const state = states.find((s) => s.label.toLowerCase().includes(labelArg.toLowerCase())) ?? null;
+  if (!state) {
+    return { error: `No state of ${ch.name} matches '${labelArg}'. States: ${states.map((s) => `"${s.label}"${s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}`).join(", ")}.` };
+  }
+  return { label: state.label }; // stamp the FULL label so the override stays exact
+}
+
+/**
+ * The apply core shared by apply_arc_template and the one-batch
+ * chain inside suggest_arc_template: resolve the range, paint the
+ * template shape onto the speaker's lines, persist, log the event
+ * and report the per-segment outcome plus the direction impact.
+ * The character, template and state are already resolved by the
+ * caller; every error/fallback string is tool-facing and asserted
+ * by the E2E suite - do not reword.
+ */
+async function applyResolvedTemplate(
+  projectId: string,
+  ch: { id: string; name: string },
+  template: ArcTemplate,
+  templateSource: TemplateSource,
+  stateLabel: string,
+  rangeArgs: Record<string, unknown>,
+): Promise<ActionResult> {
+  const range = await resolveArcRange(projectId, rangeArgs);
+  if (!range.ok) return { status: "ERROR", result: range.error };
+  const { rangeShots, rangeDesc } = range;
+
+  const touched: string[] = [];
+  const speakersSeen = new Set<string>();
+  const parsed = rangeShots.map((shot) => {
+    const lines = parseDialogue(shot.dialogue);
+    for (const l of lines) if (l.speaker.trim()) speakersSeen.add(l.speaker.trim());
+    return { shotId: shot.id, lines };
+  });
+  const [nextShots, stamped, report] = applyArcTemplate(parsed, ch.name, template, stateLabel);
+  for (let i = 0; i < rangeShots.length; i += 1) {
+    if (!nextShots[i].changed) continue;
+    await db.shot.update({ where: { id: rangeShots[i].id }, data: { dialogue: serializeDialogue(nextShots[i].lines) } });
+    touched.push(rangeShots[i].label);
+  }
+  const sourceTag = templateSourceTag(templateSource);
+  await db.productionEvent.create({
+    data: {
+      projectId,
+      actor: "DSH",
+      type: "STATE_CHANGE",
+      summary: `DSH applied arc template "${template.name}"${sourceTag} (${stateLabel}) on ${ch.name} across ${rangeDesc}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}`,
+    },
+  });
+  let result = `Arc template "${template.name}"${sourceTag} on ${ch.name} with "${stateLabel}" across ${rangeDesc}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}. Shape: ${formatTemplateReport(report, stateLabel)}. `;
+  if (stamped === 0) {
+    const speakerLines = rangeShots.reduce(
+      (acc, s) => acc + parseDialogue(s.dialogue).filter((l) => l.speaker.trim().toLowerCase() === ch.name.trim().toLowerCase()).length, 0,
+    );
+    if (speakerLines === 0) {
+      const seen = [...speakersSeen];
+      result += seen.length
+        ? `No ${ch.name} lines in that range (speakers present: ${seen.join(", ")}) - nothing was written; check the character name or widen the range. No take moved, so no re-render is needed.`
+        : `That range has no dialogue at all - nothing was written. No take moved, so no re-render is needed.`;
+      return { status: "OK", result };
+    }
+    result += `All ${speakerLines} ${ch.name} line(s) in the range already carry the template's shape - nothing to change. No take moved, so no re-render is needed.`;
+    return { status: "OK", result };
+  }
+  result += "The template carries the shape; the state carries the voice: every stamped line now performs with its variant voice, hints and register.";
+  result += await directionImpactFor(range.episode);
+  return { status: "OK", result };
 }
 
 export async function executeTool(projectId: string, name: string, args: Record<string, unknown>): Promise<ActionResult> {
@@ -1503,14 +1619,38 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const registry = await arcTemplateRegistry(projectId);
         const matches = matchArcTemplates(prose, registry.map((r) => r.template));
         const sourceOf = new Map(registry.map((r) => [r.template.id, r.source]));
-        const tag = (t: ArcTemplate) => `"${t.name}"${sourceOf.get(t.id) === "production" ? " (production template)" : ""}`;
+        const tag = (t: ArcTemplate) => `"${t.name}"${templateSourceTag(sourceOf.get(t.id) ?? "built-in")}`;
         const best = matches[0];
+        const strongMatch = Boolean(best && best.score >= 3);
+        const chName = String(args.characterName ?? "").trim();
+        const labelArg = String(args.stateLabel ?? "").trim();
+        const wantChain = strongMatch && Boolean(chName) && Boolean(labelArg);
         let result = "";
-        if (best && best.score >= 3) {
+        let chained = false;
+        if (best && strongMatch) {
           result += `Template match: ${tag(best.template)} scores ${best.score} on the creator's description. Shape: ${formatTemplateShape(best.template.segments)}. `;
           if (best.template.description) result += `${best.template.description} `;
           result += `Why: ${best.reasons.join("; ") || "closest name"}. `;
-          result += `Propose it in this turn: apply_arc_template with template:'${best.template.name}' plus characterName, stateLabel and the range - the same-turn re-render offer rides its result. `;
+          if (wantChain) {
+            // ONE-BATCH CHAIN: the matched template is applied in this very call
+            const ch = await characterByName(projectId, chName);
+            if (!ch) {
+              const known = await db.character.findMany({ where: { projectId }, select: { name: true } });
+              return { status: "ERROR", result: `Template match: ${tag(best.template)} (shape: ${formatTemplateShape(best.template.segments)}), but the chained apply failed: Character '${chName}' not found. Cast: ${known.map((c) => c.name).join(", ") || "none"}.` };
+            }
+            const stateRes = await resolveCharacterState(ch, labelArg);
+            if ("error" in stateRes) {
+              return { status: "ERROR", result: `Template match: ${tag(best.template)} (shape: ${formatTemplateShape(best.template.segments)}), but the chained apply failed: ${stateRes.error}` };
+            }
+            const applyRes = await applyResolvedTemplate(projectId, ch, best.template, sourceOf.get(best.template.id) ?? "built-in", stateRes.label, args);
+            if (applyRes.status === "ERROR") {
+              return { status: "ERROR", result: `Template match: ${tag(best.template)} (shape: ${formatTemplateShape(best.template.segments)}), but the chained apply failed: ${applyRes.result}` };
+            }
+            chained = true;
+            result += `Applied in this batch: ${applyRes.result} `;
+          } else {
+            result += `Propose it in this turn: apply_arc_template with template:'${best.template.name}' plus characterName, stateLabel and the range - or pass stateLabel here to apply it in this same batch. `;
+          }
           const runnerUp = matches[1];
           if (runnerUp && runnerUp.score > 0) result += `Runner-up: ${tag(runnerUp.template)} (score ${runnerUp.score}). `;
         } else {
@@ -1520,8 +1660,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           }
         }
         result += `Registry: ${registry.map((r) => `${tag(r.template)} (${formatTemplateShape(r.template.segments)})`).join(", ")}. `;
-        const chName = String(args.characterName ?? "").trim();
-        if (chName) {
+        if (chName && !chained) {
           const ch = await characterByName(projectId, chName);
           if (ch) {
             const states = await db.characterState.findMany({
@@ -1536,9 +1675,13 @@ export async function executeTool(projectId: string, name: string, args: Record<
             result += `Character '${chName}' not found - cast: ${known.map((c) => c.name).join(", ") || "none"}. `;
           }
         }
-        result += best && best.score >= 3
-          ? "No template truly fits? set_state_arc stamps a uniform span, and the creator can save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat."
-          : "For a beat this specific: stamp a uniform span with set_state_arc, or save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat and apply in one call by name.";
+        if (chained) {
+          result += "The beat landed in one batch: put the re-render offer from the Direction impact above in your reply so the stale stems are handled in this same turn.";
+        } else {
+          result += best && best.score >= 3
+            ? "No template truly fits? set_state_arc stamps a uniform span, and the creator can save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat."
+            : "For a beat this specific: stamp a uniform span with set_state_arc, or save a custom shape from the Arc templates dialog - saved templates join this registry for every future beat and apply in one call by name.";
+        }
         return { status: "OK", result };
       }
 
@@ -1550,69 +1693,13 @@ export async function executeTool(projectId: string, name: string, args: Record<
         }
         const resolved = await resolveTemplateForApply(projectId, String(args.template ?? ""));
         if ("error" in resolved) return { status: "ERROR", result: resolved.error };
-        const template = resolved.template;
-        const templateSource = resolved.source;
         const labelArg = String(args.stateLabel ?? "").trim();
         if (!labelArg) {
-          return { status: "ERROR", result: `Arc templates need a stateLabel: the template's state segments (${template.segments.filter((s) => s.kind === "state").length} of ${template.segments.length} in "${template.name}") force the matched state's variant voice, hints and register.` };
+          return { status: "ERROR", result: `Arc templates need a stateLabel: the template's state segments (${resolved.template.segments.filter((s) => s.kind === "state").length} of ${resolved.template.segments.length} in "${resolved.template.name}") force the matched state's variant voice, hints and register.` };
         }
-        const states = await db.characterState.findMany({
-          where: { characterId: ch.id },
-          orderBy: [{ episodeNumber: "desc" }, { createdAt: "desc" }],
-        });
-        if (states.length === 0) {
-          return { status: "ERROR", result: `${ch.name} has no development states - record one with create_character_state first.` };
-        }
-        const state = states.find((s) => s.label.toLowerCase().includes(labelArg.toLowerCase())) ?? null;
-        if (!state) {
-          return { status: "ERROR", result: `No state of ${ch.name} matches '${labelArg}'. States: ${states.map((s) => `"${s.label}"${s.episodeNumber ? ` @Ep${s.episodeNumber}` : ""}`).join(", ")}.` };
-        }
-
-        const range = await resolveArcRange(projectId, args);
-        if (!range.ok) return { status: "ERROR", result: range.error };
-        const { rangeShots, rangeDesc } = range;
-
-        let stamped = 0;
-        const touched: string[] = [];
-        const speakersSeen = new Set<string>();
-        const parsed = rangeShots.map((shot) => {
-          const lines = parseDialogue(shot.dialogue);
-          for (const l of lines) if (l.speaker.trim()) speakersSeen.add(l.speaker.trim());
-          return { shotId: shot.id, lines };
-        });
-        const [nextShots, nStamped, report] = applyArcTemplate(parsed, ch.name, template, state.label);
-        for (let i = 0; i < rangeShots.length; i += 1) {
-          if (!nextShots[i].changed) continue;
-          await db.shot.update({ where: { id: rangeShots[i].id }, data: { dialogue: serializeDialogue(nextShots[i].lines) } });
-          touched.push(rangeShots[i].label);
-        }
-        stamped = nStamped;
-        await db.productionEvent.create({
-          data: {
-            projectId,
-            actor: "DSH",
-            type: "STATE_CHANGE",
-            summary: `DSH applied arc template "${template.name}"${templateSource === "production" ? " (production template)" : ""} (${state.label}) on ${ch.name} across ${rangeDesc}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}`,
-          },
-        });
-        let result = `Arc template "${template.name}"${templateSource === "production" ? " (production template)" : ""} on ${ch.name} with "${state.label}" across ${rangeDesc}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}. Shape: ${formatTemplateReport(report, state.label)}. `;
-        if (stamped === 0) {
-          const speakerLines = rangeShots.reduce(
-            (acc, s) => acc + parseDialogue(s.dialogue).filter((l) => l.speaker.trim().toLowerCase() === ch.name.trim().toLowerCase()).length, 0,
-          );
-          if (speakerLines === 0) {
-            const seen = [...speakersSeen];
-            result += seen.length
-              ? `No ${ch.name} lines in that range (speakers present: ${seen.join(", ")}) - nothing was written; check the character name or widen the range. No take moved, so no re-render is needed.`
-              : `That range has no dialogue at all - nothing was written. No take moved, so no re-render is needed.`;
-            return { status: "OK", result };
-          }
-          result += `All ${speakerLines} ${ch.name} line(s) in the range already carry the template's shape - nothing to change. No take moved, so no re-render is needed.`;
-          return { status: "OK", result };
-        }
-        result += "The template carries the shape; the state carries the voice: every stamped line now performs with its variant voice, hints and register.";
-        result += await directionImpactFor(range.episode);
-        return { status: "OK", result };
+        const stateRes = await resolveCharacterState(ch, labelArg);
+        if ("error" in stateRes) return { status: "ERROR", result: stateRes.error };
+        return applyResolvedTemplate(projectId, ch, resolved.template, resolved.source, stateRes.label, args);
       }
 
       default:
