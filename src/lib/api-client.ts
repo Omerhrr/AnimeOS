@@ -406,6 +406,10 @@ export interface ArcTemplateRow {
   projectId: string | null;
   version: number; // current shape version (1 = as saved)
   versions: ArcTemplateVersionEntry[]; // replaced shapes, newest-first
+  // per-scope usage: applies that actually stamped lines (DSH applies
+  // + dialog applies), one count per batch for ensembles
+  usageCount: number;
+  lastUsedAt: string | null;
 }
 
 export interface RenderJobRow {
@@ -500,6 +504,9 @@ export const api = {
   patchArcTemplate: (id: string, body: { name?: string; description?: string | null; scope?: "PROJECT" | "STUDIO"; projectId?: string; segments?: Array<{ frac: number; kind: "auto" | "state" }>; note?: string }) =>
     j<{ id: string; version: number; bumped: boolean }>(`/api/arc-templates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteArcTemplate: (id: string) => j<{ ok: boolean }>(`/api/arc-templates/${id}`, { method: "DELETE" }),
+  // record one line-stamping application of a saved template (dialog apply path)
+  useArcTemplate: (id: string) =>
+    j<{ id: string; usageCount: number; lastUsedAt: string | null }>(`/api/arc-templates/${id}/use`, { method: "POST" }),
 
   // sound-design cues
   audioCues: (shotId: string) => j<AudioCueRow[]>(`/api/audio-cues?shotId=${shotId}`),

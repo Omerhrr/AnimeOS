@@ -42,6 +42,37 @@ function arcKey(a: ArcSpan): string {
 }
 
 /**
+ * The playable arc chip's QUEUE as it renders inside an ensemble
+ * cluster: the merged story-order take list (Sc · S · speaker · line ·
+ * duration) so the director sees exactly what "play beat" streams
+ * before pressing it - the same readout the DSH reply's chip carries,
+ * now living where the beat is inspected.
+ */
+function ArcTakeQueue({ takes }: { takes: ArcTakeItem[] }) {
+  if (takes.length === 0) return null;
+  return (
+    <div className="space-y-0.5 rounded-md border border-teal-400/20 bg-black/25 p-1.5">
+      <div className="flex items-center gap-1 text-[8px] font-bold uppercase tracking-[0.14em] text-teal-200/70">
+        <Route className="h-2.5 w-2.5" />
+        playable beat - {takes.length} take{takes.length === 1 ? "" : "s"} merged in story order
+      </div>
+      <div className="space-y-0.5 max-h-28 overflow-y-auto studio-scroll pr-1">
+        {takes.map((t, i) => (
+          <div key={i} className="flex items-center gap-2 rounded border border-white/8 bg-black/25 px-1.5 py-0.5 text-[10px]">
+            <span className="shrink-0 font-mono text-muted-foreground">
+              Sc{String(t.sceneNumber).padStart(2, "0")} · S{String(t.shotNumber).padStart(3, "0")}
+            </span>
+            <span className="shrink-0 font-semibold text-teal-200/90">{t.speaker}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">&quot;{t.text}&quot;</span>
+            {t.durationMs != null && <span className="shrink-0 font-mono text-muted-foreground/70">{(t.durationMs / 1000).toFixed(1)}s</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * One arc card: violet when it stands alone, inset teal-tinted when
  * it renders inside an ensemble cluster. The play button queues the
  * arc's STORED takes in story order - a quick audition of the beat's
@@ -321,19 +352,19 @@ export function PanelInspectorDialog({
                         onStop={stopArcPlayback}
                       />
                     ) : (
-                      <div
-                        key={`ens:${card.arcs.map((a) => a.speakerKey).join(":")}`}
-                        className="rounded-lg border border-teal-400/30 bg-teal-400/[0.05] p-2 space-y-1.5"
-                      >
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase bg-teal-400/25 text-teal-200">ensemble beat</span>
-                          <span className="text-[10px] text-teal-200/80">
-                            {card.size} speaker{card.size === 1 ? "" : "s"} in parallel · {card.arcs.length} arc{card.arcs.length === 1 ? "" : "s"} on this shot
-                          </span>
-                          {(() => {
-                            const beatKey = `beat:${card.arcs.map((a) => a.speakerKey).join(":")}`;
-                            const beatTakes = takesByKey.get(beatKey) ?? [];
-                            return (
+                      (() => {
+                        const beatKey = `beat:${card.arcs.map((a) => a.speakerKey).join(":")}`;
+                        const beatTakes = takesByKey.get(beatKey) ?? [];
+                        return (
+                          <div
+                            key={beatKey}
+                            className="rounded-lg border border-teal-400/30 bg-teal-400/[0.05] p-2 space-y-1.5"
+                          >
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase bg-teal-400/25 text-teal-200">ensemble beat</span>
+                              <span className="text-[10px] text-teal-200/80">
+                                {card.size} speaker{card.size === 1 ? "" : "s"} in parallel · {card.arcs.length} arc{card.arcs.length === 1 ? "" : "s"} on this shot
+                              </span>
                               <span className="ml-auto flex items-center gap-1 shrink-0">
                                 <span className="text-[9px] font-mono text-teal-200/70">
                                   {beatTakes.length} take{beatTakes.length === 1 ? "" : "s"} merged
@@ -354,25 +385,26 @@ export function PanelInspectorDialog({
                                   )}
                                 >
                                   {arcPlayKey === beatKey ? <Square className="h-2.5 w-2.5" /> : <Play className="h-2.5 w-2.5" />}
-                                  play beat
+                                  {arcPlayKey === beatKey ? "stop" : `play beat · ${beatTakes.length}`}
                                 </button>
                               </span>
-                            );
-                          })()}
-                        </div>
-                        {card.arcs.map((a) => (
-                          <InspectorArcCard
-                            key={arcKey(a)}
-                            a={a}
-                            shotDialogue={shot.dialogue}
-                            inset
-                            takeCount={takesByKey.get(arcKey(a))?.length ?? 0}
-                            playing={arcPlayKey === arcKey(a)}
-                            onPlay={() => void playArcTakes(arcKey(a), takesByKey.get(arcKey(a)) ?? [])}
-                            onStop={stopArcPlayback}
-                          />
-                        ))}
-                      </div>
+                            </div>
+                            <ArcTakeQueue takes={beatTakes} />
+                            {card.arcs.map((a) => (
+                              <InspectorArcCard
+                                key={arcKey(a)}
+                                a={a}
+                                shotDialogue={shot.dialogue}
+                                inset
+                                takeCount={takesByKey.get(arcKey(a))?.length ?? 0}
+                                playing={arcPlayKey === arcKey(a)}
+                                onPlay={() => void playArcTakes(arcKey(a), takesByKey.get(arcKey(a)) ?? [])}
+                                onStop={stopArcPlayback}
+                              />
+                            ))}
+                          </div>
+                        );
+                      })()
                     )
                   )}
                 </div>

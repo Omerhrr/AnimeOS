@@ -63,6 +63,9 @@ export async function GET(req: Request) {
       projectId: r.projectId,
       version: r.version,
       versions: safeVersions(r.versions),
+      // per-scope usage: how many line-stamping applies this shape took
+      usageCount: r.usageCount,
+      lastUsedAt: r.lastUsedAt,
     })),
   );
 }

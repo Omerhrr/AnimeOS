@@ -18,7 +18,7 @@ import { Building2, GitCompare, History, Loader2, Plus, RefreshCw, Save, Shapes,
 import { api, type ArcTemplateRow } from "@/lib/api-client";
 import { parseDialogue, serializeDialogue } from "@/lib/comic/dialogue";
 import {
-  ARC_TEMPLATES, applyArcTemplate, diffTemplateShapes, formatTemplateShape, planTemplateAssignment,
+  ARC_TEMPLATES, applyArcTemplate, diffTemplateShapes, formatTemplateShape, formatTemplateUsage, planTemplateAssignment,
   type ArcTemplate, type TemplateShotInput,
 } from "@/lib/comic/arc-templates";
 import { Button } from "@/components/ui/button";
@@ -163,10 +163,22 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     setError(null);
     try {
       const parsed: TemplateShotInput[] = targetShots.map((sh) => ({ shotId: sh.id, lines: parseDialogue(sh.dialogue) }));
-      const [results] = applyArcTemplate(parsed, activeSpeaker.name, template, stateLabel);
+      const [results, stampedLines] = applyArcTemplate(parsed, activeSpeaker.name, template, stateLabel);
       for (let i = 0; i < results.length; i += 1) {
         if (!results[i].changed) continue;
         await api.patchShot({ id: results[i].shotId, dialogue: serializeDialogue(results[i].lines) });
+      }
+      if (stampedLines > 0) {
+        // per-scope usage: a saved shape counts this apply (built-ins are
+        // code and are never counted); the local list updates so the badge
+        // reads fresh without a refetch
+        const saved = templates.find((t) => t.id === template.id);
+        if (saved) {
+          const use = await api.useArcTemplate(saved.id).catch(() => null);
+          if (use) {
+            setTemplates((rows) => rows.map((r) => (r.id === saved.id ? { ...r, usageCount: use.usageCount, lastUsedAt: use.lastUsedAt } : r)));
+          }
+        }
       }
       await qc.invalidateQueries({ queryKey: ["project", projectId] });
       setOpen(false);
@@ -257,15 +269,16 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
     setCustomSegs((segs) => segs.map((s, i) => (i === idx ? { ...s, pct } : s)));
 
   // ── cross-scope diff: every comparable shape in one list ──
-  type XTemplate = { key: string; name: string; segments: ArcTemplate["segments"]; scopeTag: string; version: number | null };
+  type XTemplate = { key: string; name: string; segments: ArcTemplate["segments"]; scopeTag: string; version: number | null; usage: number };
   const allShapes: XTemplate[] = [
-    ...ARC_TEMPLATES.map((t) => ({ key: `builtin:${t.id}`, name: t.name, segments: t.segments, scopeTag: "built-in", version: null as number | null })),
+    ...ARC_TEMPLATES.map((t) => ({ key: `builtin:${t.id}`, name: t.name, segments: t.segments, scopeTag: "built-in", version: null as number | null, usage: 0 })),
     ...templates.map((t) => ({
       key: `user:${t.id}`,
       name: t.name,
       segments: t.segments,
       scopeTag: t.scope === "STUDIO" ? "studio library" : "this production",
       version: t.version as number | null,
+      usage: t.usageCount,
     })),
   ];
   const shapeByKey = (key: string) => allShapes.find((t) => t.key === key) ?? null;
@@ -329,7 +342,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                     <SelectGroup>
                       <SelectLabel className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Studio library (shared across productions)</SelectLabel>
                       {studioTemplates.map((t) => (
-                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}{t.version >= 2 ? ` · v${t.version}` : ""}</SelectItem>
+                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}{t.version >= 2 ? ` · v${t.version}` : ""}{t.usageCount > 0 ? ` · used ${t.usageCount}×` : ""}</SelectItem>
                       ))}
                     </SelectGroup>
                   )}
@@ -337,7 +350,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                     <SelectGroup>
                       <SelectLabel className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">Production templates (saved)</SelectLabel>
                       {productionTemplates.map((t) => (
-                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}{t.version >= 2 ? ` · v${t.version}` : ""}</SelectItem>
+                        <SelectItem key={t.id} value={`user:${t.id}`} className="text-xs">{t.name}{t.version >= 2 ? ` · v${t.version}` : ""}{t.usageCount > 0 ? ` · used ${t.usageCount}×` : ""}</SelectItem>
                       ))}
                     </SelectGroup>
                   )}
@@ -356,6 +369,12 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                       {selectedSaved.version >= 2 && (
                         <span className="shrink-0 rounded-sm bg-violet-400/25 px-1 font-mono text-[9px] font-bold text-violet-100" title="Shape version - bumped every time the saved shape is updated">v{selectedSaved.version}</span>
                       )}
+                      <span
+                        className="shrink-0 rounded-sm bg-amber-400/15 px-1 font-mono text-[9px] font-bold text-amber-200"
+                        title="Per-scope usage: how many line-stamping applies this shape took (DSH applies + dialog applies, one per ensemble batch)"
+                      >
+                        {formatTemplateUsage(selectedSaved.usageCount, selectedSaved.lastUsedAt)}
+                      </span>
                       <span className="min-w-0">
                         {selectedSaved.scope === "STUDIO"
                           ? "Studio library: shared with every production on this lot - DSH matches and applies it on any show."
@@ -499,7 +518,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                     >
                       {allShapes.map((t) => (
                         <option key={t.key} value={t.key} className="bg-[#12121a]">
-                          {t.name} · {t.scopeTag}{t.version != null && t.version >= 2 ? ` · v${t.version}` : ""}
+                          {t.name} · {t.scopeTag}{t.version != null && t.version >= 2 ? ` · v${t.version}` : ""}{t.usage > 0 ? ` · used ${t.usage}×` : ""}
                         </option>
                       ))}
                     </select>
@@ -511,7 +530,7 @@ export function ArcTemplateDialog({ projectId, characters, episode }: { projectI
                     >
                       {allShapes.map((t) => (
                         <option key={t.key} value={t.key} className="bg-[#12121a]">
-                          {t.name} · {t.scopeTag}{t.version != null && t.version >= 2 ? ` · v${t.version}` : ""}
+                          {t.name} · {t.scopeTag}{t.version != null && t.version >= 2 ? ` · v${t.version}` : ""}{t.usage > 0 ? ` · used ${t.usage}×` : ""}
                         </option>
                       ))}
                     </select>

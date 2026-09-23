@@ -239,6 +239,24 @@ export function formatTemplateShape(segments: ArcTemplateSegment[]): string {
 }
 
 /**
+ * Human usage line for a saved template: "used 3×" plus the last use
+ * as a short stamp, or "never applied" while the count is 0. Only
+ * applies that STAMPED lines count, so the number reads as "this
+ * scope really uses this shape". Display helper shared by the
+ * template dialog's shape list, the selected-template meta row and
+ * the cross-scope diff pickers.
+ */
+export function formatTemplateUsage(usageCount: number, lastUsedAt: string | Date | null): string {
+  if (!Number.isFinite(usageCount) || usageCount <= 0) return "never applied";
+  const d = lastUsedAt ? new Date(lastUsedAt) : null;
+  const stamp =
+    d && !Number.isNaN(d.getTime())
+      ? ` · last ${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+      : "";
+  return `used ${usageCount}×${stamp}`;
+}
+
+/**
  * Human diff between TWO shapes, position-aligned (segment i of the
  * old shape against segment i of the new one): fraction moves, kind
  * flips, added and dropped segments. Empty list = the shapes match

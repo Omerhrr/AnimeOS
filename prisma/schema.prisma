@@ -464,6 +464,13 @@ model ArcTemplate {
   // shape never silently rewrites what earlier applies stamped.
   version     Int      @default(1)
   versions    String   @default("[]")
+  // Usage counts per scope: how many times this shape was actually
+  // APPLIED (a DSH apply or a dialog apply that stamped lines, one
+  // count per batch for ensembles). No-op applies (nothing stamped)
+  // never count, so the number stays an honest "this show really
+  // uses this shape" signal alongside the scope tag.
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)

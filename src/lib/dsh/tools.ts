@@ -544,8 +544,8 @@ type TemplateSource = "built-in" | "production" | "studio";
 
 async function arcTemplateRegistry(
   projectId: string,
-): Promise<Array<{ template: ArcTemplate; source: TemplateSource }>> {
-  const registry: Array<{ template: ArcTemplate; source: TemplateSource }> = ARC_TEMPLATES.map((t) => ({ template: t, source: "built-in" as const }));
+): Promise<Array<{ template: ArcTemplate; source: TemplateSource; usage: number }>> {
+  const registry: Array<{ template: ArcTemplate; source: TemplateSource; usage: number }> = ARC_TEMPLATES.map((t) => ({ template: t, source: "built-in" as const, usage: 0 }));
   const rows = await db.arcTemplate.findMany({
     where: { OR: [{ projectId }, { scope: "STUDIO" }] },
     orderBy: { createdAt: "asc" },
@@ -561,6 +561,7 @@ async function arcTemplateRegistry(
       registry.push({
         template: { id: row.id, name: row.name, description: row.description ?? "", segments: segs, version: row.version },
         source: row.scope === "STUDIO" ? "studio" : "production",
+        usage: row.usageCount,
       });
     }
   }
@@ -572,6 +573,25 @@ function templateSourceTag(source: TemplateSource, version?: number): string {
   const base = source === "production" ? "production template" : source === "studio" ? "studio template" : "";
   if (!base) return "";
   return version != null && version >= 2 ? ` (${base} v${version})` : ` (${base})`;
+}
+
+/**
+ * Per-scope usage counts: record ONE line-stamping application of a
+ * SAVED template (production or studio row). Built-ins live in code,
+ * not the DB, and are never counted. One batch = one use, so an
+ * ensemble apply that lands the shape on three speakers still counts
+ * once - the number answers "which shapes does this scope actually
+ * apply". Returns the fresh count when it moved, null otherwise.
+ */
+async function recordTemplateUse(
+  template: ArcTemplate,
+  templateSource: TemplateSource,
+): Promise<{ name: string; usageCount: number } | null> {
+  if (templateSource === "built-in") return null;
+  const row = await db.arcTemplate
+    .update({ where: { id: template.id }, data: { usageCount: { increment: 1 }, lastUsedAt: new Date() } })
+    .catch(() => null);
+  return row ? { name: row.name, usageCount: row.usageCount } : null;
 }
 
 /**
@@ -708,6 +728,11 @@ async function applyResolvedTemplate(
     },
   });
   let result = `Arc template "${template.name}"${sourceTag} on ${ch.name} with "${stateLabel}" across ${rangeDesc}: ${stamped} line(s) stamped${touched.length ? ` in shot(s) ${touched.join(", ")}` : ""}. Shape: ${formatTemplateReport(report, stateLabel)}. `;
+  // per-scope usage: only an apply that stamped lines counts
+  if (stamped > 0) {
+    const use = await recordTemplateUse(template, templateSource);
+    if (use) result += `Use recorded: "${use.name}" is now at ${use.usageCount} appl${use.usageCount === 1 ? "y" : "ies"} on its scope. `;
+  }
   if (stamped === 0) {
     const speakerLines = rangeShots.reduce(
       (acc, s) => acc + parseDialogue(s.dialogue).filter((l) => l.speaker.trim().toLowerCase() === ch.name.trim().toLowerCase()).length, 0,
@@ -987,6 +1012,9 @@ async function applyEnsembleTemplate(
     result += "No take moved, so no re-render is needed.";
     return { status: "OK", result };
   }
+  // per-scope usage: ONE batch = ONE use, and only because lines moved
+  const use = await recordTemplateUse(template, templateSource);
+  if (use) result += `Use recorded: "${use.name}" is now at ${use.usageCount} appl${use.usageCount === 1 ? "y" : "ies"} on its scope. `;
   // same-turn ENSEMBLE audition: one rendered read per engaged speaker
   // of the exact line the apply stamped into the state (A/B against
   // the stored take when one exists), attached to THIS call's result
@@ -2052,7 +2080,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
             result += `Closest: ${tag(best.template)} (score ${best.score}): ${formatTemplateShape(best.template.segments)}. `;
           }
         }
-        result += `Registry: ${registry.map((r) => `${tag(r.template)} (${formatTemplateShape(r.template.segments)})`).join(", ")}. `;
+        result += `Registry: ${registry.map((r) => `${tag(r.template)} (${formatTemplateShape(r.template.segments)}${r.source !== "built-in" ? `, ${r.usage === 1 ? "used once" : `used ${r.usage}×`}` : ""})`).join(", ")}. `;
         if (chName && !chained) {
           const ch = await characterByName(projectId, chName);
           if (ch) {

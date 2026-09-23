@@ -21,8 +21,9 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AudioLines, Headphones, History, Loader2, Play, Plus, Square, Trash2, Users } from "lucide-react";
+import { ArrowLeftRight, AudioLines, Headphones, History, Loader2, Play, Plus, Square, Trash2, Users, X } from "lucide-react";
 import { api, type StudioProject, type AuditionResult, type AuditionCurrentSide } from "@/lib/api-client";
+import { clearChainSides, pickChainSide, swapChainSides, type ChainPair } from "@/lib/comic/audition-chain";
 import { cn } from "@/lib/utils";
 import { VOICES, defaultVoiceFor, voiceById } from "@/lib/comic/voice-catalog";
 import { DELIVERIES, type DeliveryId } from "@/lib/comic/delivery";
@@ -46,12 +47,17 @@ function shortAuditionDate(iso: string): string {
  * PER-STATE AUDITION HISTORY: every past proposed read of ONE state
  * (DSH binds + ensemble applies, plus the board's own state tries),
  * newest first, each replayable and removable - so a performance the
- * director liked three auditions ago is still one click away.
+ * director liked three auditions ago is still one click away. ANY two
+ * recorded reads can be picked as sides A and B and chained back to
+ * back (the A/B chain bar), so yesterday's take competes with today's
+ * without re-rendering anything.
  */
-function StateAuditionHistory({ stateId, playing, onPlay, refreshKey }: {
+function StateAuditionHistory({ stateId, playing, onPlay, onChain, onStop, refreshKey }: {
   stateId: string;
   playing: string | null;
   onPlay: (key: string, url: string) => void;
+  onChain: (stateId: string, aUrl: string, bUrl: string) => void;
+  onStop: () => void;
   refreshKey: number;
 }) {
   const qc = useQueryClient();
@@ -60,6 +66,17 @@ function StateAuditionHistory({ stateId, playing, onPlay, refreshKey }: {
     queryFn: () => api.stateAuditions(stateId),
   });
   const rows = q.data?.auditions ?? [];
+  // the A/B pair: any two recorded reads picked as the back-to-back sides;
+  // a picked row that was deleted or pruned simply leaves the pair (derived,
+  // so stale ids never resolve against a changed history)
+  const [pair, setPair] = useState<ChainPair>({ aId: null, bId: null });
+  const livePair: ChainPair = {
+    aId: pair.aId && rows.some((r) => r.id === pair.aId) ? pair.aId : null,
+    bId: pair.bId && rows.some((r) => r.id === pair.bId) ? pair.bId : null,
+  };
+  const aRow = rows.find((r) => r.id === livePair.aId) ?? null;
+  const bRow = rows.find((r) => r.id === livePair.bId) ?? null;
+  const chainSide = playing === `chain:${stateId}:A` ? "A" : playing === `chain:${stateId}:B` ? "B" : null;
   async function remove(id: string) {
     try {
       await api.deleteStateAudition(id);
@@ -79,11 +96,55 @@ function StateAuditionHistory({ stateId, playing, onPlay, refreshKey }: {
           no auditions recorded for this state yet - run a state try here, or let DSH bind a variant or land an arc (every proposed read lands here).
         </div>
       )}
+      {rows.length >= 2 && !(aRow && bRow) && (
+        <div className="text-[8px] text-muted-foreground/80">
+          pick two reads as A and B, then compare them back to back
+        </div>
+      )}
+      {aRow && bRow && (
+        <div className={cn(
+          "flex items-center gap-1.5 rounded border px-1.5 py-1",
+          chainSide ? "border-amber-400/40 bg-amber-400/[0.1]" : "border-amber-400/25 bg-amber-400/[0.05]",
+        )}>
+          <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.14em] text-amber-200/90">a/b chain</span>
+          <button
+            onClick={() => (chainSide ? onStop() : onChain(stateId, aRow.url, bRow.url))}
+            title={chainSide
+              ? `Stop the back-to-back compare (side ${chainSide} is playing)`
+              : "Compare the two picked reads back to back: A first, then B"}
+            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/15 px-1.5 text-[9px] font-bold text-amber-200 hover:bg-amber-400/25 transition-colors"
+          >
+            {chainSide ? <Square className="h-2 w-2" /> : <Play className="h-2.5 w-2.5" />}
+            {chainSide ? `stop · ${chainSide}` : "compare A · B"}
+          </button>
+          <span className="min-w-0 flex-1 truncate text-[9px] text-amber-100/70">
+            A {aRow.voiceId}{aRow.durationMs ? ` · ${(aRow.durationMs / 1000).toFixed(1)}s` : ""} then B {bRow.voiceId}{bRow.durationMs ? ` · ${(bRow.durationMs / 1000).toFixed(1)}s` : ""}
+          </span>
+          <button
+            onClick={() => setPair(swapChainSides(livePair))}
+            title="Swap the two sides - B plays first"
+            className="h-5 w-5 flex items-center justify-center rounded-md text-amber-200/80 hover:text-amber-100 transition-colors shrink-0"
+          >
+            <ArrowLeftRight className="h-2.5 w-2.5" />
+          </button>
+          <button
+            onClick={() => setPair(clearChainSides(livePair))}
+            title="Clear the A/B picks"
+            className="h-5 w-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </div>
+      )}
       {rows.map((row) => {
         const key = `hist:${row.id}`;
         const isPlaying = playing === key;
+        const chainActive = (chainSide === "A" && livePair.aId === row.id) || (chainSide === "B" && livePair.bId === row.id);
         return (
-          <div key={row.id} className="flex items-center gap-1.5 rounded border border-white/10 bg-black/25 px-1.5 py-0.5">
+          <div key={row.id} className={cn(
+            "flex items-center gap-1.5 rounded border px-1.5 py-0.5 transition-colors",
+            chainActive ? "border-amber-400/45 bg-amber-400/[0.1]" : "border-white/10 bg-black/25",
+          )}>
             <button
               onClick={() => onPlay(key, row.url)}
               title={`Play this recorded read: ${row.voiceId} in ${row.deliveryId.toLowerCase()}${row.durationMs ? ` · ${(row.durationMs / 1000).toFixed(1)}s` : ""}`}
@@ -99,6 +160,28 @@ function StateAuditionHistory({ stateId, playing, onPlay, refreshKey }: {
             </span>
             <span className="min-w-0 flex-1 truncate text-[9px] text-muted-foreground">&quot;{row.text}&quot;</span>
             <span className="shrink-0 text-[8px] text-muted-foreground/70">{shortAuditionDate(row.createdAt)}</span>
+            {(["A", "B"] as const).map((side) => {
+              const picked = side === "A" ? livePair.aId === row.id : livePair.bId === row.id;
+              return (
+                <button
+                  key={side}
+                  onClick={() => setPair(pickChainSide(livePair, row.id, side))}
+                  title={picked
+                    ? `Unpick this read as side ${side}`
+                    : livePair[side === "A" ? "aId" : "bId"] === row.id
+                      ? `Move side ${side} here`
+                      : `Pick this read as side ${side} of the back-to-back compare`}
+                  className={cn(
+                    "h-5 w-5 flex items-center justify-center rounded-md border text-[8px] font-bold transition-colors shrink-0",
+                    picked
+                      ? "border-amber-400/50 bg-amber-400/20 text-amber-200"
+                      : "border-white/10 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {side}
+                </button>
+              );
+            })}
             <button
               onClick={() => void remove(row.id)}
               title="Remove this recorded read (and its file)"
@@ -309,9 +392,12 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       const audio = new Audio(url);
       audioRef.current = audio;
       setAuditionPlaying(key);
+      let settled = false;
       const done = () => {
+        if (settled) return; // a clip fires pause AND ended at natural end: settle once, so the stale event never clears the NEXT clip's key
+        settled = true;
         URL.revokeObjectURL(url);
-        if (seqRef.current === token) setAuditionPlaying(null);
+        if (audioRef.current === audio && seqRef.current === token) setAuditionPlaying(null);
         resolve();
       };
       audio.onended = done;
@@ -327,8 +413,11 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
       const audio = new Audio(url);
       audioRef.current = audio;
       setAuditionPlaying(key);
+      let settled = false;
       const done = () => {
-        if (seqRef.current === token) setAuditionPlaying(null);
+        if (settled) return; // a clip fires pause AND ended at natural end: settle once, so the stale event never clears the NEXT clip's key
+        settled = true;
+        if (audioRef.current === audio && seqRef.current === token) setAuditionPlaying(null);
         resolve();
       };
       audio.onended = done;
@@ -342,6 +431,17 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
   function playHistoryRow(key: string, url: string) {
     stopAudition();
     void playUrlAwait(key, url, seqRef.current);
+  }
+
+  /** A/B CHAIN: play the two picked history reads back to back (A then B), token-guarded like every other sequence. */
+  function playHistoryChain(stateId: string, aUrl: string, bUrl: string) {
+    stopAudition();
+    const token = seqRef.current;
+    void (async () => {
+      await playUrlAwait(`chain:${stateId}:A`, aUrl, token);
+      if (seqRef.current !== token) return;
+      await playUrlAwait(`chain:${stateId}:B`, bUrl, token);
+    })();
   }
 
   /** ENSEMBLE audition: one API call renders every selected speaker; rows come back with their A/B sides. */
@@ -696,6 +796,8 @@ export function ArtistsDialog({ project }: { project: StudioProject }) {
                     stateId={stateSel[c.id]}
                     playing={auditionPlaying}
                     onPlay={playHistoryRow}
+                    onChain={playHistoryChain}
+                    onStop={stopAudition}
                     refreshKey={histRefresh}
                   />
                 )}
