@@ -5,30 +5,43 @@ import path from "path";
 // ─────────────────────────────────────────────────────────────
 // LIVE BLENDER BRIDGE (§31 - replaceable engine driver)
 //
-// Transport: the AnimeOS Blender add-on (bridges/blender/
-// animeos_bridge.py) runs a tiny HTTP server inside Blender:
-//   GET  /status    → { blender_version, scene, busy }
-//   GET  /progress  → { progress 0..1, stage, done, png_base64? }
-//   POST /render    → submit an AnimeOS job (scene params → bpy)
-//   POST /ping      → liveness
+// The bridge renders REAL ANIMATED SHOTS: every job becomes a
+// sequenced h264 clip driven by the shot's camera grammar, rendered
+// by Cycles CPU inside a headless Blender worker and encoded to
+// public/renders/{jobId}.mp4.
 //
-// Connection sources, in order:
-//   1. ANIMEOS_BLENDER_HOST - an already-running add-on endpoint
-//      (e.g. "127.0.0.1:8100"), the way a workstation Blender or a
-//      render node attaches to this studio.
-//   2. Local `blender` binary - we spawn `blender -b -P
-//      animeos_bridge.py` ourselves (headless live bridge).
-// If neither exists, every call degrades to null and the render
-// pipeline keeps using the built-in simulator - nothing breaks.
+// Two connection paths, same output contract:
+//
+//   1. ENV HOST - ANIMEOS_BLENDER_HOST points at a running bridge
+//      server (bridges/blender/animeos_bridge.py) inside a
+//      workstation Blender (GUI or headless). Jobs go over HTTP,
+//      progress is polled, the finished clip returns as mp4_base64.
+//      Start one with:
+//        blender -b -P bridges/blender/animeos_bridge.py -- --port 8100
+//
+//   2. LOCAL WORKERS - when a `blender` binary exists on this
+//      machine, each job spawns its own headless worker process
+//        blender -b -P animeos_bridge.py -- --worker --job <file>
+//      which renders the clip and streams per-frame progress into a
+//      small JSON state file the render pipeline polls. One local
+//      worker at a time (a 4GB-class box renders one 3D clip at a
+//      time); extra jobs fall through to the MOTION engine.
+//
+// If neither exists the render pipeline uses the built-in MOTION
+// engine (ffmpeg camera moves over key art) or, failing that, the
+// wall-clock simulator - nothing breaks.
 // ─────────────────────────────────────────────────────────────
 
 const HOST_ENV = process.env.ANIMEOS_BLENDER_HOST ?? "";
-const BRIDGE_PORT = 8100;
+const BLENDER_BIN_ENV = process.env.ANIMEOS_BLENDER_BIN ?? "";
 const PROBE_TIMEOUT_MS = 1200;
+const WORKER_TIMEOUT_MS = 15 * 60_000;
+
+export type BridgeSource = "env" | "local" | null;
 
 export interface BridgeStatus {
-  mode: "LIVE_BLENDER" | "SIMULATOR";
-  source: "env" | "spawned" | null;
+  mode: "LIVE_BLENDER" | "MOTION" | "SIMULATOR";
+  source: BridgeSource;
   host: string | null;
   reachable: boolean;
   blenderVersion: string | null;
@@ -37,16 +50,10 @@ export interface BridgeStatus {
   detail: string;
 }
 
-let spawnedProcess: ChildProcess | null = null;
-let spawnedAvailable: boolean | null = null; // null = not probed yet
+let localBinCache: string | null | undefined; // undefined = not probed yet
+let localVersionCache: string | null = null;
 let lastProbe: { at: number; live: boolean } = { at: 0, live: false };
-
-function hostCandidates(): Array<{ host: string; source: "env" | "spawned" }> {
-  const out: Array<{ host: string; source: "env" | "spawned" }> = [];
-  if (HOST_ENV) out.push({ host: HOST_ENV, source: "env" });
-  if (spawnedProcess) out.push({ host: `127.0.0.1:${BRIDGE_PORT}`, source: "spawned" });
-  return out;
-}
+let localWorkers = 0; // running local worker count (serialize 3D renders)
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 4000): Promise<Response> {
   const controller = new AbortController();
@@ -73,97 +80,100 @@ async function probeHost(host: string): Promise<{ version: string; scene: string
   }
 }
 
-/** Try to spawn a headless local Blender running the bridge add-on. */
-async function trySpawnBlender(): Promise<boolean> {
-  if (spawnedProcess || spawnedAvailable === false) return Boolean(spawnedProcess);
-  const addOn = path.join(process.cwd(), "bridges", "blender", "animeos_bridge.py");
-  if (!fs.existsSync(addOn)) {
-    spawnedAvailable = false;
-    return false;
-  }
-  for (const bin of ["blender", "blender-4.2", "blender-4.1", "blender-4.0"]) {
+function localBinCandidates(): string[] {
+  const out: string[] = [];
+  if (BLENDER_BIN_ENV) out.push(BLENDER_BIN_ENV);
+  const home = process.env.HOME ?? "/home/z";
+  out.push(
+    `${home}/.venv/bin/blender`,
+    "/home/z/blender-4.3.2-linux-x64/blender",
+    "/usr/local/bin/blender",
+    "/usr/bin/blender",
+  );
+  return out;
+}
+
+/** Resolve a usable local Blender binary (cached after first probe). */
+export function localBlenderBin(): string | null {
+  if (localBinCache !== undefined) return localBinCache;
+  for (const bin of localBinCandidates()) {
     try {
-      const child = spawn(bin, ["-b", "-P", addOn, "--", "--port", String(BRIDGE_PORT)], {
-        stdio: "ignore",
-        detached: false,
-      });
-      // If the binary doesn't exist, spawn errors asynchronously - listen and clean up.
-      let failed = false;
-      child.on("error", () => {
-        failed = true;
-      });
-      await new Promise((r) => setTimeout(r, 300));
-      if (!failed && child.pid) {
-        child.removeAllListeners("error");
-        spawnedProcess = child;
-        child.on("exit", () => {
-          spawnedProcess = null;
-        });
-        // Give the add-on a moment to boot its HTTP server
-        for (let i = 0; i < 10; i++) {
-          if (await probeHost(`127.0.0.1:${BRIDGE_PORT}`)) return true;
-          await new Promise((r) => setTimeout(r, 500));
-        }
-        return Boolean(spawnedProcess);
+      fs.accessSync(bin, fs.constants.X_OK);
+      const st = fs.statSync(bin);
+      if (st.isFile() || (st.isSymbolicLink && st.isSymbolicLink())) {
+        localBinCache = bin;
+        return bin;
       }
     } catch {
-      // binary not found - try next candidate
+      // candidate missing - try the next one
     }
   }
-  spawnedAvailable = false;
-  return false;
+  localBinCache = null;
+  return null;
+}
+
+export async function blenderVersion(bin: string): Promise<string> {
+  if (localVersionCache) return localVersionCache;
+  return new Promise<string>((resolve) => {
+    const child = spawn(bin, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    child.stdout.on("data", (c: Buffer) => { out += c.toString(); });
+    child.on("error", () => resolve("unknown"));
+    child.on("exit", () => {
+      const first = out.split("\n")[0]?.replace("Blender", "").trim();
+      localVersionCache = first || "unknown";
+      resolve(localVersionCache);
+    });
+  });
 }
 
 /** Full bridge status - used by /api/bridge and the render pipeline. */
 export async function bridgeStatus(force = false): Promise<BridgeStatus> {
   const cached = !force && Date.now() - lastProbe.at < 4000;
-  if (cached && !lastProbe.live && !spawnedProcess && !HOST_ENV) {
+
+  // 1. env-host workstation Blender
+  if (HOST_ENV) {
+    const info = await probeHost(HOST_ENV);
+    if (info) {
+      lastProbe = { at: Date.now(), live: true };
+      return {
+        mode: "LIVE_BLENDER", source: "env", host: HOST_ENV, reachable: true,
+        blenderVersion: info.version, scene: info.scene || null, busy: info.busy,
+        detail: `Live Blender ${info.version} attached via ANIMEOS_BLENDER_HOST - animated sequence renders flow back into the queue`,
+      };
+    }
+    if (cached) {
+      return {
+        mode: "MOTION", source: null, host: HOST_ENV, reachable: false,
+        blenderVersion: null, scene: null, busy: false,
+        detail: `No response from ANIMEOS_BLENDER_HOST (${HOST_ENV}) - built-in MOTION engine driving`,
+      };
+    }
+  }
+
+  // 2. local headless workers (per-job subprocess, one at a time)
+  const bin = localBlenderBin();
+  if (bin) {
+    const version = await blenderVersion(bin);
+    lastProbe = { at: Date.now(), live: true };
     return {
-      mode: "SIMULATOR", source: null, host: null, reachable: false,
-      blenderVersion: null, scene: null, busy: false,
-      detail: "Blender bridge offline - set ANIMEOS_BLENDER_HOST to a running animeos_bridge.py add-on, or install Blender locally. Simulator driver active.",
+      mode: "LIVE_BLENDER", source: "local", host: bin, reachable: true,
+      blenderVersion: version, scene: "sequence worker pool", busy: localWorkers > 0,
+      detail: `Headless Blender ${version} at ${bin} - one 3D sequence worker at a time, overflow renders fall to the MOTION engine`,
     };
-  }
-
-  for (const { host, source } of hostCandidates()) {
-    const info = await probeHost(host);
-    if (info) {
-      lastProbe = { at: Date.now(), live: true };
-      return {
-        mode: "LIVE_BLENDER", source, host, reachable: true,
-        blenderVersion: info.version, scene: info.scene || null, busy: info.busy,
-        detail: `Live Blender ${info.version} attached via ${source === "env" ? "ANIMEOS_BLENDER_HOST" : "local spawn"}`,
-      };
-    }
-  }
-
-  // No env host (or env host down) - attempt local spawn once
-  if (!HOST_ENV && (await trySpawnBlender())) {
-    const info = await probeHost(`127.0.0.1:${BRIDGE_PORT}`);
-    if (info) {
-      lastProbe = { at: Date.now(), live: true };
-      return {
-        mode: "LIVE_BLENDER", source: "spawned", host: `127.0.0.1:${BRIDGE_PORT}`, reachable: true,
-        blenderVersion: info.version, scene: info.scene || null, busy: info.busy,
-        detail: "Live headless Blender spawned with the AnimeOS bridge add-on",
-      };
-    }
   }
 
   lastProbe = { at: Date.now(), live: false };
   return {
-    mode: "SIMULATOR", source: null,
-    host: HOST_ENV || (spawnedProcess ? `127.0.0.1:${BRIDGE_PORT}` : null),
-    reachable: false, blenderVersion: null, scene: null, busy: false,
-    detail: HOST_ENV
-      ? `No response from ANIMEOS_BLENDER_HOST (${HOST_ENV}) - simulator driver active.`
-      : "Blender bridge offline - set ANIMEOS_BLENDER_HOST to a running animeos_bridge.py add-on, or install Blender locally. Simulator driver active.",
+    mode: "MOTION", source: null, host: null, reachable: false,
+    blenderVersion: null, scene: null, busy: false,
+    detail: "No Blender attached - the built-in MOTION engine renders animated clips per shot's camera grammar (ffmpeg). Set ANIMEOS_BLENDER_HOST to attach a workstation.",
   };
 }
 
 export interface BridgeJobPayload {
   jobId: string;
-  shot: { number: number; description: string; shotType: string; lens: string | null; movement: string | null; lighting: string | null };
+  shot: { number: number; description: string; shotType: string; lens: string | null; movement: string | null; lighting: string | null; duration: number };
   scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number };
   project: { title: string; visualStyle: string; resolution: string; fps: number };
   mode: "PREVIEW" | "FINAL";
@@ -171,24 +181,105 @@ export interface BridgeJobPayload {
 
 export interface BridgeSubmitResult {
   submitted: boolean;
+  path: "env" | "local" | null;
   error?: string;
 }
 
-/** Submit a render job to the live Blender. Returns submitted:false when offline. */
-export async function submitRenderJob(payload: BridgeJobPayload): Promise<BridgeSubmitResult> {
+/** Submit a render job to the env-host bridge over HTTP. */
+async function submitEnvJob(payload: BridgeJobPayload): Promise<BridgeSubmitResult> {
   const status = await bridgeStatus(true);
-  if (!status.reachable || !status.host) return { submitted: false, error: status.detail };
+  if (!status.reachable || status.source !== "env" || !status.host) return { submitted: false, path: null, error: status.detail };
   try {
     const res = await fetchWithTimeout(
       `http://${status.host}/render`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       5000
     );
-    if (!res.ok) return { submitted: false, error: `Blender /render responded ${res.status}` };
-    return { submitted: true };
+    if (!res.ok) return { submitted: false, path: "env", error: `Blender /render responded ${res.status}` };
+    return { submitted: true, path: "env" };
   } catch (err) {
-    return { submitted: false, error: err instanceof Error ? err.message : "Blender submit failed" };
+    return { submitted: false, path: "env", error: err instanceof Error ? err.message : "Blender submit failed" };
   }
+}
+
+// ── local worker path (job-file protocol, no middleman server) ──
+
+export interface LocalJobState {
+  jobId: string;
+  progress: number;
+  stage: string;
+  done: boolean;
+  error: string | null;
+  mp4Path: string | null;
+}
+
+function jobFileFor(jobId: string): string {
+  return path.join(process.cwd(), "public", "renders", `.job-${jobId}.json`);
+}
+
+/** Spawn a detached headless Blender worker for one job. */
+export function submitLocalJob(payload: BridgeJobPayload): BridgeSubmitResult {
+  const bin = localBlenderBin();
+  if (!bin) return { submitted: false, path: "local", error: "no local blender binary" };
+  if (localWorkers >= 1) return { submitted: false, path: "local", error: "local worker busy" };
+  const script = path.join(process.cwd(), "bridges", "blender", "animeos_bridge.py");
+  if (!fs.existsSync(script)) return { submitted: false, path: "local", error: "bridge script missing" };
+  const rendersDir = path.join(process.cwd(), "public", "renders");
+  fs.mkdirSync(rendersDir, { recursive: true });
+  const jobFile = jobFileFor(payload.jobId);
+  fs.writeFileSync(jobFile, JSON.stringify({ jobId: payload.jobId, payload, outDir: rendersDir }));
+  try {
+    const child = spawn(bin, ["-b", "-P", script, "--", "--worker", "--job", jobFile], {
+      stdio: "ignore",
+      detached: true,
+      cwd: process.cwd(),
+    });
+    child.unref();
+    localWorkers += 1;
+    child.on("exit", () => {
+      localWorkers = Math.max(0, localWorkers - 1);
+    });
+    return { submitted: true, path: "local" };
+  } catch (err) {
+    try { fs.unlinkSync(jobFile); } catch { /* cleanup best-effort */ }
+    return { submitted: false, path: "local", error: err instanceof Error ? err.message : "worker spawn failed" };
+  }
+}
+
+/** Poll a local worker's state file into the shared progress shape. */
+export function pollLocalJob(jobId: string): BridgeProgress {
+  const file = jobFileFor(jobId);
+  try {
+    const raw = fs.readFileSync(file, "utf-8");
+    const state = JSON.parse(raw) as LocalJobState;
+    return {
+      polled: true,
+      progress: typeof state.progress === "number" ? state.progress : undefined,
+      stage: state.stage,
+      done: Boolean(state.done),
+      error: state.error ?? undefined,
+      mp4Path: state.mp4Path ?? undefined,
+    };
+  } catch {
+    return { polled: false, error: "no worker state yet" };
+  }
+}
+
+export function localWorkerBusy(): boolean {
+  return localWorkers > 0;
+}
+
+/** Submit wherever a real Blender can take the job: env host first, then a local worker. */
+export async function submitRenderJob(payload: BridgeJobPayload): Promise<BridgeSubmitResult> {
+  const envResult = await submitEnvJob(payload);
+  if (envResult.submitted) return envResult;
+  if (!HOST_ENV || envResult.error) {
+    // no env host configured, or it refused - try a local worker
+    const local = submitLocalJob(payload);
+    if (local.submitted) return local;
+    return { submitted: false, path: null, error: envResult.error ?? local.error };
+  }
+  return envResult;
 }
 
 export interface BridgeProgress {
@@ -197,26 +288,40 @@ export interface BridgeProgress {
   stage?: string;
   done?: boolean;
   pngBase64?: string;
+  mp4Base64?: string;
+  mp4Path?: string;
   error?: string;
 }
 
-/** Poll live progress for a job submitted to Blender. */
+/** Poll live progress for a job submitted to Blender (env host over HTTP). */
 export async function pollJobProgress(jobId: string): Promise<BridgeProgress> {
   const status = await bridgeStatus(true);
   if (!status.reachable || !status.host) return { polled: false, error: status.detail };
   try {
     const res = await fetchWithTimeout(`http://${status.host}/progress?job_id=${encodeURIComponent(jobId)}`, undefined, 5000);
     if (!res.ok) return { polled: false, error: `Blender /progress responded ${res.status}` };
-    const data = (await res.json()) as { progress?: number; stage?: string; done?: boolean; png_base64?: string };
+    const data = (await res.json()) as { progress?: number; stage?: string; done?: boolean; png_base64?: string; mp4_base64?: string; error?: string };
     return {
       polled: true,
       progress: typeof data.progress === "number" ? data.progress : undefined,
       stage: typeof data.stage === "string" ? data.stage : undefined,
       done: Boolean(data.done),
       pngBase64: typeof data.png_base64 === "string" ? data.png_base64 : undefined,
+      mp4Base64: typeof data.mp4_base64 === "string" ? data.mp4_base64 : undefined,
+      error: typeof data.error === "string" ? data.error : undefined,
     };
   } catch (err) {
     return { polled: false, error: err instanceof Error ? err.message : "Blender poll failed" };
+  }
+}
+
+/** Jobs whose worker state file went quiet for this long are failed out. */
+export function localJobStale(jobId: string): boolean {
+  try {
+    const st = fs.statSync(jobFileFor(jobId));
+    return Date.now() - st.mtimeMs > WORKER_TIMEOUT_MS;
+  } catch {
+    return false;
   }
 }
 

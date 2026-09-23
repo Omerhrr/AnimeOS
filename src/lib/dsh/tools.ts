@@ -1316,7 +1316,12 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
         const mode = String(args.mode ?? "PREVIEW") === "FINAL" ? "FINAL" : "PREVIEW";
         const job = await createRenderJob(projectId, shot.id, mode);
-        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} - DSH will inspect the preview when it completes.` };
+        const engineNote = job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
+          ? "headless Blender sequence worker (Cycles)"
+          : job.driver === "MOTION"
+            ? "built-in MOTION engine (camera grammar over key art)"
+            : "simulator";
+        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} on the ${engineNote} - it will finish as a playable animated clip following the shot's camera grammar (${shot.movement ?? "STATIC"}, ${shot.shotType}); DSH will inspect the preview when it completes.` };
       }
 
       case "set_shot_dialogue": {

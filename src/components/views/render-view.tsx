@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable,
-  Layers, ListFilter, Play,
+  Layers, ListFilter, Play, Clapperboard,
 } from "lucide-react";
-import { api, parseActions, parseFindings, type StudioProject } from "@/lib/api-client";
+import { api, parseActions, parseFindings, type StudioProject, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
@@ -17,27 +17,30 @@ function EngineDriverCard() {
   const bridgeQ = useQuery({ queryKey: ["bridge"], queryFn: api.bridgeStatus, refetchInterval: 5000 });
   const s = bridgeQ.data;
   const live = s?.mode === "LIVE_BLENDER" && s.reachable;
+  const motion = s?.mode === "MOTION";
 
   return (
     <div className={cn(
       "studio-panel p-4 mb-5 flex flex-col sm:flex-row sm:items-center gap-3",
-      live ? "border-emerald-400/25" : ""
+      live ? "border-emerald-400/25" : motion ? "border-teal-400/25" : ""
     )}>
       <div className={cn(
         "h-9 w-9 rounded-lg flex items-center justify-center shrink-0 border",
-        live ? "bg-emerald-400/10 border-emerald-400/30" : "bg-white/5 border-white/12"
+        live ? "bg-emerald-400/10 border-emerald-400/30" : motion ? "bg-teal-400/10 border-teal-400/30" : "bg-white/5 border-white/12"
       )}>
-        <Cable className={cn("h-4.5 w-4.5", live ? "text-emerald-300" : "text-muted-foreground")} />
+        <Cable className={cn("h-4.5 w-4.5", live ? "text-emerald-300" : motion ? "text-teal-300" : "text-muted-foreground")} />
       </div>
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-sm font-semibold">
           Engine driver
           <span className={cn(
             "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-widest border",
-            live ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-300" : "bg-white/5 border-white/12 text-muted-foreground"
+            live ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-300"
+              : motion ? "bg-teal-400/10 border-teal-400/30 text-teal-300"
+              : "bg-white/5 border-white/12 text-muted-foreground"
           )}>
-            <span className={cn("h-1.5 w-1.5 rounded-full", live ? "bg-emerald-400 dsh-pulse" : "bg-neutral-500")} />
-            {live ? "LIVE BLENDER" : "SIMULATOR"}
+            <span className={cn("h-1.5 w-1.5 rounded-full", live ? "bg-emerald-400 dsh-pulse" : motion ? "bg-teal-400" : "bg-neutral-500")} />
+            {live ? "LIVE BLENDER" : motion ? "MOTION ENGINE" : "SIMULATOR"}
           </span>
           {s?.busy && live && (
             <span className="rounded bg-amber-400/10 border border-amber-400/30 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-amber-300">RENDERING</span>
@@ -45,16 +48,21 @@ function EngineDriverCard() {
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">
           {live
-            ? `Blender ${s?.blenderVersion ?? ""} attached at ${s?.host}${s?.scene ? ` · scene “${s.scene}”` : ""} - jobs render in the real engine and flow back into the queue.`
+            ? `Blender ${s?.blenderVersion ?? ""} attached${s?.source === "local" ? " (headless worker pool)" : ` at ${s?.host ?? ""}`}${s?.scene && s.source !== "local" ? ` · scene “${s.scene}”` : ""} - animated sequence renders flow back into the queue.`
             : s?.detail ?? "Probing bridge…"}
         </p>
+        {!live && (
+          <p className="text-[10px] text-muted-foreground/80 mt-1">
+            Every job renders a sequenced clip driven by the shot&apos;s camera grammar (movement · shot type · lens · lighting · fog · lightning · energy) and muxes with the episode stems at export.
+          </p>
+        )}
         {!live && s?.envHint && (
           <p className="text-[10px] text-muted-foreground/80 mt-1 font-mono">ANIMEOS_BLENDER_HOST={s.envHint}</p>
         )}
       </div>
       {!live && (
         <p className="sm:ml-auto text-[10px] leading-relaxed text-muted-foreground/80 sm:max-w-[290px] sm:text-right">
-          Attach one: run <span className="font-mono">bridges/blender/animeos_bridge.py</span> inside Blender, then set <span className="font-mono">ANIMEOS_BLENDER_HOST=127.0.0.1:8100</span>.
+          Attach one: run <span className="font-mono">blender -b -P bridges/blender/animeos_bridge.py</span>, then set <span className="font-mono">ANIMEOS_BLENDER_HOST=127.0.0.1:8100</span>.
         </p>
       )}
     </div>
@@ -182,6 +190,101 @@ function BatchRenderCard({ project }: { project: StudioProject }) {
     </div>
   );}
 
+function EpisodeCutCard({ project }: { project: StudioProject }) {
+  const [episodeId, setEpisodeId] = useState<string | null>(null);
+  const [mode, setMode] = useState<"PREVIEW" | "FINAL">("PREVIEW");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [cut, setCut] = useState<EpisodeCutResult | null>(null);
+
+  const episodes = useMemo(
+    () => project.seasons.flatMap((s) => s.episodes).sort((a, b) => a.number - b.number),
+    [project.seasons]
+  );
+
+  async function exportCut() {
+    if (!episodeId) return;
+    setBusy(true);
+    setError(null);
+    setCut(null);
+    try {
+      const r = await api.exportCut(episodeId, mode);
+      setCut(r);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cut export failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (episodes.length === 0) return null;
+
+  return (
+    <div className="studio-panel p-4 mb-5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Clapperboard className="h-4 w-4 text-teal-300" />
+        <span className="text-sm font-semibold">Episode cut</span>
+        <span className="text-[11px] text-muted-foreground">concatenate each shot&apos;s animated clip in story order, synthesize the stems server-side, mux video + audio into one mp4</span>
+      </div>
+      <div className="flex items-center gap-3 mt-3 flex-wrap">
+        <select
+          value={episodeId ?? ""}
+          onChange={(e) => { setEpisodeId(e.target.value || null); setCut(null); setError(null); }}
+          className="h-7 rounded-lg bg-white/5 border border-white/12 text-[11px] px-2 text-foreground"
+          aria-label="Episode to cut"
+        >
+          <option value="">Pick an episode…</option>
+          {episodes.map((ep) => (
+            <option key={ep.id} value={ep.id}>E{String(ep.number).padStart(2, "0")} · {ep.title}</option>
+          ))}
+        </select>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setMode("PREVIEW")}
+            className={cn("px-2.5 h-7 rounded-lg text-[11px] font-medium border transition-colors", mode === "PREVIEW" ? "bg-primary/15 text-primary border-primary/30" : "text-muted-foreground border-white/10 bg-white/5")}
+          >PREVIEW</button>
+          <button
+            onClick={() => setMode("FINAL")}
+            className={cn("px-2.5 h-7 rounded-lg text-[11px] font-medium border transition-colors", mode === "FINAL" ? "bg-primary/15 text-primary border-primary/30" : "text-muted-foreground border-white/10 bg-white/5")}
+          >FINAL</button>
+        </div>
+        <Button size="sm" className="h-7 text-[11px]" disabled={busy || !episodeId} onClick={() => void exportCut()}>
+          {busy ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Clapperboard className="h-3 w-3 mr-1.5" />}
+          {busy ? "Rendering + muxing…" : "Export cut (mp4)"}
+        </Button>
+      </div>
+      {error && <p className="text-[11px] text-rose-300 mt-2">{error}</p>}
+      {cut && (
+        <div className="mt-3">
+          <video
+            key={cut.url}
+            src={cut.url}
+            controls
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full rounded-lg border border-white/10 bg-black"
+            style={{ maxHeight: 340 }}
+          />
+          <div className="flex items-center gap-2 flex-wrap mt-2 text-[11px] text-muted-foreground">
+            <a href={cut.url} download={cut.file} className="text-teal-300 hover:underline">download {cut.file}</a>
+            <span>· {cut.width}x{cut.height} @ {Math.round(cut.fps)}fps</span>
+            <span>· {(cut.durationMs / 1000).toFixed(1)}s</span>
+            <span>· {cut.shotCount} shot{cut.shotCount === 1 ? "" : "s"}</span>
+            <span>· {cut.cueCount} stem cue{cut.cueCount === 1 ? "" : "s"}</span>
+            {cut.renderedNow > 0 && <span className="text-amber-300">· {cut.renderedNow} rendered inline</span>}
+            <a href={cut.manifestFile} target="_blank" rel="noreferrer" className="hover:underline">manifest</a>
+          </div>
+          {cut.warnings.length > 0 && (
+            <div className="mt-1.5 text-[10px] text-amber-300/90 leading-relaxed">{cut.warnings.join(" · ")}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RenderView({ project }: { project: StudioProject }) {
   const qc = useQueryClient();
   const { projectId, openPreview } = useStudio();
@@ -221,12 +324,14 @@ export function RenderView({ project }: { project: StudioProject }) {
     <div>
       <SectionHeader
         title="Render Queue"
-        sub="Live Blender when attached, built-in simulator otherwise - same job lifecycle, same DSH inspection loop. Completed previews go straight to DSH for inspection."
+        sub="Headless Blender workers when a binary exists, the built-in MOTION engine otherwise - every job renders a real animated clip per shot's camera grammar. Completed previews go straight to DSH for inspection."
       />
 
       <EngineDriverCard />
 
       <BatchRenderCard project={project} />
+
+      <EpisodeCutCard project={project} />
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mr-1">
@@ -276,15 +381,23 @@ export function RenderView({ project }: { project: StudioProject }) {
                     {job.shot ? `Shot ${String(job.shot.number).padStart(3, "0")}` : "Production master"}
                     <span className="text-[11px] font-normal text-muted-foreground">{job.mode} · attempt {job.attempt}</span>
                     <span
-                      title={job.driver === "BLENDER" ? "Rendered by the live Blender bridge" : "Rendered by the built-in simulator"}
+                      title={
+                        job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
+                          ? "Rendered by a headless Blender sequence worker (Cycles)"
+                          : job.driver === "MOTION"
+                            ? "Rendered by the built-in MOTION engine (ffmpeg camera grammar over key art)"
+                            : "Rendered by the wall-clock simulator"
+                      }
                       className={cn(
                         "rounded px-1 py-[1px] text-[8px] font-bold tracking-widest border",
-                        job.driver === "BLENDER"
+                        job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
                           ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-300"
-                          : "bg-white/5 border-white/12 text-muted-foreground"
+                          : job.driver === "MOTION"
+                            ? "bg-teal-400/10 border-teal-400/30 text-teal-300"
+                            : "bg-white/5 border-white/12 text-muted-foreground"
                       )}
                     >
-                      {job.driver === "BLENDER" ? "BLENDER" : "SIM"}
+                      {job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL" ? "BLENDER" : job.driver === "MOTION" ? "MOTION" : "SIM"}
                     </span>
                     <StatusBadge status={job.status} />
                   </div>
@@ -317,6 +430,20 @@ export function RenderView({ project }: { project: StudioProject }) {
                   )}
                 </div>
               </div>
+
+              {job.outputUrl && !active && (
+                <video
+                  key={job.id}
+                  src={job.outputUrl}
+                  controls
+                  loop
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="w-full rounded-lg border border-white/10 bg-black mt-3"
+                  style={{ maxHeight: 280 }}
+                />
+              )}
 
               {active && (
                 <div className="mt-3">

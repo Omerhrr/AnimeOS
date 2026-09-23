@@ -289,8 +289,8 @@ export interface ArcPlaybackFeed {
 }
 
 export interface BridgeStatusInfo {
-  mode: "LIVE_BLENDER" | "SIMULATOR";
-  source: "env" | "spawned" | null;
+  mode: "LIVE_BLENDER" | "MOTION" | "SIMULATOR";
+  source: "env" | "local" | null;
   host: string | null;
   reachable: boolean;
   blenderVersion: string | null;
@@ -421,6 +421,9 @@ export interface RenderJobRow {
   stage: string;
   attempt: number;
   driver: string;
+  // finished animated clip (mp4 under /renders/) for MOTION and
+  // Blender drivers; null for still-frame fallbacks
+  outputUrl: string | null;
   createdAt: string;
   shot?: (ShotRow & { scene?: { id: string; number: number; title: string } }) | null;
   evaluation: {
@@ -448,6 +451,21 @@ export interface ProjectSummary {
   episodeCount: number;
   characterCount: number;
   renderCount: number;
+}
+
+export interface EpisodeCutResult {
+  url: string;
+  file: string;
+  manifestFile: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  fps: number;
+  shotCount: number;
+  cueCount: number;
+  renderedNow: number;
+  warnings: string[];
+  audioKinds: Record<string, number>;
 }
 
 export interface SceneAnalysis {
@@ -507,6 +525,10 @@ export const api = {
   // record one line-stamping application of a saved template (dialog apply path)
   useArcTemplate: (id: string) =>
     j<{ id: string; usageCount: number; lastUsedAt: string | null }>(`/api/arc-templates/${id}/use`, { method: "POST" }),
+
+  // episode cut export: animated clips + stems muxed into one mp4
+  exportCut: (episodeId: string, mode: "PREVIEW" | "FINAL" = "PREVIEW") =>
+    j<EpisodeCutResult>(`/api/episodes/${episodeId}/cut`, { method: "POST", body: JSON.stringify({ mode }) }),
 
   // sound-design cues
   audioCues: (shotId: string) => j<AudioCueRow[]>(`/api/audio-cues?shotId=${shotId}`),

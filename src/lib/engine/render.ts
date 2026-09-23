@@ -2,23 +2,34 @@ import { db } from "@/lib/db";
 import fs from "fs";
 import path from "path";
 import { stageFor } from "@/lib/types";
-import { bridgeStatus, submitRenderJob, pollJobProgress } from "@/lib/bridge/blender";
+import {
+  bridgeStatus, submitRenderJob, pollJobProgress,
+  pollLocalJob, localJobStale,
+} from "@/lib/bridge/blender";
+import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 
 // ─────────────────────────────────────────────────────────────
-// RENDER PIPELINE (pluggable engine driver)
+// RENDER PIPELINE (pluggable engine drivers)
 //
 // Architecture per the vision doc:
 //   Scene → Shot → Validation → Render → DSH Inspection → Revision → Approve
 //
-// Two drivers behind the same job lifecycle:
-//   • BLENDER   - a live Blender instance running the AnimeOS bridge
-//     add-on (bridges/blender/animeos_bridge.py). Jobs are submitted
-//     over HTTP, progress is polled, and the finished frame is pulled
-//     back into public/renders/.
-//   • SIMULATOR - the built-in timed-stage driver, used whenever no
-//     Blender is attached (and as automatic fallback mid-job). The
-//     production state machine, render queue, and DSH evaluation loop
-//     are identical for both drivers.
+// Every driver behind the same job lifecycle now produces REAL
+// ANIMATED SHOTS - a sequenced clip per shot's camera grammar, not
+// a still:
+//   • BLENDER        - a workstation Blender running the AnimeOS
+//     bridge server (env host over HTTP), rendering the frame
+//     range with Cycles and returning the finished clip.
+//   • BLENDER_LOCAL  - a locally-installed headless Blender: each
+//     job spawns its own worker subprocess (one 3D render at a
+//     time), progress flows through a state file.
+//   • MOTION         - the built-in ffmpeg engine: deterministic
+//     camera program (movement / shot type / lens / lighting /
+//     fog / lightning / energy) animated over the shot's key art.
+//   • SIMULATOR      - wall-clock fallback when no engine exists.
+//
+// The production state machine, render queue, and DSH evaluation
+// loop are identical for all four drivers.
 // ─────────────────────────────────────────────────────────────
 
 export async function createRenderJob(projectId: string, shotId: string | null, mode: "PREVIEW" | "FINAL") {
@@ -46,55 +57,67 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
 
   let driver = "SIMULATOR";
   let stage = "Validating scene graph";
+  let clipMs = 0;
 
-  // Live Blender attached? Hand the job to the real engine.
+  // Pick the first engine that can take the job.
   const bridge = await bridgeStatus(true);
-  if (bridge.reachable && bridge.host && shotId) {
-    const shot = await db.shot.findUnique({
-      where: { id: shotId },
-      include: { scene: true },
-    });
-    if (shot) {
-      const project = await db.project.findUnique({ where: { id: projectId } });
-      const submit = await submitRenderJob({
-        jobId: job.id,
-        shot: {
-          number: shot.number,
-          description: shot.description,
-          shotType: shot.shotType,
-          lens: shot.lens,
-          movement: shot.movement,
-          lighting: shot.lighting,
-        },
-        scene: {
-          number: shot.scene.number,
-          title: shot.scene.title,
-          fogDensity: shot.scene.fogDensity,
-          lightningIntensity: shot.scene.lightningIntensity,
-          energyIntensity: shot.scene.energyIntensity,
-          cameraDistance: shot.scene.cameraDistance,
-          rimLightIntensity: shot.scene.rimLightIntensity,
-        },
-        project: {
-          title: project?.title ?? "AnimeOS",
-          visualStyle: project?.visualStyle ?? "DONGHUA",
-          resolution: project?.resolution ?? "1920x1080",
-          fps: project?.fps ?? 24,
-        },
-        mode,
-      });
-      if (submit.submitted) {
-        driver = "BLENDER";
-        stage = `Blender: job submitted → ${bridge.host}`;
-      } else {
-        stage = `Blender submit failed (${submit.error ?? "unknown"}) - simulator taking over`;
-      }
+  const shot = shotId
+    ? await db.shot.findUnique({ where: { id: shotId }, include: { scene: true } })
+    : null;
+
+  if (bridge.reachable && shot) {
+    const project = await db.project.findUnique({ where: { id: projectId } });
+    const payload = {
+      jobId: job.id,
+      shot: {
+        number: shot.number,
+        description: shot.description,
+        shotType: shot.shotType,
+        lens: shot.lens,
+        movement: shot.movement,
+        lighting: shot.lighting,
+        duration: shot.duration,
+      },
+      scene: {
+        number: shot.scene.number,
+        title: shot.scene.title,
+        fogDensity: shot.scene.fogDensity,
+        lightningIntensity: shot.scene.lightningIntensity,
+        energyIntensity: shot.scene.energyIntensity,
+        cameraDistance: shot.scene.cameraDistance,
+        rimLightIntensity: shot.scene.rimLightIntensity,
+      },
+      project: {
+        title: project?.title ?? "AnimeOS",
+        visualStyle: project?.visualStyle ?? "DONGHUA",
+        resolution: project?.resolution ?? "1920x1080",
+        fps: project?.fps ?? 24,
+      },
+      mode,
+    };
+    const submit = await submitRenderJob(payload);
+    if (submit.submitted) {
+      driver = submit.path === "local" ? "BLENDER_LOCAL" : "BLENDER";
+      stage = submit.path === "local"
+        ? "Blender: headless sequence worker spawned"
+        : `Blender: job submitted → ${bridge.host}`;
+      clipMs = Math.round(shot.duration * 1000);
+    } else {
+      stage = `Blender submit failed (${submit.error ?? "unknown"}) - trying the built-in engine`;
     }
+  }
+
+  // MOTION engine: built-in ffmpeg camera-grammar renderer.
+  if (driver === "SIMULATOR" && shot && (await detectFfmpeg())) {
+    driver = "MOTION";
+    clipMs = Math.round(shot.duration * 1000);
+    stage = "Motion: planning camera program";
+    startMotionJob(job.id, shot, mode);
   }
 
   const finalJob = await db.renderJob.update({
     where: { id: job.id },
-    data: { driver, stage },
+    data: { driver, stage, ...(clipMs > 0 ? { durationMs: clipMs } : {}) },
   });
 
   await db.productionEvent.create({
@@ -110,11 +133,81 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
   return finalJob;
 }
 
+// ── MOTION engine runner (async, updates the job as ffmpeg encodes) ──
+
+function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number }; shotType: string; lens: string | null; movement: string | null; lighting: string | null; duration: number; number: number; artworkUrl: string | null }, mode: "PREVIEW" | "FINAL") {
+  void (async () => {
+    let lastPct = -1;
+    try {
+      const sceneProject = await db.scene.findUnique({ where: { id: shot.scene.id }, select: { episode: { select: { season: { select: { projectId: true } } } } } });
+      const projectRow = sceneProject
+        ? await db.project.findUnique({ where: { id: sceneProject.episode.season.projectId } })
+        : null;
+      const result = await renderShotClip({
+        jobId,
+        shotType: shot.shotType,
+        lens: shot.lens,
+        movement: shot.movement,
+        lighting: shot.lighting,
+        fogDensity: shot.scene.fogDensity,
+        lightningIntensity: shot.scene.lightningIntensity,
+        energyIntensity: shot.scene.energyIntensity,
+        cameraDistance: shot.scene.cameraDistance,
+        rimLightIntensity: shot.scene.rimLightIntensity,
+        duration: shot.duration,
+        fps: projectRow?.fps ?? 24,
+        resolution: projectRow?.resolution ?? "1920x1080",
+        mode,
+        artworkUrl: shot.artworkUrl,
+        shotNumber: shot.number,
+        onProgress: (ratio) => {
+          const pct = Math.floor(ratio * 25) * 4;
+          if (pct > lastPct) {
+            lastPct = pct;
+            void db.renderJob.update({
+              where: { id: jobId },
+              data: { progress: pct, stage: stageFor(pct) },
+            }).catch(() => {});
+          }
+        },
+      });
+      if (result.outputUrl) {
+        await db.renderJob.update({
+          where: { id: jobId },
+          data: {
+            status: "REVIEW",
+            progress: 100,
+            stage: `Motion clip ready - ${result.programNote}`.slice(0, 120),
+            outputUrl: result.outputUrl,
+            finishedAt: new Date(),
+          },
+        });
+      } else {
+        await db.renderJob.update({
+          where: { id: jobId },
+          data: {
+            status: "FAILED",
+            progress: 100,
+            stage: `Motion engine failed (${result.error ?? "unknown"})`.slice(0, 120),
+            finishedAt: new Date(),
+          },
+        });
+      }
+    } catch (err) {
+      await db.renderJob.update({
+        where: { id: jobId },
+        data: { status: "FAILED", progress: 100, stage: `Motion engine error: ${err instanceof Error ? err.message : "unknown"}`.slice(0, 120), finishedAt: new Date() },
+      }).catch(() => {});
+    }
+  })();
+}
+
 /**
- * Advance a job's progress. BLENDER jobs poll the live engine;
- * SIMULATOR jobs advance on elapsed wall-clock time.
- * When a job crosses 100% the caller is responsible for triggering
- * the DSH evaluation pass exactly once.
+ * Advance a job's progress. BLENDER jobs poll the live engine (HTTP
+ * for env hosts, state files for local workers), MOTION jobs update
+ * themselves from ffmpeg, SIMULATOR jobs advance on elapsed
+ * wall-clock time. When a job crosses 100% the caller is responsible
+ * for triggering the DSH evaluation pass exactly once.
  */
 export async function tickRenderJob(jobId: string) {
   let job = await db.renderJob.findUnique({ where: { id: jobId }, include: { evaluation: true } });
@@ -122,13 +215,61 @@ export async function tickRenderJob(jobId: string) {
 
   if (job.status !== "RENDERING") return job;
 
+  if (job.driver === "BLENDER_LOCAL") {
+    if (localJobStale(job.id)) {
+      return db.renderJob.update({
+        where: { id: jobId },
+        data: { status: "FAILED", progress: 100, stage: "Blender worker went quiet - job failed", finishedAt: new Date() },
+        include: { evaluation: true },
+      });
+    }
+    const prog = pollLocalJob(job.id);
+    if (prog.polled && prog.done) {
+      if (prog.error || !prog.mp4Path) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { status: "FAILED", progress: 100, stage: `Blender: ${prog.error ?? "no clip produced"}`.slice(0, 120), finishedAt: new Date() },
+          include: { evaluation: true },
+        });
+      } else if (fs.existsSync(prog.mp4Path)) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: {
+            status: "REVIEW", progress: 100,
+            stage: (prog.stage?.slice(0, 60) || "Blender clip ready") + " - awaiting DSH inspection",
+            outputUrl: `/renders/${job.id}.mp4`,
+            finishedAt: new Date(),
+          },
+          include: { evaluation: true },
+        });
+      } else {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { status: "FAILED", progress: 100, stage: "Blender clip missing on disk", finishedAt: new Date() },
+          include: { evaluation: true },
+        });
+      }
+    } else if (prog.polled && typeof prog.progress === "number") {
+      const progress = Math.min(99, Math.floor(prog.progress * 100));
+      if (progress !== job.progress) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { progress, stage: prog.stage ?? stageFor(progress) },
+          include: { evaluation: true },
+        });
+      }
+    }
+    return job;
+  }
+
   if (job.driver === "BLENDER") {
     const prog = await pollJobProgress(job.id);
 
     if (prog.polled && typeof prog.progress === "number") {
       const progress = Math.min(100, Math.floor(prog.progress * 100));
       if (prog.done) {
-        if (prog.pngBase64) persistRenderFrame(job.id, prog.pngBase64);
+        if (prog.mp4Base64) persistRenderMp4(job.id, prog.mp4Base64);
+        else if (prog.pngBase64) persistRenderFrame(job.id, prog.pngBase64);
         if (prog.error) {
           job = await db.renderJob.update({
             where: { id: jobId },
@@ -136,9 +277,15 @@ export async function tickRenderJob(jobId: string) {
             include: { evaluation: true },
           });
         } else {
+          const hasClip = Boolean(prog.mp4Base64) && fs.existsSync(path.join(process.cwd(), "public", "renders", `${job.id}.mp4`));
           job = await db.renderJob.update({
             where: { id: jobId },
-            data: { status: "REVIEW", progress: 100, stage: prog.stage?.slice(0, 120) || "Blender render complete - awaiting DSH inspection", finishedAt: new Date() },
+            data: {
+              status: "REVIEW", progress: 100,
+              stage: prog.stage?.slice(0, 120) || "Blender render complete - awaiting DSH inspection",
+              ...(hasClip ? { outputUrl: `/renders/${job.id}.mp4` } : {}),
+              finishedAt: new Date(),
+            },
             include: { evaluation: true },
           });
         }
@@ -190,6 +337,16 @@ function persistRenderFrame(jobId: string, base64: string) {
     fs.writeFileSync(path.join(dir, `${jobId}.png`), Buffer.from(base64, "base64"));
   } catch {
     // non-fatal - the frame already exists on the Blender host
+  }
+}
+
+function persistRenderMp4(jobId: string, base64: string) {
+  try {
+    const dir = path.join(process.cwd(), "public", "renders");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${jobId}.mp4`), Buffer.from(base64, "base64"));
+  } catch {
+    // non-fatal - the clip already exists on the Blender host
   }
 }
 

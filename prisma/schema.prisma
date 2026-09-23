@@ -366,8 +366,15 @@ model RenderJob {
   progress   Float     @default(0)
   stage      String    @default("Queued")
   attempt    Int       @default(1)
-  driver     String    @default("SIMULATOR") // SIMULATOR | BLENDER
+  // BLENDER (workstation bridge, animated sequence mode) | MOTION
+  // (built-in ffmpeg camera-grammar engine) | SIMULATOR (wall-clock
+  // fallback when neither engine exists)
+  driver     String    @default("SIMULATOR")
   durationMs Int       @default(16000)
+  // Finished render artifact: an animated clip (mp4) served from
+  // /renders/. Still-frame outputs (legacy bridge pngs) keep this
+  // null and surface the frame through the job payload instead.
+  outputUrl  String?
   startedAt  DateTime?
   finishedAt DateTime?
   createdAt  DateTime  @default(now())
