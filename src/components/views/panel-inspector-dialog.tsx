@@ -9,7 +9,8 @@ import { Loader2, Route, SlidersHorizontal, Users, Zap } from "lucide-react";
 import { api, type ArtistRow, type SceneWithShots, type ShotRow, type StyleLoraRow } from "@/lib/api-client";
 import { parseDialogue } from "@/lib/comic/dialogue";
 import {
-  arcSpansForShot, computeArcSpans, describeArcPosition, formatArcRange,
+  arcSpansForShot, computeArcSpans, describeArcPosition, ensembleGroupSizes, formatArcRange,
+  groupEnsembleSpans, type ArcSpan,
 } from "@/lib/comic/arcs";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +26,49 @@ function compileLoraDirective(lora: StyleLoraRow | null, strength: number | null
   const s = Math.min(1.2, Math.max(0.1, strength ?? lora.weight));
   const dominance = s >= 0.75 ? "this adapter dominates the visual style" : "blend this adapter with the base production style";
   return `style LoRA "${lora.name}" active (trigger tokens: ${lora.triggerPhrase.trim()}) at strength ${s.toFixed(2)} - ${dominance}`;
+}
+
+/** An arc span touching the inspected shot, enriched with ensemble info. */
+type InspectorArc = ArcSpan & { startsHere: boolean; endsHere: boolean; ensemble: number; group: number; order: number };
+
+type InspectorArcCard =
+  | { kind: "single"; arc: InspectorArc }
+  | { kind: "ensemble"; size: number; arcs: InspectorArc[] };
+
+/**
+ * One arc card: violet when it stands alone, inset teal-tinted when
+ * it renders inside an ensemble cluster.
+ */
+function InspectorArcCard({ a, shotDialogue, inset }: { a: InspectorArc; shotDialogue: string | null | undefined; inset?: boolean }) {
+  const arcLines = parseDialogue(shotDialogue).filter(
+    (l) => l.speaker.trim().toLowerCase() === a.speakerKey && (l.state ?? null) === a.state
+  );
+  return (
+    <div className={cn(
+      "space-y-1",
+      inset
+        ? "rounded-md border border-teal-400/20 bg-black/25 p-2"
+        : "rounded-lg border border-violet-400/25 bg-violet-400/[0.07] p-2.5",
+    )}>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[11px] font-semibold text-violet-200 truncate max-w-[230px]">{a.state}</span>
+        <span className="text-[10px] text-muted-foreground">{a.speaker}</span>
+        {a.crossesScene && (
+          <span className="px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase bg-violet-400/25 text-violet-200">cross-scene</span>
+        )}
+      </div>
+      <div className="text-[10px] font-mono text-muted-foreground">
+        {formatArcRange(a)} · {a.lineCount} line{a.lineCount === 1 ? "" : "s"} across {a.shotCount} shot{a.shotCount === 1 ? "" : "s"} · {describeArcPosition(a.startsHere, a.endsHere)}
+      </div>
+      {arcLines.length > 0 && (
+        <div className="space-y-0.5">
+          {arcLines.map((l, i) => (
+            <p key={i} className="text-[10px] text-foreground/80 truncate">&quot;{l.text}&quot;</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function PanelInspectorDialog({
@@ -57,8 +101,10 @@ export function PanelInspectorDialog({
   const selectedLora = loras.find((l) => l.id === loraId) ?? null;
   const directive = compileLoraDirective(selectedLora, loraId ? strength : null);
 
-  // state arc spans across the episode; which of them touch THIS shot
-  const shotArcs = useMemo(() => {
+  // state arc spans across the episode; which of them touch THIS shot;
+  // spans from different speakers sharing a shot cluster into one
+  // ENSEMBLE card (a parallel beat painted on several characters)
+  const arcCards = useMemo<InspectorArcCard[]>(() => {
     if (!episodeScenes || episodeScenes.length === 0) return [];
     const ordered = [...episodeScenes]
       .sort((a, b) => a.number - b.number)
@@ -67,7 +113,36 @@ export function PanelInspectorDialog({
           .sort((a, b) => a.number - b.number)
           .map((sh) => ({ id: sh.id, sceneId: sc.id, sceneNumber: sc.number, number: sh.number, dialogue: sh.dialogue ?? null }))
       );
-    return arcSpansForShot(computeArcSpans(ordered), shot.id);
+    const all = computeArcSpans(ordered);
+    const groups = groupEnsembleSpans(all);
+    const sizes = ensembleGroupSizes(groups);
+    const meta = new Map<string, { group: number; ensemble: number; order: number }>();
+    all.forEach((s, i) => {
+      meta.set(`${s.speakerKey}:${s.state}:${s.startShotId}`, { group: groups[i], ensemble: sizes[groups[i]] ?? 1, order: i });
+    });
+    const touching: InspectorArc[] = arcSpansForShot(all, shot.id).map((a) => {
+      const m = meta.get(`${a.speakerKey}:${a.state}:${a.startShotId}`);
+      return { ...a, ensemble: m?.ensemble ?? 1, group: m?.group ?? -1, order: m?.order ?? 0 };
+    });
+    const cards: InspectorArcCard[] = [];
+    const ensByGroup = new Map<number, InspectorArc[]>();
+    for (const a of touching) {
+      if (a.ensemble > 1) {
+        const arr = ensByGroup.get(a.group) ?? [];
+        arr.push(a);
+        ensByGroup.set(a.group, arr);
+      } else {
+        cards.push({ kind: "single", arc: a });
+      }
+    }
+    for (const arcs of ensByGroup.values()) {
+      cards.push({ kind: "ensemble", size: arcs[0].ensemble, arcs });
+    }
+    return cards.sort((x, y) => {
+      const ox = x.kind === "single" ? x.arc.order : x.arcs[0].order;
+      const oy = y.kind === "single" ? y.arc.order : y.arcs[0].order;
+      return ox - oy;
+    });
   }, [episodeScenes, shot.id]);
 
   async function save() {
@@ -108,38 +183,41 @@ export function PanelInspectorDialog({
               <Label className="flex items-center gap-1.5 text-xs">
                 <Route className="h-3.5 w-3.5 text-primary" /> State arcs
               </Label>
-              {shotArcs.length === 0 ? (
+              {arcCards.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   No state arc touches this shot. Stamp one from the dialogue editor (the State row&apos;s arrow buttons) or ask DSH for set_state_arc; arcs force the state&apos;s variant voice, speed/pitch hints and register on every line they cover.
                 </p>
               ) : (
                 <div className="space-y-1.5">
-                  {shotArcs.map((a) => {
-                    const arcLines = parseDialogue(shot.dialogue).filter(
-                      (l) => l.speaker.trim().toLowerCase() === a.speakerKey && (l.state ?? null) === a.state
-                    );
-                    return (
-                      <div key={`${a.speakerKey}:${a.state}:${a.startShotId}`} className="rounded-lg border border-violet-400/25 bg-violet-400/[0.07] p-2.5 space-y-1">
+                  {arcCards.map((card) =>
+                    card.kind === "single" ? (
+                      <InspectorArcCard
+                        key={`${card.arc.speakerKey}:${card.arc.state}:${card.arc.startShotId}`}
+                        a={card.arc}
+                        shotDialogue={shot.dialogue}
+                      />
+                    ) : (
+                      <div
+                        key={`ens:${card.arcs.map((a) => a.speakerKey).join(":")}`}
+                        className="rounded-lg border border-teal-400/30 bg-teal-400/[0.05] p-2 space-y-1.5"
+                      >
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[11px] font-semibold text-violet-200 truncate max-w-[230px]">{a.state}</span>
-                          <span className="text-[10px] text-muted-foreground">{a.speaker}</span>
-                          {a.crossesScene && (
-                            <span className="px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase bg-violet-400/25 text-violet-200">cross-scene</span>
-                          )}
+                          <span className="px-1 rounded-sm text-[8px] font-bold tracking-widest uppercase bg-teal-400/25 text-teal-200">ensemble beat</span>
+                          <span className="text-[10px] text-teal-200/80">
+                            {card.size} speaker{card.size === 1 ? "" : "s"} in parallel · {card.arcs.length} arc{card.arcs.length === 1 ? "" : "s"} on this shot
+                          </span>
                         </div>
-                        <div className="text-[10px] font-mono text-muted-foreground">
-                          {formatArcRange(a)} · {a.lineCount} line{a.lineCount === 1 ? "" : "s"} across {a.shotCount} shot{a.shotCount === 1 ? "" : "s"} · {describeArcPosition(a.startsHere, a.endsHere)}
-                        </div>
-                        {arcLines.length > 0 && (
-                          <div className="space-y-0.5">
-                            {arcLines.map((l, i) => (
-                              <p key={i} className="text-[10px] text-foreground/80 truncate">&quot;{l.text}&quot;</p>
-                            ))}
-                          </div>
-                        )}
+                        {card.arcs.map((a) => (
+                          <InspectorArcCard
+                            key={`${a.speakerKey}:${a.state}:${a.startShotId}`}
+                            a={a}
+                            shotDialogue={shot.dialogue}
+                            inset
+                          />
+                        ))}
                       </div>
-                    );
-                  })}
+                    )
+                  )}
                 </div>
               )}
             </div>

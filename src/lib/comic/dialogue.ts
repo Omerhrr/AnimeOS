@@ -19,6 +19,12 @@ export interface DialogueLine {
   // speed/pitch hints and the state-classified delivery all come from
   // it). null = auto (episode-resolved) state selection.
   state?: string | null;
+  // Ensemble batch tag: set by an ENSEMBLE arc apply (one template
+  // painted on several speakers in one batch) so the derived spans
+  // can read as ONE parallel beat across speaker lanes. Pure display
+  // metadata: it never enters the voice sig, so it cannot make a
+  // fresh take stale. Any other state-writing path clears it.
+  arcBatch?: string | null;
 }
 
 export const BUBBLE_KINDS: Array<{ id: BubbleKind; label: string; hint: string }> = [
@@ -31,6 +37,7 @@ const VALID_KINDS = new Set<BubbleKind>(["SPEECH", "THOUGHT", "SFX"]);
 const MAX_LINES = 8;
 const MAX_TEXT = 300;
 const MAX_STATE = 80;
+const MAX_ARC_BATCH = 64;
 
 export function parseDialogue(raw: string | null | undefined): DialogueLine[] {
   if (!raw) return [];
@@ -45,6 +52,7 @@ export function parseDialogue(raw: string | null | undefined): DialogueLine[] {
         kind: VALID_KINDS.has(l.kind as BubbleKind) ? (l.kind as BubbleKind) : "SPEECH",
         delivery: isDeliveryId(l.delivery) ? (l.delivery as DeliveryId) : null,
         state: typeof l.state === "string" ? l.state.trim().slice(0, MAX_STATE) || null : null,
+        arcBatch: typeof l.arcBatch === "string" ? l.arcBatch.trim().slice(0, MAX_ARC_BATCH) || null : null,
       }))
       .filter((l) => l.text.length > 0)
       .slice(0, MAX_LINES);
@@ -62,6 +70,7 @@ export function serializeDialogue(lines: DialogueLine[]): string {
         kind: VALID_KINDS.has(l.kind) ? l.kind : "SPEECH",
         ...(isDeliveryId(l.delivery) ? { delivery: l.delivery } : {}),
         ...(l.state ? { state: l.state.trim().slice(0, MAX_STATE) } : {}),
+        ...(l.arcBatch ? { arcBatch: l.arcBatch.trim().slice(0, MAX_ARC_BATCH) } : {}),
       }))
       .filter((l) => l.text.trim().length > 0)
       .slice(0, MAX_LINES)
@@ -74,7 +83,9 @@ export function serializeDialogue(lines: DialogueLine[]): string {
  * she draws the blade until the scene ends). A line is stamped only
  * when it actually changes, so re-running the same arc is a no-op and
  * the returned count reflects real edits. state null clears overrides.
- * Returns [newLines, stampedCount]; the caller persists newLines.
+ * A changed line drops any ensemble batch tag (a new direction
+ * replaces the old parallel beat). Returns [newLines, stampedCount];
+ * the caller persists newLines.
  */
 export function stampStateArc(
   lines: DialogueLine[],
@@ -89,7 +100,7 @@ export function stampStateArc(
     if (!l.speaker || l.speaker.trim().toLowerCase() !== want) return l;
     if ((l.state ?? null) === (state ?? null)) return l;
     stamped += 1;
-    return { ...l, state };
+    return { ...l, state, arcBatch: null };
   });
   return [next, stamped];
 }

@@ -11,8 +11,8 @@ import {
 } from "@/lib/comic/layout";
 import { parseDialogue, serializeDialogue, stampStateArc } from "@/lib/comic/dialogue";
 import {
-  arcSpansForShot, computeArcSpans, describeArcPosition, formatArcRange,
-  type ArcSpan,
+  arcSpansForShot, computeArcSpans, describeArcPosition, ensembleGroupSizes, formatArcRange,
+  groupEnsembleSpans, type ArcSpan,
 } from "@/lib/comic/arcs";
 import { exportWebtoonSlices } from "@/lib/comic/export-slices";
 import { PanelArt } from "@/components/views/comic-panel-art";
@@ -56,7 +56,7 @@ interface PanelActions {
   selectMode: boolean;
 }
 
-export type ArcChips = Array<ArcSpan & { startsHere: boolean; endsHere: boolean }>;
+export type ArcChips = Array<ArcSpan & { startsHere: boolean; endsHere: boolean; ensemble: number }>;
 
 /** Violet arc chips stacked under the shot-number chip: a state span lives on this card. */
 function ArcChips({ spans, rtl }: { spans?: ArcChips; rtl: boolean }) {
@@ -69,10 +69,10 @@ function ArcChips({ spans, rtl }: { spans?: ArcChips; rtl: boolean }) {
       {spans.slice(0, 2).map((a) => (
         <span
           key={`${a.speakerKey}:${a.state}:${a.startShotId}`}
-          title={`State arc "${a.state}" - ${a.speaker} - ${formatArcRange(a)}${a.crossesScene ? " (crosses scenes)" : ""} - ${describeArcPosition(a.startsHere, a.endsHere)}`}
+          title={`State arc "${a.state}" - ${a.speaker} - ${formatArcRange(a)}${a.crossesScene ? " (crosses scenes)" : ""} - ${describeArcPosition(a.startsHere, a.endsHere)}${a.ensemble > 1 ? ` - ensemble beat: ${a.ensemble} speakers in parallel` : ""}`}
           className="flex max-w-[92px] items-center gap-1 px-1 py-[1px] text-[8px] font-bold leading-tight tracking-wider"
           style={{
-            border: "1px solid rgba(139,92,246,0.6)",
+            border: a.ensemble > 1 ? "1px solid rgba(94,234,212,0.7)" : "1px solid rgba(139,92,246,0.6)",
             borderRadius: 3,
             background: a.startsHere ? "rgba(124,58,237,0.92)" : "rgba(255,255,255,0.9)",
             color: a.startsHere ? "#ffffff" : "#6d28d9",
@@ -85,6 +85,14 @@ function ArcChips({ spans, rtl }: { spans?: ArcChips; rtl: boolean }) {
               : { boxShadow: "inset 0 0 0 1.5px currentColor" }}
           />
           <span className="truncate">{a.state}</span>
+          {a.ensemble > 1 && (
+            <span
+              className="shrink-0 rounded-sm px-0.5 text-[7px]"
+              style={{ background: "rgba(19,78,74,0.92)", color: "#99f6e4" }}
+            >
+              ×{a.ensemble}
+            </span>
+          )}
         </span>
       ))}
       {spans.length > 2 && (
@@ -559,15 +567,19 @@ export function ComicView({ project }: { project: StudioProject }) {
       );
   }, [episode]);
   const arcSpans = useMemo(() => computeArcSpans(orderedShots), [orderedShots]);
+  // ensemble grouping: spans from different speakers sharing a shot read as one parallel beat
+  const arcGroups = useMemo(() => groupEnsembleSpans(arcSpans), [arcSpans]);
+  const arcGroupSizes = useMemo(() => ensembleGroupSizes(arcGroups), [arcGroups]);
   const arcChipsByShot = useMemo(() => {
     const map: Record<string, ArcChips> = {};
-    for (const span of arcSpans) {
+    arcSpans.forEach((span, i) => {
+      const ensemble = arcGroupSizes[arcGroups[i]] ?? 1;
       for (const shotId of span.shotIds) {
-        (map[shotId] ??= []).push({ ...span, startsHere: span.startShotId === shotId, endsHere: span.endShotId === shotId });
+        (map[shotId] ??= []).push({ ...span, startsHere: span.startShotId === shotId, endsHere: span.endShotId === shotId, ensemble });
       }
-    }
+    });
     return map;
-  }, [arcSpans]);
+  }, [arcSpans, arcGroups, arcGroupSizes]);
 
   // state arc: stamp a line's picked state (or clear) onto the speaker's following lines,
   // within the scene (default) or across scene boundaries through the end of the episode
@@ -709,6 +721,7 @@ export function ComicView({ project }: { project: StudioProject }) {
       {/* season-wide arc ruler: spans drawn across the season's episodes */}
       {rulerOpen && (
         <ArcRuler
+          projectId={project.id}
           episodes={episodes}
           activeEpisodeNumber={episode?.number ?? null}
           onPickEpisode={(epNumber) => {

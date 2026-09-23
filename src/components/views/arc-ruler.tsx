@@ -15,16 +15,21 @@
 // segments replace episode segments, shot ticks give per-shot
 // reading, and season arcs that flow in from (or out to) a
 // neighbouring episode are clipped to the window with an amber
-// arrow. Pure display: spans come from the shared
-// computeSeasonArcSpans over the project query the view already
-// holds, so there is no extra API round trip.
+// arrow. The focused episode is remembered per session, so
+// switching episodes or views and coming back restores the zoom.
+// ENSEMBLE BEATS: spans from DIFFERENT speakers covering a shared
+// shot read as one parallel beat and carry a teal ×N badge, so a
+// multi-speaker apply is visible across lanes at a glance. Pure
+// display: spans come from the shared computeSeasonArcSpans over
+// the project query the view already holds, so there is no extra
+// API round trip.
 // ─────────────────────────────────────────────────────────────
 
-import { useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { Crosshair, Route } from "lucide-react";
 import {
-  computeSeasonArcSpans, formatSeasonArcRange, groupSpansBySpeaker,
-  type SeasonArcShotInput, type SeasonArcSpan,
+  computeSeasonArcSpans, ensembleGroupSizes, formatSeasonArcRange, groupEnsembleSpans,
+  groupSpansBySpeaker, type SeasonArcShotInput, type SeasonArcSpan,
 } from "@/lib/comic/arcs";
 import { cn } from "@/lib/utils";
 
@@ -36,8 +41,42 @@ const LANE_H = 26;
 const GUTTER_W = 88;
 const TICK_LABEL_MAX = 32; // show per-shot numbers only when the episode is small enough
 
+type RulerSpan = SeasonArcSpan & { ensemble: number; ensembleNames: string[] };
+
+// ── session-backed focus store ────────────────────────────────
+// sessionStorage IS the state: the focused episode survives ruler
+// close/open and episode switches for the whole tab session, and
+// useSyncExternalStore keeps SSR (null) and client snapshots in
+// sync without a restore effect.
+const focusListeners = new Set<() => void>();
+function subscribeFocus(onChange: () => void) {
+  focusListeners.add(onChange);
+  return () => {
+    focusListeners.delete(onChange);
+  };
+}
+function emitFocusChange() {
+  for (const listener of focusListeners) listener();
+}
+
+function useFocusEpisode(projectId: string): [number | null, (n: number | null) => void] {
+  const key = `animeos:arc-ruler-focus:${projectId}`;
+  const raw = useSyncExternalStore(
+    subscribeFocus,
+    () => window.sessionStorage.getItem(key),
+    () => null,
+  );
+  const set = (n: number | null) => {
+    if (n === null) window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, String(n));
+    emitFocusChange();
+  };
+  const parsed = raw === null ? Number.NaN : Number(raw);
+  return [Number.isFinite(parsed) ? parsed : null, set];
+}
+
 interface FocusBar {
-  span: SeasonArcSpan;
+  span: RulerSpan;
   leftClip: boolean; // the season arc flows in from the previous episode
   rightClip: boolean; // ...and keeps flowing into the next one
   left: number;
@@ -45,13 +84,14 @@ interface FocusBar {
 }
 
 export function ArcRuler({
-  episodes, activeEpisodeNumber, onPickEpisode,
+  projectId, episodes, activeEpisodeNumber, onPickEpisode,
 }: {
+  projectId: string;
   episodes: RulerEpisode[];
   activeEpisodeNumber: number | null;
   onPickEpisode: (episodeNumber: number) => void;
 }) {
-  const [focusEpisodeNumber, setFocusEpisodeNumber] = useState<number | null>(null);
+  const [focusEpisodeNumber, setFocusEpisodeNumber] = useFocusEpisode(projectId);
 
   const ordered = useMemo(
     () => [...episodes].sort((a, b) => a.number - b.number).filter((e) => e.scenes.some((sc) => sc.shots.length > 0)),
@@ -80,6 +120,32 @@ export function ArcRuler({
 
   const spans: SeasonArcSpan[] = useMemo(() => computeSeasonArcSpans(shots), [shots]);
 
+  // ensemble grouping: spans from DIFFERENT speakers sharing a shot
+  // read as ONE parallel beat (the same template applied to several
+  // speakers over the same range)
+  const ensembleOf = useMemo(() => {
+    const groups = groupEnsembleSpans(spans);
+    const sizes = ensembleGroupSizes(groups);
+    const names = new Map<number, string[]>();
+    spans.forEach((s, i) => {
+      const g = groups[i];
+      const arr = names.get(g) ?? [];
+      arr.push(s.speaker);
+      names.set(g, arr);
+    });
+    return { group: groups, size: sizes, names };
+  }, [spans]);
+
+  const enrichedSpans: RulerSpan[] = useMemo(
+    () =>
+      spans.map((span, i) => ({
+        ...span,
+        ensemble: ensembleOf.size[ensembleOf.group[i]] ?? 1,
+        ensembleNames: ensembleOf.names.get(ensembleOf.group[i]) ?? [],
+      })),
+    [spans, ensembleOf],
+  );
+
   // episode segments along the same axis
   const segments = useMemo(() => {
     const total = shots.length;
@@ -104,16 +170,16 @@ export function ArcRuler({
   const speakerLanes = useMemo(
     () =>
       groupSpansBySpeaker(
-        spans.map((span) => ({ ...span, start: indexByShotId.get(span.startShotId) ?? 0 })),
+        enrichedSpans.map((span) => ({ ...span, start: indexByShotId.get(span.startShotId) ?? 0 })),
       ),
-    [spans, indexByShotId],
+    [enrichedSpans, indexByShotId],
   );
 
   const bars = useMemo(() => {
     const total = shots.length;
     if (total === 0) return [];
     const laneOf = new Map(speakerLanes.map((g, i) => [g.speakerKey, i]));
-    return spans.map((span) => {
+    return enrichedSpans.map((span) => {
       const start = indexByShotId.get(span.startShotId) ?? 0;
       const end = indexByShotId.get(span.endShotId) ?? start;
       return {
@@ -122,14 +188,14 @@ export function ArcRuler({
         width: ((end - start + 1) / total) * 100,
       };
     });
-  }, [spans, shots, indexByShotId, speakerLanes]);
+  }, [enrichedSpans, shots, indexByShotId, speakerLanes]);
 
   // ── focus view geometry: season spans clipped to the episode window ──
   const focusView = useMemo(() => {
     if (!focused) return null;
     const from = focused.startIdx;
     const total = focused.count;
-    const windowSpans = spans.flatMap((span) => {
+    const windowSpans = enrichedSpans.flatMap((span) => {
       const s = indexByShotId.get(span.startShotId) ?? 0;
       const e = indexByShotId.get(span.endShotId) ?? s;
       if (e < from || s > from + total - 1) return [];
@@ -160,7 +226,7 @@ export function ArcRuler({
     // shot ticks (labelled when the episode is small enough to read them)
     const tickShots = shots.slice(from, from + total);
     return { lanes, laneOf, focusBars, sceneSegs, tickShots, from, total };
-  }, [focused, spans, indexByShotId, shots]);
+  }, [focused, enrichedSpans, indexByShotId, shots]);
 
   const totalShots = shots.length;
 
@@ -196,7 +262,7 @@ export function ArcRuler({
             Exit focus (season view)
           </button>
           <span className="text-[10px] text-muted-foreground">
-            {lanes.reduce((n, g) => n + g.spans.length, 0)} state arc{lanes.reduce((n, g) => n + g.spans.length, 0) === 1 ? "" : "s"} in this episode · {total} shots · one lane per speaker · an amber arrow means the season beat continues into the neighbouring episode
+            {lanes.reduce((n, g) => n + g.spans.length, 0)} state arc{lanes.reduce((n, g) => n + g.spans.length, 0) === 1 ? "" : "s"} in this episode · {total} shots · one lane per speaker · an ×N badge marks an ensemble beat · an amber arrow means the season beat continues into the neighbouring episode
           </span>
         </div>
 
@@ -261,11 +327,12 @@ export function ArcRuler({
 
             {focusBars.map(({ span, leftClip, rightClip, left, width }) => {
               const lane = laneOf.get(span.speakerKey) ?? 0;
+              const ens = span.ensemble;
               return (
                 <button
                   key={`${span.speakerKey}:${span.state}:${span.startShotId}`}
                   onClick={() => onPickEpisode(span.startEpisode)}
-                  className="absolute flex items-center overflow-hidden px-1.5 text-left text-[9px] font-bold tracking-wide transition-all hover:brightness-125 focus:outline-none focus-visible:ring-1 focus-visible:ring-violet-300"
+                  className="absolute flex items-center overflow-hidden px-1.5 text-left text-[9px] font-bold tracking-wide transition-all hover:brightness-125 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-300"
                   style={{
                     top: 4 + lane * LANE_H,
                     height: LANE_H - 6,
@@ -273,16 +340,17 @@ export function ArcRuler({
                     width: `${width}%`,
                     minWidth: 14,
                     background: "linear-gradient(180deg, rgba(139,92,246,0.95), rgba(109,40,217,0.95))",
-                    border: "1px solid rgba(196,181,253,0.7)",
+                    border: ens > 1 ? "1px solid rgba(94,234,212,0.8)" : "1px solid rgba(196,181,253,0.7)",
                     borderRadius: 4,
                     color: "#fff",
                     boxShadow: leftClip || rightClip ? "0 0 0 1px rgba(232,176,75,0.55)" : "none",
                   }}
-                  title={`State arc "${span.state}" - ${span.speaker} - ${formatSeasonArcRange(span)} - ${span.lineCount} line${span.lineCount === 1 ? "" : "s"} in ${span.shotCount} shot${span.shotCount === 1 ? "" : "s"}${leftClip ? ` - continues from Ep${span.startEpisode}` : ""}${rightClip ? ` - continues into Ep${span.endEpisode}` : ""}`}
+                  title={`State arc "${span.state}" - ${span.speaker} - ${formatSeasonArcRange(span)} - ${span.lineCount} line${span.lineCount === 1 ? "" : "s"} in ${span.shotCount} shot${span.shotCount === 1 ? "" : "s"}${ens > 1 ? ` - ensemble beat: ${ens} speakers in parallel (${span.ensembleNames.join(", ")})` : ""}${leftClip ? ` - continues from Ep${span.startEpisode}` : ""}${rightClip ? ` - continues into Ep${span.endEpisode}` : ""}`}
                 >
                   <span className="truncate">
                     {leftClip && <span className="mr-1 text-amber-200">←</span>}
                     {span.state}
+                    {ens > 1 && <span className="ml-1 text-teal-200">×{ens}</span>}
                     {rightClip && <span className="ml-1 text-amber-200">→</span>}
                   </span>
                 </button>
@@ -324,7 +392,7 @@ export function ArcRuler({
           <Route className="h-3.5 w-3.5 text-violet-300" /> Season arc ruler
         </span>
         <span className="text-[10px] text-muted-foreground">
-          {spans.length} state arc{spans.length === 1 ? "" : "s"} across {ordered.length} episode{ordered.length === 1 ? "" : "s"} · {totalShots} shots · one lane per speaker · a bar crossing a boundary is one continuous season beat · click a bar to open that episode · click an episode label to focus the ruler on it
+          {spans.length} state arc{spans.length === 1 ? "" : "s"} across {ordered.length} episode{ordered.length === 1 ? "" : "s"} · {totalShots} shots · one lane per speaker · a bar crossing a boundary is one continuous season beat · an ×N badge marks an ensemble beat (the same shape on several speakers in parallel) · click a bar to open that episode · click an episode label to focus the ruler on it
         </span>
       </div>
 
@@ -395,7 +463,7 @@ export function ArcRuler({
             <button
               key={`${span.speakerKey}:${span.state}:${span.startShotId}`}
               onClick={() => onPickEpisode(span.startEpisode)}
-              className="absolute flex items-center overflow-hidden px-1.5 text-left text-[9px] font-bold tracking-wide transition-all hover:brightness-125 focus:outline-none focus-visible:ring-1 focus-visible:ring-violet-300"
+              className="absolute flex items-center overflow-hidden px-1.5 text-left text-[9px] font-bold tracking-wide transition-all hover:brightness-125 focus:outline-none focus-visible:ring-1 focus-visible:ring-teal-300"
               style={{
                 top: 4 + lane * LANE_H,
                 height: LANE_H - 6,
@@ -403,15 +471,16 @@ export function ArcRuler({
                 width: `${width}%`,
                 minWidth: 14,
                 background: "linear-gradient(180deg, rgba(139,92,246,0.95), rgba(109,40,217,0.95))",
-                border: "1px solid rgba(196,181,253,0.7)",
+                border: span.ensemble > 1 ? "1px solid rgba(94,234,212,0.8)" : "1px solid rgba(196,181,253,0.7)",
                 borderRadius: 4,
                 color: "#fff",
                 boxShadow: span.crossesEpisode ? "0 0 0 1px rgba(232,176,75,0.55)" : "none",
               }}
-              title={`State arc "${span.state}" - ${span.speaker} - ${formatSeasonArcRange(span)} - ${span.lineCount} line${span.lineCount === 1 ? "" : "s"} in ${span.shotCount} shot${span.shotCount === 1 ? "" : "s"}${span.crossesEpisode ? " - crosses episodes" : span.crossesScene ? " - crosses scenes" : ""}`}
+              title={`State arc "${span.state}" - ${span.speaker} - ${formatSeasonArcRange(span)} - ${span.lineCount} line${span.lineCount === 1 ? "" : "s"} in ${span.shotCount} shot${span.shotCount === 1 ? "" : "s"}${span.ensemble > 1 ? ` - ensemble beat: ${span.ensemble} speakers in parallel (${span.ensembleNames.join(", ")})` : ""}${span.crossesEpisode ? " - crosses episodes" : span.crossesScene ? " - crosses scenes" : ""}`}
             >
               <span className="truncate">
                 {span.state}
+                {span.ensemble > 1 && <span className="ml-1 text-teal-200">×{span.ensemble}</span>}
                 {span.crossesEpisode && <span className="ml-1 text-amber-200">→ season</span>}
               </span>
             </button>

@@ -129,8 +129,15 @@ export interface TemplateShotResult {
  * the chosen state ("state" segments) or cleared ("auto" segments).
  * The shape spans the WHOLE range, so one possession arc stretches
  * across the beat instead of repeating per shot. A line is written
- * only when its override actually changes, so re-running the same
- * template is a no-op. Returns [perShotResults, stampedCount,
+ * only when something actually changes, so re-running the same
+ * template is a no-op. Every WRITTEN line carries arcBatch: the
+ * caller's ensemble batch id when one is supplied (an ENSEMBLE apply
+ * marks its speakers so the derived spans read as ONE parallel beat),
+ * or null (a solo apply replaces whatever batch was there) - and an
+ * already-matching line whose batch differs is refreshed too, so a
+ * re-applied ensemble keeps its whole shape under ONE batch. The
+ * returned count reflects STATE changes only (batch refreshes do not
+ * count as stamped). Returns [perShotResults, stampedCount,
  * perSegmentReport]; persist every result where changed is true.
  */
 export function applyArcTemplate(
@@ -138,6 +145,7 @@ export function applyArcTemplate(
   speaker: string,
   template: ArcTemplate,
   state: string | null,
+  options: { batchId?: string | null } = {},
 ): [TemplateShotResult[], number, TemplateSegmentReport[]] {
   const want = speaker.trim().toLowerCase();
   // the speaker's line positions across the range, in order
@@ -157,16 +165,21 @@ export function applyArcTemplate(
   const next = shots.map((sh) => ({ shotId: sh.shotId, lines: [...sh.lines], changed: false }));
   const report: TemplateSegmentReport[] = template.segments.map((seg) => ({ kind: seg.kind, lines: 0, stamped: 0 }));
   let stamped = 0;
+  const batchId = options.batchId ?? null;
 
   positions.forEach((pos, k) => {
     const segIdx = segOfLine[k] ?? 0;
     const segState = template.segments[segIdx].kind === "state" ? state : null;
     const target = next[pos.shot].lines[pos.line];
-    if ((target.state ?? null) !== segState) {
-      next[pos.shot].lines[pos.line] = { ...target, state: segState };
+    const stateChanged = (target.state ?? null) !== segState;
+    const batchChanged = (target.arcBatch ?? null) !== batchId;
+    if (stateChanged || batchChanged) {
+      next[pos.shot].lines[pos.line] = { ...target, state: segState, arcBatch: batchId };
       next[pos.shot].changed = true;
-      stamped += 1;
-      report[segIdx].stamped += 1;
+      if (stateChanged) {
+        stamped += 1;
+        report[segIdx].stamped += 1;
+      }
     }
     report[segIdx].lines += 1;
   });

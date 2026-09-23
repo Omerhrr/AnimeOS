@@ -34,6 +34,7 @@ export interface ArcSpan {
   shotCount: number;
   crossesScene: boolean;
   shotIds: string[]; // ordered, deduped
+  arcBatches: string[]; // ensemble batch ids on the span's lines (ordered, deduped)
 }
 
 export function computeArcSpans(shots: ArcShotInput[]): ArcSpan[] {
@@ -59,6 +60,7 @@ export function computeArcSpans(shots: ArcShotInput[]): ArcSpan[] {
           cur.shotIds.push(shot.id);
           cur.shotCount += 1;
         }
+        if (line.arcBatch && !cur.arcBatches.includes(line.arcBatch)) cur.arcBatches.push(line.arcBatch);
       } else {
         if (cur) spans.push(cur);
         cur = {
@@ -75,6 +77,7 @@ export function computeArcSpans(shots: ArcShotInput[]): ArcSpan[] {
           shotCount: 1,
           crossesScene: false,
           shotIds: [shot.id],
+          arcBatches: line.arcBatch ? [line.arcBatch] : [],
         };
       }
     }
@@ -192,6 +195,77 @@ export function packSpanLanes<T extends { start: number; end: number }>(spans: T
     lanes[i] = lane;
   }
   return lanes;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Ensemble beats: spans from DIFFERENT speakers that belong to the
+// same parallel beat read as one ensemble. Two links union spans:
+// (1) a shared ENSEMBLE BATCH id (an apply_arc_template ensemble
+// batch stamps the same arcBatch on every speaker's lines, so the
+// classic alternating-dialogue beat groups even when no two spans
+// share a shot), and (2) a shared shot id (free-form parallel lines
+// inside one shot). Union-find; same-speaker spans never merge;
+// groups are numbered in first-seen order and a group of size 1 is
+// not an ensemble. Pure display layer: derived from the same spans
+// the ruler and the panel inspector already hold.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * One group index per input span (input order preserved). A span
+ * that bridges two groups pulls them together, so a three-speaker
+ * beat is one group even when no single line carries all three.
+ */
+export function groupEnsembleSpans<T extends { speakerKey: string; shotIds: string[]; arcBatches?: string[] }>(
+  spans: T[],
+): number[] {
+  const n = spans.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const unionIfDiff = (a: number, b: number) => {
+    if (spans[a].speakerKey === spans[b].speakerKey) return;
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+  };
+  const byShot = new Map<string, number[]>();
+  const byBatch = new Map<string, number[]>();
+  spans.forEach((s, i) => {
+    for (const id of s.shotIds) {
+      const shotPeers = byShot.get(id) ?? [];
+      for (const j of shotPeers) unionIfDiff(i, j);
+      shotPeers.push(i);
+      byShot.set(id, shotPeers);
+    }
+    for (const b of s.arcBatches ?? []) {
+      const batchPeers = byBatch.get(b) ?? [];
+      for (const j of batchPeers) unionIfDiff(i, j);
+      batchPeers.push(i);
+      byBatch.set(b, batchPeers);
+    }
+  });
+  const dense = new Map<number, number>();
+  return parent.map((_, i) => {
+    const root = find(i);
+    let g = dense.get(root);
+    if (g === undefined) {
+      g = dense.size;
+      dense.set(root, g);
+    }
+    return g;
+  });
+}
+
+/** Member count per group id (index = group id). */
+export function ensembleGroupSizes(groups: number[]): number[] {
+  const sizes: number[] = [];
+  for (const g of groups) sizes[g] = (sizes[g] ?? 0) + 1;
+  return sizes;
 }
 
 export interface SpeakerLane<T> {
