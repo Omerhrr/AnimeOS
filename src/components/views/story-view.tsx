@@ -7,6 +7,7 @@ import {
   Wand2, MapPin, CloudSun, Clock, Layers, Camera,
 } from "lucide-react";
 import { api, type SceneAnalysis, type StudioProject } from "@/lib/api-client";
+import { poseChip } from "@/lib/animation/poses";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge, SHOT_TYPE_LABELS } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
@@ -223,6 +224,11 @@ function SceneDetail({ analysis }: { analysis: SceneAnalysis }) {
                       <span className="text-[11px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10">{SHOT_TYPE_LABELS[s.shotType] ?? s.shotType}</span>
                       {s.lens && <span className="text-[11px] text-muted-foreground">{s.lens}</span>}
                       {s.movement && <span className="text-[11px] text-muted-foreground">· {s.movement.toLowerCase()}</span>}
+                      {poseChip(s.poseStart, s.poseEnd) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-400/12 border border-teal-400/25 text-teal-200 font-mono" title="Character motion: engines interpolate these poses across the clip">
+                          {poseChip(s.poseStart, s.poseEnd)}
+                        </span>
+                      )}
                       <span className="text-[11px] text-muted-foreground">· {s.duration.toFixed(1)}s</span>
                       <StatusBadge status={s.status} />
                     </div>

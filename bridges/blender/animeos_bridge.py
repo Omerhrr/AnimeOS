@@ -43,6 +43,15 @@
 # CPU and encodes an h264 clip (system ffmpeg when present, Blender's
 # own FFMPEG writer otherwise). The finished clip flows back to AnimeOS
 # as mp4_base64 and lands in public/renders/{jobId}.mp4.
+#
+# v3.1 adds CHARACTER MOTION inside the frame: when the shot carries
+# poseStart / poseEnd (AnimeOS shot pose vocabulary) the worker builds
+# a skeletal STAND-IN FIGURE (jointed humanoid with the emissive blade
+# in hand) and interpolates its joints between the two poses with eased
+# timing - lunges, slashes, casts, bows, walk cycles - so the blocking
+# pass shows the character performing, not just the lens moving. The
+# /render payload's shot dict grows two optional fields:
+#   "poseStart": "STANCE", "poseEnd": "LUNGE"
 
 import argparse
 import base64
@@ -121,20 +130,77 @@ def lightning_windows(job_id, lightning, duration_sec):
         windows.append((0.12 + rng() * 0.74, 0.08 + 0.1 * lightning, 0.35 + 0.35 * lightning))
     return windows
 
+# ─── shared pose vocabulary (mirrors src/lib/animation/poses.ts) ──
+
+POSE_JOINTS = {
+    #          rootX  rootY spine head  rArm  rElb  lArm  lElb  rLeg rKnee lLeg lKnee
+    "STANCE": (0.00,  0.00,   1,   0,    -8,    8,    8,    8,     0,   4,    0,   4),
+    "WALK":   (0.10,  0.00,   2,   0,    18,   12,  -18,   12,    28,  12,  -14,   8),
+    "LUNGE":  (0.35, -0.12,  10,  -3,   -95,    5,   35,   45,    55,  40,  -25,  10),
+    "SLASH":  (0.10, -0.05,  -8,  -5,  -160,   20,  -30,   30,    10,  10,   -8,   6),
+    "CAST":   (0.00,  0.02,  -4, -12,  -120,   50, -120,   50,     6,   6,   -6,   6),
+    "DRAW":   (0.05, -0.03,   3,   2,   -85,   95,  -70,   12,    12,  14,  -10,   6),
+    "BLOCK":  (0.00, -0.06,   6,   4,   -70,  100,  -60,  100,    20,  30,  -10,  15),
+    "LEAP":   (0.15,  0.55,  -6,  -4,  -140,   20, -120,   20,    60,  70,   35,  55),
+    "CROUCH": (0.05, -0.40,  18,   6,   -30,   40,  -20,   35,    70,  95,   55,  90),
+    "FALL":   (0.05, -0.62,  32,  20,    40,   10,  -55,   15,    15,  45,    5,  30),
+    "RISE":   (0.10, -0.25,  14,   4,   -20,   25,  -15,   20,    40,  60,   25,  40),
+    "BOW":    (0.00, -0.04,  38,  22,    12,    6,   12,    6,     0,   2,    0,   2),
+    "POINT":  (0.05,  0.00,   2,  -2,   -88,    4,   10,   12,     8,   6,   -6,   4),
+}
+
+POSE_ALIASES = {
+    "IDLE": "STANCE", "STAND": "STANCE", "READY": "STANCE",
+    "STEP": "WALK", "STRIDE": "WALK", "ATTACK": "LUNGE",
+    "STRIKE": "SLASH", "SWORD_SLASH": "SLASH", "SPELL": "CAST", "CHANNEL": "CAST",
+    "AIM": "DRAW", "GUARD": "BLOCK", "DEFEND": "BLOCK", "JUMP": "LEAP",
+    "DUCK": "CROUCH", "COLLAPSE": "FALL", "STAND_UP": "RISE",
+    "SALUTE": "BOW", "GREET": "BOW", "CALL": "POINT",
+}
+
+def normalize_pose(value):
+    raw = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+    if not raw:
+        return None
+    if raw in POSE_JOINTS:
+        return raw
+    return POSE_ALIASES.get(raw)
+
+def ease_in_out_cubic(t):
+    x = clamp(t, 0.0, 1.0)
+    if x < 0.5:
+        return 4.0 * x * x * x
+    return 1.0 - ((-2.0 * x + 2.0) ** 3) / 2.0
+
+def lerp_pose(start, end, t):
+    a = POSE_JOINTS.get(normalize_pose(start) or "STANCE", POSE_JOINTS["STANCE"])
+    b = POSE_JOINTS.get(normalize_pose(end) or "STANCE", POSE_JOINTS["STANCE"])
+    k = ease_in_out_cubic(t)
+    return tuple(a[i] + (b[i] - a[i]) * k for i in range(len(a)))
+
+
 def camera_pose(shot_payload, scene_payload, t):
     """Camera position + look target for progress t (0..1) through the
-    shot, driven by the movement grammar."""
+    shot, driven by the movement grammar. Shots carrying a pose
+    program reframe slightly: the stand-in figure replaces the props
+    as the subject, so the rig pulls back and lowers its target onto
+    the body."""
     dist, lens, height = SHOT_FRAMING.get(str(shot_payload.get("shotType", "MEDIUM")).upper(), SHOT_FRAMING["MEDIUM"])
     dist *= float(scene_payload.get("cameraDistance", 1.0))
     movement = str(shot_payload.get("movement") or "STATIC").upper()
     if movement not in ("ORBIT", "PAN", "TRACKING", "CRANE", "DOLLY_IN", "DOLLY_OUT", "TILT_UP", "TILT_DOWN"):
         movement = "STATIC"
+    has_poses = bool(normalize_pose(shot_payload.get("poseStart")) or normalize_pose(shot_payload.get("poseEnd")))
+    if has_poses:
+        dist *= 1.25
 
     angle = 40.0
     radius = dist
     h = height
     lateral = 0.0
-    target = [0.0, 0.0, height * 0.75]
+    # pose shots frame the FIGURE (prop-scale stand-in, ~0.8m tall);
+    # everything else frames the plinth + floating blade as before
+    target = [0.0, 0.0, height * (0.42 if has_poses else 0.75)]
 
     if movement == "ORBIT":
         angle = 40.0 + (t - 0.5) * 44.0
@@ -155,6 +221,14 @@ def camera_pose(shot_payload, scene_payload, t):
     elif movement == "TILT_DOWN":
         target[2] = height * (0.9 - 0.55 * t)
 
+    if has_poses:
+        # follow the subject: the pose program can carry the figure
+        # toward the lens (LUNGE root travel), so the rig backs off by
+        # the same world travel (table value x prop scale) and keeps
+        # the body framed
+        rx = lerp_pose(shot_payload.get("poseStart"), shot_payload.get("poseEnd"), t)[0]
+        radius += rx * 0.42
+
     rad = math.radians(angle)
     pos = [radius * math.sin(rad) + lateral, -radius * math.cos(rad), h]
     if movement == "STATIC":
@@ -163,6 +237,116 @@ def camera_pose(shot_payload, scene_payload, t):
 
 
 # ═══ WORKER MODE (runs inside a fresh headless Blender) ═══════
+
+def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
+    """Skeletal stand-in: primitives parented under joint empties so the
+    frame loop can articulate the character per frame. The figure faces
+    -Y (toward the camera rig); the emissive blade sits in its right
+    hand, so slashes and casts carry the energy glow with them."""
+    def empty(name, parent, loc):
+        e = bpy.data.objects.new(name, None)
+        scn.collection.objects.link(e)
+        e.empty_display_size = 0.05
+        if parent:
+            e.parent = parent
+        e.location = loc
+        return e
+
+    def limb(name, parent, loc, scale):
+        bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+        m = bpy.context.active_object
+        m.name = name
+        m.scale = scale
+        m.data.materials.append(body_mat)
+        m.parent = parent
+        m.location = loc
+        return m
+
+    root = empty("Root", None, (0.0, 0.0, 0.0))
+    pelvis = empty("Pelvis", root, (0.0, 0.0, 1.02))
+    limb("Torso", pelvis, (0.0, 0.0, 0.22), (0.17, 0.12, 0.30))
+    spine = empty("Spine", pelvis, (0.0, 0.0, 0.45))
+    head = empty("Head", spine, (0.0, 0.0, 0.28))
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=0.12, location=(0, 0, 0))
+    hm = bpy.context.active_object
+    hm.name = "HeadMesh"
+    hm.data.materials.append(body_mat)
+    hm.parent = head
+    hm.location = (0.0, 0.0, 0.12)
+
+    r_shoulder = empty("RShoulder", spine, (-0.24, 0.0, 0.18))
+    limb("RUpperArm", r_shoulder, (0.0, 0.0, -0.14), (0.045, 0.045, 0.14))
+    r_elbow = empty("RElbow", r_shoulder, (0.0, 0.0, -0.28))
+    limb("RForearm", r_elbow, (0.0, 0.0, -0.13), (0.038, 0.038, 0.13))
+    l_shoulder = empty("LShoulder", spine, (0.24, 0.0, 0.18))
+    limb("LUpperArm", l_shoulder, (0.0, 0.0, -0.14), (0.045, 0.045, 0.14))
+    l_elbow = empty("LElbow", l_shoulder, (0.0, 0.0, -0.28))
+    limb("LForearm", l_elbow, (0.0, 0.0, -0.13), (0.038, 0.038, 0.13))
+
+    r_hip = empty("RHip", pelvis, (-0.10, 0.0, -0.02))
+    limb("RThigh", r_hip, (0.0, 0.0, -0.24), (0.055, 0.055, 0.22))
+    r_knee = empty("RKnee", r_hip, (0.0, 0.0, -0.46))
+    limb("RShin", r_knee, (0.0, 0.0, -0.22), (0.045, 0.045, 0.22))
+    l_hip = empty("LHip", pelvis, (0.10, 0.0, -0.02))
+    limb("LThigh", l_hip, (0.0, 0.0, -0.24), (0.055, 0.055, 0.22))
+    l_knee = empty("LKnee", l_hip, (0.0, 0.0, -0.46))
+    limb("LShin", l_knee, (0.0, 0.0, -0.22), (0.045, 0.045, 0.22))
+
+    bpy.ops.mesh.primitive_cone_add(radius1=0.05, radius2=0.0, depth=1.2, vertices=6, location=(0, 0, 0))
+    blade = bpy.context.active_object
+    blade.name = "HandBlade"
+    blade.data.materials.append(blade_mat)
+    blade.parent = empty("RHand", r_elbow, (0.0, 0.0, -0.26))
+    blade.location = (0.0, -0.10, -0.18)
+    blade.rotation_euler = (math.radians(-72), 0.0, 0.0)
+
+    # prop scale: the stand-in shares the scene's existing prop sizing
+    # (plinth 0.9m, floating blade) so every shot-type framing in
+    # SHOT_FRAMING keeps working unchanged - root scales the whole
+    # hierarchy toward the ground
+    root.scale = (0.45, 0.45, 0.45)
+
+    return {
+        "root": root, "spine": spine, "head": head,
+        "rShoulder": r_shoulder, "rElbow": r_elbow,
+        "lShoulder": l_shoulder, "lElbow": l_elbow,
+        "rHip": r_hip, "rKnee": r_knee, "lHip": l_hip, "lKnee": l_knee,
+    }
+
+
+def apply_pose(figure, pose_start, pose_end, t, t_sec):
+    """Pose the stand-in for this frame: eased interpolation between the
+    shot's start/end poses, plus a procedural walk cycle when either
+    endpoint is WALK (stride swing on hips/shoulders, counter-swing on
+    the opposite arm, a small root bob)."""
+    (root_x, root_y, spine_a, head_a, r_arm, r_elb, l_arm, l_elb, r_leg, r_knee, l_leg, l_knee) = lerp_pose(pose_start, pose_end, t)
+    walking = "WALK" in (normalize_pose(pose_start), normalize_pose(pose_end))
+    leg_r = leg_l = arm_r = arm_l = 0.0
+    bob = 0.0
+    if walking:
+        phase = t_sec * 2.2 * math.pi * 2.0  # ~2.2 strides per second
+        leg_r = math.sin(phase) * 22.0
+        leg_l = -leg_r
+        arm_r = -leg_r * 0.55
+        arm_l = leg_r * 0.55
+        bob = abs(math.cos(phase)) * 0.045
+    root = figure["root"]
+    # root motion is set on the root object itself (outside the scaled
+    # hierarchy), so apply the same prop scale to keep travel in
+    # proportion with the 0.45x stand-in
+    s = 0.45
+    root.location = (0.0, -root_x * s, (root_y + bob) * s)
+    figure["spine"].rotation_euler = (math.radians(spine_a), 0.0, 0.0)
+    figure["head"].rotation_euler = (math.radians(head_a), 0.0, 0.0)
+    figure["rShoulder"].rotation_euler = (math.radians(r_arm - arm_r), 0.0, 0.0)
+    figure["lShoulder"].rotation_euler = (math.radians(l_arm - arm_l), 0.0, 0.0)
+    figure["rElbow"].rotation_euler = (math.radians(-r_elb), 0.0, 0.0)
+    figure["lElbow"].rotation_euler = (math.radians(-l_elb), 0.0, 0.0)
+    figure["rHip"].rotation_euler = (math.radians(-r_leg - leg_r), 0.0, 0.0)
+    figure["lHip"].rotation_euler = (math.radians(-l_leg - leg_l), 0.0, 0.0)
+    figure["rKnee"].rotation_euler = (math.radians(r_knee), 0.0, 0.0)
+    figure["lKnee"].rotation_euler = (math.radians(l_knee), 0.0, 0.0)
+
 
 def worker_run(job_file):
     import bpy
@@ -208,6 +392,12 @@ def worker_run(job_file):
 
         scn = bpy.context.scene
 
+        # clean slate: Blender's startup Cube/Light/Camera surround the
+        # origin (a 2m box) and would swallow the stand-in set - purge them
+        for ob in list(scn.objects):
+            if ob.name in ("Cube", "Light", "Camera"):
+                bpy.data.objects.remove(ob, do_unlink=True)
+
         # ── stand-in set (built fresh in this clean .blend) ──
         ground_mesh = bpy.data.meshes.new("Ground")
         ground_mesh.from_pydata([(-14, -14, 0), (14, -14, 0), (14, 14, 0), (-14, 14, 0)], [], [(0, 1, 2, 3)])
@@ -231,12 +421,6 @@ def worker_run(job_file):
             rock.scale = (1.0, 0.8 + rng() * 0.4, 0.6 + rng() * 0.5)
             rock.data.materials.append(mat)
 
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.5, depth=0.9, location=(0, 0, 0.45))
-        scn.collection.objects[-1].data.materials.append(mat)
-
-        bpy.ops.mesh.primitive_cone_add(radius1=0.14, radius2=0.0, depth=1.9, vertices=6, location=(0, 0, 1.85))
-        blade = scn.collection.objects[-1]
-        blade.rotation_euler = (0.05, 0.12, 0.4)
         blade_mat = bpy.data.materials.new("BladeMat")
         blade_mat.use_nodes = True
         nodes = blade_mat.node_tree.nodes
@@ -248,7 +432,24 @@ def worker_run(job_file):
         emission.inputs[1].default_value = 2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0
         out_node = nodes.get("Material Output")
         blade_mat.node_tree.links.new(emission.outputs[0], out_node.inputs[0])
-        blade.data.materials.append(blade_mat)
+
+        # ── subject: skeletal stand-in when the shot carries poses,
+        #    the legacy plinth + floating blade otherwise ──
+        pose_start = normalize_pose(shot.get("poseStart"))
+        pose_end = normalize_pose(shot.get("poseEnd"))
+        figure = None
+        state["posesRequested"] = [str(shot.get("poseStart")), str(shot.get("poseEnd"))]
+        state["posesResolved"] = [pose_start, pose_end]
+        state["scriptMtime"] = os.path.getmtime(__file__)
+        if pose_start or pose_end:
+            figure = build_stand_in_figure(bpy, scn, mat, blade_mat)
+        else:
+            bpy.ops.mesh.primitive_cylinder_add(radius=0.5, depth=0.9, location=(0, 0, 0.45))
+            scn.collection.objects[-1].data.materials.append(mat)
+            bpy.ops.mesh.primitive_cone_add(radius1=0.14, radius2=0.0, depth=1.9, vertices=6, location=(0, 0, 1.85))
+            blade = scn.collection.objects[-1]
+            blade.rotation_euler = (0.05, 0.12, 0.4)
+            blade.data.materials.append(blade_mat)
 
         # ── AnimeOS scene params ──
         fog = float(scene_p.get("fogDensity", 0.45))
@@ -318,6 +519,8 @@ def worker_run(job_file):
             cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
             t_sec = (f - 1) / fps
+            if figure:
+                apply_pose(figure, pose_start, pose_end, t, t_sec)
             boost = 0.0
             for (start, dur, alpha) in windows:
                 if start <= t_sec <= start + dur:

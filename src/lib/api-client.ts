@@ -86,6 +86,8 @@ export interface ShotRow {
   shotType: string;
   lens: string | null;
   movement: string | null;
+  poseStart?: string | null;
+  poseEnd?: string | null;
   duration: number;
   lighting: string | null;
   status: string;
@@ -298,6 +300,7 @@ export interface BridgeStatusInfo {
   busy: boolean;
   detail: string;
   envHint: string | null;
+  img2vid?: { available: boolean; host: string | null };
 }
 
 export interface CharacterFull {

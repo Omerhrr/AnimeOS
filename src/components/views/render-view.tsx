@@ -6,7 +6,7 @@ import {
   MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable,
   Layers, ListFilter, Play, Clapperboard,
 } from "lucide-react";
-import { api, parseActions, parseFindings, type StudioProject, type EpisodeCutResult } from "@/lib/api-client";
+import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ function EngineDriverCard() {
   const s = bridgeQ.data;
   const live = s?.mode === "LIVE_BLENDER" && s.reachable;
   const motion = s?.mode === "MOTION";
+  const img2vid = (s as BridgeStatusInfo | undefined)?.img2vid;
 
   return (
     <div className={cn(
@@ -53,11 +54,14 @@ function EngineDriverCard() {
         </p>
         {!live && (
           <p className="text-[10px] text-muted-foreground/80 mt-1">
-            Every job renders a sequenced clip driven by the shot&apos;s camera grammar (movement · shot type · lens · lighting · fog · lightning · energy) and muxes with the episode stems at export.
+            Every job renders a sequenced clip driven by the shot&apos;s camera grammar (movement · shot type · lens · lighting · fog · lightning · energy) plus the character&apos;s pose program (start pose → end pose), and muxes with the episode stems at export.
           </p>
         )}
         {!live && s?.envHint && (
           <p className="text-[10px] text-muted-foreground/80 mt-1 font-mono">ANIMEOS_BLENDER_HOST={s.envHint}</p>
+        )}
+        {img2vid?.available && (
+          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">ANIMEOS_IMG2VID_HOST={img2vid.host} - pose-carrying hero shots route to the interpolation provider</p>
         )}
       </div>
       {!live && (
@@ -383,21 +387,25 @@ export function RenderView({ project }: { project: StudioProject }) {
                     <span
                       title={
                         job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
-                          ? "Rendered by a headless Blender sequence worker (Cycles)"
-                          : job.driver === "MOTION"
-                            ? "Rendered by the built-in MOTION engine (ffmpeg camera grammar over key art)"
-                            : "Rendered by the wall-clock simulator"
+                          ? "Rendered by a headless Blender sequence worker (Cycles; skeletal stand-in when the shot carries poses)"
+                          : job.driver === "IMG2VID"
+                            ? "Rendered by the img2vid interpolation provider (pose-to-motion over key art)"
+                            : job.driver === "MOTION"
+                              ? "Rendered by the built-in MOTION engine (ffmpeg camera grammar over key art; poses as a blocking approximation)"
+                              : "Rendered by the wall-clock simulator"
                       }
                       className={cn(
                         "rounded px-1 py-[1px] text-[8px] font-bold tracking-widest border",
                         job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
                           ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-300"
-                          : job.driver === "MOTION"
-                            ? "bg-teal-400/10 border-teal-400/30 text-teal-300"
-                            : "bg-white/5 border-white/12 text-muted-foreground"
+                          : job.driver === "IMG2VID"
+                            ? "bg-sky-400/10 border-sky-400/30 text-sky-300"
+                            : job.driver === "MOTION"
+                              ? "bg-teal-400/10 border-teal-400/30 text-teal-300"
+                              : "bg-white/5 border-white/12 text-muted-foreground"
                       )}
                     >
-                      {job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL" ? "BLENDER" : job.driver === "MOTION" ? "MOTION" : "SIM"}
+                      {job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL" ? "BLENDER" : job.driver === "IMG2VID" ? "IMG2VID" : job.driver === "MOTION" ? "MOTION" : "SIM"}
                     </span>
                     <StatusBadge status={job.status} />
                   </div>

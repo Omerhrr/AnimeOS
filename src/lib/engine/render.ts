@@ -2,11 +2,13 @@ import { db } from "@/lib/db";
 import fs from "fs";
 import path from "path";
 import { stageFor } from "@/lib/types";
+import { hasPoseProgram } from "@/lib/animation/poses";
 import {
   bridgeStatus, submitRenderJob, pollJobProgress,
   pollLocalJob, localJobStale,
 } from "@/lib/bridge/blender";
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
+import { img2vidHost, submitImg2VidJob, pollImg2VidJob } from "@/lib/bridge/img2vid";
 
 // ─────────────────────────────────────────────────────────────
 // RENDER PIPELINE (pluggable engine drivers)
@@ -22,14 +24,21 @@ import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 //     range with Cycles and returning the finished clip.
 //   • BLENDER_LOCAL  - a locally-installed headless Blender: each
 //     job spawns its own worker subprocess (one 3D render at a
-//     time), progress flows through a state file.
+//     time), progress flows through a state file. Shots carrying a
+//     pose program get the skeletal stand-in articulated between
+//     their start/end poses.
+//   • IMG2VID        - interpolation-model provider slot (env
+//     ANIMEOS_IMG2VID_HOST): hero shots with a pose program route
+//     here first when configured; the provider animates the key
+//     art inside the frame and the clip downloads back.
 //   • MOTION         - the built-in ffmpeg engine: deterministic
 //     camera program (movement / shot type / lens / lighting /
-//     fog / lightning / energy) animated over the shot's key art.
+//     fog / lightning / energy) animated over the shot's key art;
+//     pose pairs play as a blocking approximation.
 //   • SIMULATOR      - wall-clock fallback when no engine exists.
 //
 // The production state machine, render queue, and DSH evaluation
-// loop are identical for all four drivers.
+// loop are identical for all five drivers.
 // ─────────────────────────────────────────────────────────────
 
 export async function createRenderJob(projectId: string, shotId: string | null, mode: "PREVIEW" | "FINAL") {
@@ -75,6 +84,8 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         shotType: shot.shotType,
         lens: shot.lens,
         movement: shot.movement,
+        poseStart: shot.poseStart,
+        poseEnd: shot.poseEnd,
         lighting: shot.lighting,
         duration: shot.duration,
       },
@@ -107,6 +118,38 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     }
   }
 
+  // IMG2VID: interpolation-model slot. Hero shots that carry a pose
+  // program route to the configured provider before the built-in
+  // engines; the provider animates the key art between the poses.
+  if (driver === "SIMULATOR" && shot && img2vidHost() && hasPoseProgram(shot.poseStart, shot.poseEnd)) {
+    const project = await db.project.findUnique({ where: { id: projectId } });
+    const fps = project?.fps ?? 24;
+    const resMatch = String(project?.resolution ?? "1920x1080").match(/(\d{2,5})x(\d{2,5})/);
+    const width = resMatch ? parseInt(resMatch[1], 10) : 1920;
+    const height = resMatch ? parseInt(resMatch[2], 10) : 1080;
+    const base = process.env.ANIMEOS_PUBLIC_URL ?? "";
+    const submit = await submitImg2VidJob({
+      jobId: job.id,
+      imageUrl: shot.artworkUrl ? (base ? `${base}${shot.artworkUrl}` : shot.artworkUrl) : null,
+      poseStart: shot.poseStart,
+      poseEnd: shot.poseEnd,
+      movement: shot.movement,
+      shotType: shot.shotType,
+      fps,
+      frames: Math.max(2, Math.round(shot.duration * fps)),
+      width,
+      height,
+      mode,
+    });
+    if (submit.submitted) {
+      driver = "IMG2VID";
+      clipMs = Math.round(shot.duration * 1000);
+      stage = "Img2Vid: pose interpolation job submitted";
+    } else {
+      stage = `Img2Vid submit failed (${submit.error ?? "unknown"}) - trying the built-in engine`;
+    }
+  }
+
   // MOTION engine: built-in ffmpeg camera-grammar renderer.
   if (driver === "SIMULATOR" && shot && (await detectFfmpeg())) {
     driver = "MOTION";
@@ -135,7 +178,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
 
 // ── MOTION engine runner (async, updates the job as ffmpeg encodes) ──
 
-function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number }; shotType: string; lens: string | null; movement: string | null; lighting: string | null; duration: number; number: number; artworkUrl: string | null }, mode: "PREVIEW" | "FINAL") {
+function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number }; shotType: string; lens: string | null; movement: string | null; poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number; number: number; artworkUrl: string | null }, mode: "PREVIEW" | "FINAL") {
   void (async () => {
     let lastPct = -1;
     try {
@@ -148,6 +191,8 @@ function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: 
         shotType: shot.shotType,
         lens: shot.lens,
         movement: shot.movement,
+        poseStart: shot.poseStart,
+        poseEnd: shot.poseEnd,
         lighting: shot.lighting,
         fogDensity: shot.scene.fogDensity,
         lightningIntensity: shot.scene.lightningIntensity,
@@ -255,6 +300,65 @@ export async function tickRenderJob(jobId: string) {
         job = await db.renderJob.update({
           where: { id: jobId },
           data: { progress, stage: prog.stage ?? stageFor(progress) },
+          include: { evaluation: true },
+        });
+      }
+    }
+    return job;
+  }
+
+  if (job.driver === "IMG2VID") {
+    const prog = await pollImg2VidJob(job.id);
+    if (prog.polled && prog.done) {
+      if (prog.error || !prog.mp4Path) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { status: "FAILED", progress: 100, stage: `Img2Vid: ${prog.error ?? "no clip produced"}`.slice(0, 120), finishedAt: new Date() },
+          include: { evaluation: true },
+        });
+      } else if (fs.existsSync(prog.mp4Path)) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: {
+            status: "REVIEW", progress: 100,
+            stage: "Img2Vid clip ready - pose interpolation rendered",
+            outputUrl: `/renders/${job.id}.mp4`,
+            finishedAt: new Date(),
+          },
+          include: { evaluation: true },
+        });
+      } else {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { status: "FAILED", progress: 100, stage: "Img2Vid clip missing on disk", finishedAt: new Date() },
+          include: { evaluation: true },
+        });
+      }
+    } else if (prog.polled && typeof prog.progress === "number") {
+      const progress = Math.min(99, Math.floor(prog.progress * 100));
+      if (progress !== job.progress) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { progress, stage: "Img2Vid: interpolating poses" },
+          include: { evaluation: true },
+        });
+      }
+    } else if (!prog.polled) {
+      // provider lost mid-job - re-render locally with the MOTION engine
+      const shot = job.shotId
+        ? await db.shot.findUnique({ where: { id: job.shotId }, include: { scene: true } })
+        : null;
+      if (shot && (await detectFfmpeg())) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { driver: "MOTION", stage: "Img2Vid provider lost - MOTION engine taking over", startedAt: new Date() },
+          include: { evaluation: true },
+        });
+        startMotionJob(job.id, shot, (job.mode as "PREVIEW" | "FINAL") ?? "PREVIEW");
+      } else {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { driver: "SIMULATOR", stage: "Img2Vid provider lost - simulator taking over", startedAt: new Date() },
           include: { evaluation: true },
         });
       }

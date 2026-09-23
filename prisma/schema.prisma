@@ -123,6 +123,8 @@ model Shot {
   shotType    String   @default("MEDIUM") // ESTABLISHING | WIDE | MEDIUM | CLOSEUP | EXTREME_CLOSEUP | LOW_ANGLE
   lens        String?  // e.g. "50mm"
   movement    String?  // ORBIT | DOLLY_IN | STATIC | PAN | TRACKING | CRANE
+  poseStart   String?  // character start pose (see src/lib/animation/poses.ts)
+  poseEnd     String?  // character end pose - drivers interpolate start -> end across the clip
   duration    Float    @default(4.0)
   lighting    String?
   status      String   @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED

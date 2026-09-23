@@ -26,6 +26,7 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
+import { hasPoseProgram, poseChip } from "@/lib/animation/poses";
 
 // ── camera grammar planner (pure) ────────────────────────────
 
@@ -34,6 +35,8 @@ export interface CameraProgramInput {
   shotType: string;
   lens: string | null;
   movement: string | null;
+  poseStart?: string | null;
+  poseEnd?: string | null;
   lighting: string | null;
   fogDensity: number;
   lightningIntensity: number;
@@ -56,6 +59,7 @@ export interface FlashWindow {
 export interface CameraProgram {
   move: string; // normalized movement id
   moveLabel: string; // human wording for stage lines
+  poseChipText: string | null; // "STANCE -> LUNGE" when the shot carries poses
   zoomFrom: number; // camera zoom relative to the plate (1 = full frame)
   zoomTo: number;
   uxFrom: number; // horizontal focus center 0..1
@@ -238,6 +242,18 @@ export function planCameraProgram(input: CameraProgramInput): CameraProgram {
     }
   }
 
+  // pose program: ffmpeg cannot articulate a painted character, so the
+  // pair plays as a BLOCKING approximation - an impact beat lands at
+  // the end pose (quick teal/white strike) and the program note says so
+  const poseChipText = hasPoseProgram(input.poseStart, input.poseEnd) ? poseChip(input.poseStart, input.poseEnd) : null;
+  if (poseChipText) {
+    pulses.push({
+      start: clamp(0.86 + (rng() - 0.5) * 0.05, 0.05, 0.95),
+      dur: 0.14,
+      alpha: 0.2,
+    });
+  }
+
   // timing + resolution (PREVIEW renders smaller for queue speed)
   const durationSec = clamp(Number.isFinite(input.duration) && input.duration > 0 ? input.duration : 4, 0.8, 30);
   const fps = clamp(Math.round(input.fps || 24), 1, 60);
@@ -248,6 +264,7 @@ export function planCameraProgram(input: CameraProgramInput): CameraProgram {
   return {
     move,
     moveLabel: lensNote ? `${prof.label} (${lensNote})` : prof.label,
+    poseChipText,
     zoomFrom: Number(zoomFrom.toFixed(4)),
     zoomTo: Number(zoomTo.toFixed(4)),
     uxFrom: prof.uxFrom,
@@ -278,6 +295,7 @@ export function describeProgram(p: CameraProgram, hasArt: boolean): string {
   ];
   if (p.fogAlpha > 0) parts.push(`fog veil ${p.fogAlpha.toFixed(2)}`);
   if (p.flashes.length > 0) parts.push(`${p.flashes.length} lightning flash${p.flashes.length === 1 ? "" : "es"}`);
+  if (p.poseChipText) parts.push(`poses ${p.poseChipText} (blocking)`);
   parts.push(hasArt ? "key art" : "procedural plate");
   return parts.join(" · ");
 }
@@ -365,6 +383,8 @@ export async function renderShotClip(opts: {
   shotType: string;
   lens: string | null;
   movement: string | null;
+  poseStart?: string | null;
+  poseEnd?: string | null;
   lighting: string | null;
   fogDensity: number;
   lightningIntensity: number;
@@ -384,6 +404,8 @@ export async function renderShotClip(opts: {
     shotType: opts.shotType,
     lens: opts.lens,
     movement: opts.movement,
+    poseStart: opts.poseStart ?? null,
+    poseEnd: opts.poseEnd ?? null,
     lighting: opts.lighting,
     fogDensity: opts.fogDensity,
     lightningIntensity: opts.lightningIntensity,

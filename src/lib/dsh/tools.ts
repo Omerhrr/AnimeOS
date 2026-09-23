@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { randomUUID } from "node:crypto";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { createRenderJob } from "@/lib/engine/render";
+import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
 import {
   applyArcTemplate, arcTemplateByName, ARC_TEMPLATES, formatTemplateReport,
@@ -116,7 +117,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "create_shot",
-    description: "Add a shot to a scene. Shot types: ESTABLISHING | WIDE | MEDIUM | CLOSEUP | EXTREME_CLOSEUP | LOW_ANGLE. Movements: ORBIT | DOLLY_IN | STATIC | PAN | TRACKING | CRANE.",
+    description: "Add a shot to a scene. Shot types: ESTABLISHING | WIDE | MEDIUM | CLOSEUP | EXTREME_CLOSEUP | LOW_ANGLE. Movements: ORBIT | DOLLY_IN | STATIC | PAN | TRACKING | CRANE. Poses (character motion inside the frame): STANCE | WALK | LUNGE | SLASH | CAST | DRAW | BLOCK | LEAP | CROUCH | FALL | RISE | BOW | POINT - give poseStart and poseEnd and the engines interpolate the character between them across the clip.",
     args: {
       sceneNumber: "number (defaults to latest scene)",
       number: "number, shot number (omit to auto-increment)",
@@ -124,8 +125,20 @@ export const TOOL_DEFS: ToolDef[] = [
       shotType: "string",
       lens: "e.g. 24mm, 50mm, 85mm (optional)",
       movement: "string (optional)",
+      poseStart: "string pose id (optional, e.g. STANCE)",
+      poseEnd: "string pose id (optional, e.g. LUNGE)",
       duration: "seconds (optional, default 4)",
       lighting: "string (optional)",
+    },
+  },
+  {
+    name: "set_shot_poses",
+    description: "Set or clear a shot's character motion program: a start pose and an end pose the engines interpolate across the clip (a blocking pass on the Blender stand-in, an img2vid interpolation when a provider is attached, a blocking approximation with an impact beat on the MOTION engine). Poses: STANCE | WALK | LUNGE | SLASH | CAST | DRAW | BLOCK | LEAP | CROUCH | FALL | RISE | BOW | POINT. Pass empty strings to clear.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      poseStart: "string pose id (empty string clears)",
+      poseEnd: "string pose id (empty string clears)",
     },
   },
   {
@@ -1222,6 +1235,14 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!scene) scene = await latestScene(projectId);
         if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
 
+        const poseStart = args.poseStart ? normalizePose(args.poseStart) : null;
+        const poseEnd = args.poseEnd ? normalizePose(args.poseEnd) : null;
+        if (args.poseStart && !poseStart) {
+          return { status: "ERROR", result: `Unknown pose '${args.poseStart}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
+        if (args.poseEnd && !poseEnd) {
+          return { status: "ERROR", result: `Unknown pose '${args.poseEnd}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
         const maxNum = await db.shot.aggregate({ where: { sceneId: scene.id }, _max: { number: true } });
         const shot = await db.shot.create({
           data: {
@@ -1231,11 +1252,42 @@ export async function executeTool(projectId: string, name: string, args: Record<
             shotType: String(args.shotType ?? "MEDIUM"),
             lens: args.lens ? String(args.lens) : null,
             movement: args.movement ? String(args.movement) : null,
+            poseStart,
+            poseEnd,
             duration: args.duration ? Number(args.duration) : 4,
             lighting: args.lighting ? String(args.lighting) : null,
           },
         });
-        return { status: "OK", result: `Shot ${String(shot.number).padStart(3, "0")} (${shot.shotType}, ${shot.lens ?? "default lens"}, ${shot.movement ?? "static"}, ${shot.duration}s) added to Scene ${scene.number}.` };
+        const poseTxt = poseChip(shot.poseStart, shot.poseEnd);
+        return { status: "OK", result: `Shot ${String(shot.number).padStart(3, "0")} (${shot.shotType}, ${shot.lens ?? "default lens"}, ${shot.movement ?? "static"}${poseTxt ? `, poses ${poseTxt}` : ""}, ${shot.duration}s) added to Scene ${scene.number}.` };
+      }
+
+      case "set_shot_poses": {
+        const scene = await resolveScene(projectId, args.sceneNumber);
+        if (!scene) return { status: "ERROR", result: "No scene exists yet - create a scene first." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        const rawStart = String(args.poseStart ?? "").trim();
+        const rawEnd = String(args.poseEnd ?? "").trim();
+        const poseStart = rawStart ? normalizePose(rawStart) : null;
+        const poseEnd = rawEnd ? normalizePose(rawEnd) : null;
+        if (rawStart && !poseStart) {
+          return { status: "ERROR", result: `Unknown pose '${rawStart}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
+        if (rawEnd && !poseEnd) {
+          return { status: "ERROR", result: `Unknown pose '${rawEnd}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
+        const updated = await db.shot.update({
+          where: { id: shot.id },
+          data: { poseStart, poseEnd },
+        });
+        const chip = poseChip(updated.poseStart, updated.poseEnd);
+        if (!chip) {
+          return { status: "OK", result: `Shot ${String(updated.number).padStart(3, "0")} pose program cleared - the shot renders with camera grammar only.` };
+        }
+        return { status: "OK", result: `Shot ${String(updated.number).padStart(3, "0")} will perform ${describePosePair(updated.poseStart, updated.poseEnd)}. Every render engine now interpolates these poses across the clip.` };
       }
 
       case "create_terminology": {
@@ -1316,12 +1368,19 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
         const mode = String(args.mode ?? "PREVIEW") === "FINAL" ? "FINAL" : "PREVIEW";
         const job = await createRenderJob(projectId, shot.id, mode);
+        const poseTxt = poseChip(shot.poseStart, shot.poseEnd);
         const engineNote = job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
-          ? "headless Blender sequence worker (Cycles)"
-          : job.driver === "MOTION"
-            ? "built-in MOTION engine (camera grammar over key art)"
-            : "simulator";
-        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} on the ${engineNote} - it will finish as a playable animated clip following the shot's camera grammar (${shot.movement ?? "STATIC"}, ${shot.shotType}); DSH will inspect the preview when it completes.` };
+          ? poseTxt
+            ? `headless Blender sequence worker (Cycles) with the skeletal stand-in performing ${poseTxt}`
+            : "headless Blender sequence worker (Cycles)"
+          : job.driver === "IMG2VID"
+            ? "img2vid interpolation provider (pose-to-motion model)"
+            : job.driver === "MOTION"
+              ? poseTxt
+                ? "built-in MOTION engine (poses play as a blocking approximation)"
+                : "built-in MOTION engine (camera grammar over key art)"
+              : "simulator";
+        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} on the ${engineNote} - it will finish as a playable animated clip following the shot's camera grammar (${shot.movement ?? "STATIC"}, ${shot.shotType}${poseTxt ? `, character ${poseTxt}` : ""}); DSH will inspect the preview when it completes.` };
       }
 
       case "set_shot_dialogue": {

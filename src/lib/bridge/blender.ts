@@ -173,7 +173,7 @@ export async function bridgeStatus(force = false): Promise<BridgeStatus> {
 
 export interface BridgeJobPayload {
   jobId: string;
-  shot: { number: number; description: string; shotType: string; lens: string | null; movement: string | null; lighting: string | null; duration: number };
+  shot: { number: number; description: string; shotType: string; lens: string | null; movement: string | null; poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number };
   scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number };
   project: { title: string; visualStyle: string; resolution: string; fps: number };
   mode: "PREVIEW" | "FINAL";

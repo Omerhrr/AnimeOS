@@ -2,9 +2,27 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { normalizePose } from "@/lib/animation/poses";
+
+/** Pose chips must name the shared vocabulary (or an alias) - typos 400 so renders never silently no-op. */
+function poseField(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const pose = normalizePose(value);
+  if (!pose) throw new Error(`unknown pose '${String(value)}' - valid: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT`);
+  return pose;
+}
 
 export async function POST(req: Request) {
   const body = await req.json();
+  let poseStart: string | null;
+  let poseEnd: string | null;
+  try {
+    poseStart = poseField(body.poseStart) ?? null;
+    poseEnd = poseField(body.poseEnd) ?? null;
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "invalid pose" }, { status: 400 });
+  }
   const maxNum = await db.shot.aggregate({ where: { sceneId: String(body.sceneId) }, _max: { number: true } });
   const shot = await db.shot.create({
     data: {
@@ -14,6 +32,8 @@ export async function POST(req: Request) {
       shotType: String(body.shotType ?? "MEDIUM"),
       lens: body.lens ? String(body.lens) : null,
       movement: body.movement ? String(body.movement) : null,
+      poseStart,
+      poseEnd,
       duration: Number(body.duration ?? 4),
       lighting: body.lighting ? String(body.lighting) : null,
     },
@@ -90,6 +110,10 @@ export async function PATCH(req: Request) {
       }
     }
     if (rest.artworkUrl !== undefined) data.artworkUrl = rest.artworkUrl ? String(rest.artworkUrl) : null;
+    const poseStart = poseField(rest.poseStart);
+    if (poseStart !== undefined) data.poseStart = poseStart;
+    const poseEnd = poseField(rest.poseEnd);
+    if (poseEnd !== undefined) data.poseEnd = poseEnd;
     return data;
   }
 
@@ -114,8 +138,8 @@ export async function PATCH(req: Request) {
   }
 
   // ── Single-shot variant ────────────────────────────────
-  const data = buildFieldData(rest);
   try {
+    const data = buildFieldData(rest);
     const existing = await db.shot.findUnique({ where: { id: String(id) } });
     if (!existing) return NextResponse.json({ error: "Shot not found" }, { status: 404 });
     const refData = await validatedRefs(existing.sceneId, rest);
@@ -126,7 +150,7 @@ export async function PATCH(req: Request) {
     if (err instanceof Error && (err.message.includes("belong") || err.message.includes("loraStrength"))) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
-    if (err instanceof Error && err.message.includes("dialogue")) {
+    if (err instanceof Error && (err.message.includes("dialogue") || err.message.includes("unknown pose"))) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     throw err;

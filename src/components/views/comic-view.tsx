@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { BookOpen, BookOpenCheck, CheckSquare, FileDown, Layers, MoveRight, Music, Route, SlidersHorizontal, Sparkles, Loader2, MessageSquarePlus, Scissors, TriangleAlert, Users, X, Zap } from "lucide-react";
 import type { StudioProject, SceneWithShots, ShotRow } from "@/lib/api-client";
 import { api } from "@/lib/api-client";
+import { poseChip } from "@/lib/animation/poses";
 import {
   COMIC_FORMATS, layoutScene, stripHeight,
   type ComicFormat, type PanelPlacement, type ComicPage,
@@ -268,13 +269,26 @@ function PanelFrame({
       {/* status dot */}
       <span className={cn("absolute bottom-1.5 h-2 w-2 rounded-full z-10", rtl ? "left-1.5" : "right-1.5", STATUS_DOT[shot.status] ?? "bg-neutral-400")} title={shot.status} />
 
-      {/* movement chip */}
-      {dynamic && (
-        <span
-          className={cn("absolute bottom-1 px-1 py-[1px] text-[8px] font-mono tracking-wider z-10", rtl ? "right-1" : "left-1")}
-          style={{ border: `1px solid ${cfg.ink}`, color: cfg.ink, background: "rgba(255,255,255,0.75)" }}
-        >
-          {shot.movement}
+      {/* movement + pose chips */}
+      {(dynamic || poseChip(shot.poseStart, shot.poseEnd)) && (
+        <span className={cn("absolute bottom-1 flex gap-1 z-10", rtl ? "right-1" : "left-1")}>
+          {dynamic && (
+            <span
+              className="px-1 py-[1px] text-[8px] font-mono tracking-wider"
+              style={{ border: `1px solid ${cfg.ink}`, color: cfg.ink, background: "rgba(255,255,255,0.75)" }}
+            >
+              {shot.movement}
+            </span>
+          )}
+          {poseChip(shot.poseStart, shot.poseEnd) && (
+            <span
+              className="px-1 py-[1px] text-[8px] font-mono font-bold tracking-wider text-teal-700"
+              style={{ border: "1px solid #0f766e", background: "rgba(204,251,241,0.85)" }}
+              title="Character motion: engines interpolate these poses across the clip"
+            >
+              {poseChip(shot.poseStart, shot.poseEnd)}
+            </span>
+          )}
         </span>
       )}
 
@@ -336,9 +350,22 @@ function WebtoonPanel({
         {String(shot.number).padStart(3, "0")}
       </span>
       <ArcChips spans={arcChips} rtl={false} />
-      {dynamic && (
-        <span className="absolute bottom-1 right-1 z-10 px-1 py-[1px] text-[8px] font-mono tracking-wider" style={{ border: `1px solid ${cfg.ink}`, color: cfg.ink, background: "rgba(255,255,255,0.75)" }}>
-          {shot.movement}
+      {(dynamic || poseChip(shot.poseStart, shot.poseEnd)) && (
+        <span className="absolute bottom-1 right-1 z-10 flex gap-1">
+          {dynamic && (
+            <span className="px-1 py-[1px] text-[8px] font-mono tracking-wider" style={{ border: `1px solid ${cfg.ink}`, color: cfg.ink, background: "rgba(255,255,255,0.75)" }}>
+              {shot.movement}
+            </span>
+          )}
+          {poseChip(shot.poseStart, shot.poseEnd) && (
+            <span
+              className="px-1 py-[1px] text-[8px] font-mono font-bold tracking-wider text-teal-700"
+              style={{ border: "1px solid #0f766e", background: "rgba(204,251,241,0.85)" }}
+              title="Character motion: engines interpolate these poses across the clip"
+            >
+              {poseChip(shot.poseStart, shot.poseEnd)}
+            </span>
+          )}
         </span>
       )}
       <figcaption className={cn("absolute bottom-6 left-1 z-10 px-1.5 py-1 text-[9px] leading-snug text-neutral-900", lines.length > 0 ? "line-clamp-1" : "line-clamp-2")} style={{ background: "rgba(255,255,255,0.88)", border: `1px solid ${cfg.ink}`, maxWidth: "76%" }}>

@@ -1,13 +1,15 @@
 "use client";
 
 // Per-panel inspector: multi-artist assignment + per-shot style LoRA
-// fine-tuning. The compiled LoRA directive shown here is the client
+// fine-tuning + the shot's character motion program (start/end poses).
+// The compiled LoRA directive shown here is the client
 // mirror of src/lib/ai/art.ts → shotLoraDirective().
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Play, Route, SlidersHorizontal, Square, Users, Zap } from "lucide-react";
+import { Loader2, Move3d, Play, Route, SlidersHorizontal, Square, Users, Zap } from "lucide-react";
 import { api, type ArtistRow, type SceneWithShots, type ShotRow, type StyleLoraRow } from "@/lib/api-client";
 import { parseDialogue } from "@/lib/comic/dialogue";
+import { POSES, POSE_LABELS, poseChip } from "@/lib/animation/poses";
 import {
   arcSpansForShot, computeArcSpans, describeArcPosition, ensembleGroupSizes, formatArcRange,
   groupEnsembleSpans, type ArcSpan,
@@ -157,6 +159,9 @@ export function PanelInspectorDialog({
   const [artistId, setArtistId] = useState<string | null>(shot.artistId ?? null);
   const [loraId, setLoraId] = useState<string | null>(shot.loraId ?? null);
   const [strength, setStrength] = useState<number>(shot.loraStrength ?? shot.lora?.weight ?? 0.8);
+  // character motion program: "" = no pose on that end
+  const [poseStart, setPoseStart] = useState<string>(shot.poseStart ?? "");
+  const [poseEnd, setPoseEnd] = useState<string>(shot.poseEnd ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // arc playback: one sequential player for the whole dialog; the key
@@ -170,6 +175,8 @@ export function PanelInspectorDialog({
       setArtistId(shot.artistId ?? null);
       setLoraId(shot.loraId ?? null);
       setStrength(shot.loraStrength ?? shot.lora?.weight ?? 0.8);
+      setPoseStart(shot.poseStart ?? "");
+      setPoseEnd(shot.poseEnd ?? "");
       setError(null);
     } else {
       stopArcPlayback();
@@ -305,6 +312,8 @@ export function PanelInspectorDialog({
         artistId: artistId,
         loraId: loraId,
         loraStrength: loraId ? strength : null,
+        poseStart: poseStart || null,
+        poseEnd: poseEnd || null,
       });
       onSaved();
       onClose();
@@ -456,6 +465,47 @@ export function PanelInspectorDialog({
             )}
           </div>
 
+          {/* ── Motion poses (character motion inside the frame) ── */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1.5 text-xs">
+              <Move3d className="h-3.5 w-3.5 text-primary" /> Motion poses
+              {poseChip(poseStart, poseEnd) && (
+                <span className="ml-1 px-1.5 py-0.5 rounded bg-teal-400/15 border border-teal-400/25 text-[9px] font-bold tracking-wider text-teal-200">{poseChip(poseStart, poseEnd)}</span>
+              )}
+            </Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Start pose</span>
+                <select
+                  value={poseStart}
+                  onChange={(e) => setPoseStart(e.target.value)}
+                  className="w-full h-8 rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                >
+                  <option value="" className="bg-[#12121a]">None (camera only)</option>
+                  {POSES.map((p) => (
+                    <option key={p} value={p} className="bg-[#12121a]">{p} - {POSE_LABELS[p]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">End pose</span>
+                <select
+                  value={poseEnd}
+                  onChange={(e) => setPoseEnd(e.target.value)}
+                  className="w-full h-8 rounded-lg border border-white/10 bg-white/5 px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                >
+                  <option value="" className="bg-[#12121a]">None (camera only)</option>
+                  {POSES.map((p) => (
+                    <option key={p} value={p} className="bg-[#12121a]">{p} - {POSE_LABELS[p]}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              The engines interpolate the character between the two poses across the clip: the Blender stand-in performs the beat, an img2vid provider animates the key art when one is attached, and the MOTION engine plays a blocking approximation with an impact beat.
+            </p>
+          </div>
+
           {/* ── Style LoRA ── */}
           <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-xs">
@@ -524,9 +574,9 @@ export function PanelInspectorDialog({
           <Button variant="outline" size="sm" className="h-8 border-white/12 bg-white/5" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button size="sm" className="h-8" onClick={() => void save()} disabled={saving || artists.length + loras.length === 0}>
+          <Button size="sm" className="h-8" onClick={() => void save()} disabled={saving}>
             {saving && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
-            Save panel assignment
+            Save panel settings
           </Button>
         </DialogFooter>
       </DialogContent>
