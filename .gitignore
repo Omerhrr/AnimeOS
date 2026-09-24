@@ -85,3 +85,7 @@ public/auditions/*.wav
 # e2e iter31 local artifacts
 scripts/.e2e31-frames/
 scripts/.e2e31-state.json
+
+# e2e iter34 local artifacts
+iter34-*.png
+scripts/.e2e34-state.json

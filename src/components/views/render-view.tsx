@@ -4,13 +4,14 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable,
-  Layers, ListFilter, Play, Clapperboard,
+  Layers, ListFilter, Play, Clapperboard, Timer,
 } from "lucide-react";
 import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { formatSeconds, parseTelemetry, providerLedger } from "@/lib/engine/telemetry";
 import { cn } from "@/lib/utils";
 
 function EngineDriverCard() {
@@ -322,6 +323,16 @@ export function RenderView({ project }: { project: StudioProject }) {
     review: jobs.filter((j) => ["REVIEW", "NEEDS_REVISION"].includes(j.status)).length,
     approved: jobs.filter((j) => ["APPROVED"].includes(j.status)).length,
   }), [jobs]);
+  // per-provider ledger: latency + cost aggregated over every job that
+  // finished with telemetry (spans chain takeovers, credits bill the final provider)
+  const ledger = useMemo(
+    () => providerLedger(jobs.map((j) => parseTelemetry(j.telemetry))),
+    [jobs],
+  );
+  const totalCredits = useMemo(
+    () => jobs.reduce((n, j) => n + (parseTelemetry(j.telemetry)?.credits ?? 0), 0),
+    [jobs],
+  );
   const visibleJobs = useMemo(() => {
     const f = FILTERS.find((x) => x.id === filter);
     return f ? jobs.filter((j) => f.match(j.status)) : jobs;
@@ -345,6 +356,9 @@ export function RenderView({ project }: { project: StudioProject }) {
           <span className="px-2 py-0.5 rounded border border-amber-400/25 bg-amber-400/5 tabular-nums">{counts.active} active</span>
           <span className="px-2 py-0.5 rounded border border-violet-400/25 bg-violet-400/5 tabular-nums">{counts.review} in review</span>
           <span className="px-2 py-0.5 rounded border border-emerald-400/25 bg-emerald-400/5 tabular-nums">{counts.approved} approved</span>
+          {totalCredits > 0 && (
+            <span className="px-2 py-0.5 rounded border border-sky-400/25 bg-sky-400/5 tabular-nums" title="Estimated cost over these jobs (hosted providers bill per clip-second)">~{totalCredits} credits</span>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-1">
           <ListFilter className="h-3.5 w-3.5 text-muted-foreground" />
@@ -362,6 +376,25 @@ export function RenderView({ project }: { project: StudioProject }) {
           ))}
         </div>
       </div>
+
+      {ledger.length > 0 && (
+        <div className="studio-panel p-3 mb-3">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-2">
+            <Timer className="h-3.5 w-3.5" /> Provider ledger - latency &amp; cost per engine
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ledger.map((row) => (
+              <div key={row.provider} className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5">
+                <div className="text-[11px] font-semibold tabular-nums">{row.provider} <span className="font-normal text-muted-foreground">· {row.jobs} job{row.jobs === 1 ? "" : "s"}</span></div>
+                <div className="text-[10px] text-muted-foreground tabular-nums">
+                  avg {formatSeconds(row.avgMs)} · total {formatSeconds(row.totalMs)}
+                  {row.credits > 0 ? <span className="text-sky-300"> · ~{row.credits} credits</span> : <span> · 0 credits</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {jobs.length === 0 && (
         <div className="studio-panel p-10 text-center text-sm text-muted-foreground">
@@ -441,6 +474,35 @@ export function RenderView({ project }: { project: StudioProject }) {
                   )}
                 </div>
               </div>
+
+              {(() => {
+                const tel = parseTelemetry(job.telemetry);
+                if (!tel || tel.spans.length === 0) return null;
+                return (
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[10px] leading-relaxed">
+                    <Timer className="h-3 w-3 text-muted-foreground shrink-0" />
+                    {tel.spans.map((span, i) => (
+                      <span
+                        key={i}
+                        title={`${span.provider}${span.note ? ` (${span.note})` : ""} worked ${formatSeconds(span.ms)} on this job`}
+                        className="rounded px-1.5 py-0.5 border border-white/12 bg-white/5 tabular-nums"
+                      >
+                        <span className="text-muted-foreground">{i > 0 ? "→ " : ""}</span>
+                        <span className="font-semibold">{span.provider}</span> {formatSeconds(span.ms)}
+                        {span.note && <span className="text-muted-foreground"> · {span.note}</span>}
+                      </span>
+                    ))}
+                    {tel.credits > 0 && (
+                      <span className="rounded px-1.5 py-0.5 border border-sky-400/25 bg-sky-400/5 text-sky-300 tabular-nums" title="Estimated cost: hosted providers bill per clip-second (MOTION and local Blender compute is free)">
+                        ~{tel.credits} credits
+                      </span>
+                    )}
+                    {tel.takeovers.length > 0 && (
+                      <span className="text-amber-300/80" title={tel.takeovers.join("; ")}>takeover</span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {job.outputUrl && !active && (
                 <video

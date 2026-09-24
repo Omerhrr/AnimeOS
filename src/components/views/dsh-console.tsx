@@ -67,11 +67,26 @@ const STEP_DOT: Record<string, string> = {
   ERROR: "bg-rose-400",
 };
 
+/** One episode row of the per-episode template catalog. */
+interface TemplateEpisode {
+  episodeId: string;
+  seasonNumber: number;
+  number: number;
+  title: string;
+  sceneCount: number;
+  shotCount: number;
+  templates: Array<{ id: string; name: string; summary: string; cadenceHint: string; stepCount: number }>;
+}
+
 function PlansPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // per-episode templates: episode pick + landing state
+  const [episodeId, setEpisodeId] = useState("");
+  const [landing, setLanding] = useState<string | null>(null);
+  const [landMsg, setLandMsg] = useState<string | null>(null);
 
   const plansQ = useQuery({
     queryKey: ["dshPlans", projectId],
@@ -83,7 +98,18 @@ function PlansPanel({ projectId }: { projectId: string }) {
     enabled: Boolean(projectId),
     refetchInterval: (q) => ((q.state.data ?? []).some((p) => p.status === "ACTIVE") ? 5000 : false),
   });
+  const catalogQ = useQuery({
+    queryKey: ["planTemplates", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/plan-templates?projectId=${projectId}`);
+      const body = (await res.json()) as { episodes?: TemplateEpisode[] };
+      return body.episodes ?? [];
+    },
+    enabled: Boolean(projectId) && open,
+  });
   const plans = plansQ.data ?? [];
+  const episodes = catalogQ.data ?? [];
+  const pickedEpisode = episodes.find((e) => e.episodeId === episodeId) ?? episodes[0] ?? null;
   const proposed = plans.filter((p) => p.status === "PROPOSED").length;
   const active = plans.filter((p) => p.status === "ACTIVE" || p.status === "PAUSED").length;
 
@@ -108,7 +134,30 @@ function PlansPanel({ projectId }: { projectId: string }) {
     }
   }
 
-  if (plans.length === 0) return null;
+  async function land(templateId: string) {
+    if (!pickedEpisode) return;
+    setLanding(templateId);
+    setLandMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/plan-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, episodeId: pickedEpisode.episodeId, templateId }),
+      });
+      const body = (await res.json()) as { error?: string; planTitle?: string };
+      if (!res.ok) setError(body.error ?? "Landing failed");
+      else setLandMsg(`'${body.planTitle}' landed as a proposal - approve it above to open its runner.`);
+    } catch {
+      setError("Landing failed");
+    } finally {
+      setLanding(null);
+      await qc.invalidateQueries({ queryKey: ["dshPlans", projectId] });
+    }
+  }
+
+  // The panel always renders now: even with zero plans it carries the
+  // per-episode template catalog (the nightly-breakdown entry point).
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.02]">
@@ -129,13 +178,16 @@ function PlansPanel({ projectId }: { projectId: string }) {
         {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-2 max-h-72 overflow-y-auto studio-scroll">
+        <div className="px-3 pb-3 space-y-2 max-h-[26rem] overflow-y-auto studio-scroll">
           <p className="text-[10px] text-muted-foreground leading-relaxed">
             DSH landed these ordered tool-call lists for work that spans turns or days. Approve a proposal to open its runner;
             running executes real production steps and records each result. A failed step parks the plan for a retry.
           </p>
           {error && (
             <div className="text-[10px] text-rose-300 bg-rose-400/10 border border-rose-400/25 rounded-md px-2 py-1">{error}</div>
+          )}
+          {landMsg && (
+            <div className="text-[10px] text-teal-300 bg-teal-400/10 border border-teal-400/25 rounded-md px-2 py-1">{landMsg}</div>
           )}
           {plans.map((p) => (
             <div key={p.id} className="rounded-lg border border-white/10 bg-black/20 p-2.5 space-y-1.5">
@@ -178,6 +230,51 @@ function PlansPanel({ projectId }: { projectId: string }) {
               </div>
             </div>
           ))}
+
+          {episodes.length > 0 && (
+            <div className="rounded-lg border border-teal-400/15 bg-teal-400/[0.03] p-2.5 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300">Per-episode templates</span>
+                <select
+                  value={pickedEpisode?.episodeId ?? ""}
+                  onChange={(e) => { setEpisodeId(e.target.value); setLandMsg(null); }}
+                  className="h-6 rounded-md bg-white/5 border border-white/12 text-[10px] px-1.5 text-foreground"
+                  aria-label="Episode for the template"
+                >
+                  {episodes.map((ep) => (
+                    <option key={ep.episodeId} value={ep.episodeId}>
+                      S{ep.seasonNumber} E{String(ep.number).padStart(2, "0")} · {ep.title} ({ep.shotCount} shots)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Land a shaped plan for the picked episode: numbers resolve from the production now, the plan waits as a proposal.
+                Approve once, then run by hand or arm a nightly schedule - the nightly-breakdown pattern without hand-writing steps.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-1.5">
+                {(pickedEpisode?.templates ?? []).map((t) => (
+                  <div key={t.id} className="rounded-md border border-white/10 bg-black/25 p-2 flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-medium">{t.name}</span>
+                      <span className="text-[9px] text-muted-foreground font-mono">{t.stepCount} steps</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-3" title={t.summary}>{t.summary}</p>
+                    <div className="flex items-center gap-1.5 mt-auto pt-1">
+                      <button
+                        onClick={() => void land(t.id)}
+                        disabled={landing === t.id || !pickedEpisode}
+                        className="h-6 rounded-md border border-teal-400/25 bg-teal-400/10 px-2 text-[10px] font-semibold text-teal-200 hover:bg-teal-400/20 transition-colors disabled:opacity-40"
+                      >
+                        {landing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Land as plan"}
+                      </button>
+                      <span className="text-[9px] text-muted-foreground truncate" title={t.cadenceHint}>{t.cadenceHint}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

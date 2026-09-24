@@ -20,6 +20,7 @@ import {
   img2vidHost, img2vidProvider, submitImg2VidJob, pollImg2VidJob,
   submitImg2VidZaiJob, pollImg2VidZaiJob,
 } from "@/lib/bridge/img2vid";
+import { finishTelemetry, takeoverSpan } from "@/lib/engine/telemetry";
 
 // ─────────────────────────────────────────────────────────────
 // RENDER PIPELINE (pluggable engine drivers)
@@ -318,6 +319,8 @@ function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: 
         },
       });
       if (result.outputUrl) {
+        const prev = await db.renderJob.findUnique({ where: { id: jobId }, select: { telemetry: true, startedAt: true, durationMs: true } });
+        const telemetry = finishTelemetry(prev?.telemetry, "MOTION", prev?.startedAt, (prev?.durationMs ?? 16000) / 1000, "built-in ffmpeg");
         await db.renderJob.update({
           where: { id: jobId },
           data: {
@@ -326,9 +329,12 @@ function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: 
             stage: `Motion clip ready - ${result.programNote}`.slice(0, 120),
             outputUrl: result.outputUrl,
             finishedAt: new Date(),
+            telemetry: JSON.stringify(telemetry),
           },
         });
       } else {
+        const prev = await db.renderJob.findUnique({ where: { id: jobId }, select: { telemetry: true, startedAt: true, durationMs: true } });
+        const telemetry = finishTelemetry(prev?.telemetry, "MOTION", prev?.startedAt, (prev?.durationMs ?? 16000) / 1000, "built-in ffmpeg");
         await db.renderJob.update({
           where: { id: jobId },
           data: {
@@ -336,13 +342,16 @@ function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: 
             progress: 100,
             stage: `Motion engine failed (${result.error ?? "unknown"})`.slice(0, 120),
             finishedAt: new Date(),
+            telemetry: JSON.stringify(telemetry),
           },
         });
       }
     } catch (err) {
+      const prev = await db.renderJob.findUnique({ where: { id: jobId }, select: { telemetry: true, startedAt: true, durationMs: true } });
+      const telemetry = finishTelemetry(prev?.telemetry, "MOTION", prev?.startedAt, (prev?.durationMs ?? 16000) / 1000, "built-in ffmpeg");
       await db.renderJob.update({
         where: { id: jobId },
-        data: { status: "FAILED", progress: 100, stage: `Motion engine error: ${err instanceof Error ? err.message : "unknown"}`.slice(0, 120), finishedAt: new Date() },
+        data: { status: "FAILED", progress: 100, stage: `Motion engine error: ${err instanceof Error ? err.message : "unknown"}`.slice(0, 120), finishedAt: new Date(), telemetry: JSON.stringify(telemetry) },
       }).catch(() => {});
     }
   })();
@@ -365,7 +374,7 @@ export async function tickRenderJob(jobId: string) {
     if (localJobStale(job.id)) {
       return db.renderJob.update({
         where: { id: jobId },
-        data: { status: "FAILED", progress: 100, stage: "Blender worker went quiet - job failed", finishedAt: new Date() },
+        data: { status: "FAILED", progress: 100, stage: "Blender worker went quiet - job failed", finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER_LOCAL", job.startedAt, job.durationMs / 1000, "local worker")) },
         include: { evaluation: true },
       });
     }
@@ -374,7 +383,7 @@ export async function tickRenderJob(jobId: string) {
       if (prog.error || !prog.mp4Path) {
         job = await db.renderJob.update({
           where: { id: jobId },
-          data: { status: "FAILED", progress: 100, stage: `Blender: ${prog.error ?? "no clip produced"}`.slice(0, 120), finishedAt: new Date() },
+          data: { status: "FAILED", progress: 100, stage: `Blender: ${prog.error ?? "no clip produced"}`.slice(0, 120), finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER_LOCAL", job.startedAt, job.durationMs / 1000, "local worker")) },
           include: { evaluation: true },
         });
       } else if (fs.existsSync(prog.mp4Path)) {
@@ -385,13 +394,14 @@ export async function tickRenderJob(jobId: string) {
             stage: [job.lipNote, prog.stage?.slice(0, 60) || "Blender clip ready"].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
             outputUrl: `/renders/${job.id}.mp4`,
             finishedAt: new Date(),
+            telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER_LOCAL", job.startedAt, job.durationMs / 1000, "local worker")),
           },
           include: { evaluation: true },
         });
       } else {
         job = await db.renderJob.update({
           where: { id: jobId },
-          data: { status: "FAILED", progress: 100, stage: "Blender clip missing on disk", finishedAt: new Date() },
+          data: { status: "FAILED", progress: 100, stage: "Blender clip missing on disk", finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER_LOCAL", job.startedAt, job.durationMs / 1000, "local worker")) },
           include: { evaluation: true },
         });
       }
@@ -416,7 +426,7 @@ export async function tickRenderJob(jobId: string) {
       if (prog.error || !prog.mp4Path) {
         job = await db.renderJob.update({
           where: { id: jobId },
-          data: { status: "FAILED", progress: 100, stage: `Img2Vid: ${prog.error ?? "no clip produced"}`.slice(0, 120), finishedAt: new Date() },
+          data: { status: "FAILED", progress: 100, stage: `Img2Vid: ${prog.error ?? "no clip produced"}`.slice(0, 120), finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "IMG2VID", job.startedAt, job.durationMs / 1000, job.providerTaskId ? "z.ai interpolation" : "host provider")) },
           include: { evaluation: true },
         });
       } else if (fs.existsSync(prog.mp4Path)) {
@@ -427,13 +437,14 @@ export async function tickRenderJob(jobId: string) {
             stage: [job.lipNote, job.providerTaskId ? "Img2Vid clip ready - z.ai interpolation model rendered the pose beat" : "Img2Vid clip ready - pose interpolation rendered"].filter(Boolean).join(" - ").slice(0, 200),
             outputUrl: `/renders/${job.id}.mp4`,
             finishedAt: new Date(),
+            telemetry: JSON.stringify(finishTelemetry(job.telemetry, "IMG2VID", job.startedAt, job.durationMs / 1000, job.providerTaskId ? "z.ai interpolation" : "host provider")),
           },
           include: { evaluation: true },
         });
       } else {
         job = await db.renderJob.update({
           where: { id: jobId },
-          data: { status: "FAILED", progress: 100, stage: "Img2Vid clip missing on disk", finishedAt: new Date() },
+          data: { status: "FAILED", progress: 100, stage: "Img2Vid clip missing on disk", finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "IMG2VID", job.startedAt, job.durationMs / 1000, job.providerTaskId ? "z.ai interpolation" : "host provider")) },
           include: { evaluation: true },
         });
       }
@@ -459,14 +470,26 @@ export async function tickRenderJob(jobId: string) {
         const takeoverSpeech = rebuilt?.program ?? null;
         job = await db.renderJob.update({
           where: { id: jobId },
-          data: { driver: "MOTION", stage: "Img2Vid provider lost - MOTION engine taking over", startedAt: new Date() },
+          data: {
+            driver: "MOTION",
+            stage: "Img2Vid provider lost - MOTION engine taking over",
+            startedAt: new Date(),
+            // close the IMG2VID span and remember the trail so the
+            // readout shows the real chain (provider latency per span)
+            telemetry: takeoverSpan(job.telemetry, "IMG2VID", job.startedAt, "Img2Vid provider lost -> MOTION engine took over"),
+          },
           include: { evaluation: true },
         });
         startMotionJob(job.id, shot, (job.mode as "PREVIEW" | "FINAL") ?? "PREVIEW", takeoverSpeech);
       } else {
         job = await db.renderJob.update({
           where: { id: jobId },
-          data: { driver: "SIMULATOR", stage: "Img2Vid provider lost - simulator taking over", startedAt: new Date() },
+          data: {
+            driver: "SIMULATOR",
+            stage: "Img2Vid provider lost - simulator taking over",
+            startedAt: new Date(),
+            telemetry: takeoverSpan(job.telemetry, "IMG2VID", job.startedAt, "Img2Vid provider lost -> simulator took over"),
+          },
           include: { evaluation: true },
         });
       }
@@ -485,7 +508,7 @@ export async function tickRenderJob(jobId: string) {
         if (prog.error) {
           job = await db.renderJob.update({
             where: { id: jobId },
-            data: { status: "FAILED", stage: `Blender: ${prog.error}`.slice(0, 120), progress: 100, finishedAt: new Date() },
+            data: { status: "FAILED", stage: `Blender: ${prog.error}`.slice(0, 120), progress: 100, finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "workstation Cycles")) },
             include: { evaluation: true },
           });
         } else {
@@ -497,6 +520,7 @@ export async function tickRenderJob(jobId: string) {
               stage: [job.lipNote, prog.stage?.slice(0, 120) || "Blender render complete - awaiting DSH inspection"].filter(Boolean).join(" - ").slice(0, 200),
               ...(hasClip ? { outputUrl: `/renders/${job.id}.mp4` } : {}),
               finishedAt: new Date(),
+              telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "workstation Cycles")),
             },
             include: { evaluation: true },
           });
@@ -512,7 +536,12 @@ export async function tickRenderJob(jobId: string) {
       // Bridge lost mid-job - degrade to the simulator cleanly.
       job = await db.renderJob.update({
         where: { id: jobId },
-        data: { driver: "SIMULATOR", stage: "Blender bridge lost - simulator taking over", startedAt: new Date() },
+        data: {
+          driver: "SIMULATOR",
+          stage: "Blender bridge lost - simulator taking over",
+          startedAt: new Date(),
+          telemetry: takeoverSpan(job.telemetry, "BLENDER", job.startedAt, "Blender bridge lost -> simulator took over"),
+        },
         include: { evaluation: true },
       });
     }
@@ -527,7 +556,7 @@ export async function tickRenderJob(jobId: string) {
     if (ratio >= 1) {
       job = await db.renderJob.update({
         where: { id: jobId },
-        data: { status: "REVIEW", progress: 100, stage: "Awaiting DSH inspection", finishedAt: new Date() },
+        data: { status: "REVIEW", progress: 100, stage: "Awaiting DSH inspection", finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "SIMULATOR", job.startedAt, job.durationMs / 1000, "wall-clock")) },
         include: { evaluation: true },
       });
     } else if (Math.abs(progress - job.progress) >= 1) {

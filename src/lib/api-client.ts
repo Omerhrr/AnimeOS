@@ -426,6 +426,9 @@ export interface RenderJobRow {
   stage: string;
   attempt: number;
   driver: string;
+  // per-provider latency/cost telemetry recorded at completion
+  // (JSON {spans, takeovers, totalMs, credits} - parse with parseTelemetry)
+  telemetry: string | null;
   // finished animated clip (mp4 under /renders/) for MOTION and
   // Blender drivers; null for still-frame fallbacks
   outputUrl: string | null;

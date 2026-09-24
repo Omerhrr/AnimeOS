@@ -49,6 +49,7 @@ model Project {
   universeFacts    UniverseFact[]
   repaintRuns      RepaintRun[]
   studioSchedules  StudioSchedule[]
+  identityScores   IdentityScore[]
 }
 
 model Season {
@@ -147,6 +148,7 @@ model Shot {
   lora        StyleLora? @relation(fields: [loraId], references: [id], onDelete: SetNull)
   artist      Artist?    @relation(fields: [artistId], references: [id], onDelete: SetNull)
   audioCues   AudioCue[]
+  identityScore IdentityScore?
 
   @@unique([sceneId, number])
 }
@@ -393,6 +395,13 @@ model RenderJob {
   // through completion so the finished stage and queue cards keep
   // naming the performance after the poll path rewrites the stage.
   lipNote  String?
+  // Per-provider telemetry recorded at completion: JSON
+  // {spans: [{provider, ms, note?}], takeovers: string[], totalMs,
+  // credits} - one span per provider that actually worked on the
+  // job (takeovers chain spans), latency per span and an estimated
+  // cost read from the documented per-provider rate table. The
+  // queue cards surface it as a latency/cost readout.
+  telemetry String?
   startedAt  DateTime?
   finishedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -596,4 +605,29 @@ model ArcTemplate {
   // (projectId null) are deduped in the API because SQLite treats
   // NULLs as distinct in unique indexes.
   @@unique([projectId, name])
+}
+
+// ─────────────────────────────────────────────────────────────
+// IDENTITY-SIMILARITY SCORING FOR PANELS
+// ─────────────────────────────────────────────────────────────
+
+// How closely a shot's panel art matches each featured character's
+// canonical model sheet, judged by a vision model and persisted per
+// panel (one row per shot, replaced on re-score). scores is JSON:
+// [{characterName, similarity 0..1, aspects {face, hair, wardrobe,
+// weapon, palette, style}, note}]. worst is the lowest similarity in
+// the row (the readout the identity panel and DSH rank by). A low
+// worst feeds the re-paint offer next to the score.
+model IdentityScore {
+  id         String   @id @default(cuid())
+  projectId  String
+  shotId     String   @unique
+  scores     String   @default("[]") // JSON IdentityScoreEntry[]
+  worst      Float    @default(1) // min similarity across the panel's cast
+  castSize   Int      @default(0) // how many anchored cast members were judged
+  note       String?  // the vision model's one-line summary for the panel
+  scoredAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  shot       Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }

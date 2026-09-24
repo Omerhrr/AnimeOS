@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power, Play, Pause, Square, PaintRoller } from "lucide-react";
+import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power, Play, Pause, Square, PaintRoller, Fingerprint } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader } from "@/components/views/shared";
@@ -21,6 +21,8 @@ const KIND_COLORS: Record<string, string> = {
   TRANSFORMED: "border-violet-400/40 text-violet-300 bg-violet-400/10",
   ART_DRIFT: "border-rose-400/40 text-rose-300 bg-rose-400/10",
   ART_VERIFIED: "border-emerald-400/40 text-emerald-300 bg-emerald-400/10",
+  IDENTITY_DRIFT: "border-rose-400/40 text-rose-300 bg-rose-400/10",
+  IDENTITY_VERIFIED: "border-emerald-400/40 text-emerald-300 bg-emerald-400/10",
   FACT_BROKEN: "border-rose-400/40 text-rose-300 bg-rose-400/10",
   FACT_HELD: "border-emerald-400/40 text-emerald-300 bg-emerald-400/10",
   CUSTOM: "border-white/20 text-muted-foreground bg-white/5",
@@ -185,6 +187,239 @@ function ArtContinuityPanel({ projectId }: { projectId: string }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+interface IdentityEntry {
+  characterName: string;
+  similarity: number;
+  aspects: Partial<Record<string, number>>;
+  note: string;
+}
+
+interface IdentityRow {
+  shotId: string;
+  ref: string;
+  description: string;
+  artUrl: string | null;
+  worst: number | null;
+  castSize: number;
+  note: string | null;
+  scoredAt: string | null;
+  entries: IdentityEntry[];
+}
+
+interface IdentityData {
+  rows: IdentityRow[];
+  queue: Array<{ shotId: string; ref: string; description: string; worst: number; entries: IdentityEntry[] }>;
+  shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>;
+  threshold: number;
+  average: number | null;
+}
+
+/**
+ * Identity-similarity scoring: a vision model scores each panel's art
+ * against EVERY featured character's canonical model sheet (0..1 per
+ * character plus per-aspect scores). Panels below the identity bar
+ * queue worst-first with a re-paint offer; scoring a panel lands an
+ * IDENTITY_VERIFIED / IDENTITY_DRIFT continuity event.
+ */
+function IdentityPanel({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [scoring, setScoring] = useState<string | null>(null);
+  const [batching, setBatching] = useState(false);
+  const [repainting, setRepainting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+
+  const dataQ = useQuery({
+    queryKey: ["identity", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/identity?projectId=${projectId}`);
+      if (!res.ok) return null;
+      return (await res.json()) as IdentityData;
+    },
+    enabled: Boolean(projectId),
+  });
+  const data = dataQ.data ?? { rows: [], queue: [], shots: [], threshold: 0.6, average: null };
+
+  async function scoreOne(shotId: string) {
+    setScoring(shotId);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch("/api/identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shotId }),
+      });
+      const body = (await res.json()) as { error?: string; scored?: { ref: string; verdict: { entries: IdentityEntry[]; worst: number } } };
+      if (!res.ok || body.error) setError(body.error ?? "Identity scoring failed");
+      else if (body.scored) {
+        const v = body.scored.verdict;
+        setBanner(`${body.scored.ref}: ${v.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(v.worst * 100).toFixed(0)}%`);
+      }
+    } catch {
+      setError("Identity scoring failed");
+    } finally {
+      setScoring(null);
+      await qc.invalidateQueries({ queryKey: ["identity", projectId] });
+    }
+  }
+
+  async function batch() {
+    setBatching(true);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch("/api/identity", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, limit: 3 }),
+      });
+      const body = (await res.json()) as { scored?: Array<{ ref: string; verdict: { worst: number } }>; errors?: Array<{ ref: string; error: string }> };
+      setBanner(`Identity pass: ${body.scored?.length ?? 0} panel(s) scored${body.errors?.length ? `, ${body.errors.length} skipped` : ""} - worst-first rows updated below`);
+    } catch {
+      setError("Identity pass failed");
+    } finally {
+      setBatching(false);
+      await qc.invalidateQueries({ queryKey: ["identity", projectId] });
+    }
+  }
+
+  async function repaint(shotId: string, ref: string) {
+    setRepainting(shotId);
+    setError(null);
+    try {
+      await api.generatePanelArt(shotId, "MANHUA");
+      setBanner(`${ref} re-painted with the canon riding the prompt - score again to confirm the identity fix`);
+      await scoreOne(shotId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Re-paint failed");
+    } finally {
+      setRepainting(null);
+    }
+  }
+
+  const pct = (v: number | null | undefined) => v == null ? "-" : `${(v * 100).toFixed(0)}%`;
+
+  return (
+    <div className="studio-panel p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Fingerprint className="h-4 w-4 text-violet-300" /> Identity similarity
+          </h3>
+          <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 max-w-xl">
+            Each panel is scored against every featured character&apos;s canonical model sheet: one similarity number per
+            character plus per-aspect scores (face, hair, wardrobe, weapon, palette, style). A worst below the identity
+            bar queues the panel for a re-paint.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="border-violet-400/25 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20" onClick={() => void batch()} disabled={batching}>
+            {batching ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <ScanEye className="h-4 w-4 mr-1.5" />}
+            Score worst 3
+          </Button>
+        </div>
+      </div>
+
+      {error && <p className="text-[11px] text-rose-300">{error}</p>}
+      {banner && (
+        <div className="rounded-lg border border-violet-400/25 bg-violet-400/10 px-3 py-2 text-[11px] text-violet-200 leading-relaxed">{banner}</div>
+      )}
+
+      {data.average != null && (
+        <div className="flex flex-wrap gap-2 text-[10px]">
+          <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">{data.rows.length} panel(s) scored</span>
+          <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">avg worst {(data.average * 100).toFixed(0)}%</span>
+          <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">identity bar {(data.threshold * 100).toFixed(0)}%</span>
+          {data.queue.length > 0 ? (
+            <span className="px-2 py-1 rounded-md border border-rose-400/25 bg-rose-400/10 text-rose-200 tabular-nums">{data.queue.length} below the bar</span>
+          ) : (
+            <span className="px-2 py-1 rounded-md border border-emerald-400/25 bg-emerald-400/10 text-emerald-200">identity clean</span>
+          )}
+        </div>
+      )}
+
+      {data.queue.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-rose-300/90">Re-paint queue (worst identity first)</div>
+          {data.queue.map((row) => (
+            <div key={row.shotId} className="rounded-lg border border-rose-400/20 bg-rose-400/[0.04] px-3 py-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-[10px] text-muted-foreground shrink-0">{row.ref}</span>
+                  <span className="text-[11px] truncate">{row.description}</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] font-mono text-rose-300 tabular-nums">worst {(row.worst * 100).toFixed(0)}%</span>
+                  <button
+                    onClick={() => void repaint(row.shotId, row.ref)}
+                    disabled={repainting === row.shotId}
+                    title="Re-generate this panel with the canon riding the prompt, then re-score it"
+                    className="h-6 rounded-md border border-violet-400/25 bg-violet-400/10 px-2 text-[9px] font-semibold text-violet-200 hover:bg-violet-400/20 transition-colors disabled:opacity-40"
+                  >
+                    {repainting === row.shotId ? <Loader2 className="h-3 w-3 animate-spin" /> : "Re-paint + re-score"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.rows.length > 0 && (
+        <div className="space-y-1.5">
+          {data.rows.slice(0, 8).map((row) => (
+            <div key={row.shotId} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-[10px] text-muted-foreground shrink-0">{row.ref}</span>
+                  <span className="text-[11px] truncate">{row.description}</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className={cn(
+                    "text-[10px] font-mono tabular-nums",
+                    (row.worst ?? 1) < data.threshold ? "text-rose-300" : "text-emerald-300"
+                  )}>worst {pct(row.worst)}</span>
+                  <button
+                    onClick={() => void scoreOne(row.shotId)}
+                    disabled={scoring === row.shotId}
+                    title="Vision score this panel against every featured character's model sheet"
+                    className="h-6 rounded-md border border-violet-400/25 bg-violet-400/10 px-2 text-[9px] font-semibold text-violet-200 hover:bg-violet-400/20 transition-colors disabled:opacity-40"
+                  >
+                    {scoring === row.shotId ? <Loader2 className="h-3 w-3 animate-spin" /> : "Score now"}
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {row.entries.map((e, i) => (
+                  <span
+                    key={i}
+                    title={Object.entries(e.aspects).map(([k, v]) => `${k} ${((v as number) * 100).toFixed(0)}%`).join(" · ") || e.note}
+                    className={cn(
+                      "px-1.5 py-0.5 rounded border text-[9px] tabular-nums",
+                      e.similarity < data.threshold ? "border-rose-400/30 text-rose-200 bg-rose-400/10" : "border-emerald-400/30 text-emerald-200 bg-emerald-400/10"
+                    )}
+                  >
+                    {e.characterName} {pct(e.similarity)}
+                  </span>
+                ))}
+              </div>
+              {row.note && <p className="text-[10px] text-muted-foreground leading-relaxed mt-1">{row.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.rows.length === 0 && (
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Nothing scored yet. Generate panel art for shots whose cast carries a model sheet, then press Score worst 3 (or
+          tell DSH <span className="font-mono">score_panel_identity</span>) to run the first identity pass.
+        </p>
       )}
     </div>
   );
@@ -744,6 +979,8 @@ export function ContinuityView({ project }: { project: import("@/lib/api-client"
       />
       <div className="space-y-2.5 max-h-[calc(100vh-13rem)] overflow-y-auto studio-scroll pr-1">
         <ArtContinuityPanel projectId={project.id} />
+
+        <IdentityPanel projectId={project.id} />
         <UniverseFactsPanel projectId={project.id} />
         {(eventsQ.data ?? []).map((ev) => (
           <div key={ev.id} className="studio-panel p-4">

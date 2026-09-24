@@ -6,6 +6,8 @@ import { checkShotUniverseFacts } from "@/lib/universe-facts";
 import { startRepaintRun } from "@/lib/universe-repaint";
 import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
+import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan } from "@/lib/dsh/plan-templates";
+import { IDENTITY_REPAINT_THRESHOLD, scoreProjectIdentity, scoreShotIdentity } from "@/lib/identity";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
 } from "@/lib/scheduler";
@@ -266,6 +268,23 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       name: "string (optional - name fragment; defaults to the most recent schedule)",
       action: "run | enable | disable | delete",
+    },
+  },
+  {
+    name: "land_episode_plan",
+    description: "Land a PER-EPISODE PLAN TEMPLATE as a PROPOSED cross-turn plan: beat-breakdown opens a new story beat with a three-shot cinematography breakdown, panel-pass generates fact-aware panel art for a scene's first three shots and scans them, render-pass queues PREVIEW renders plus a voice-direction diff, canon-audit vision-verdicts the hero panel against the universe facts and runs the art-continuity scan. The plan waits in the creator's review panel (approve once, then run_plan or a nightly schedule walks it).",
+    args: {
+      episodeNumber: "number - which episode the plan targets (defaults to the latest episode)",
+      template: "beat-breakdown | panel-pass | render-pass | canon-audit",
+    },
+  },
+  {
+    name: "score_panel_identity",
+    description: "Identity-similarity scoring for a panel: a vision model scores how closely the panel art matches EACH featured character's canonical model sheet (0..1 per character, plus face/hair/wardrobe/weapon/palette/style aspects). Persists on the shot, lands an IDENTITY_VERIFIED or IDENTITY_DRIFT continuity event, and a worst score below the drift threshold earns a re-paint offer. Without args, scores the WORST already-scored panel (or the newest art-bearing panel when nothing is scored yet); pass limit to batch a few.",
+    args: {
+      sceneNumber: "number (optional, defaults to latest scene)",
+      shotNumber: "number (optional, defaults to shot 1)",
+      limit: "number 1-8 (optional - batch-score that many panels worst-first instead of one)",
     },
   },
   {
@@ -1691,6 +1710,77 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return { status: "OK", result: `Supervised re-paint run ${run.id.slice(-6)} started: ${run.total} queued panel(s) worst-first. Each step re-paints with the flagged facts as prompt corrections, re-runs the vision check, and records FIXED / STILL_BROKEN / ERROR - still-broken panels stop being retried and wait for the director. Progress lands as REPAINT steps in this run's trace and the Continuity view shows the live log; call run_repaint_queue again only to start ANOTHER pass after this one finishes.` };
       }
 
+      case "land_episode_plan": {
+        const templateId = String(args.template ?? "").trim();
+        if (!templateId) return { status: "ERROR", result: `template is required - pick one of: ${EPISODE_TEMPLATE_IDS.join(", ")}` };
+        let episodeId: string | null = null;
+        if (args.episodeNumber) {
+          const ep = await db.episode.findFirst({
+            where: { season: { projectId }, number: Number(args.episodeNumber) },
+            orderBy: { season: { number: "asc" } },
+          });
+          if (!ep) return { status: "ERROR", result: `No episode ${String(args.episodeNumber)} in this production - create it first.` };
+          episodeId = ep.id;
+        } else {
+          const ep = await db.episode.findFirst({
+            where: { season: { projectId } },
+            orderBy: [{ season: { number: "asc" } }, { number: "desc" }],
+          });
+          if (!ep) return { status: "ERROR", result: "No episode exists yet - create one with create_episode first." };
+          episodeId = ep.id;
+        }
+        const result = await instantiateEpisodePlan(projectId, episodeId, templateId);
+        if (!result.ok) return { status: "ERROR", result: result.error ?? "template landing failed" };
+        return { status: "OK", result: `Per-episode plan '${result.planTitle}' landed from the '${templateId}' template (id ${result.planId?.slice(-6)}). It is PROPOSED in the creator's plan review panel - approve it once, then run_plan walks it a few steps per call, or a nightly PLAN_RUN schedule (create_schedule) walks it while the studio sleeps.` };
+      }
+
+      case "score_panel_identity": {
+        // batch mode: worst existing scores first, then never-scored panels
+        if (args.limit !== undefined && args.limit !== null && String(args.limit) !== "") {
+          const limit = Number(args.limit);
+          const result = await scoreProjectIdentity(projectId, Number.isFinite(limit) ? limit : 4);
+          if (result.scored.length === 0 && result.errors.length === 0) {
+            return { status: "ERROR", result: "No art-bearing panel with an anchored (sheeted) cast to score - generate panel art and model sheets first." };
+          }
+          const lines = result.scored.map((s) => `${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%`);
+          const errLines = result.errors.map((e) => `${e.ref}: ${e.error}`);
+          return { status: "OK", result: `Identity pass scored ${result.scored.length} panel(s), worst-first:\n${lines.join("\n")}${errLines.length ? `\nSkipped:\n${errLines.join("\n")}` : ""}\nA worst below ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% lands an IDENTITY_DRIFT event and earns a re-paint offer (generate_panel_art), then score again to confirm the fix.` };
+        }
+        let shotId: string | null = null;
+        if (args.sceneNumber || args.shotNumber) {
+          const scene = await resolveScene(projectId, args.sceneNumber ? Number(args.sceneNumber) : null);
+          if (!scene) return { status: "ERROR", result: "No scene exists - nothing to score." };
+          const shot = await db.shot.findFirst({ where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 } });
+          if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+          shotId = shot.id;
+        } else {
+          // no target given: the worst already-scored panel, else the newest art-bearing panel
+          const worst = await db.identityScore.findFirst({
+            where: { projectId },
+            orderBy: { worst: "asc" as const },
+          });
+          if (worst) {
+            shotId = worst.shotId;
+          } else {
+            const newest = await db.shot.findFirst({
+              where: { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
+              orderBy: { artGeneratedAt: "desc" as const },
+            });
+            if (!newest) return { status: "ERROR", result: "No art-bearing panel exists - generate panel art first (generate_panel_art)." };
+            shotId = newest.id;
+          }
+        }
+        const result = await scoreShotIdentity(shotId);
+        if (!result.ok) return { status: "ERROR", result: `Identity scoring failed: ${result.error}` };
+        const s = result.scored;
+        const aspect = s.verdict.entries[0];
+        const aspectLine = aspect && Object.keys(aspect.aspects).length > 0
+          ? ` Top entry's aspects: ${Object.entries(aspect.aspects).map(([k, v]) => `${k} ${(Number(v) * 100).toFixed(0)}%`).join(", ")}.`
+          : "";
+        const drifted = s.verdict.worst < IDENTITY_REPAINT_THRESHOLD;
+        return { status: "OK", result: `Identity score for ${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%${s.verdict.note ? ` (${s.verdict.note})` : ""}.${aspectLine} ${drifted ? `That is below the ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% identity bar - the panel earned an IDENTITY_DRIFT event and a re-paint offer: regenerate the panel (generate_panel_art) and score again to confirm.` : "An IDENTITY_VERIFIED event recorded the panel."}` };
+      }
+
       case "render_shot": {
         let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
@@ -2588,6 +2678,11 @@ export async function buildCompactContext(projectId: string) {
       universeFacts: true,
       dshPlans: { orderBy: { createdAt: "desc" as const }, take: 8 },
       studioSchedules: { orderBy: { createdAt: "asc" as const }, take: 30 },
+      identityScores: {
+        orderBy: { worst: "asc" as const },
+        take: 8,
+        include: { shot: { include: { scene: { include: { episode: { include: { season: true } } } } } } },
+      },
       loras: { include: { _count: { select: { shots: true } } } },
       artists: { include: { _count: { select: { shots: true } } } },
     },
@@ -2658,5 +2753,11 @@ export async function buildCompactContext(projectId: string) {
       const last = s.lastStatus ? `, last ${s.lastStatus}: ${String(s.lastReport ?? "").slice(0, 90)}` : ", never fired";
       return `${s.enabled ? "ON" : "OFF"} '${s.name}' (${s.kind}, ${describeCadence(s.cadence, s.intervalHours, s.hourUtc, s.weekday)}, ${when}${last})`;
     }),
+    identity: project.identityScores.map((row) => {
+      const sh = row.shot;
+      const ref = `E${sh.scene.episode.number} Sc${sh.scene.number} S${String(sh.number).padStart(3, "0")}`;
+      return `${ref} worst ${(row.worst * 100).toFixed(0)}% (${row.castSize} cast, ${row.scoredAt.toISOString().slice(0, 10)})${row.worst < IDENTITY_REPAINT_THRESHOLD ? " DRIFT" : ""}`;
+    }),
+    planTemplates: `per-episode templates ready to land with land_episode_plan: ${EPISODE_TEMPLATE_IDS.join(", ")}`,
   };
 }
