@@ -300,7 +300,7 @@ export interface BridgeStatusInfo {
   busy: boolean;
   detail: string;
   envHint: string | null;
-  img2vid?: { available: boolean; host: string | null };
+  img2vid?: { available: boolean; host: string | null; provider?: "host" | "zai" | null };
 }
 
 export interface CharacterFull {
@@ -332,6 +332,8 @@ export interface CharacterFull {
     voiceVariant?: string | null; // state voice variant: TTS voice while this state is episode-effective
     speedHint?: number | null; // state speed hint: multiplier on the take's base speed while effective
     pitchHint?: number | null; // state pitch hint: playback pitch factor while effective (1 = natural)
+    poseStart?: string | null; // state pose preset: the pose the character starts from while this state performs
+    poseEnd?: string | null; // state pose preset: the pose the performance moves into
   }>;
   relationsFrom: Array<{ id: string; type: string; to: { id: string; name: string } }>;
   relationsTo: Array<{ id: string; type: string; from: { id: string; name: string } }>;
@@ -499,10 +501,11 @@ export const api = {
     j<{ modelSheetUrl: string; prompt: string; anchor: string }>("/api/character-sheet", { method: "POST", body: JSON.stringify({ characterId }) }),
   createCharacter: (body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "POST", body: JSON.stringify(body) }),
   patchCharacter: (id: string, body: Record<string, unknown>) => j<{ id: string }>("/api/characters", { method: "PATCH", body: JSON.stringify({ id, ...body }) }),
-  // state voice performance: bind/clear the variant voice (empty string
-  // clears) and set/clear speed/pitch hints for a development state
-  patchCharacterState: (id: string, patch: { voiceVariant?: string; speedHint?: number | null; pitchHint?: number | null }) =>
-    j<{ id: string; voiceVariant: string | null; speedHint: number | null; pitchHint: number | null }>("/api/character-states", { method: "PATCH", body: JSON.stringify({ id, ...patch }) }),
+  // state voice performance (variant voice + speed/pitch hints) and
+  // the state's POSE PRESET (start/end pair; auto applies the library
+  // preset resolved from the label; empty strings clear)
+  patchCharacterState: (id: string, patch: { voiceVariant?: string; speedHint?: number | null; pitchHint?: number | null; poseStart?: string; poseEnd?: string; auto?: boolean }) =>
+    j<{ id: string; voiceVariant: string | null; speedHint: number | null; pitchHint: number | null; poseStart?: string | null; poseEnd?: string | null }>("/api/character-states", { method: "PATCH", body: JSON.stringify({ id, ...patch }) }),
   createEnvironment: (body: Record<string, unknown>) => j<{ id: string }>("/api/environments", { method: "POST", body: JSON.stringify(body) }),
 
   // style LoRA registry

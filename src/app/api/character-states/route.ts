@@ -3,12 +3,14 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
+import { normalizePose } from "@/lib/animation/poses";
+import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 
 // PATCH a character development state. Exposes the state's voice
-// performance: the voice variant (the TTS voice that performs the
-// character's lines while this state is episode-effective, overriding
-// the cast artist's normal voice) plus speed/pitch hints that bend the
-// take's pace and voice depth in the same window.
+// performance (variant voice + speed/pitch hints) and the state's
+// POSE PRESET: the start/end pair the character performs while this
+// state is episode-effective. "auto" re-resolves the library preset
+// from the label; explicit poseStart/poseEnd win; empty string clears.
 export async function PATCH(req: Request) {
   let body: Record<string, unknown>;
   try {
@@ -57,6 +59,31 @@ export async function PATCH(req: Request) {
       changes.push(`pitch hint x${data.pitchHint}`);
     }
   }
+  if (body.auto === true) {
+    const preset = presetPosesForStateLabel(state.label);
+    if (preset) {
+      data.poseStart = preset.poseStart;
+      data.poseEnd = preset.poseEnd;
+      changes.push(`pose preset from the state library (${preset.poseStart} -> ${preset.poseEnd}: ${preset.note})`);
+    } else {
+      return NextResponse.json({ error: `No library pose preset matches the state label '${state.label}'` }, { status: 400 });
+    }
+  }
+  for (const field of ["poseStart", "poseEnd"] as const) {
+    if (body[field] === undefined) continue;
+    const raw = body[field] === null ? "" : String(body[field]).trim();
+    if (!raw) {
+      data[field] = null;
+      changes.push(field === "poseStart" ? "start pose cleared" : "end pose cleared");
+      continue;
+    }
+    const pose = normalizePose(raw);
+    if (!pose) {
+      return NextResponse.json({ error: `Unknown pose '${raw}' (valid: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT)` }, { status: 400 });
+    }
+    data[field] = pose;
+    changes.push(field === "poseStart" ? `start pose ${pose}` : `end pose ${pose}`);
+  }
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
@@ -70,5 +97,5 @@ export async function PATCH(req: Request) {
       summary: `State performance updated on ${state.character.name} "${state.label}": ${changes.join(", ")}; direction diff will flag affected takes stale`,
     },
   });
-  return NextResponse.json({ id: updated.id, voiceVariant: updated.voiceVariant, speedHint: updated.speedHint, pitchHint: updated.pitchHint });
+  return NextResponse.json({ id: updated.id, voiceVariant: updated.voiceVariant, speedHint: updated.speedHint, pitchHint: updated.pitchHint, poseStart: updated.poseStart, poseEnd: updated.poseEnd });
 }

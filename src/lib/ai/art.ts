@@ -3,6 +3,7 @@ import path from "path";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { safeJsonParse } from "@/lib/types";
+import { POSE_GLOSS } from "@/lib/animation/poses";
 
 // ─────────────────────────────────────────────────────────────
 // AI ART SERVICE - panel art + character model sheets
@@ -112,11 +113,17 @@ interface CastMember {
   name: string;
   appearance: string | null;
   modelSheetPrompt: string | null;
+  modelSheetUrl?: string | null;
+  modelSheetAt?: Date | null;
   states: Array<{
     episodeNumber: number | null;
     clothing: string | null;
     weapon: string | null;
     cultivation: string | null;
+    label: string;
+    createdAt: Date;
+    poseStart?: string | null;
+    poseEnd?: string | null;
   }>;
 }
 
@@ -124,7 +131,10 @@ interface CastMember {
 function activeState(member: CastMember, episodeNumber: number) {
   return [...member.states]
     .filter((s) => s.episodeNumber === null || s.episodeNumber <= episodeNumber)
-    .sort((a, b) => (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1))[0];
+    .sort((a, b) =>
+      (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1)
+      || b.createdAt.getTime() - a.createdAt.getTime()
+    )[0];
 }
 
 /**
@@ -182,6 +192,34 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
     .filter(Boolean)
     .join("\n");
 
+  // art-aware continuity: the previous shot of the episode is the
+  // visual this panel must sit next to - carry its beat over so
+  // consecutive panels read as one continuous scene
+  let prevContinuity: string | null = null;
+  const prevShot =
+    (await db.shot.findFirst({
+      where: { sceneId: scene.id, number: { lt: shot.number } },
+      orderBy: { number: "desc" },
+    })) ??
+    (scene.number > 1
+      ? await db.shot.findFirst({
+          where: {
+            scene: { episodeId: scene.episodeId, number: scene.number - 1 },
+          },
+          orderBy: { number: "desc" },
+        })
+      : null);
+  if (prevShot) {
+    const prevBits = [
+      prevShot.description ? `previous shot: ${prevShot.description}` : null,
+      prevShot.lighting ? `its lighting: ${prevShot.lighting}` : null,
+      prevShot.artworkUrl ? "a panel for it already exists - match its palette, environment and character wardrobe exactly" : null,
+    ].filter(Boolean);
+    if (prevBits.length > 0) {
+      prevContinuity = `Continuity with the previous panel (keep the same location, time of day, palette, wardrobe and character appearance; only the framing/action moves forward): ${prevBits.join("; ")}`;
+    }
+  }
+
   const promptParts = [
     FORMAT_STYLE[comicFormat],
     styleTokens,
@@ -193,6 +231,8 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
     scene.weather ? `${scene.weather.toLowerCase()} weather` : null,
     shot.lighting ? `Lighting: ${shot.lighting}` : null,
     cast ? `Characters:\n${cast}` : null,
+    shot.poseStart ? `The featured character is captured mid-action at the start of the move: ${POSE_GLOSS[shot.poseStart] ?? "in motion"}` : null,
+    prevContinuity,
     "single comic panel",
     negativeTail,
   ];
@@ -205,13 +245,15 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
   await fs.promises.mkdir(dir, { recursive: true });
   await fs.promises.writeFile(path.join(dir, `${shot.id}.png`), Buffer.from(base64, "base64"));
 
-  // cache-busting version so <img> refreshes on regeneration
-  const artworkUrl = `/panels/${shot.id}.png?v=${Date.now()}`;
-  await db.shot.update({ where: { id: shot.id }, data: { artworkUrl } });
+  // cache-busting version so <img> refreshes on regeneration;
+  // artGeneratedAt feeds the art-aware continuity staleness scan
+  const now = new Date();
+  const artworkUrl = `/panels/${shot.id}.png?v=${now.getTime()}`;
+  await db.shot.update({ where: { id: shot.id }, data: { artworkUrl, artGeneratedAt: now } });
 
   return {
     artworkUrl,
-    prompt: prompt.slice(0, 500),
+    prompt: prompt.slice(0, 1200),
     lora: shot.lora ? { name: shot.lora.name, strength: shot.loraStrength ?? shot.lora.weight } : null,
   };
 }
@@ -286,12 +328,13 @@ export async function generateCharacterModelSheet(characterId: string) {
   await fs.promises.writeFile(path.join(dir, `${character.id}.png`), Buffer.from(base64, "base64"));
 
   const modelSheetUrl = `/sheets/${character.id}.png?v=${Date.now()}`;
+  const now = new Date();
   await db.character.update({
     where: { id: character.id },
-    data: { modelSheetUrl, modelSheetPrompt: anchor },
+    data: { modelSheetUrl, modelSheetPrompt: anchor, modelSheetAt: now },
   });
 
-  return { modelSheetUrl, prompt: sheetPrompt.slice(0, 500), anchor };
+  return { modelSheetUrl, prompt: sheetPrompt.slice(0, 1200), anchor };
 }
 
 // ─── SDK call with retry ────────────────────────────────────

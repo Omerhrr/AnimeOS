@@ -125,21 +125,25 @@ export async function ensureSeed() {
         characterId: linYue.id, label: "S01 - Village Disciple", episodeNumber: 1, stateType: "PERMANENT",
         cultivation: "Qi Condensation", weapon: "Wooden Sword", clothing: "Disciple Robes",
         abilities: JSON.stringify(["Basic Swordsmanship"]),
+        poseStart: "STANCE", poseEnd: "WALK",
       },
       {
         characterId: linYue.id, label: "S02 - Foundation Established", episodeNumber: 15, stateType: "PERMANENT",
         cultivation: "Foundation Establishment", weapon: "Jade Sword", clothing: "Battle Robes",
         abilities: JSON.stringify(["Advanced Swordsmanship", "Azure Flame"]),
+        poseStart: "LUNGE", poseEnd: "SLASH",
       },
       {
         characterId: linYue.id, label: "S03 - Core Formation", episodeNumber: 40, stateType: "PERMANENT",
         cultivation: "Core Formation", weapon: "Celestial Sword", clothing: "Sect Elder Robes",
         abilities: JSON.stringify(["Sword Domain", "Azure Heaven Flame"]),
+        poseStart: "STANCE", poseEnd: "CAST",
       },
       {
         characterId: linYue.id, label: "Battle-damaged (temple fight)", episodeNumber: 7, stateType: "TEMPORARY",
         cultivation: "Foundation Establishment", weapon: "Jade Sword", clothing: "Battle Robes (torn)",
         abilities: JSON.stringify(["Advanced Swordsmanship"]),
+        poseStart: "STANCE", poseEnd: "FALL",
       },
     ],
   });

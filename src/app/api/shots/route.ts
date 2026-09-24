@@ -2,7 +2,8 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { normalizePose } from "@/lib/animation/poses";
+import { normalizePose, poseChip } from "@/lib/animation/poses";
+import { presetPosesForStateLabel, resolveActiveState } from "@/lib/animation/state-poses";
 
 /** Pose chips must name the shared vocabulary (or an alias) - typos 400 so renders never silently no-op. */
 function poseField(value: unknown): string | null | undefined {
@@ -144,8 +145,67 @@ export async function PATCH(req: Request) {
     if (!existing) return NextResponse.json({ error: "Shot not found" }, { status: 404 });
     const refData = await validatedRefs(existing.sceneId, rest);
     Object.assign(data, refData);
+
+    // ── applyStatePoses: land the cast's state pose preset on this shot ──
+    // Resolves the detected cast (description match, same rule the art
+    // prompts use), takes each character's episode-active development
+    // state, and the first state carrying a pose pair (or, with auto,
+    // the library preset for its label) supplies the shot's program.
+    let statePoseInfo: Record<string, unknown> | null = null;
+    if (rest.applyStatePoses === true) {
+      const scene = await db.scene.findUnique({
+        where: { id: existing.sceneId },
+        include: { episode: { include: { season: { include: { project: { include: { characters: { include: { states: true } } } } } } } } },
+      });
+      const project = scene?.episode.season.project;
+      if (project) {
+        const desc = existing.description.toLowerCase();
+        const detected = project.characters
+          .filter((c) => desc.includes(c.name.toLowerCase().split(" ")[0]))
+          .slice(0, 3);
+        let applied: { poseStart: string; poseEnd: string; source: string } | null = null;
+        for (const ch of detected) {
+          const active = resolveActiveState(ch.states, scene!.episode.number);
+          if (!active) continue;
+          const start = active.poseStart ? normalizePose(active.poseStart) : null;
+          const end = active.poseEnd ? normalizePose(active.poseEnd) : null;
+          if (start || end) {
+            applied = { poseStart: start ?? "STANCE", poseEnd: end ?? "STANCE", source: `${ch.name} state "${active.label}" preset` };
+            break;
+          }
+          if (rest.auto !== false) {
+            const lib = presetPosesForStateLabel(active.label);
+            if (lib) {
+              applied = { poseStart: lib.poseStart, poseEnd: lib.poseEnd, source: `${ch.name} state "${active.label}" library preset (${lib.note})` };
+              break;
+            }
+          }
+        }
+        if (applied) {
+          // explicit pose fields in the same request win over the preset
+          if (data.poseStart === undefined) data.poseStart = applied.poseStart;
+          if (data.poseEnd === undefined) data.poseEnd = applied.poseEnd;
+          statePoseInfo = {
+            applied: true,
+            source: applied.source,
+            previous: poseChip(existing.poseStart, existing.poseEnd),
+            now: poseChip(data.poseStart as string, data.poseEnd as string),
+          };
+        } else {
+          statePoseInfo = {
+            applied: false,
+            reason: detected.length === 0
+              ? "no cast member is referenced by this shot's description"
+              : "no episode-effective state carries a pose preset (and none matched the library)",
+          };
+        }
+      } else {
+        statePoseInfo = { applied: false, reason: "scene not found" };
+      }
+    }
+
     const shot = await db.shot.update({ where: { id: String(id) }, data });
-    return NextResponse.json({ id: shot.id });
+    return NextResponse.json({ id: shot.id, statePoses: statePoseInfo });
   } catch (err) {
     if (err instanceof Error && (err.message.includes("belong") || err.message.includes("loraStrength"))) {
       return NextResponse.json({ error: err.message }, { status: 400 });

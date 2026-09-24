@@ -60,8 +60,11 @@ function EngineDriverCard() {
         {!live && s?.envHint && (
           <p className="text-[10px] text-muted-foreground/80 mt-1 font-mono">ANIMEOS_BLENDER_HOST={s.envHint}</p>
         )}
-        {img2vid?.available && (
-          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">ANIMEOS_IMG2VID_HOST={img2vid.host} - pose-carrying hero shots route to the interpolation provider</p>
+        {img2vid?.available && img2vid.provider === "host" && (
+          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">ANIMEOS_IMG2VID_HOST={img2vid.host} - pose-carrying hero shots route to the attached interpolation provider</p>
+        )}
+        {img2vid?.available && img2vid.provider === "zai" && (
+          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">img2vid provider: built-in z.ai interpolation model - pose-carrying hero shots become real AI video (ANIMEOS_IMG2VID=off disables)</p>
         )}
       </div>
       {!live && (

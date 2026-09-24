@@ -1,41 +1,59 @@
 // ─────────────────────────────────────────────────────────────
-// IMG2VID PROVIDER SLOT (interpolation model behind the driver chain)
+// IMG2VID PROVIDER (interpolation model behind the driver chain)
 //
-// The third way a shot moves: an external img2vid interpolation model
-// turns the shot's key art + pose pair into real character motion
-// inside the frame. AnimeOS ships the CLIENT + driver integration;
-// point ANIMEOS_IMG2VID_HOST at any service that speaks this tiny
-// protocol and hero shots start routing to it automatically:
+// The third way a shot moves: an img2vid interpolation model turns
+// the shot's key art + pose pair into real character motion inside
+// the frame. Two providers speak the same driver contract:
 //
-//   POST http://{host}/jobs
-//        {"jobId", "imageUrl", "poseStart", "poseEnd", "movement",
-//         "shotType", "fps", "frames", "width", "height", "mode"}
-//     → 201 {"jobId", "status": "queued"}   (409 when busy)
-//   GET  http://{host}/jobs/{jobId}
-//     → {"status": "queued" | "running" | "done" | "error",
-//        "progress": 0..1, "videoUrl": "http://..." (when done),
-//        "error": "..." (when failed)}
+//   1. HOST   - point ANIMEOS_IMG2VID_HOST at any service that
+//      speaks this tiny protocol:
+//        POST http://{host}/jobs
+//             {"jobId", "imageUrl", "poseStart", "poseEnd", ...}
+//          → 201 {"jobId", "status": "queued"}   (409 when busy)
+//        GET  http://{host}/jobs/{jobId}
+//          → {"status", "progress", "videoUrl", "error"}
 //
-// The client downloads the finished clip into
-// public/renders/{jobId}.mp4 - the same output contract as the
-// Blender bridge and the MOTION engine. When the env var is unset
-// (the default) the slot is invisible: the driver chain never
-// touches it and nothing else changes.
+//   2. ZAI    - the built-in REAL provider: the z.ai async
+//      video-generation model (image + pose/camera prompt in, an
+//      interpolated clip out). Active whenever no host is attached
+//      and ANIMEOS_IMG2VID != "off" - no extra setup, hero shots
+//      route to a real interpolation model out of the box.
+//
+// Both download the finished clip into public/renders/{jobId}.mp4 -
+// the same output contract as the Blender bridge and the MOTION
+// engine. With ANIMEOS_IMG2VID=off and no host the slot is
+// invisible: the driver chain never touches it.
 // ─────────────────────────────────────────────────────────────
 
 import fs from "fs";
 import path from "path";
+import ZAI from "z-ai-web-dev-sdk";
+import { POSE_GLOSS } from "@/lib/animation/poses";
 
 const HOST_ENV_KEY = "ANIMEOS_IMG2VID_HOST";
+const PROVIDER_ENV_KEY = "ANIMEOS_IMG2VID";
+
+export type Img2VidProvider = "host" | "zai";
 
 /** Read lazily so operators (and tests) can set the env after import. */
 export function img2vidHost(): string | null {
   return process.env[HOST_ENV_KEY] || null;
 }
 
-export function img2vidStatus(): { available: boolean; host: string | null } {
+/**
+ * Which provider takes img2vid jobs: the attached host wins, else
+ * the built-in z.ai video model, else null (slot off).
+ */
+export function img2vidProvider(): Img2VidProvider | null {
+  if (img2vidHost()) return "host";
+  if (String(process.env[PROVIDER_ENV_KEY] ?? "").trim().toLowerCase() === "off") return null;
+  return "zai";
+}
+
+export function img2vidStatus(): { available: boolean; host: string | null; provider: Img2VidProvider | null } {
   const host = img2vidHost();
-  return { available: Boolean(host), host };
+  const provider = img2vidProvider();
+  return { available: provider !== null, host, provider };
 }
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 6000): Promise<Response> {
@@ -122,5 +140,169 @@ export async function pollImg2VidJob(jobId: string): Promise<Img2VidPollResult> 
     return { polled: true, status, done: true, progress: 1, mp4Path: outAbs };
   } catch (err) {
     return { polled: false, error: err instanceof Error ? err.message : "img2vid poll failed" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// ZAI PROVIDER - the built-in real interpolation model
+//
+// z.ai async video generation: an image (the shot's key art) plus a
+// pose/camera prompt go in; the model interpolates real character
+// motion between the poses; the finished clip downloads back into
+// public/renders/{jobId}.mp4 like every other driver.
+// ─────────────────────────────────────────────────────────────
+
+const MOVEMENT_GLOSS: Record<string, string> = {
+  ORBIT: "the camera orbits around the subject",
+  DOLLY_IN: "the camera pushes in toward the subject",
+  STATIC: "the camera holds still",
+  PAN: "the camera pans across the scene",
+  TRACKING: "the camera tracks alongside the subject",
+  CRANE: "the camera cranes up and over the scene",
+};
+
+const SHOT_GLOSS: Record<string, string> = {
+  ESTABLISHING: "wide establishing view",
+  WIDE: "wide view, subject small in a large environment",
+  MEDIUM: "medium view, waist-up on the subject",
+  CLOSEUP: "close view on the subject",
+  EXTREME_CLOSEUP: "extreme close view on one detail",
+  LOW_ANGLE: "low-angle view looking up at the subject",
+};
+
+/** Clip length the model is asked for (seconds), clamped to a sane window. */
+export function img2vidDurationClamp(seconds: number): number {
+  return Math.min(10, Math.max(3, Math.round(seconds)));
+}
+
+/**
+ * The animation prompt sent to the video model: identity lock on the
+ * key art's character, the pose beat in performance words, the
+ * camera program. Pure - E2E asserts on its wording.
+ */
+export function buildImg2VidPrompt(input: {
+  poseStart: string | null;
+  poseEnd: string | null;
+  movement: string | null;
+  shotType: string;
+  lighting: string | null;
+}): string {
+  const start = input.poseStart ? POSE_GLOSS[input.poseStart] ?? null : null;
+  const endPose = input.poseEnd ? POSE_GLOSS[input.poseEnd] ?? null : null;
+  const beat = start && endPose && start !== endPose
+    ? `The main character performs a smooth, physical movement: ${start}, flowing continuously into ${endPose} by the end of the clip.`
+    : start || endPose
+      ? `The main character holds ${start ?? endPose} with subtle living motion - breathing, weight shifts, cloth drift.`
+      : "The scene stays alive with subtle ambient motion.";
+  const camera = MOVEMENT_GLOSS[input.movement?.toUpperCase() ?? ""] ?? "the camera holds still";
+  const framing = SHOT_GLOSS[input.shotType.toUpperCase()] ?? "medium view";
+  const parts = [
+    "Animate this exact frame into a cinematic anime clip.",
+    beat,
+    `Camera work: ${camera}, ${framing}.`,
+    input.lighting ? `Lighting mood: ${input.lighting}.` : null,
+    "Keep the character's face, hair, outfit, colors and art style EXACTLY as in the source frame - same identity, same palette. Consistent single character, smooth natural motion, no cuts, no text, no watermark.",
+  ];
+  return parts.filter(Boolean).join(" ");
+}
+
+/** Max key-art bytes we inline as a data URL (base64 inflates 4/3). */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Resolve the key art into something the video service can fetch:
+ * absolute URLs pass through; local public paths become data URLs
+ * read straight off disk (no public host required).
+ */
+export function resolveImg2VidImageUrl(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+  const clean = imageUrl.split("?")[0];
+  const file = path.join(process.cwd(), "public", path.normalize(clean).replace(/^([.][.][/\\])+/, ""));
+  if (!fs.existsSync(file)) return null;
+  const stat = fs.statSync(file);
+  if (stat.size <= 0 || stat.size > MAX_IMAGE_BYTES) return null;
+  const ext = path.extname(file).toLowerCase().replace(".", "") || "png";
+  return `data:image/${ext};base64,${fs.readFileSync(file).toString("base64")}`;
+}
+
+export interface Img2VidZaiSubmitPayload {
+  jobId: string;
+  imageUrl: string | null;
+  poseStart: string | null;
+  poseEnd: string | null;
+  movement: string | null;
+  shotType: string;
+  lighting: string | null;
+  duration: number; // seconds
+  mode: "PREVIEW" | "FINAL";
+}
+
+export interface Img2VidZaiSubmitResult {
+  submitted: boolean;
+  taskId?: string;
+  error?: string;
+}
+
+/** Submit an img2vid job to the z.ai video model; returns the async task id. */
+export async function submitImg2VidZaiJob(payload: Img2VidZaiSubmitPayload): Promise<Img2VidZaiSubmitResult> {
+  if (img2vidProvider() !== "zai") return { submitted: false, error: "z.ai img2vid provider is off" };
+  try {
+    const zai = await ZAI.create();
+    const prompt = buildImg2VidPrompt(payload);
+    const image = resolveImg2VidImageUrl(payload.imageUrl);
+    const res = (await zai.video.generations.create({
+      prompt,
+      ...(image ? { image_url: image } : {}),
+      quality: payload.mode === "FINAL" ? "quality" : "speed",
+      with_audio: false,
+      duration: img2vidDurationClamp(payload.duration),
+    })) as { id?: string; task_status?: string };
+    if (!res?.id) return { submitted: false, error: "video model returned no task id" };
+    return { submitted: true, taskId: res.id };
+  } catch (err) {
+    return { submitted: false, error: err instanceof Error ? err.message : "img2vid z.ai submit failed" };
+  }
+}
+
+export interface Img2VidZaiPollResult {
+  polled: boolean;
+  status?: "queued" | "running" | "done" | "error";
+  done?: boolean;
+  error?: string;
+  mp4Path?: string; // set when the finished clip was downloaded this poll
+}
+
+/** Poll the z.ai video task; when done, download the clip into public/renders. */
+export async function pollImg2VidZaiJob(jobId: string, taskId: string): Promise<Img2VidZaiPollResult> {
+  try {
+    const zai = await ZAI.create();
+    const res = (await zai.async.result.query(taskId)) as {
+      task_status?: string;
+      video_result?: Array<{ url?: string }>;
+      video_url?: string;
+      url?: string;
+    };
+    const raw = String(res?.task_status ?? "PROCESSING").toUpperCase();
+    if (raw === "FAIL") {
+      return { polled: true, status: "error", done: true, error: "video model reported task failure" };
+    }
+    if (raw !== "SUCCESS") {
+      return { polled: true, status: "running", done: false };
+    }
+    const videoUrl = res?.video_result?.[0]?.url || res?.video_url || res?.url || null;
+    if (!videoUrl) return { polled: true, status: "error", done: true, error: "video model finished without a clip url" };
+    // download the finished clip (same contract as the host provider)
+    const dir = path.join(process.cwd(), "public", "renders");
+    fs.mkdirSync(dir, { recursive: true });
+    const outAbs = path.join(dir, `${jobId}.mp4`);
+    const clip = await fetchWithTimeout(videoUrl, undefined, 120_000);
+    if (!clip.ok) return { polled: true, status: "error", done: true, error: `clip download responded ${clip.status}` };
+    const buf = Buffer.from(await clip.arrayBuffer());
+    if (buf.length === 0) return { polled: true, status: "error", done: true, error: "clip download was empty" };
+    fs.writeFileSync(outAbs, buf);
+    return { polled: true, status: "done", done: true, mp4Path: outAbs };
+  } catch (err) {
+    return { polled: false, error: err instanceof Error ? err.message : "img2vid z.ai poll failed" };
   }
 }

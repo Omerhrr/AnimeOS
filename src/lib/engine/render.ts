@@ -8,7 +8,10 @@ import {
   pollLocalJob, localJobStale,
 } from "@/lib/bridge/blender";
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
-import { img2vidHost, submitImg2VidJob, pollImg2VidJob } from "@/lib/bridge/img2vid";
+import {
+  img2vidHost, img2vidProvider, submitImg2VidJob, pollImg2VidJob,
+  submitImg2VidZaiJob, pollImg2VidZaiJob,
+} from "@/lib/bridge/img2vid";
 
 // ─────────────────────────────────────────────────────────────
 // RENDER PIPELINE (pluggable engine drivers)
@@ -27,10 +30,13 @@ import { img2vidHost, submitImg2VidJob, pollImg2VidJob } from "@/lib/bridge/img2
 //     time), progress flows through a state file. Shots carrying a
 //     pose program get the skeletal stand-in articulated between
 //     their start/end poses.
-//   • IMG2VID        - interpolation-model provider slot (env
-//     ANIMEOS_IMG2VID_HOST): hero shots with a pose program route
-//     here first when configured; the provider animates the key
-//     art inside the frame and the clip downloads back.
+//   • IMG2VID        - interpolation-model provider: hero shots with
+//     a pose program route here first when the built-in engines are
+//     unavailable. Two providers speak the driver contract: an
+//     attached host (env ANIMEOS_IMG2VID_HOST) or the BUILT-IN z.ai
+//     video model (real img2vid, active by default; ANIMEOS_IMG2VID
+//     =off disables). The provider animates the key art inside the
+//     frame and the clip downloads back.
 //   • MOTION         - the built-in ffmpeg engine: deterministic
 //     camera program (movement / shot type / lens / lighting /
 //     fog / lightning / energy) animated over the shot's key art;
@@ -67,6 +73,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
   let driver = "SIMULATOR";
   let stage = "Validating scene graph";
   let clipMs = 0;
+  let providerTaskId: string | null = null;
 
   // Pick the first engine that can take the job.
   const bridge = await bridgeStatus(true);
@@ -118,35 +125,64 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     }
   }
 
-  // IMG2VID: interpolation-model slot. Hero shots that carry a pose
-  // program route to the configured provider before the built-in
-  // engines; the provider animates the key art between the poses.
-  if (driver === "SIMULATOR" && shot && img2vidHost() && hasPoseProgram(shot.poseStart, shot.poseEnd)) {
+  // IMG2VID: interpolation-model providers. Hero shots that carry a
+  // pose program route to the attached host first, then the built-in
+  // z.ai video model, before the built-in engines; the provider
+  // animates the key art between the poses.
+  if (driver === "SIMULATOR" && shot && hasPoseProgram(shot.poseStart, shot.poseEnd) && img2vidProvider()) {
     const project = await db.project.findUnique({ where: { id: projectId } });
     const fps = project?.fps ?? 24;
     const resMatch = String(project?.resolution ?? "1920x1080").match(/(\d{2,5})x(\d{2,5})/);
     const width = resMatch ? parseInt(resMatch[1], 10) : 1920;
     const height = resMatch ? parseInt(resMatch[2], 10) : 1080;
     const base = process.env.ANIMEOS_PUBLIC_URL ?? "";
-    const submit = await submitImg2VidJob({
-      jobId: job.id,
-      imageUrl: shot.artworkUrl ? (base ? `${base}${shot.artworkUrl}` : shot.artworkUrl) : null,
-      poseStart: shot.poseStart,
-      poseEnd: shot.poseEnd,
-      movement: shot.movement,
-      shotType: shot.shotType,
-      fps,
-      frames: Math.max(2, Math.round(shot.duration * fps)),
-      width,
-      height,
-      mode,
-    });
-    if (submit.submitted) {
-      driver = "IMG2VID";
-      clipMs = Math.round(shot.duration * 1000);
-      stage = "Img2Vid: pose interpolation job submitted";
-    } else {
-      stage = `Img2Vid submit failed (${submit.error ?? "unknown"}) - trying the built-in engine`;
+    const imageUrl = shot.artworkUrl ? (base ? `${base}${shot.artworkUrl}` : shot.artworkUrl) : null;
+
+    // 1) attached host protocol provider
+    if (img2vidHost()) {
+      const submit = await submitImg2VidJob({
+        jobId: job.id,
+        imageUrl,
+        poseStart: shot.poseStart,
+        poseEnd: shot.poseEnd,
+        movement: shot.movement,
+        shotType: shot.shotType,
+        fps,
+        frames: Math.max(2, Math.round(shot.duration * fps)),
+        width,
+        height,
+        mode,
+      });
+      if (submit.submitted) {
+        driver = "IMG2VID";
+        clipMs = Math.round(shot.duration * 1000);
+        stage = "Img2Vid: pose interpolation job submitted to the attached provider";
+      } else {
+        stage = `Img2Vid submit failed (${submit.error ?? "unknown"}) - trying the built-in engine`;
+      }
+    }
+
+    // 2) built-in z.ai video model (the real provider, no setup)
+    if (driver === "SIMULATOR" && img2vidProvider() === "zai") {
+      const submit = await submitImg2VidZaiJob({
+        jobId: job.id,
+        imageUrl,
+        poseStart: shot.poseStart,
+        poseEnd: shot.poseEnd,
+        movement: shot.movement,
+        shotType: shot.shotType,
+        lighting: shot.lighting,
+        duration: shot.duration,
+        mode,
+      });
+      if (submit.submitted && submit.taskId) {
+        driver = "IMG2VID";
+        clipMs = Math.round(shot.duration * 1000);
+        stage = "Img2Vid: z.ai interpolation model generating the pose clip";
+        providerTaskId = submit.taskId;
+      } else {
+        stage = `Img2Vid submit failed (${submit.error ?? "unknown"}) - trying the built-in engine`;
+      }
     }
   }
 
@@ -160,7 +196,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
 
   const finalJob = await db.renderJob.update({
     where: { id: job.id },
-    data: { driver, stage, ...(clipMs > 0 ? { durationMs: clipMs } : {}) },
+    data: { driver, stage, ...(clipMs > 0 ? { durationMs: clipMs } : {}), ...(providerTaskId ? { providerTaskId } : {}) },
   });
 
   await db.productionEvent.create({
@@ -308,7 +344,9 @@ export async function tickRenderJob(jobId: string) {
   }
 
   if (job.driver === "IMG2VID") {
-    const prog = await pollImg2VidJob(job.id);
+    const prog = job.providerTaskId
+      ? await pollImg2VidZaiJob(job.id, job.providerTaskId)
+      : await pollImg2VidJob(job.id);
     if (prog.polled && prog.done) {
       if (prog.error || !prog.mp4Path) {
         job = await db.renderJob.update({
@@ -321,7 +359,7 @@ export async function tickRenderJob(jobId: string) {
           where: { id: jobId },
           data: {
             status: "REVIEW", progress: 100,
-            stage: "Img2Vid clip ready - pose interpolation rendered",
+            stage: (job.providerTaskId ? "Img2Vid clip ready - z.ai interpolation model rendered the pose beat" : "Img2Vid clip ready - pose interpolation rendered").slice(0, 120),
             outputUrl: `/renders/${job.id}.mp4`,
             finishedAt: new Date(),
           },
@@ -334,12 +372,13 @@ export async function tickRenderJob(jobId: string) {
           include: { evaluation: true },
         });
       }
-    } else if (prog.polled && typeof prog.progress === "number") {
-      const progress = Math.min(99, Math.floor(prog.progress * 100));
-      if (progress !== job.progress) {
+    } else if (prog.polled && !prog.done) {
+      // async model work in flight - creep progress so the queue card lives
+      const creep = Math.min(92, job.progress + 4);
+      if (creep !== job.progress) {
         job = await db.renderJob.update({
           where: { id: jobId },
-          data: { progress, stage: "Img2Vid: interpolating poses" },
+          data: { progress: creep, stage: job.providerTaskId ? "Img2Vid: z.ai model interpolating the pose beat" : "Img2Vid: interpolating poses" },
           include: { evaluation: true },
         });
       }

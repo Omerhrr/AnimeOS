@@ -9,6 +9,7 @@ import {
 import { api, parseStringArray, type CharacterFull, type StudioProject } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { VOICES } from "@/lib/comic/voice-catalog";
+import { POSES, poseChip } from "@/lib/animation/poses";
 import { SectionHeader } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -180,6 +181,73 @@ function StateVoiceVariantSelect({ state }: { state: CharacterFull["states"][num
   );
 }
 
+/**
+ * State pose preset: the start/end pair the character PERFORMS while
+ * this state is episode-effective. Shots featuring the character
+ * inherit it via applyStatePoses - the development state changes HOW
+ * a pose is performed. "Library" re-resolves the preset from the
+ * label (e.g. furious lands STANCE -> LUNGE).
+ */
+function StatePosePresetSelect({ state }: { state: CharacterFull["states"][number] }) {
+  const qc = useQueryClient();
+  const { projectId } = useStudio();
+  const [busy, setBusy] = useState(false);
+  const patch = (p: { poseStart?: string; poseEnd?: string; auto?: boolean }) => {
+    setBusy(true);
+    void api.patchCharacterState(state.id, p)
+      .then(() => qc.invalidateQueries({ queryKey: ["project", projectId] }))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="mt-1.5 space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-muted-foreground" title="The body language this state performs: shots featuring the character inherit the pair via Use state poses (panel inspector) or applyStatePoses (shots API)">
+          Pose preset
+        </span>
+        <select
+          value={state.poseStart ?? ""}
+          disabled={busy}
+          onChange={(e) => patch({ poseStart: e.target.value })}
+          title="Start pose of this state's performance"
+          className="h-6 w-[104px] rounded-md bg-white/5 border border-white/12 px-1.5 text-[10px]"
+        >
+          <option value="" className="bg-card">Start: none</option>
+          {POSES.map((p) => (
+            <option key={p} value={p} className="bg-card">{p}</option>
+          ))}
+        </select>
+        <span className="text-[10px] text-muted-foreground">-&gt;</span>
+        <select
+          value={state.poseEnd ?? ""}
+          disabled={busy}
+          onChange={(e) => patch({ poseEnd: e.target.value })}
+          title="End pose of this state's performance"
+          className="h-6 w-[104px] rounded-md bg-white/5 border border-white/12 px-1.5 text-[10px]"
+        >
+          <option value="" className="bg-card">End: none</option>
+          {POSES.map((p) => (
+            <option key={p} value={p} className="bg-card">{p}</option>
+          ))}
+        </select>
+        <button
+          disabled={busy}
+          onClick={() => patch({ auto: true })}
+          title="Apply the library preset resolved from this state's label (e.g. furious lands STANCE -> LUNGE)"
+          className="h-6 shrink-0 rounded-md border border-teal-400/25 bg-teal-400/10 px-1.5 text-[9px] font-semibold text-teal-200 hover:bg-teal-400/20 transition-colors disabled:opacity-40"
+        >
+          Library
+        </button>
+        {busy && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />}
+      </div>
+      {(state.poseStart || state.poseEnd) && (
+        <p className="text-[9px] text-teal-200/70 truncate">
+          body language: {poseChip(state.poseStart, state.poseEnd)} - lands on shots via Use state poses
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CharacterSheet({
   character, project, onGenerateSheet, sheetBusy,
 }: {
@@ -290,6 +358,7 @@ function CharacterSheet({
                     {s.clothing && <span>{s.clothing}</span>}
                   </div>
                   <StateVoiceVariantSelect state={s} />
+                  <StatePosePresetSelect state={s} />
                 </div>
               ))}
             </div>

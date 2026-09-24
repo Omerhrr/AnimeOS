@@ -995,6 +995,8 @@ export function ComicView({ project }: { project: StudioProject }) {
           shot={inspectingShot}
           artists={project.artists}
           loras={project.loras}
+          characters={project.characters}
+          episodeNumber={episode?.number ?? null}
           episodeScenes={episode?.scenes}
           open
           onClose={() => setInspectingShot(null)}

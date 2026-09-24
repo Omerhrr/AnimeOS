@@ -7,9 +7,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Move3d, Play, Route, SlidersHorizontal, Square, Users, Zap } from "lucide-react";
-import { api, type ArtistRow, type SceneWithShots, type ShotRow, type StyleLoraRow } from "@/lib/api-client";
+import { api, type ArtistRow, type SceneWithShots, type ShotRow, type StyleLoraRow, type StudioProject } from "@/lib/api-client";
 import { parseDialogue } from "@/lib/comic/dialogue";
-import { POSES, POSE_LABELS, poseChip } from "@/lib/animation/poses";
+import { POSES, POSE_LABELS, normalizePose, poseChip } from "@/lib/animation/poses";
+import { presetPosesForStateLabel, resolveActiveState } from "@/lib/animation/state-poses";
 import {
   arcSpansForShot, computeArcSpans, describeArcPosition, ensembleGroupSizes, formatArcRange,
   groupEnsembleSpans, type ArcSpan,
@@ -145,11 +146,15 @@ function InspectorArcCard({
 }
 
 export function PanelInspectorDialog({
-  shot, artists, loras, episodeScenes, open, onClose, onSaved,
+  shot, artists, loras, characters, episodeNumber, episodeScenes, open, onClose, onSaved,
 }: {
   shot: ShotRow;
   artists: ArtistRow[];
   loras: StyleLoraRow[];
+  /** production cast with development states: powers the Use-state-poses button */
+  characters?: StudioProject["characters"];
+  /** inspected shot's episode number: which state is episode-effective */
+  episodeNumber?: number | null;
   /** ordered scenes of the inspected shot's episode: enables the state-arc span section */
   episodeScenes?: SceneWithShots[];
   open: boolean;
@@ -164,6 +169,8 @@ export function PanelInspectorDialog({
   const [poseEnd, setPoseEnd] = useState<string>(shot.poseEnd ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // where the current pose pair came from (state preset source / fallback note)
+  const [statePoseSource, setStatePoseSource] = useState<string | null>(null);
   // arc playback: one sequential player for the whole dialog; the key
   // names the card currently playing, the token cancels the queue
   const playTokenRef = useRef(0);
@@ -178,6 +185,7 @@ export function PanelInspectorDialog({
       setPoseStart(shot.poseStart ?? "");
       setPoseEnd(shot.poseEnd ?? "");
       setError(null);
+      setStatePoseSource(null);
     } else {
       stopArcPlayback();
     }
@@ -212,6 +220,43 @@ export function PanelInspectorDialog({
 
   const selectedLora = loras.find((l) => l.id === loraId) ?? null;
   const directive = compileLoraDirective(selectedLora, loraId ? strength : null);
+
+  /**
+   * Use state poses: resolve the detected cast's episode-active
+   * development state and land its pose preset on this panel's two
+   * selects (client mirror of the shots API applyStatePoses action).
+   */
+  function applyStatePoses() {
+    if (!characters) return;
+    const desc = shot.description.toLowerCase();
+    const detected = characters
+      .filter((c) => desc.includes(c.name.toLowerCase().split(" ")[0]))
+      .slice(0, 3);
+    for (const ch of detected) {
+      const active = resolveActiveState(ch.states, episodeNumber ?? 0);
+      if (!active) continue;
+      const start = active.poseStart ? normalizePose(active.poseStart) : null;
+      const end = active.poseEnd ? normalizePose(active.poseEnd) : null;
+      if (start || end) {
+        setPoseStart(start ?? "STANCE");
+        setPoseEnd(end ?? "STANCE");
+        setStatePoseSource(`${ch.name} state "${active.label}" preset`);
+        return;
+      }
+      const lib = presetPosesForStateLabel(active.label);
+      if (lib) {
+        setPoseStart(lib.poseStart);
+        setPoseEnd(lib.poseEnd);
+        setStatePoseSource(`${ch.name} state "${active.label}" library preset: ${lib.note}`);
+        return;
+      }
+    }
+    setStatePoseSource(
+      detected.length === 0
+        ? "No cast member is referenced by this panel's description"
+        : `No episode-effective state of ${detected.map((c) => c.name).join(", ")} carries a pose preset`
+    );
+  }
 
   // state arc spans across the episode; which of them touch THIS shot;
   // spans from different speakers sharing a shot cluster into one
@@ -467,12 +512,33 @@ export function PanelInspectorDialog({
 
           {/* ── Motion poses (character motion inside the frame) ── */}
           <div className="space-y-2">
-            <Label className="flex items-center gap-1.5 text-xs">
-              <Move3d className="h-3.5 w-3.5 text-primary" /> Motion poses
-              {poseChip(poseStart, poseEnd) && (
-                <span className="ml-1 px-1.5 py-0.5 rounded bg-teal-400/15 border border-teal-400/25 text-[9px] font-bold tracking-wider text-teal-200">{poseChip(poseStart, poseEnd)}</span>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="flex items-center gap-1.5 text-xs">
+                <Move3d className="h-3.5 w-3.5 text-primary" /> Motion poses
+                {poseChip(poseStart, poseEnd) && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded bg-teal-400/15 border border-teal-400/25 text-[9px] font-bold tracking-wider text-teal-200">{poseChip(poseStart, poseEnd)}</span>
+                )}
+              </Label>
+              {characters && characters.length > 0 && (
+                <button
+                  onClick={applyStatePoses}
+                  title="Fill both poses from the featured character's episode-active development state (its pose preset, or the library preset for the state's label)"
+                  className="h-7 shrink-0 rounded-lg border border-teal-400/25 bg-teal-400/10 px-2.5 text-[10px] font-semibold text-teal-200 hover:bg-teal-400/20 transition-colors"
+                >
+                  Use state poses
+                </button>
               )}
-            </Label>
+            </div>
+            {statePoseSource && (
+              <p className={cn(
+                "rounded-md border px-2 py-1 text-[10px] leading-relaxed",
+                poseStart || poseEnd
+                  ? "border-teal-400/25 bg-teal-400/10 text-teal-200/90"
+                  : "border-amber-400/25 bg-amber-400/10 text-amber-200/90"
+              )}>
+                {statePoseSource}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Start pose</span>

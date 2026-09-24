@@ -1,8 +1,10 @@
 import { db } from "@/lib/db";
 import { randomUUID } from "node:crypto";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
+import { scanArtContinuity, checkShotArtContinuity } from "@/lib/continuity-art";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
+import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
 import {
   applyArcTemplate, arcTemplateByName, ARC_TEMPLATES, formatTemplateReport,
@@ -70,7 +72,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "create_character_state",
-    description: "Record a character development state at a point in the story (PERMANENT development, TEMPORARY scene state, or VARIANT appearance).",
+    description: "Record a character development state at a point in the story (PERMANENT development, TEMPORARY scene state, or VARIANT appearance). The state can carry a POSE PRESET: the start/end pair the character performs while this state is episode-effective. Without explicit poses the library preset matching the label is applied automatically (e.g. a furious state lands STANCE -> LUNGE).",
     args: {
       characterName: "string",
       label: "string, e.g. 'S02 - Foundation Established'",
@@ -80,6 +82,8 @@ export const TOOL_DEFS: ToolDef[] = [
       weapon: "string (optional)",
       clothing: "string (optional)",
       abilities: "comma-separated (optional)",
+      poseStart: "string pose id (optional, e.g. STANCE - omit to let the library preset from the label apply)",
+      poseEnd: "string pose id (optional, e.g. LUNGE)",
     },
   },
   {
@@ -142,6 +146,16 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "set_state_poses",
+    description: "Set or clear a development state's POSE PRESET (the pair the character performs while this state is episode-effective). Shots featuring the character then inherit the pair via applyStatePoses (shots API / panel inspector) - the development state changes HOW a pose is performed. Empty strings clear the pair; the vocabulary is STANCE | WALK | LUNGE | SLASH | CAST | DRAW | BLOCK | LEAP | CROUCH | FALL | RISE | BOW | POINT.",
+    args: {
+      characterName: "string",
+      stateLabel: "string - the state to steer (latest matching state of the character; omit for the character's newest state)",
+      poseStart: "string pose id (e.g. STANCE, empty string clears)",
+      poseEnd: "string pose id (e.g. LUNGE, empty string clears)",
+    },
+  },
+  {
     name: "create_terminology",
     description: "Add a canonical term to the translation memory to keep localization consistent.",
     args: { term: "string", category: "string (optional)", translations: "JSON object {lang: translation}, e.g. {\"zh-CN\":\"青焰\",\"en-US\":\"Azure Flame\"}" },
@@ -167,6 +181,15 @@ export const TOOL_DEFS: ToolDef[] = [
     name: "check_capabilities",
     description: "Missing-capability detection for a scene: what the scene requires vs. what the production actually has (characters, environments, VFX, props).",
     args: { sceneNumber: "number (defaults to latest scene)" },
+  },
+  {
+    name: "check_art_continuity",
+    description: "Art-aware continuity: check the ART layer against the production's canonical history. Without deep, scans the project (or one scene) for stale art (panel predates the episode-active state or the current model-sheet anchor) and featured characters without a model sheet. With deep:true and a targeted shot, a VISION model compares the shot's panel art against the character's canonical model sheet and lands an ART_DRIFT or ART_VERIFIED continuity event.",
+    args: {
+      sceneNumber: "number (optional, narrows the scan to one scene)",
+      shotNumber: "number (optional, with sceneNumber targets one shot)",
+      deep: "boolean (optional, vision art-vs-anchor check on the targeted shot - needs panel art and a model sheet)",
+    },
   },
   {
     name: "render_shot",
@@ -1121,19 +1144,45 @@ export async function executeTool(projectId: string, name: string, args: Record<
       case "create_character_state": {
         const ch = await characterByName(projectId, String(args.characterName ?? ""));
         if (!ch) return { status: "ERROR", result: `Character '${String(args.characterName)}' not found.` };
+        const label = String(args.label ?? "New state");
+        let poseStart = args.poseStart ? normalizePose(args.poseStart) : null;
+        let poseEnd = args.poseEnd ? normalizePose(args.poseEnd) : null;
+        if (args.poseStart && !poseStart) {
+          return { status: "ERROR", result: `Unknown pose '${args.poseStart}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
+        if (args.poseEnd && !poseEnd) {
+          return { status: "ERROR", result: `Unknown pose '${args.poseEnd}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
+        let presetNote: string | null = null;
+        if (!poseStart && !poseEnd) {
+          // no explicit pair: the state's body language resolves from the
+          // label library (a furious state lands STANCE -> LUNGE, ...)
+          const preset = presetPosesForStateLabel(label);
+          if (preset) {
+            poseStart = preset.poseStart;
+            poseEnd = preset.poseEnd;
+            presetNote = preset.note;
+          }
+        }
         await db.characterState.create({
           data: {
             characterId: ch.id,
-            label: String(args.label ?? "New state"),
+            label,
             episodeNumber: args.episodeNumber ? Number(args.episodeNumber) : null,
             stateType: String(args.stateType ?? "PERMANENT"),
             cultivation: args.cultivation ? String(args.cultivation) : null,
             weapon: args.weapon ? String(args.weapon) : null,
             clothing: args.clothing ? String(args.clothing) : null,
             abilities: args.abilities ? JSON.stringify(String(args.abilities).split(",").map((s) => s.trim()).filter(Boolean)) : null,
+            poseStart,
+            poseEnd,
           },
         });
-        return { status: "OK", result: `State '${String(args.label)}' recorded for ${ch.name}.` };
+        const chip = poseChip(poseStart, poseEnd);
+        const poseTxt = chip
+          ? ` Body language preset: ${chip}${presetNote ? ` (${presetNote})` : ""} - shots featuring ${ch.name} inherit it via applyStatePoses.`
+          : "";
+        return { status: "OK", result: `State '${label}' recorded for ${ch.name}.${poseTxt}` };
       }
 
       case "create_relationship": {
@@ -1290,6 +1339,38 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return { status: "OK", result: `Shot ${String(updated.number).padStart(3, "0")} will perform ${describePosePair(updated.poseStart, updated.poseEnd)}. Every render engine now interpolates these poses across the clip.` };
       }
 
+      case "set_state_poses": {
+        const ch = await characterByName(projectId, String(args.characterName ?? ""));
+        if (!ch) return { status: "ERROR", result: `Character '${String(args.characterName)}' not found.` };
+        const states = await db.characterState.findMany({ where: { characterId: ch.id }, orderBy: [{ episodeNumber: "desc" }, { createdAt: "desc" }] });
+        if (states.length === 0) {
+          return { status: "ERROR", result: `${ch.name} has no development states yet - create one first.` };
+        }
+        const labelArg = String(args.stateLabel ?? "").trim().toLowerCase();
+        const state = labelArg
+          ? states.find((s) => s.label.toLowerCase().includes(labelArg)) ?? null
+          : states[0];
+        if (!state) {
+          return { status: "ERROR", result: `No state of ${ch.name} matches '${String(args.stateLabel)}'. Known states: ${states.map((s) => s.label).join("; ")}.` };
+        }
+        const rawStart = String(args.poseStart ?? "").trim();
+        const rawEnd = String(args.poseEnd ?? "").trim();
+        const poseStart = rawStart ? normalizePose(rawStart) : null;
+        const poseEnd = rawEnd ? normalizePose(rawEnd) : null;
+        if (rawStart && !poseStart) {
+          return { status: "ERROR", result: `Unknown pose '${rawStart}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
+        if (rawEnd && !poseEnd) {
+          return { status: "ERROR", result: `Unknown pose '${rawEnd}'. Valid poses: STANCE, WALK, LUNGE, SLASH, CAST, DRAW, BLOCK, LEAP, CROUCH, FALL, RISE, BOW, POINT.` };
+        }
+        await db.characterState.update({ where: { id: state.id }, data: { poseStart, poseEnd } });
+        const chip = poseChip(poseStart, poseEnd);
+        if (!chip) {
+          return { status: "OK", result: `Pose preset cleared on ${ch.name} "${state.label}" - the state no longer steers shot body language.` };
+        }
+        return { status: "OK", result: `Pose preset set on ${ch.name} "${state.label}": the character now performs ${describePosePair(poseStart, poseEnd)} while this state is episode-effective. Land it on shots via applyStatePoses (shots API) or the panel inspector's Use-state-poses button.` };
+      }
+
       case "create_terminology": {
         let translations: Record<string, string> = {};
         if (typeof args.translations === "string") {
@@ -1351,6 +1432,57 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return { status: "OK", result: `Capability check for Scene ${scene.number} '${scene.title}':\n${lines.join("\n")}${missing.length ? `\n→ ${missing.length} missing capability(ies): ${missing.map((m) => m.requirement).join(", ")}` : "\n→ All requirements satisfied."}` };
       }
 
+      case "check_art_continuity": {
+        const deep = args.deep === true;
+        let sceneNumber: number | null = args.sceneNumber ? Number(args.sceneNumber) : null;
+        if (deep && !sceneNumber && args.shotNumber) {
+          // target the latest scene when only a shot number is given
+          const latest = await latestScene(projectId);
+          sceneNumber = latest?.number ?? null;
+        }
+        if (deep) {
+          const scene = await resolveScene(projectId, sceneNumber);
+          if (!scene) return { status: "ERROR", result: "No scene exists - nothing to check." };
+          const shot = await db.shot.findFirst({
+            where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+          });
+          if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+          const result = await checkShotArtContinuity(shot.id);
+          if (!result.ok) return { status: "ERROR", result: `Art check failed for Shot ${String(shot.number).padStart(3, "0")}: ${result.error}` };
+          const v = result.verdict;
+          const driftTxt = v.drift.length > 0
+            ? ` Drift: ${v.drift.map((d) => `${d.aspect} (${d.note})`).join("; ")}.`
+            : "";
+          return {
+            status: "OK",
+            result: `Art continuity ${result.eventKind} on Shot ${String(shot.number).padStart(3, "0")} (vs ${v.characterName}'s model sheet): ${v.summary}.${driftTxt} The verdict is persisted as a continuity event and visible in the Continuity view.`,
+          };
+        }
+        const scan = await scanArtContinuity(projectId);
+        const scoped = sceneNumber
+          ? scan.shots.filter((s) => s.sceneNumber === sceneNumber)
+          : scan.shots;
+        const stale = scoped.filter((s) => s.items.some((i) => i.kind === "stale-state" || i.kind === "stale-anchor"));
+        const missing = scoped.filter((s) => s.items.some((i) => i.kind === "anchor-missing"));
+        if (stale.length === 0 && missing.length === 0) {
+          return { status: "OK", result: `Art continuity clean across ${scoped.length} shot(s): no art predates its state or anchor, and every featured character has a model sheet. Run deep:true on a hero shot for a vision-level art-vs-anchor comparison.` };
+        }
+        const lines = [
+          ...stale.slice(0, 8).map((s) => {
+            const items = s.items.filter((i) => i.kind !== "anchor-missing").map((i) => i.note).join("; ");
+            return `STALE ART ${s.ref}: ${items}`;
+          }),
+          ...missing.slice(0, 6).map((s) => {
+            const who = [...new Set(s.items.filter((i) => i.kind === "anchor-missing").map((i) => i.characterName))].join(", ");
+            return `ANCHOR MISSING ${s.ref}: ${who} - generate_model_sheet before more art features them`;
+          }),
+        ];
+        return {
+          status: "OK",
+          result: `Art continuity scan (${sceneNumber ? `Scene ${sceneNumber}` : "whole project"}): ${stale.length} stale-art shot(s), ${missing.length} shot(s) with missing anchors.\n${lines.join("\n")}${lines.length < stale.length + missing.length ? "\n... and more - regenerate panel art or model sheets to clear these." : ""}`,
+        };
+      }
+
       case "render_shot": {
         let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
@@ -1374,7 +1506,9 @@ export async function executeTool(projectId: string, name: string, args: Record<
             ? `headless Blender sequence worker (Cycles) with the skeletal stand-in performing ${poseTxt}`
             : "headless Blender sequence worker (Cycles)"
           : job.driver === "IMG2VID"
-            ? "img2vid interpolation provider (pose-to-motion model)"
+            ? job.providerTaskId
+              ? "the built-in z.ai img2vid interpolation model (real pose-to-motion video)"
+              : "img2vid interpolation provider (pose-to-motion model)"
             : job.driver === "MOTION"
               ? poseTxt
                 ? "built-in MOTION engine (poses play as a blocking approximation)"
@@ -2290,7 +2424,7 @@ export async function buildCompactContext(projectId: string) {
       modelSheet: Boolean(c.modelSheetUrl),
       voiceActor: c.voiceArtist ? `${c.voiceArtist.name} (${c.voiceArtist.voiceId ?? "no voice set"})` : null,
       abilities: JSON.parse(c.abilities || "[]"),
-      states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon, voiceVariant: s.voiceVariant ?? null, speedHint: s.speedHint ?? null, pitchHint: s.pitchHint ?? null })),
+      states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon, voiceVariant: s.voiceVariant ?? null, speedHint: s.speedHint ?? null, pitchHint: s.pitchHint ?? null, poses: poseChip(s.poseStart, s.poseEnd) ?? null })),
     })),
     environments: project.environments.map((e) => e.name),
     assets: project.assets.map((a) => `${a.category}:${a.name}(${a.status})`),

@@ -129,6 +129,7 @@ model Shot {
   lighting    String?
   status      String   @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED
   artworkUrl  String?  // AI-generated panel art (served from /panels/)
+  artGeneratedAt DateTime? // when the current artworkUrl was generated - art-aware continuity compares this against state/anchor timestamps
   dialogue    String?  // JSON: Array<{ speaker, text, kind: SPEECH | THOUGHT | SFX }>
   // Per-shot style LoRA fine-tuning - selects a production LoRA adapter
   // whose trigger tokens are injected into this shot's art prompt.
@@ -254,6 +255,7 @@ model Character {
   canonicalState String?  // JSON summary of current canonical condition (injuries etc.)
   modelSheetUrl   String?  // AI-generated character model sheet (served from /sheets/)
   modelSheetPrompt String? // Canonical visual-anchor prompt - reused in every panel art for consistency
+  modelSheetAt    DateTime? // when the current sheet/anchor was generated - art-aware continuity staleness anchor
   parentId       String?  // derivative source character
   derivativeType String?  // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
   // Per-artist voice casting: which roster artist speaks for this character
@@ -280,6 +282,8 @@ model CharacterState {
   clothing      String?
   abilities     String? // JSON string[]
   voiceVariant  String? // state voice variant: TTS voice that performs the character's lines while this state is episode-effective (null = cast voice)
+  poseStart     String? // state pose preset: the pose the character starts from while this state performs (see src/lib/animation/poses.ts)
+  poseEnd       String? // state pose preset: the pose the state's performance moves into - development state changes HOW a pose is performed
   speedHint     Float?  // state speed hint: multiplier on the take's base speed while this state supplies the performance (1 = no bend)
   pitchHint     Float?  // state pitch hint: playback pitch factor for takes in this state (1 = natural pitch; <1 deeper, >1 higher)
   createdAt     DateTime @default(now())
@@ -377,6 +381,9 @@ model RenderJob {
   // /renders/. Still-frame outputs (legacy bridge pngs) keep this
   // null and surface the frame through the job payload instead.
   outputUrl  String?
+  // IMG2VID provider task id (async video-generation model). Host
+  // protocol jobs poll by AnimeOS jobId; SDK jobs poll by this id.
+  providerTaskId String?
   startedAt  DateTime?
   finishedAt DateTime?
   createdAt  DateTime  @default(now())
