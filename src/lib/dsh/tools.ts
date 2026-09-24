@@ -7,10 +7,13 @@ import { startRepaintRun } from "@/lib/universe-repaint";
 import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
 import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan } from "@/lib/dsh/plan-templates";
-import { IDENTITY_REPAINT_THRESHOLD, scoreProjectIdentity, scoreShotIdentity } from "@/lib/identity";
+import { IDENTITY_REPAINT_THRESHOLD, scoreProjectIdentity, scoreShotIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD } from "@/lib/identity";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
 } from "@/lib/scheduler";
+import { studioPulse } from "@/lib/studio-pulse";
+import { canonHealthData } from "@/lib/canon-health";
+import { scheduleHealthData } from "@/lib/schedule-health";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -286,6 +289,11 @@ export const TOOL_DEFS: ToolDef[] = [
       shotNumber: "number (optional, defaults to shot 1)",
       limit: "number 1-8 (optional - batch-score that many panels worst-first instead of one)",
     },
+  },
+  {
+    name: "studio_pulse",
+    description: "One honest health readout of the whole studio, instant and provider-free: the canon score (universe-fact verdict history: coverage and hold rate), identity health (vision-scored panels, drift queue, provider-free affinity tripwire), schedule health (14-day fire outcomes, overdue and erroring cadences) and queue pressure (active renders, re-render queue). Call it when the creator asks how the production is doing, before promising deadlines, or after a night of scheduled fires.",
+    args: {},
   },
   {
     name: "render_shot",
@@ -1777,8 +1785,18 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const aspectLine = aspect && Object.keys(aspect.aspects).length > 0
           ? ` Top entry's aspects: ${Object.entries(aspect.aspects).map(([k, v]) => `${k} ${(Number(v) * 100).toFixed(0)}%`).join(", ")}.`
           : "";
+        // the provider-free affinity tripwire rides the vision score (instant, local math)
+        const aff = await scoreShotEmbedding(shotId).catch(() => null);
+        const affLine = aff?.ok
+          ? ` Provider-free affinity: ${aff.scored.verdict.entries.map(describeAffinity).join("; ")}${aff.scored.verdict.worst < AFFINITY_WATCH_THRESHOLD ? " - WATCH: far from the sheet, check this panel" : ""} (tripwire only: the vision score stays the authority).`
+          : "";
         const drifted = s.verdict.worst < IDENTITY_REPAINT_THRESHOLD;
-        return { status: "OK", result: `Identity score for ${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%${s.verdict.note ? ` (${s.verdict.note})` : ""}.${aspectLine} ${drifted ? `That is below the ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% identity bar - the panel earned an IDENTITY_DRIFT event and a re-paint offer: regenerate the panel (generate_panel_art) and score again to confirm.` : "An IDENTITY_VERIFIED event recorded the panel."}` };
+        return { status: "OK", result: `Identity score for ${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%${s.verdict.note ? ` (${s.verdict.note})` : ""}.${aspectLine}${affLine} ${drifted ? `That is below the ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% identity bar - the panel earned an IDENTITY_DRIFT event and a re-paint offer: regenerate the panel (generate_panel_art) and score again to confirm.` : "An IDENTITY_VERIFIED event recorded the panel."}` };
+      }
+
+      case "studio_pulse": {
+        const pulse = await studioPulse(projectId);
+        return { status: "OK", result: pulse.lines.join("\n") };
       }
 
       case "render_shot": {
@@ -2648,7 +2666,8 @@ export async function executeTool(projectId: string, name: string, args: Record<
 }
 
 export async function buildCompactContext(projectId: string) {
-  const project = await db.project.findUnique({
+  const [project, canon, scheduleHealth] = await Promise.all([
+    db.project.findUnique({
     where: { id: projectId },
     include: {
       seasons: {
@@ -2683,10 +2702,14 @@ export async function buildCompactContext(projectId: string) {
         take: 8,
         include: { shot: { include: { scene: { include: { episode: { include: { season: true } } } } } } },
       },
+      panelEmbeddings: { orderBy: { worst: "asc" as const }, take: 5, include: { shot: { include: { scene: { include: { episode: { include: { season: true } } } } } } } },
       loras: { include: { _count: { select: { shots: true } } } },
       artists: { include: { _count: { select: { shots: true } } } },
     },
-  });
+  }),
+    canonHealthData(projectId).catch(() => null),
+    scheduleHealthData(projectId).catch(() => null),
+  ]);
   if (!project) return null;
 
   return {
@@ -2758,6 +2781,13 @@ export async function buildCompactContext(projectId: string) {
       const ref = `E${sh.scene.episode.number} Sc${sh.scene.number} S${String(sh.number).padStart(3, "0")}`;
       return `${ref} worst ${(row.worst * 100).toFixed(0)}% (${row.castSize} cast, ${row.scoredAt.toISOString().slice(0, 10)})${row.worst < IDENTITY_REPAINT_THRESHOLD ? " DRIFT" : ""}`;
     }),
+    affinity: project.panelEmbeddings.map((row) => {
+      const sh = row.shot;
+      const ref = `E${sh.scene.episode.number} Sc${sh.scene.number} S${String(sh.number).padStart(3, "0")}`;
+      return `${ref} ${(row.worst * 100).toFixed(0)}% provider-free affinity${row.worst < 0.5 ? " WATCH" : ""} (tripwire only, vision score is the authority)`;
+    }),
     planTemplates: `per-episode templates ready to land with land_episode_plan: ${EPISODE_TEMPLATE_IDS.join(", ")}`,
+    canonHealth: canon ? canon.digest.headline : null,
+    scheduleHealth: scheduleHealth ? scheduleHealth.headline : null,
   };
 }

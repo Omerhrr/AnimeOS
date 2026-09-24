@@ -306,6 +306,28 @@ interface ScheduleRow {
   createdAt: string;
 }
 
+interface ScheduleHealthRowUi {
+  scheduleId: string;
+  name: string;
+  enabled: boolean;
+  overdue: boolean;
+  lastStatus: "OK" | "SKIPPED" | "ERROR" | null;
+  window: { ok: number; skipped: number; error: number; fires: number };
+  errorStreak: number;
+  okRate: number | null;
+  headline: string;
+}
+
+interface ScheduleDigest {
+  rows: ScheduleHealthRowUi[];
+  armed: number;
+  overdue: number;
+  erroring: number;
+  windowDays: number;
+  window: { ok: number; skipped: number; error: number; fires: number };
+  headline: string;
+}
+
 const SCHED_STATUS_COLORS: Record<string, string> = {
   OK: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
   SKIPPED: "border-amber-400/30 text-amber-300 bg-amber-400/10",
@@ -340,11 +362,11 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
     queryKey: ["studioSchedules", projectId],
     queryFn: async () => {
       const res = await fetch(`/api/schedules?projectId=${projectId}`);
-      const body = (await res.json()) as { schedules?: ScheduleRow[] };
-      return body.schedules ?? [];
+      const body = (await res.json()) as { schedules?: ScheduleRow[]; digest?: ScheduleDigest };
+      return { schedules: body.schedules ?? [], digest: body.digest ?? null };
     },
     enabled: Boolean(projectId),
-    refetchInterval: (q) => ((q.state.data ?? []).some((s) => s.enabled) ? 8000 : false),
+    refetchInterval: (q) => ((q.state.data?.schedules ?? []).some((s) => s.enabled) ? 8000 : false),
   });
   const plansQ = useQuery({
     queryKey: ["dshPlans", projectId],
@@ -355,7 +377,8 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
     },
     enabled: Boolean(projectId) && open,
   });
-  const schedules = schedulesQ.data ?? [];
+  const schedules = schedulesQ.data?.schedules ?? [];
+  const digest = schedulesQ.data?.digest ?? null;
   const activePlans = (plansQ.data ?? []).filter((p) => p.status === "ACTIVE");
 
   async function act(scheduleId: string, action: string) {
@@ -439,6 +462,35 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
             (nightly breakdowns), REPAINT_QUEUE supervises renders and starts a re-paint pass when the universe queue is dirty.
             Every fire lands as a production event with its outcome.
           </p>
+          {digest && (
+            <div className="flex flex-wrap gap-1.5 text-[9px]">
+              <span className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-muted-foreground tabular-nums">
+                {digest.armed} armed of {digest.rows.length}
+              </span>
+              {digest.window.fires > 0 ? (
+                <span className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-muted-foreground tabular-nums">
+                  {digest.windowDays}d: {digest.window.ok} OK / {digest.window.skipped} skipped / {digest.window.error} error
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-muted-foreground">no fires in {digest.windowDays}d</span>
+              )}
+              {digest.overdue > 0 && (
+                <span className="px-1.5 py-0.5 rounded border border-amber-400/30 text-amber-300 bg-amber-400/10 tabular-nums">{digest.overdue} overdue</span>
+              )}
+              {digest.erroring > 0 && (
+                <span className="px-1.5 py-0.5 rounded border border-rose-400/30 text-rose-300 bg-rose-400/10 tabular-nums">{digest.erroring} needs attention</span>
+              )}
+            </div>
+          )}
+          {digest && digest.rows.some((r) => r.errorStreak >= 2 || (r.enabled && r.lastStatus === "ERROR")) && (
+            <div className="space-y-0.5">
+              {digest.rows.filter((r) => r.errorStreak >= 2 || (r.enabled && r.lastStatus === "ERROR")).map((r) => (
+                <p key={r.scheduleId} className="text-[9px] text-rose-300/90 truncate" title={r.headline}>
+                  {r.errorStreak >= 2 ? `${r.errorStreak} errors in a row` : "last fire errored"}: {r.name}
+                </p>
+              ))}
+            </div>
+          )}
           {error && (
             <div className="text-[10px] text-rose-300 bg-rose-400/10 border border-rose-400/25 rounded-md px-2 py-1">{error}</div>
           )}

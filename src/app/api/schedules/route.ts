@@ -5,11 +5,12 @@ import { db } from "@/lib/db";
 import {
   createSchedule, listSchedules, fireDueSchedules, fireScheduleNow,
 } from "@/lib/scheduler";
+import { scheduleHealthData } from "@/lib/schedule-health";
 
 // ── Cadence scheduler (approved plans on a schedule + render-queue
-//    supervision).
+//    supervision) + its health digest.
 //
-// GET    { projectId }                                   -> schedules (cadence + last fire)
+// GET    { projectId }                                   -> schedules (cadence + last fire) + health digest
 // POST   { projectId, name, kind, cadence, ... }         -> register a schedule
 // POST   { action: "tick" }                              -> fire every due schedule now
 // PATCH  { scheduleId, action: enable|disable|run }      -> steer
@@ -18,8 +19,8 @@ import {
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
-  const schedules = await listSchedules(projectId);
-  return NextResponse.json({ schedules });
+  const [schedules, digest] = await Promise.all([listSchedules(projectId), scheduleHealthData(projectId)]);
+  return NextResponse.json({ schedules, digest });
 }
 
 export async function POST(req: Request) {

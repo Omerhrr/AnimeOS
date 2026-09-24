@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power, Play, Pause, Square, PaintRoller, Fingerprint } from "lucide-react";
+import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power, Play, Pause, Square, PaintRoller, Fingerprint, Activity, HeartPulse } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader } from "@/components/views/shared";
@@ -217,6 +217,7 @@ interface IdentityData {
   shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>;
   threshold: number;
   average: number | null;
+  embeddings: Record<string, { worst: number; hashHex: string; computedAt: string; entries: Array<{ characterName: string; palette: number; structure: number; combined: number; note: string }> }>;
 }
 
 /**
@@ -230,6 +231,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [scoring, setScoring] = useState<string | null>(null);
   const [batching, setBatching] = useState(false);
+  const [affinityRunning, setAffinityRunning] = useState(false);
   const [repainting, setRepainting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
@@ -243,7 +245,27 @@ function IdentityPanel({ projectId }: { projectId: string }) {
     },
     enabled: Boolean(projectId),
   });
-  const data = dataQ.data ?? { rows: [], queue: [], shots: [], threshold: 0.6, average: null };
+  const data = dataQ.data ?? { rows: [], queue: [], shots: [], threshold: 0.6, average: null, embeddings: {} };
+
+  async function affinityPass() {
+    setAffinityRunning(true);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch("/api/identity", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, limit: 8, mode: "affinity" }),
+      });
+      const body = (await res.json()) as { scored?: Array<{ ref: string; verdict: { worst: number } }>; errors?: Array<{ ref: string; error: string }> };
+      setBanner(`Affinity pass (provider-free): ${body.scored?.length ?? 0} panel(s) embedded${body.errors?.length ? `, ${body.errors.length} skipped` : ""} - tripwire only, the vision score stays the authority`);
+    } catch {
+      setError("Affinity pass failed");
+    } finally {
+      setAffinityRunning(false);
+      await qc.invalidateQueries({ queryKey: ["identity", projectId] });
+    }
+  }
 
   async function scoreOne(shotId: string) {
     setScoring(shotId);
@@ -319,6 +341,10 @@ function IdentityPanel({ projectId }: { projectId: string }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" className="border-sky-400/25 bg-sky-400/10 text-sky-200 hover:bg-sky-400/20" onClick={() => void affinityPass()} disabled={affinityRunning} title="Embed every panel and sheet locally (dHash + palette histogram) and compare - instant, no provider, a tripwire rather than a verdict">
+            {affinityRunning ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Activity className="h-4 w-4 mr-1.5" />}
+            Affinity pass
+          </Button>
           <Button size="sm" variant="outline" className="border-violet-400/25 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20" onClick={() => void batch()} disabled={batching}>
             {batching ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <ScanEye className="h-4 w-4 mr-1.5" />}
             Score worst 3
@@ -408,6 +434,18 @@ function IdentityPanel({ projectId }: { projectId: string }) {
                     {e.characterName} {pct(e.similarity)}
                   </span>
                 ))}
+                {data.embeddings?.[row.shotId]?.entries.map((e, i) => (
+                  <span
+                    key={`aff-${i}`}
+                    title={`Provider-free affinity tripwire (dHash + palette histogram vs the sheet): palette ${(e.palette * 100).toFixed(0)}%, structure ${(e.structure * 100).toFixed(0)}%. A tripwire, not a verdict - the vision score stays the authority.`}
+                    className={cn(
+                      "px-1.5 py-0.5 rounded border text-[9px] tabular-nums border-sky-400/30 text-sky-200 bg-sky-400/10",
+                      e.combined < 0.5 && "border-amber-400/30 text-amber-200 bg-amber-400/10"
+                    )}
+                  >
+                    aff {e.characterName} {pct(e.combined)}
+                  </span>
+                ))}
               </div>
               {row.note && <p className="text-[10px] text-muted-foreground leading-relaxed mt-1">{row.note}</p>}
             </div>
@@ -418,7 +456,135 @@ function IdentityPanel({ projectId }: { projectId: string }) {
       {data.rows.length === 0 && (
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           Nothing scored yet. Generate panel art for shots whose cast carries a model sheet, then press Score worst 3 (or
-          tell DSH <span className="font-mono">score_panel_identity</span>) to run the first identity pass.
+          tell DSH <span className="font-mono">score_panel_identity</span>) to run the first identity pass. The Affinity pass button
+          embeds every panel and sheet locally instead - instant and provider-free, a tripwire when the vision provider is down.
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface FactHealthRowUi {
+  factId: string;
+  text: string;
+  category: string;
+  active: boolean;
+  status: "HELD" | "VIOLATED" | "UNVERIFIED";
+  checkedPanels: number;
+  held: number;
+  broken: number;
+  worstBrokenConfidence: number | null;
+  lastCheckedAt: string | null;
+  lastConfidence: number | null;
+  lastNote: string;
+}
+
+interface CanonHealthData {
+  digest: {
+    score: number | null;
+    band: "HEALTHY" | "WATCH" | "DRIFTING" | null;
+    activeFacts: number;
+    verifiedFacts: number;
+    violatedFacts: number;
+    coverage: number | null;
+    holdRate: number | null;
+    recent: { held: number; broken: number; days: number };
+    worstFacts: FactHealthRowUi[];
+    headline: string;
+  };
+  rows: FactHealthRowUi[];
+}
+
+const FACT_STATUS_COLORS: Record<string, string> = {
+  HELD: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  VIOLATED: "border-rose-400/30 text-rose-300 bg-rose-400/10",
+  UNVERIFIED: "border-amber-400/30 text-amber-300 bg-amber-400/10",
+};
+
+const CANON_BAND_COLORS: Record<string, string> = {
+  HEALTHY: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  WATCH: "border-amber-400/30 text-amber-300 bg-amber-400/10",
+  DRIFTING: "border-rose-400/30 text-rose-300 bg-rose-400/10",
+};
+
+/**
+ * Canon health: the universe-facts verdict history read back as a
+ * report card. A 0..1 score mixes COVERAGE (how much of the active
+ * canon the audits actually reached - an unchecked canon is not a
+ * healthy canon) with HOLD RATE (how often checked facts held), and
+ * each fact gets a status row (held / violated / never verified)
+ * with its confidence and last check.
+ */
+function CanonHealthPanel({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<CanonHealthData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/canon-health?projectId=${projectId}`);
+      if (res.ok) setData((await res.json()) as CanonHealthData);
+    } catch { /* surfaced on the next refresh */ }
+    finally { setLoading(false); }
+  }
+
+  const d = data?.digest;
+  const bandColor = d?.band ? CANON_BAND_COLORS[d.band] : "";
+
+  return (
+    <div className="studio-panel p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <HeartPulse className="h-4 w-4 text-rose-300" /> Canon health
+          </h3>
+          <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 max-w-xl">
+            The universe-facts verdict history as a report card: the score mixes coverage (an unchecked canon is not a
+            healthy canon) with the hold rate of audited panels. Violated and never-verified facts surface first.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" className="border-rose-400/25 bg-rose-400/10 text-rose-200 hover:bg-rose-400/20" onClick={() => void refresh()} disabled={loading}>
+          {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
+          Read canon health
+        </Button>
+      </div>
+
+      {d && (
+        <>
+          <div className="flex flex-wrap gap-2 text-[10px]">
+            {d.score != null ? (
+              <>
+                <span className={cn("px-2 py-1 rounded-md border font-semibold tabular-nums", bandColor)}>canon {(d.score * 100).toFixed(0)}% {d.band}</span>
+                <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">{d.verifiedFacts}/{d.activeFacts} facts audited</span>
+                {d.holdRate != null && <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">hold rate {(d.holdRate * 100).toFixed(0)}%</span>}
+                <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">{d.recent.days}d: {d.recent.held} held / {d.recent.broken} broken</span>
+              </>
+            ) : (
+              <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground">{d.headline}</span>
+            )}
+          </div>
+
+          {d.worstFacts.length > 0 && (
+            <div className="space-y-1">
+              {d.worstFacts.map((f) => (
+                <div key={f.factId} className={cn("rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 flex items-center gap-2", !f.active && "opacity-50")}>
+                  <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold shrink-0", FACT_STATUS_COLORS[f.status])}>{f.status}</span>
+                  <span className={cn("text-[11px] flex-1 min-w-0 truncate", !f.active && "line-through")} title={`${f.category}: ${f.text}${f.lastNote ? ` - ${f.lastNote}` : ""}`}>{f.text}</span>
+                  <span className="text-[9px] text-muted-foreground shrink-0 tabular-nums" title="audited panels: held / broken">
+                    {f.checkedPanels > 0 ? `${f.held}/${f.held + f.broken} panels` : "never audited"}
+                    {f.worstBrokenConfidence != null ? ` - worst ${(f.worstBrokenConfidence * 100).toFixed(0)}%` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {!d && (
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Press Read canon health to roll the fact verdict history into a score. Facts get audited by
+          <span className="font-mono"> check_universe_facts</span> (here or by DSH); every verdict feeds this readout.
         </p>
       )}
     </div>
@@ -981,6 +1147,7 @@ export function ContinuityView({ project }: { project: import("@/lib/api-client"
         <ArtContinuityPanel projectId={project.id} />
 
         <IdentityPanel projectId={project.id} />
+        <CanonHealthPanel projectId={project.id} />
         <UniverseFactsPanel projectId={project.id} />
         {(eventsQ.data ?? []).map((ev) => (
           <div key={ev.id} className="studio-panel p-4">

@@ -50,6 +50,7 @@ model Project {
   repaintRuns      RepaintRun[]
   studioSchedules  StudioSchedule[]
   identityScores   IdentityScore[]
+  panelEmbeddings  PanelEmbedding[]
 }
 
 model Season {
@@ -149,6 +150,7 @@ model Shot {
   artist      Artist?    @relation(fields: [artistId], references: [id], onDelete: SetNull)
   audioCues   AudioCue[]
   identityScore IdentityScore?
+  panelEmbedding PanelEmbedding?
 
   @@unique([sceneId, number])
 }
@@ -627,6 +629,27 @@ model IdentityScore {
   castSize   Int      @default(0) // how many anchored cast members were judged
   note       String?  // the vision model's one-line summary for the panel
   scoredAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  shot       Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// PROVIDER-FREE IDENTITY AFFINITY: a deterministic artwork-level
+// embedding of each panel (64-bit dHash structure + 4x4x4 palette
+// histogram) compared against the SAME embedding of every featured
+// character's model sheet. A tripwire, not an identity verdict: it
+// is instant, costs zero providers, and keeps a drift watch alive
+// when the vision provider is rate-limited. The vision score stays
+// the identity authority.
+model PanelEmbedding {
+  id         String   @id @default(cuid())
+  projectId  String
+  shotId     String   @unique
+  hashHex    String // panel structure hash (64-bit dHash, hex)
+  rows       String   @default("[]") // JSON [{characterName, palette, structure, combined, note}]
+  worst      Float    @default(1) // min combined affinity across the panel's cast (higher = closer)
+  method     String   @default("dHash 64-bit + 4x4x4 palette histogram cosine, provider-free")
+  computedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   shot       Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)

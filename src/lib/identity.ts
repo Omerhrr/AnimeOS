@@ -2,6 +2,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { detectCast } from "@/lib/ai/art";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
+import { affinityBetween, embedPublicImage } from "@/lib/embedding";
 
 // ─────────────────────────────────────────────────────────────
 // IDENTITY-SIMILARITY SCORING FOR PANELS
@@ -348,6 +349,7 @@ export interface IdentityPanelData {
   shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>; // score-now picker
   threshold: number;
   average: number | null;
+  embeddings: Record<string, AffinityRowData>; // per-shot provider-free affinity rows
 }
 
 /** Panel feed for the Continuity view's identity panel. */
@@ -356,7 +358,7 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
     where: { id: projectId },
     include: { characters: { include: { states: true } } },
   });
-  if (!project) return { rows: [], queue: [], shots: [], threshold: IDENTITY_REPAINT_THRESHOLD, average: null };
+  if (!project) return { rows: [], queue: [], shots: [], threshold: IDENTITY_REPAINT_THRESHOLD, average: null, embeddings: {} };
 
   const rows = await db.shot.findMany({
     where: { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
@@ -409,5 +411,189 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
   const worstValues = panelRows.map((r) => r.worst).filter((v): v is number => v !== null);
   const average = worstValues.length > 0 ? worstValues.reduce((a, b) => a + b, 0) / worstValues.length : null;
 
-  return { rows: panelRows, queue, shots, threshold: IDENTITY_REPAINT_THRESHOLD, average };
+  const embeddings = await db.panelEmbedding.findMany({
+    where: { projectId, shotId: { in: rows.map((r) => r.id) } },
+  });
+  const embeddingMap: Record<string, AffinityRowData> = {};
+  for (const e of embeddings) {
+    let rows: AffinityEntry[] = [];
+    try {
+      const parsed = JSON.parse(e.rows);
+      if (Array.isArray(parsed)) rows = parsed as AffinityEntry[];
+    } catch {
+      rows = [];
+    }
+    embeddingMap[e.shotId] = { worst: e.worst, hashHex: e.hashHex, computedAt: e.computedAt.toISOString(), entries: rows };
+  }
+
+  return { rows: panelRows, queue, shots, threshold: IDENTITY_REPAINT_THRESHOLD, average, embeddings: embeddingMap };
+}
+
+// ─────────────────────────────────────────────────────────────
+// PROVIDER-FREE AFFINITY PASS (the embedding tripwire)
+// ─────────────────────────────────────────────────────────────
+
+export const AFFINITY_WATCH_THRESHOLD = 0.5; // heuristic tripwire line, NOT the identity bar
+
+export interface AffinityEntry {
+  characterName: string;
+  palette: number; // cosine of the 4x4x4 palette histograms
+  structure: number; // bit agreement of the 64-bit dHashes
+  combined: number; // mean of both
+  note: string;
+}
+
+export interface AffinityVerdict {
+  entries: AffinityEntry[];
+  worst: number;
+}
+
+export interface AffinityRowData {
+  worst: number;
+  hashHex: string;
+  computedAt: string;
+  entries: AffinityEntry[];
+}
+
+export interface AffinityScoredShot {
+  shotId: string;
+  ref: string;
+  episode: number;
+  verdict: AffinityVerdict;
+  computedAt: string;
+}
+
+/** Parse stored affinity rows defensively. */
+export function parseAffinityRows(raw: string | null | undefined): AffinityEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === "object")
+      .map((r) => ({
+        characterName: String(r.characterName ?? "?"),
+        palette: Number(r.palette ?? 0),
+        structure: Number(r.structure ?? 0),
+        combined: Number(r.combined ?? 0),
+        note: String(r.note ?? ""),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** Describe an affinity in one honest line. Pure. */
+export function describeAffinity(entry: AffinityEntry): string {
+  return `${entry.characterName} ${(entry.combined * 100).toFixed(0)}% affinity (palette ${(entry.palette * 100).toFixed(0)}%, structure ${(entry.structure * 100).toFixed(0)}%)`;
+}
+
+/**
+ * PROVIDER-FREE affinity pass for ONE panel: embed the panel art and
+ * every sheeted featured character's model sheet locally (dHash +
+ * palette histogram), compare with pure math, persist a
+ * PanelEmbedding row. No network, no model - instant.
+ */
+export async function scoreShotEmbedding(shotId: string): Promise<
+  { ok: true; scored: AffinityScoredShot } | { ok: false; error: string }
+> {
+  const shot = await loadIdentityShot(shotId);
+  if (!shot) return { ok: false, error: "Shot not found" };
+  if (!shot.artworkUrl) return { ok: false, error: "This shot has no panel art to embed yet" };
+  const episode = shot.scene.episode;
+  const project = episode.season.project;
+  const cast = detectCast(project.characters, shot.description).filter((c) => c.modelSheetUrl);
+  if (cast.length === 0) {
+    return { ok: false, error: "No featured character with a model sheet - the affinity pass compares against sheets too" };
+  }
+
+  const panelEmbed = await embedPublicImage(shot.artworkUrl);
+  if (!panelEmbed) return { ok: false, error: "Panel art is missing on disk or unreadable" };
+
+  const entries: AffinityEntry[] = [];
+  for (const member of cast) {
+    const sheetEmbed = await embedPublicImage(member.modelSheetUrl as string);
+    if (!sheetEmbed) continue;
+    const aff = affinityBetween(panelEmbed.palette, panelEmbed.hash, sheetEmbed.palette, sheetEmbed.hash);
+    entries.push({
+      characterName: member.name,
+      palette: aff.palette,
+      structure: aff.structure,
+      combined: aff.combined,
+      note: aff.combined < AFFINITY_WATCH_THRESHOLD
+        ? "far from the sheet in palette or structure - likely a different composition or grade, check the vision score"
+        : "artwork-level tripwire only: the vision identity score stays the authority",
+    });
+  }
+  if (entries.length === 0) return { ok: false, error: "Model sheets are missing on disk or unreadable" };
+
+  const worst = Math.min(...entries.map((e) => e.combined));
+  const computedAt = new Date();
+  await db.panelEmbedding.upsert({
+    where: { shotId: shot.id },
+    create: {
+      projectId: project.id,
+      shotId: shot.id,
+      hashHex: panelEmbed.hashHex,
+      rows: JSON.stringify(entries),
+      worst,
+      computedAt,
+    },
+    update: {
+      hashHex: panelEmbed.hashHex,
+      rows: JSON.stringify(entries),
+      worst,
+      computedAt,
+    },
+  });
+
+  return {
+    ok: true,
+    scored: {
+      shotId: shot.id,
+      ref: `E${episode.number} Sc${shot.scene.number} S${String(shot.number).padStart(3, "0")}`,
+      episode: episode.number,
+      verdict: { entries, worst },
+      computedAt: computedAt.toISOString(),
+    },
+  };
+}
+
+/**
+ * Batch the free pass over a production: art-bearing panels with a
+ * sheeted cast, capped. Cheapest-first ordering is unnecessary - the
+ * whole pass is local math.
+ */
+export async function scoreProjectEmbeddings(projectId: string, limit = 8): Promise<{ scored: AffinityScoredShot[]; errors: Array<{ ref: string; error: string }> }> {
+  const rows = await db.shot.findMany({
+    where: { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
+    include: {
+      panelEmbedding: true,
+      scene: { include: { episode: { include: { season: { select: { number: true } } } } } },
+    },
+    orderBy: { artGeneratedAt: "desc" },
+    take: 40,
+  });
+  if (rows.length === 0) return { scored: [], errors: [] };
+
+  const project = await db.project.findUnique({
+    where: { id: projectId },
+    include: { characters: { include: { states: true } } },
+  });
+  if (!project) return { scored: [], errors: [] };
+
+  const hasSheetedCast = (description: string) => detectCast(project.characters, description).some((c) => c.modelSheetUrl);
+  const candidates = rows
+    .filter((r) => hasSheetedCast(r.description))
+    .sort((a, b) => (a.panelEmbedding?.worst ?? -1) - (b.panelEmbedding?.worst ?? -1))
+    .slice(0, Math.max(1, Math.min(12, Math.round(limit) || 8)));
+
+  const scored: AffinityScoredShot[] = [];
+  const errors: Array<{ ref: string; error: string }> = [];
+  for (const row of candidates) {
+    const res = await scoreShotEmbedding(row.id);
+    if (res.ok) scored.push(res.scored);
+    else errors.push({ ref: `E${row.scene.episode.number} Sc${row.scene.number} S${String(row.number).padStart(3, "0")}`, error: res.error });
+  }
+  return { scored, errors };
 }
