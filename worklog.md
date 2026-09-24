@@ -1008,3 +1008,27 @@ Stage Summary:
 - The canon panel catches the drift one episode earlier: a fact whose confidence curve declines earns the reword-or-retire suggestion even while its hold rate is still perfect
 - A character's voice is theirs now: train once from their rendered takes through the cloning provider, and their lines perform with their own voice everywhere the provider can reach - with the catalog voice as the honest, signature-stamped fallback
 - Next horizons: timestamped phoneme alignment, a reword-aware curve break marker, real-account OAuth walks, provider retry/backoff + render caching, multi-user studio
+---
+Task ID: iteration-40
+Agent: main (Super Z)
+Task: Full end-to-end 1-minute animation run ("Cloudveil Ascent" E01) with designed characters and scenes, and a fully functional local Blender.
+
+Work Log:
+- Installed Blender 4.3.2 (tarball to /home/z/blender-4.3.2-linux-x64, the exact path the bridge probes) and smoke-tested the REAL worker path: blender -b -P bridges/blender/animeos_bridge.py --worker rendered a 24-frame h264 clip in 39s with the v3.2 rig (face, hands, 7 face channels) and resolved poses
+- Built scripts/production-run.ts: a resumable, idempotent orchestrator (setup/sheets/panels/voices/renders/final/cut/publish/verify phases) driving the REAL pipeline functions with NO SDK mocks
+- setup: project "Cloudveil Ascent" (DONGHUA 1920x1080@24), 3 characters (Yun Shu / Master Heiyan / Xue Lian) + development states, 2 environments, 2 universe facts, episode 1 "The Blade Wakes", 3 scenes, 12 shots = EXACTLY 60.0s, dialogue on 3 closeups, 14 audio cues (3 VOICE + 6 SFX + 3 AMBIENCE + 2 BGM), 3 roster artists + voice casting
+- sheets: 3 real model sheets (SDK image gen, ANCHOR badges in the UI)
+- panels: 12 real panel arts (SDK image gen, 12/12 in DB)
+- voices: 3 real TTS takes (24kHz WAVs, distinct cast voices luodo/kazi/xiaochen)
+- renders: all 12 shots through BLENDER_LOCAL headless Cycles workers (PREVIEW 512px/10 samples, serialized one worker at a time, resumable across invocations), every job DSH-inspected (evaluations landed); lip-sync closeups carried real-take viseme programs ("19 visemes, 1 real take, acoustic re-timed") into the 3D face rig
+- cut: found + fixed a REAL bug in src/lib/comic/cut.ts - the stem mix used amix duration=longest, which ends at the last cue (~57s), and the mux's -shortest then trimmed real footage off the tail of every cut; fix pads the mix to the cut timeline with apad=whole_dur; cut rebuilt at exactly 60000ms (1280x720@24, 12 shots, 14 cues muxed h264+aac)
+- publish: staged YOUTUBE (5/5 READY), DOUYIN (honest 4/5 FAIL on 16:9-on-9:16), STUDIO_INGEST (5/5 READY)
+- E2E (agent-browser): project switch, render queue shows BLENDER_LOCAL x12 + live progress cards, bridge panel flips to LIVE BLENDER 4.3.2 after dev-restart (the old server had cached no-binary from before the install), cut export button built a fresh 60.000s cut from the UI, Characters view shows the 3 ANCHOR-badged cast, Story view shows scenes/capability checks/shot REVIEW states
+- hygiene: .gitignore now covers public/renders/*.mp4, .job state files, .frames dirs and cuts/ (the mp4s were previously unignored - the sweep lesson); removed smoke-test clip and tarball; tsc src-scoped clean; eslint clean on the changed file
+
+Stage Summary:
+- The pipeline runs END TO END for real: authored cast/scenes -> model sheets -> panel art -> TTS takes -> Blender Cycles renders -> DSH inspections -> 60.000s muxed cut -> platform-staged packages
+- Blender 4.3.2 is fully functional as the local driver (LIVE_BLENDER local worker pool); on this 2-core box PREVIEW costs ~1.1s/frame (~2-4 min/shot)
+- A FINAL-mode verification render (s3.2, 96 frames at 48 samples/1280px, ~56s/frame) was still in flight at commit time; it is resumable/inspectable via `bun run scripts/production-run.ts final` and the queue tick - the cut prefers a finished FINAL clip automatically
+- Deliverable cut: public/renders/cuts/cloudveil-ascent-ep01-*.mp4 (60.000s, gitignored; regenerate via the cut phase or the UI button)
+- Known honest gaps: identity vision-scoring and schedules not exercised in this run (pulse reports both honestly); panels/previews are previz-grade by design

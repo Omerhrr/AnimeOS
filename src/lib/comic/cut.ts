@@ -347,7 +347,10 @@ export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINA
     }
     if (idx > 0) {
       const mixIn = Array.from({ length: idx }, (_, i) => `[c${i}]`).join("");
-      const filter = `${chains.join(";")};${mixIn}amix=inputs=${idx}:normalize=0:duration=longest,volume=0.9,alimiter=limit=0.89,aformat=sample_rates=44100:channel_layouts=mono[aout]`;
+      // apad to the CUT TIMELINE (not the longest cue): amix stops at the
+      // last cue's end, and the mux's -shortest would then trim real
+      // rendered footage off the tail of every episode
+      const filter = `${chains.join(";")};${mixIn}amix=inputs=${idx}:normalize=0:duration=longest,volume=0.9,alimiter=limit=0.89,aformat=sample_rates=44100:channel_layouts=mono,apad=whole_dur=${(plan.totalMs / 1000).toFixed(3)}[aout]`;
       const mix = await runFfmpeg([...inputs, "-filter_complex", filter, "-map", "[aout]", "-c:a", "pcm_s16le", "-ar", "44100", "-ac", "1", mixPath]);
       audioOk = mix.ok;
       if (!mix.ok) audioError = mix.error;

@@ -89,3 +89,11 @@ scripts/.e2e31-state.json
 # e2e iter34 local artifacts
 iter34-*.png
 scripts/.e2e34-state.json
+
+# Generated render clips + cuts (regenerable, large)
+public/renders/*.mp4
+public/renders/.job-*.json
+public/renders/.frames-*/
+!public/renders/cuts/.gitkeep
+public/renders/cuts/*
+!public/renders/cuts/.gitkeep
