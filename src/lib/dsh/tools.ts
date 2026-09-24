@@ -264,6 +264,8 @@ export const TOOL_DEFS: ToolDef[] = [
       hourUtc: "number 0-23 (DAILY/WEEKLY hour of day, default 2 = the studio night)",
       weekday: "number 0-6 (WEEKLY: 0=Sunday .. 6=Saturday, default 1=Monday)",
       maxSteps: "number 1-3 (PLAN_RUN: steps per fire, default 3)",
+      webhookUrl: "string http(s) URL (DAILY_DIGEST optional - POSTs the digest JSON there when one lands)",
+      digestEmail: "string email (DAILY_DIGEST optional - mails the digest via SMTP when ANIMEOS_SMTP_URL is configured)",
     },
   },
   {
@@ -1271,11 +1273,16 @@ export async function executeTool(projectId: string, name: string, args: Record<
           hourUtc: Number(args.hourUtc ?? 2),
           weekday: Number(args.weekday ?? 1),
           maxSteps: Number(args.maxSteps ?? 3),
+          webhookUrl: args.webhookUrl === undefined ? undefined : String(args.webhookUrl ?? ""),
+          digestEmail: args.digestEmail === undefined ? undefined : String(args.digestEmail ?? ""),
         });
         if (!result.ok) return { status: "ERROR", result: result.error };
         const s = result.schedule;
         const kindNote = s.kind === "PLAN_RUN" ? "runs an approved plan" : s.kind === "DAILY_DIGEST" ? "posts the daily digest to the creator" : "render-queue supervision";
-        return { status: "OK", result: `Schedule '${s.name}' registered (${kindNote}, ${s.cadenceLabel}${s.kind === "PLAN_RUN" ? `, maxSteps ${s.maxSteps}` : ""}). First fire: ${s.nextRunAt ?? "on the next tick"}. Every fire lands as a production event; the creator steers it from the scheduler panel (enable/disable/run now/delete).` };
+        const deliveryNote = s.kind === "DAILY_DIGEST" && (s.webhookUrl || s.digestEmail)
+          ? ` Delivery: ${s.webhookUrl ? "webhook" : ""}${s.webhookUrl && s.digestEmail ? " + " : ""}${s.digestEmail ? "email" : ""}.`
+          : "";
+        return { status: "OK", result: `Schedule '${s.name}' registered (${kindNote}, ${s.cadenceLabel}${s.kind === "PLAN_RUN" ? `, maxSteps ${s.maxSteps}` : ""}).${deliveryNote} First fire: ${s.nextRunAt ?? "on the next tick"}. Every fire lands as a production event; the creator steers it from the scheduler panel (enable/disable/run now/delete).` };
       }
 
       case "steer_schedule": {
@@ -2812,6 +2819,7 @@ export async function buildCompactContext(projectId: string) {
     canonRetire: canon && canon.suggestions.length > 0
       ? canon.suggestions.map((s) => `'${s.text.slice(0, 60)}' - ${s.reason}`)
       : null,
+    factDrift: canon ? canon.drift.headline : null,
     identityDrift: drift ? drift.headline : null,
     latestDigest: latestDigestEvent
       ? `${latestDigestEvent.summary} (${latestDigestEvent.createdAt.toISOString().slice(0, 16)}Z)`

@@ -12,6 +12,9 @@ import {
   type AudioTake,
 } from "@/lib/animation/viseme-audio";
 import {
+  neuralSpeechProgram, describeNeuralSpeechProgram,
+} from "@/lib/animation/viseme-neural";
+import {
   bridgeStatus, submitRenderJob, pollJobProgress,
   pollLocalJob, localJobStale,
 } from "@/lib/bridge/blender";
@@ -58,10 +61,12 @@ import { finishTelemetry, takeoverSpan } from "@/lib/engine/telemetry";
 
 /**
  * Build a shot's lip-sync program with REAL AUDIO as the timing
- * score: each VOICE cue's rendered take (public/voices/{cueId}.wav)
- * is read from disk and analyzed into visemes, so the mouth performs
- * what the voice actor actually said. Spans without a decodable take
- * fall back to the text-derived performance.
+ * score and a NEURAL PHONEME PLAN as the shape score: each VOICE
+ * cue's rendered take (public/voices/{cueId}.wav) is read from disk
+ * and analyzed into visemes, then the plan's wide/round identity is
+ * conformed onto the audio envelope (a refused model degrades to the
+ * audio-only pass). Spans without a decodable take perform from the
+ * plan (or the per-character text table as the last resort).
  */
 async function shotSpeechProgram(shot: {
   shotType: string;
@@ -85,12 +90,19 @@ async function shotSpeechProgram(shot: {
     }
     return { startMs: c.startMs, durationMs: c.voiceDurationMs ?? 0, wav };
   });
-  const program = audioDrivenSpeechProgram({
-    dialogue: shot.dialogue,
-    shotDurationMs: Math.round(shot.duration * 1000),
-    takes,
-  });
-  return { program, note: describeAudioSpeechProgram(program) };
+  let program: SpeechProgram;
+  let note: string | null;
+  try {
+    // the neural pass degrades internally (offline model -> audio-only -> text)
+    const neural = await neuralSpeechProgram({ dialogue: shot.dialogue, shotDurationMs: Math.round(shot.duration * 1000), takes });
+    program = neural;
+    note = describeNeuralSpeechProgram(neural);
+  } catch {
+    const audio = audioDrivenSpeechProgram({ dialogue: shot.dialogue, shotDurationMs: Math.round(shot.duration * 1000), takes });
+    program = audio;
+    note = describeAudioSpeechProgram(audio);
+  }
+  return { program, note };
 }
 
 export async function createRenderJob(projectId: string, shotId: string | null, mode: "PREVIEW" | "FINAL") {

@@ -98,6 +98,122 @@ export function retireSuggestionsFromRows(rows: FactHealthRow[]): RetireSuggesti
     .sort((a, b) => a.holdRate - b.holdRate);
 }
 
+// ─── Fact-level drift curves ─────────────────────────────────
+//
+// The character curves ask "is the ART sliding?"; the fact curves
+// ask "is the AUDIT JUDGMENT sliding?" - a fact's per-panel
+// confidence laid over episode order. A fact whose verdict
+// confidence declines across the show is heading for a violation
+// streak (or was written too loosely in the first place); the curve
+// makes that visible before the queue floods.
+
+export interface FactDriftPoint {
+  episode: number;
+  confidence: number; // 0..1 from the verdict
+  holds: boolean;
+  at: string;
+}
+
+export type FactDriftTrend = "IMPROVING" | "DECLINING" | "STABLE" | "FLAT";
+
+export interface FactDrift {
+  factId: string;
+  text: string;
+  category: string;
+  points: FactDriftPoint[]; // ordered by episode, then check time
+  first: number | null;
+  last: number | null;
+  delta: number | null; // last confidence - first (null with <2 points)
+  trend: FactDriftTrend;
+  holdRate: number; // held / checked across the curve
+  panels: number;
+}
+
+export const FACT_DRIFT_TREND_THRESHOLD = 0.05; // |delta| below this reads as stable
+
+function factDriftTrend(delta: number | null, panels: number): FactDriftTrend {
+  if (panels < 2 || delta == null) return "FLAT";
+  if (delta <= -FACT_DRIFT_TREND_THRESHOLD) return "DECLINING";
+  if (delta >= FACT_DRIFT_TREND_THRESHOLD) return "IMPROVING";
+  return "STABLE";
+}
+
+/**
+ * Roll verdict events into per-fact confidence curves over episode
+ * order. Events without a parseable confidence or episode position
+ * are skipped (a curve point needs both). Pure - the E2E drives it.
+ */
+export function factDriftFromEvents(
+  facts: Array<{ id: string; text: string; category: string; active: boolean }>,
+  events: Array<{ entityName: string; kind: string; description: string; episodeNumber: number | null; createdAt: Date }>,
+): FactDrift[] {
+  const byFact = new Map<string, Array<{ kind: string; description: string; episodeNumber: number | null; createdAt: Date }>>();
+  for (const ev of events) {
+    if (ev.kind !== "FACT_HELD" && ev.kind !== "FACT_BROKEN") continue;
+    const list = byFact.get(ev.entityName);
+    if (list) list.push(ev);
+    else byFact.set(ev.entityName, [ev]);
+  }
+  return facts
+    .map((f) => {
+      const rows = byFact.get(f.text.slice(0, 90)) ?? [];
+      const points: FactDriftPoint[] = rows
+        .map((r) => ({
+          confidence: Number(r.description.match(CONFIDENCE_RE)?.[1] ?? NaN),
+          holds: r.kind === "FACT_HELD",
+          episode: r.episodeNumber,
+          at: r.createdAt,
+        }))
+        .filter((p) => Number.isFinite(p.confidence) && p.episode != null)
+        .sort((a, b) => a.episode! - b.episode! || a.at.getTime() - b.at.getTime())
+        .map((p) => ({ episode: p.episode!, confidence: Math.min(1, Math.max(0, p.confidence)), holds: p.holds, at: p.at.toISOString() }));
+      const first = points.length > 0 ? points[0].confidence : null;
+      const last = points.length > 0 ? points[points.length - 1].confidence : null;
+      const delta = first != null && last != null && points.length >= 2 ? last - first : null;
+      const held = points.filter((p) => p.holds).length;
+      return {
+        factId: f.id,
+        text: f.text,
+        category: f.category,
+        points,
+        first,
+        last,
+        delta,
+        trend: factDriftTrend(delta, points.length),
+        holdRate: points.length > 0 ? held / points.length : 0,
+        panels: points.length,
+      };
+    })
+    .filter((c) => c.panels > 0)
+    .sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0)); // steepest decline first
+}
+
+export interface FactDriftData {
+  curves: FactDrift[]; // every curved fact, steepest decline first
+  watch: FactDrift[]; // the DECLINING subset
+  headline: string;
+}
+
+/** Per-fact confidence curves over episode order for one production. */
+export async function factDriftData(projectId: string): Promise<FactDriftData> {
+  const [facts, events] = await Promise.all([
+    db.universeFact.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } }),
+    db.continuityEvent.findMany({
+      where: { projectId, kind: { in: ["FACT_HELD", "FACT_BROKEN"] } },
+      orderBy: { createdAt: "desc" as const },
+      take: 400,
+    }),
+  ]);
+  const curves = factDriftFromEvents(facts, events);
+  const watch = curves.filter((c) => c.trend === "DECLINING");
+  const headline = curves.length === 0
+    ? "no fact drift curves yet - audit a few panels"
+    : watch.length > 0
+      ? `${watch.length} of ${curves.length} curved fact(s) DECLINING over episode order: ${watch.map((c) => `"${c.text.slice(0, 40)}" ${(c.delta! * 100).toFixed(0)}%`).join(", ")}`
+      : `${curves.length} fact curve(s), none declining`;
+  return { curves, watch, headline };
+}
+
 const CONFIDENCE_RE = /confidence (0\.\d+)/;
 const NOTE_RE = /confidence [\d.]+\s*-\s*([^\n]*)$/;
 
@@ -173,7 +289,7 @@ export function canonScoreFromRows(rows: FactHealthRow[]): { score: number | nul
 }
 
 /** Everything the Continuity view's canon-health panel needs in one GET. */
-export async function canonHealthData(projectId: string): Promise<{ digest: CanonHealthDigest; rows: FactHealthRow[]; suggestions: RetireSuggestion[] }> {
+export async function canonHealthData(projectId: string): Promise<{ digest: CanonHealthDigest; rows: FactHealthRow[]; suggestions: RetireSuggestion[]; drift: FactDriftData }> {
   const [facts, events] = await Promise.all([
     db.universeFact.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } }),
     db.continuityEvent.findMany({
@@ -200,6 +316,7 @@ export async function canonHealthData(projectId: string): Promise<{ digest: Cano
     .slice(0, 5);
 
   const suggestions = retireSuggestionsFromRows(rows);
+  const drift = await factDriftData(projectId).catch(() => ({ curves: [], watch: [], headline: "fact drift curves unavailable" } as FactDriftData));
 
   let headline: string;
   if (activeRows.length === 0) {
@@ -227,5 +344,6 @@ export async function canonHealthData(projectId: string): Promise<{ digest: Cano
     },
     rows,
     suggestions,
+    drift,
   };
 }

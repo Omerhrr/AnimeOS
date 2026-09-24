@@ -45,6 +45,8 @@ export async function POST(req: Request) {
     hourUtc: Number(body.hourUtc ?? 2),
     weekday: Number(body.weekday ?? 1),
     maxSteps: Number(body.maxSteps ?? 3),
+    webhookUrl: body.webhookUrl === undefined ? undefined : String(body.webhookUrl ?? ""),
+    digestEmail: body.digestEmail === undefined ? undefined : String(body.digestEmail ?? ""),
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result, { status: 201 });
@@ -59,8 +61,27 @@ export async function PATCH(req: Request) {
   }
   const scheduleId = String(body.scheduleId ?? "");
   const action = String(body.action ?? "").toLowerCase();
-  if (!scheduleId || !["enable", "disable", "run"].includes(action)) {
-    return NextResponse.json({ error: "scheduleId and action (enable | disable | run) required" }, { status: 400 });
+  if (!scheduleId || !["enable", "disable", "run", "set_delivery"].includes(action)) {
+    return NextResponse.json({ error: "scheduleId and action (enable | disable | run | set_delivery) required" }, { status: 400 });
+  }
+  if (action === "set_delivery") {
+    // DAILY_DIGEST delivery targets (webhook + email), steerable any time
+    const row = await db.studioSchedule.findUnique({ where: { id: scheduleId } });
+    if (!row) return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+    if (row.kind !== "DAILY_DIGEST") return NextResponse.json({ error: "only DAILY_DIGEST schedules carry delivery targets" }, { status: 400 });
+    const data: { webhookUrl?: string | null; digestEmail?: string | null } = {};
+    if (body.webhookUrl !== undefined) {
+      const hook = String(body.webhookUrl ?? "").trim();
+      if (hook && !/^https?:\/\/\S+$/.test(hook)) return NextResponse.json({ error: "webhookUrl must be an http(s) URL" }, { status: 400 });
+      data.webhookUrl = hook || null;
+    }
+    if (body.digestEmail !== undefined) {
+      const mail = String(body.digestEmail ?? "").trim();
+      if (mail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return NextResponse.json({ error: "digestEmail must be a valid email address" }, { status: 400 });
+      data.digestEmail = mail || null;
+    }
+    await db.studioSchedule.update({ where: { id: scheduleId }, data });
+    return NextResponse.json({ ok: true, ...data });
   }
   if (action === "enable" || action === "disable") {
     const row = await db.studioSchedule.findUnique({ where: { id: scheduleId } });

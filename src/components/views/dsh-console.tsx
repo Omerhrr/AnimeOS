@@ -886,6 +886,7 @@ interface DigestRowUi {
   windowHours: number;
   events: number;
   createdAt: string;
+  deliveries: Array<{ kind: string; target: string; ok: boolean; detail: string }>;
 }
 
 function DigestPanel({ projectId }: { projectId: string }) {
@@ -895,6 +896,10 @@ function DigestPanel({ projectId }: { projectId: string }) {
   const [arming, setArming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [hookInput, setHookInput] = useState("");
+  const [mailInput, setMailInput] = useState("");
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliveryMsg, setDeliveryMsg] = useState<string | null>(null);
 
   const digestsQ = useQuery({
     queryKey: ["studioDigests", projectId],
@@ -910,13 +915,14 @@ function DigestPanel({ projectId }: { projectId: string }) {
     queryKey: ["studioDigestArmed", projectId],
     queryFn: async () => {
       const res = await fetch(`/api/schedules?projectId=${projectId}`);
-      const body = (await res.json()) as { schedules?: Array<{ id: string; kind: string; enabled: boolean }> };
+      const body = (await res.json()) as { schedules?: Array<{ id: string; kind: string; enabled: boolean; webhookUrl: string | null; digestEmail: string | null }> };
       return body.schedules ?? [];
     },
     enabled: Boolean(projectId), // the collapsed header chip reads this too
   });
   const digests = digestsQ.data ?? [];
-  const digestArmed = (schedulesQ.data ?? []).some((s) => s.kind === "DAILY_DIGEST" && s.enabled);
+  const digestSchedule = (schedulesQ.data ?? []).find((s) => s.kind === "DAILY_DIGEST" && s.enabled) ?? null;
+  const digestArmed = Boolean(digestSchedule);
 
   async function post() {
     setPosting(true);
@@ -953,6 +959,34 @@ function DigestPanel({ projectId }: { projectId: string }) {
     } finally {
       setArming(false);
       await qc.invalidateQueries({ queryKey: ["studioDigests", projectId] });
+      await qc.invalidateQueries({ queryKey: ["studioDigestArmed", projectId] });
+      await qc.invalidateQueries({ queryKey: ["studioSchedules", projectId] });
+    }
+  }
+
+  // Delivery beyond the studio: the digest POSTs itself to a webhook
+  // and/or mails itself via SMTP (when ANIMEOS_SMTP_URL is set).
+  async function saveDelivery() {
+    if (!digestSchedule) return;
+    setSavingDelivery(true);
+    setDeliveryMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/schedules", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduleId: digestSchedule.id, action: "set_delivery", webhookUrl: hookInput, digestEmail: mailInput }),
+      });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(body.error ?? "Saving delivery failed");
+      } else {
+        setDeliveryMsg("Delivery targets saved - the next digest POSTs to the webhook and/or mails the address (email needs ANIMEOS_SMTP_URL).");
+      }
+    } catch {
+      setError("Saving delivery failed");
+    } finally {
+      setSavingDelivery(false);
       await qc.invalidateQueries({ queryKey: ["studioDigestArmed", projectId] });
       await qc.invalidateQueries({ queryKey: ["studioSchedules", projectId] });
     }
@@ -1008,6 +1042,44 @@ function DigestPanel({ projectId }: { projectId: string }) {
               </button>
             )}
           </div>
+
+          {digestSchedule && (
+            <div className="rounded-lg border border-white/10 bg-black/20 p-2.5 space-y-1.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-300/90">Delivery beyond the studio</div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                The nightly digest can POST itself to a webhook (Slack/Discord gateways, automation) and mail itself via SMTP
+                (set <span className="font-mono">ANIMEOS_SMTP_URL</span> to enable email). Every outcome is recorded on the digest.
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  value={hookInput}
+                  onChange={(e) => setHookInput(e.target.value)}
+                  placeholder="https://hooks.example.com/animeos (webhook URL)"
+                  className="flex-1 min-w-45 h-7 rounded-md border border-white/10 bg-black/30 px-2 text-[10px] font-mono outline-none focus:border-white/25"
+                />
+                <input
+                  value={mailInput}
+                  onChange={(e) => setMailInput(e.target.value)}
+                  placeholder="creator@example.com (email)"
+                  className="flex-1 min-w-40 h-7 rounded-md border border-white/10 bg-black/30 px-2 text-[10px] outline-none focus:border-white/25"
+                />
+                <button
+                  onClick={() => void saveDelivery()}
+                  disabled={savingDelivery}
+                  className="h-7 rounded-md border border-sky-400/25 bg-sky-400/10 px-2.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+                >
+                  {savingDelivery ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                  Save delivery
+                </button>
+              </div>
+              {(digestSchedule.webhookUrl || digestSchedule.digestEmail) && (
+                <p className="text-[9px] text-muted-foreground font-mono truncate">
+                  armed targets: {digestSchedule.webhookUrl ? "webhook" : ""}{digestSchedule.webhookUrl && digestSchedule.digestEmail ? " + " : ""}{digestSchedule.digestEmail ? "email" : ""}
+                </p>
+              )}
+              {deliveryMsg && <p className="text-[10px] text-emerald-300">{deliveryMsg}</p>}
+            </div>
+          )}
           {digests.length === 0 ? (
             <p className="text-[10px] text-muted-foreground italic">No digests posted yet - press Post digest now, or arm the nightly cadence.</p>
           ) : (
@@ -1031,6 +1103,22 @@ function DigestPanel({ projectId }: { projectId: string }) {
                   {(isOpen ? lines : lines.slice(0, 3)).map((line, j) => (
                     <p key={j} className="text-[10px] text-muted-foreground/90 leading-relaxed">{line}</p>
                   ))}
+                  {d.deliveries.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {d.deliveries.map((del, j) => (
+                        <span
+                          key={j}
+                          title={del.detail}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded border text-[9px] tabular-nums",
+                            del.ok ? "border-emerald-400/30 text-emerald-300 bg-emerald-400/10" : "border-rose-400/30 text-rose-300 bg-rose-400/10"
+                          )}
+                        >
+                          {del.kind} {del.ok ? "OK" : "FAILED"} - {del.target}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {lines.length > 3 && (
                     <button onClick={() => setExpanded(isOpen ? null : d.id)} className="text-[9px] text-sky-300/80 hover:text-sky-200">
                       {isOpen ? "show less" : `+${lines.length - 3} more section(s)`}

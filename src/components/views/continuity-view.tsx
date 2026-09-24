@@ -249,10 +249,10 @@ const DRIFT_TREND_COLORS: Record<string, string> = {
 
 /**
  * Tiny inline sparkline for a drift curve: one polyline over the
- * character's per-panel scores in story order, 0..1 mapped to the
- * 56x20 box. Pure SVG - no chart library.
+ * per-panel scores (identity) or confidences (facts) in story order,
+ * 0..1 mapped to the 56x20 box. Pure SVG - no chart library.
  */
-function DriftSparkline({ points }: { points: DriftPointUi[] }) {
+function DriftSparkline({ points }: { points: Array<{ score: number }> }) {
   if (points.length < 2) {
     return <svg width="56" height="20" className="shrink-0"><line x1="4" y1="10" x2="52" y2="10" stroke="currentColor" strokeWidth="1" className="text-white/15" strokeDasharray="2 3" /></svg>;
   }
@@ -573,6 +573,19 @@ interface RetireSuggestionUi {
   reason: string;
 }
 
+interface FactDriftUi {
+  factId: string;
+  text: string;
+  category: string;
+  points: Array<{ episode: number; confidence: number; holds: boolean; at: string }>;
+  first: number | null;
+  last: number | null;
+  delta: number | null;
+  trend: "IMPROVING" | "DECLINING" | "STABLE" | "FLAT";
+  holdRate: number;
+  panels: number;
+}
+
 interface CanonHealthData {
   digest: {
     score: number | null;
@@ -589,6 +602,7 @@ interface CanonHealthData {
   };
   rows: FactHealthRowUi[];
   suggestions: RetireSuggestionUi[];
+  drift: { curves: FactDriftUi[]; watch: FactDriftUi[]; headline: string };
 }
 
 const FACT_STATUS_COLORS: Record<string, string> = {
@@ -767,6 +781,42 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
 
           {banner && <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">{banner}</div>}
           {error && <p className="text-[11px] text-rose-300">{error}</p>}
+
+          {data && data.drift && data.drift.curves.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-rose-300/90">Fact drift curves (confidence over episode order)</div>
+                {data.drift.watch.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded border border-rose-400/30 text-rose-300 bg-rose-400/10 text-[9px] font-semibold">
+                    {data.drift.watch.length} declining
+                  </span>
+                )}
+              </div>
+              {data.drift.curves.slice(0, 6).map((c) => (
+                <div key={c.factId} className="rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 flex items-center gap-2">
+                  <span className={cn("text-current", c.trend === "DECLINING" ? "text-rose-300" : c.trend === "IMPROVING" ? "text-emerald-300" : "text-muted-foreground")}>
+                    <DriftSparkline points={c.points.map((p) => ({ score: p.confidence }))} />
+                  </span>
+                  <span className="text-[11px] truncate flex-1" title={`${c.category}: ${c.text} - ${c.panels} audited panel(s), ${(c.holdRate * 100).toFixed(0)}% held`}>{c.text}</span>
+                  <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold shrink-0", DRIFT_TREND_COLORS[c.trend])}>
+                    {c.trend}{c.delta != null ? ` ${(c.delta >= 0 ? "+" : "")}${(c.delta * 100).toFixed(0)}%` : ""}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground tabular-nums shrink-0" title="latest verdict confidence for this fact">
+                    latest {c.last == null ? "-" : `${(c.last * 100).toFixed(0)}%`}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">{c.panels} panel{c.panels === 1 ? "" : "s"}</span>
+                  <span className={cn("text-[9px] tabular-nums shrink-0", c.holdRate < 0.5 ? "text-amber-300/90" : "text-muted-foreground")} title="hold rate across the curve">
+                    {(c.holdRate * 100).toFixed(0)}% held
+                  </span>
+                </div>
+              ))}
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Each polyline is one fact&apos;s audit confidence in episode order (left = earliest). A DECLINING fact curve means
+                the verdicts are losing faith across the show: expect a violation streak, and consider rewording the fact before the
+                re-render queue floods.
+              </p>
+            </div>
+          )}
         </>
       )}
 

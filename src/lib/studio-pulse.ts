@@ -60,6 +60,11 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
     : drift.watch.length > 0
       ? `DRIFT CURVES: ${drift.watch.map((c) => `${c.characterName} ${(c.delta! * 100).toFixed(0)}% over ${c.panels} panel(s)`).join(", ")} declining`
       : `${drift.characters.length} character curve(s), none declining`;
+  const factDriftLine = canon.drift.curves.length === 0
+    ? "no fact drift curves yet"
+    : canon.drift.watch.length > 0
+      ? `FACT DRIFT: ${canon.drift.watch.map((c) => `"${c.text.slice(0, 40)}" ${(c.delta! * 100).toFixed(0)}%`).join(", ")} declining`
+      : `${canon.drift.curves.length} fact curve(s), none declining`;
 
   const scheduleLine = schedules.rows.length === 0
     ? schedules.headline
@@ -71,6 +76,7 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
   if (d.score != null) headlineParts.push(`canon ${d.band}`);
   if (belowBar > 0) headlineParts.push(`${belowBar} identity drift`);
   if (drift.watch.length > 0) headlineParts.push(`${drift.watch.length} declining character curve(s)`);
+  if (canon.drift.watch.length > 0) headlineParts.push(`${canon.drift.watch.length} declining fact curve(s)`);
   if (canon.suggestions.length > 0) headlineParts.push(`${canon.suggestions.length} fact(s) to reword/retire`);
   if (schedules.overdue > 0) headlineParts.push(`${schedules.overdue} schedule(s) overdue`);
   if (schedules.erroring > 0) headlineParts.push(`${schedules.erroring} schedule(s) erroring`);
@@ -84,6 +90,7 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
       ? `Canon retire suggestions: ${canon.suggestions.map((s) => `"${s.text.slice(0, 50)}" (${s.reason.split(" - ")[0]})`).join("; ")}`
       : "Canon retire suggestions: none",
     `Identity: ${identityLine}; ${affinityLine}; ${driftLine}`,
+    `Fact drift: ${factDriftLine}`,
     `Schedules: ${scheduleLine}`,
     `Queue: ${queueLine}`,
   ];

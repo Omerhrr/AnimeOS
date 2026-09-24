@@ -38,15 +38,103 @@ export interface DailyDigest {
   events: number;
 }
 
-const BUCKET_LABELS: Record<string, string> = {
-  RENDER: "renders",
-  PLAN: "plans",
-  TOOL_CALL: "plan steps",
-  SCHEDULE: "schedule fires",
-  EVALUATION: "DSH inspections",
-  STATE_CHANGE: "evaluation fixes",
-  CONTINUITY: "continuity writes",
-};
+// ─── Delivery beyond the studio ─────────────────────────────
+//
+// A digest is only useful if it reaches the creator. Two targets:
+//
+//   • WEBHOOK - POST the digest JSON to any URL (Slack/Discord
+//     gateways, automation hubs, a phone's push bridge).
+//   • EMAIL   - SMTP via nodemailer, configured with
+//     ANIMEOS_SMTP_URL (smtp://user:pass@host:port). Without the
+//     env the outcome is an honest "no transport", never a silent
+//     drop.
+
+export interface DeliveryTarget {
+  webhookUrl?: string | null;
+  email?: string | null;
+}
+
+export interface DeliveryOutcome {
+  kind: "webhook" | "email";
+  target: string; // redacted display form
+  ok: boolean;
+  detail: string;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function redactUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname.slice(0, 24)}`;
+  } catch {
+    return url.slice(0, 40);
+  }
+}
+
+/** Deliver one digest to its targets; every outcome is recorded, none throw. */
+export async function deliverDigest(
+  digest: DailyDigest,
+  projectTitle: string,
+  targets: DeliveryTarget,
+): Promise<DeliveryOutcome[]> {
+  const outcomes: DeliveryOutcome[] = [];
+  const body = JSON.stringify({
+    project: projectTitle,
+    headline: digest.headline,
+    lines: digest.lines,
+    windowHours: digest.windowHours,
+    events: digest.events,
+    postedAt: new Date().toISOString(),
+  });
+
+  const webhookUrl = String(targets.webhookUrl ?? "").trim();
+  if (webhookUrl) {
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: AbortSignal.timeout(8000),
+      });
+      outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: res.ok, detail: `webhook responded ${res.status}` });
+    } catch (err) {
+      outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: err instanceof Error ? err.message.slice(0, 120) : "webhook failed" });
+    }
+  }
+
+  const email = String(targets.email ?? "").trim();
+  if (email) {
+    if (!EMAIL_RE.test(email)) {
+      outcomes.push({ kind: "email", target: email, ok: false, detail: "not a valid email address" });
+    } else {
+      try {
+        const { default: nodemailer } = await import("nodemailer");
+        const smtpUrl = String(process.env.ANIMEOS_SMTP_URL ?? "").trim();
+        if (!smtpUrl) {
+          outcomes.push({ kind: "email", target: email, ok: false, detail: "no SMTP transport configured (set ANIMEOS_SMTP_URL)" });
+        } else {
+          const transport = nodemailer.createTransport(smtpUrl);
+          const info = await transport.sendMail({
+            from: String(process.env.ANIMEOS_SMTP_FROM ?? "AnimeOS Studio <studio@animeos.local>"),
+            to: email,
+            subject: `${projectTitle} - ${digest.headline}`.slice(0, 140),
+            text: digest.lines.join("\n"),
+          });
+          outcomes.push({ kind: "email", target: email, ok: true, detail: `email accepted (${info.messageId ?? "sent"})` });
+        }
+      } catch (err) {
+        outcomes.push({ kind: "email", target: email, ok: false, detail: err instanceof Error ? err.message.slice(0, 120) : "email failed" });
+      }
+    }
+  }
+  return outcomes;
+}
+
+function describeDeliveries(outcomes: DeliveryOutcome[]): string | null {
+  if (outcomes.length === 0) return null;
+  return outcomes.map((o) => `${o.kind} ${o.ok ? "OK" : "FAILED"} (${o.detail.slice(0, 60)})`).join(", ");
+}
 
 /** Roll a window of production events into one digest. Pure. */
 export function buildDigestFromEvents(input: DigestInput): DailyDigest {
@@ -95,11 +183,12 @@ export function buildDigestFromEvents(input: DigestInput): DailyDigest {
   };
 }
 
-/** Build AND land the digest for one production (a DIGEST production event). */
+/** Build AND land the digest for one production (a DIGEST production event), then deliver it. */
 export async function postDailyDigest(
   projectId: string,
   windowHours = DIGEST_WINDOW_HOURS,
-): Promise<{ ok: true; digest: DailyDigest } | { ok: false; error: string }> {
+  targets: DeliveryTarget = {},
+): Promise<{ ok: true; digest: DailyDigest; deliveries: DeliveryOutcome[] } | { ok: false; error: string }> {
   const project = await db.project.findUnique({ where: { id: projectId }, select: { title: true } });
   if (!project) return { ok: false, error: "Production not found" };
 
@@ -128,17 +217,22 @@ export async function postDailyDigest(
     queueCounts: { active: activeJobs, rerender: rerenderQueue },
   });
 
+  const deliveries = await deliverDigest(digest, project.title, targets).catch(() => [
+    { kind: "webhook" as const, target: "?", ok: false, detail: "delivery crashed" },
+  ]);
+  const deliveryLine = describeDeliveries(deliveries);
+
   await db.productionEvent.create({
     data: {
       projectId,
       actor: "SYSTEM",
       type: "DIGEST",
-      summary: digest.headline.slice(0, 300),
-      payload: JSON.stringify({ text: digest.lines.join("\n"), windowHours: digest.windowHours, events: digest.events }),
+      summary: `${digest.headline.slice(0, 300)}${deliveryLine ? ` - delivered: ${deliveryLine.slice(0, 120)}` : ""}`,
+      payload: JSON.stringify({ text: digest.lines.join("\n"), windowHours: digest.windowHours, events: digest.events, deliveries }),
     },
   });
 
-  return { ok: true, digest };
+  return { ok: true, digest, deliveries };
 }
 
 export interface DigestRow {
@@ -148,6 +242,7 @@ export interface DigestRow {
   windowHours: number;
   events: number;
   createdAt: string;
+  deliveries: Array<{ kind: string; target: string; ok: boolean; detail: string }>;
 }
 
 /** The digest panel's feed: the most recent posted digests. */
@@ -161,11 +256,20 @@ export async function listDigests(projectId: string, take = 7): Promise<DigestRo
     let text = r.summary;
     let windowHours = DIGEST_WINDOW_HOURS;
     let events = 0;
+    let deliveries: Array<{ kind: string; target: string; ok: boolean; detail: string }> = [];
     try {
-      const parsed = JSON.parse(r.payload ?? "{}") as { text?: unknown; windowHours?: unknown; events?: unknown };
+      const parsed = JSON.parse(r.payload ?? "{}") as { text?: unknown; windowHours?: unknown; events?: unknown; deliveries?: unknown };
       if (typeof parsed.text === "string") text = parsed.text;
       if (typeof parsed.windowHours === "number") windowHours = parsed.windowHours;
       if (typeof parsed.events === "number") events = parsed.events;
+      if (Array.isArray(parsed.deliveries)) {
+        deliveries = (parsed.deliveries as Array<Record<string, unknown>>).map((d) => ({
+          kind: String(d.kind ?? "?"),
+          target: String(d.target ?? "?"),
+          ok: Boolean(d.ok),
+          detail: String(d.detail ?? ""),
+        }));
+      }
     } catch { /* summary fallback already set */ }
     return {
       id: r.id,
@@ -173,6 +277,7 @@ export async function listDigests(projectId: string, take = 7): Promise<DigestRo
       text,
       windowHours,
       events,
+      deliveries,
       createdAt: r.createdAt.toISOString(),
     };
   });

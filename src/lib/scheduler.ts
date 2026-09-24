@@ -55,6 +55,8 @@ export interface ScheduleRow {
   weekday: number;
   maxSteps: number;
   enabled: boolean;
+  webhookUrl: string | null;
+  digestEmail: string | null;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   lastStatus: string | null;
@@ -77,6 +79,8 @@ export interface ScheduleView {
   weekday: number;
   maxSteps: number;
   enabled: boolean;
+  webhookUrl: string | null;
+  digestEmail: string | null;
   lastRunAt: string | null;
   nextRunAt: string | null;
   lastStatus: FireStatus | null;
@@ -148,6 +152,8 @@ function viewOf(row: ScheduleRow, planTitle: string | null): ScheduleView {
     weekday: row.weekday,
     maxSteps: row.maxSteps,
     enabled: row.enabled,
+    webhookUrl: row.webhookUrl,
+    digestEmail: row.digestEmail,
     lastRunAt: row.lastRunAt ? row.lastRunAt.toISOString() : null,
     nextRunAt: row.nextRunAt ? row.nextRunAt.toISOString() : null,
     lastStatus: (["OK", "SKIPPED", "ERROR"] as string[]).includes(row.lastStatus ?? "") ? (row.lastStatus as FireStatus) : null,
@@ -180,7 +186,12 @@ export interface CreateScheduleInput {
   hourUtc?: number;
   weekday?: number;
   maxSteps?: number;
+  webhookUrl?: string | null;
+  digestEmail?: string | null;
 }
+
+const WEBHOOK_RE = /^https?:\/\/\S+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Validate + land a schedule (enabled, first fire computed from now). */
 export async function createSchedule(
@@ -207,6 +218,21 @@ export async function createSchedule(
   const hourUtc = Math.min(23, Math.max(0, Math.round(Number(input.hourUtc ?? 2)) || 0));
   const weekday = Math.min(6, Math.max(0, Math.round(Number(input.weekday ?? 1)) || 0));
   const maxSteps = Math.min(3, Math.max(1, Math.round(Number(input.maxSteps ?? 3)) || 3));
+  // DAILY_DIGEST delivery targets (webhook POST + SMTP email)
+  let webhookUrl: string | null = null;
+  let digestEmail: string | null = null;
+  if (kind === "DAILY_DIGEST") {
+    const hook = String(input.webhookUrl ?? "").trim();
+    if (hook) {
+      if (!WEBHOOK_RE.test(hook)) return { ok: false, error: "webhookUrl must be an http(s) URL" };
+      webhookUrl = hook.slice(0, 400);
+    }
+    const mail = String(input.digestEmail ?? "").trim();
+    if (mail) {
+      if (!EMAIL_RE.test(mail)) return { ok: false, error: "digestEmail must be a valid email address" };
+      digestEmail = mail.slice(0, 200);
+    }
+  }
   const row = await db.studioSchedule.create({
     data: {
       projectId,
@@ -219,6 +245,8 @@ export async function createSchedule(
       weekday,
       maxSteps,
       enabled: true,
+      webhookUrl,
+      digestEmail,
       nextRunAt: computeNextRun(cadence, intervalHours, hourUtc, weekday, new Date()),
     },
   });
@@ -242,11 +270,14 @@ interface FireOutcome {
 /** Execute one schedule fire. Claims nothing - the caller advances the row. */
 async function fireSchedule(row: ScheduleRow): Promise<FireOutcome> {
   if (row.kind === "DAILY_DIGEST") {
-    const result = await postDailyDigest(row.projectId);
+    const result = await postDailyDigest(row.projectId, 24, { webhookUrl: row.webhookUrl, email: row.digestEmail });
     if (!result.ok) return { status: "ERROR", report: result.error ?? "the digest failed to build" };
+    const delivered = result.deliveries.length > 0
+      ? ` - delivered: ${result.deliveries.map((d) => `${d.kind} ${d.ok ? "OK" : "FAILED"}`).join(", ")}`
+      : "";
     return {
       status: "OK",
-      report: `posted the digest to the creator: ${result.digest.headline} - ${result.digest.lines.length - 1} section(s) riding it`,
+      report: `posted the digest to the creator: ${result.digest.headline} - ${result.digest.lines.length - 1} section(s) riding it${delivered}`,
     };
   }
 

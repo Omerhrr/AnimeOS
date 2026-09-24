@@ -558,6 +558,12 @@ model StudioSchedule {
   weekday       Int       @default(1) // WEEKLY: 0=Sunday .. 6=Saturday
   maxSteps      Int       @default(3) // PLAN_RUN: steps per fire (1..3)
   enabled       Boolean   @default(true)
+  // DAILY_DIGEST delivery targets (beyond the studio's own digest
+  // panel): an outbound webhook (POST the digest JSON) and an email
+  // address (SMTP via nodemailer when ANIMEOS_SMTP_URL is set). Both
+  // null = the digest lands in the studio only.
+  webhookUrl    String?
+  digestEmail   String?
   lastRunAt     DateTime?
   nextRunAt     DateTime?
   lastStatus    String?   // OK | SKIPPED | ERROR (null = never fired)
