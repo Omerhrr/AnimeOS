@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send, Loader2, Brain, ListChecks, Wrench, CircleCheck, CircleX, User,
-  Sparkles, ChevronDown, ChevronUp, Volume2, Play, Square, Route,
+  Sparkles, ChevronDown, ChevronUp, Volume2, Play, Square, Route, ClipboardList,
 } from "lucide-react";
 import { api, parseTrace, type DshMessageRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -20,6 +20,168 @@ const SUGGESTIONS = [
   "Check Scene 12 for missing capabilities and fix them",
   "Render a preview of shot 5 in scene 12 and inspect it",
 ];
+
+// ─────────────────────────────────────────────────────────────
+// PLANS THAT OUTLIVE THE TURN: DSH lands cross-turn plans as
+// PROPOSED; this panel is the creator's review gate - approve a plan
+// to open its runner, then run the next steps (a few per click) or
+// pause/abort between them. Run state lives in the DB, so the panel,
+// DSH and any later conversation see the same progress.
+// ─────────────────────────────────────────────────────────────
+interface PlanStepRow {
+  tool: string;
+  args: Record<string, unknown>;
+  why: string;
+  status: "PENDING" | "DONE" | "ERROR";
+  result?: string;
+  at?: string;
+}
+
+interface PlanRow {
+  id: string;
+  title: string;
+  goal: string;
+  status: "PROPOSED" | "ACTIVE" | "PAUSED" | "DONE" | "ABORTED";
+  source: "DSH" | "CREATOR";
+  cursor: number;
+  total: number;
+  done: number;
+  failed: number;
+  steps: PlanStepRow[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+const PLAN_STATUS_COLORS: Record<string, string> = {
+  PROPOSED: "border-violet-400/30 text-violet-300 bg-violet-400/10",
+  ACTIVE: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  PAUSED: "border-amber-400/30 text-amber-300 bg-amber-400/10",
+  DONE: "border-sky-400/30 text-sky-300 bg-sky-400/10",
+  ABORTED: "border-white/20 text-muted-foreground bg-white/5",
+};
+
+const STEP_DOT: Record<string, string> = {
+  PENDING: "bg-white/20",
+  DONE: "bg-emerald-400",
+  ERROR: "bg-rose-400",
+};
+
+function PlansPanel({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const plansQ = useQuery({
+    queryKey: ["dshPlans", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/dsh-plans?projectId=${projectId}`);
+      const body = (await res.json()) as { plans?: PlanRow[] };
+      return body.plans ?? [];
+    },
+    enabled: Boolean(projectId),
+    refetchInterval: (q) => ((q.state.data ?? []).some((p) => p.status === "ACTIVE") ? 5000 : false),
+  });
+  const plans = plansQ.data ?? [];
+  const proposed = plans.filter((p) => p.status === "PROPOSED").length;
+  const active = plans.filter((p) => p.status === "ACTIVE" || p.status === "PAUSED").length;
+
+  async function act(planId: string, action: string, maxSteps?: number) {
+    setBusyId(planId);
+    setError(null);
+    try {
+      const res = await fetch("/api/dsh-plans", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId, action, maxSteps }),
+      });
+      const body = (await res.json()) as { error?: string; report?: string };
+      if (!res.ok) setError(body.error ?? "Plan action failed");
+      else if (body.report) console.log("plan run report:", body.report);
+    } catch {
+      setError("Plan action failed");
+    } finally {
+      setBusyId(null);
+      await qc.invalidateQueries({ queryKey: ["dshPlans", projectId] });
+      await qc.invalidateQueries({ queryKey: ["project", projectId] });
+    }
+  }
+
+  if (plans.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02]">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2"
+      >
+        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300">
+          <ClipboardList className="h-3.5 w-3.5" />
+          Plans that outlive the turn
+          {proposed > 0 && (
+            <span className="px-1.5 py-0.5 rounded border border-violet-400/30 text-violet-300 bg-violet-400/10 normal-case tracking-normal">{proposed} awaiting review</span>
+          )}
+          {active > 0 && (
+            <span className="px-1.5 py-0.5 rounded border border-emerald-400/30 text-emerald-300 bg-emerald-400/10 normal-case tracking-normal">{active} in flight</span>
+          )}
+        </span>
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 max-h-72 overflow-y-auto studio-scroll">
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            DSH landed these ordered tool-call lists for work that spans turns or days. Approve a proposal to open its runner;
+            running executes real production steps and records each result. A failed step parks the plan for a retry.
+          </p>
+          {error && (
+            <div className="text-[10px] text-rose-300 bg-rose-400/10 border border-rose-400/25 rounded-md px-2 py-1">{error}</div>
+          )}
+          {plans.map((p) => (
+            <div key={p.id} className="rounded-lg border border-white/10 bg-black/20 p-2.5 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", PLAN_STATUS_COLORS[p.status])}>{p.status}</span>
+                <span className="text-[12px] font-medium">{p.title}</span>
+                <span className="text-[9px] text-muted-foreground font-mono">{p.done}/{p.total} done{p.failed ? ` · ${p.failed} failed` : ""}</span>
+                <span className="text-[9px] text-muted-foreground">via {p.source === "DSH" ? "DSH" : "creator"}</span>
+                <span className="flex-1" />
+                {p.status === "PROPOSED" && (
+                  <button onClick={() => void act(p.id, "approve")} disabled={busyId === p.id} className="h-6 rounded-md border border-emerald-400/25 bg-emerald-400/10 px-2 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-400/20 transition-colors disabled:opacity-40">Approve</button>
+                )}
+                {(p.status === "ACTIVE") && (
+                  <>
+                    <button onClick={() => void act(p.id, "run", 1)} disabled={busyId === p.id} className="h-6 rounded-md border border-teal-400/25 bg-teal-400/10 px-2 text-[10px] font-semibold text-teal-200 hover:bg-teal-400/20 transition-colors disabled:opacity-40 flex items-center gap-1">
+                      {busyId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}Run next step
+                    </button>
+                    <button onClick={() => void act(p.id, "run", 3)} disabled={busyId === p.id} className="h-6 rounded-md border border-teal-400/25 bg-teal-400/[0.06] px-2 text-[10px] text-teal-200/90 hover:bg-teal-400/15 transition-colors disabled:opacity-40">Run 3</button>
+                    <button onClick={() => void act(p.id, "pause")} disabled={busyId === p.id} className="h-6 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 text-[10px] text-amber-200 hover:bg-amber-400/20 transition-colors disabled:opacity-40">Pause</button>
+                  </>
+                )}
+                {p.status === "PAUSED" && (
+                  <button onClick={() => void act(p.id, "resume")} disabled={busyId === p.id} className="h-6 rounded-md border border-emerald-400/25 bg-emerald-400/10 px-2 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-400/20 transition-colors disabled:opacity-40">Resume</button>
+                )}
+                {(p.status === "ACTIVE" || p.status === "PAUSED" || p.status === "PROPOSED") && (
+                  <button onClick={() => void act(p.id, "abort")} disabled={busyId === p.id} className="h-6 rounded-md border border-rose-400/25 bg-rose-400/10 px-2 text-[10px] text-rose-200 hover:bg-rose-400/20 transition-colors disabled:opacity-40">Abort</button>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">{p.goal}</p>
+              <div className="space-y-1">
+                {p.steps.map((s, i) => (
+                  <div key={i} className="flex items-start gap-2 text-[10px] leading-relaxed">
+                    <span className={cn("mt-1.5 h-1.5 w-1.5 rounded-full shrink-0", STEP_DOT[s.status] ?? "bg-white/20")} />
+                    <span className="text-muted-foreground/70 font-mono shrink-0">{String(i + 1).padStart(2, "0")}</span>
+                    <span className="font-mono text-[9px] text-sky-300/90 shrink-0">{s.tool}</span>
+                    <span className="text-muted-foreground truncate" title={s.why}>{s.why || (s.status !== "PENDING" ? (s.result ?? "").split("\n")[0] : "")}</span>
+                    {s.status === "ERROR" && <span className="text-rose-300 shrink-0">failed</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Same-turn ENSEMBLE audition block: an ensemble apply renders ONE
@@ -407,10 +569,12 @@ export function DshConsole() {
         setProject(result.activeProjectId);
       }
       const target = result.activeProjectId ?? projectId;
-      // Production state may have changed massively
+      // Production state may have changed massively (and DSH may have
+      // landed a cross-turn plan for the work that did not fit)
       qc.invalidateQueries({ queryKey: ["project", target] });
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["renderJobs", target] });
+      qc.invalidateQueries({ queryKey: ["dshPlans", target] });
     } catch (err) {
       setError(err instanceof Error ? err.message : "DSH could not complete the turn");
     } finally {
@@ -431,6 +595,8 @@ export function DshConsole() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto studio-scroll space-y-4 pr-1">
+        {projectId && <PlansPanel projectId={projectId} />}
+
         {messages.length === 0 && !busy && (
           <div className="studio-panel p-5">
             <p className="text-sm font-medium mb-1">The set is quiet, director.</p>

@@ -44,6 +44,7 @@ model Project {
   productionEvents ProductionEvent[]
   continuityEvents ContinuityEvent[]
   dshMessages      DshMessage[]
+  dshPlans         DshPlan[]
   arcTemplates     ArcTemplate[]
   universeFacts    UniverseFact[]
   repaintRuns      RepaintRun[]
@@ -488,6 +489,27 @@ model DshMessage {
   content   String
   trace     String?  // JSON [{step, thought, plan, actions:[{tool,args,result,status}]}]
   createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// DSH PLANS THAT SURVIVE THE TURN (cross-turn directing)
+// A plan is an ordered list of tool calls DSH lands for work that
+// spans turns or days. It starts PROPOSED: the creator approves it in
+// the plan review panel, and from then on run_plan executes the next
+// steps (a few per call) and reports - pause/abort hold between steps.
+// ─────────────────────────────────────────────────────────────
+model DshPlan {
+  id        String   @id @default(cuid())
+  projectId String
+  title     String
+  goal      String   // what this plan accomplishes, in the creator's language
+  status    String   @default("PROPOSED") // PROPOSED | ACTIVE | PAUSED | DONE | ABORTED
+  source    String   @default("DSH") // DSH | CREATOR
+  steps     String   @default("[]") // JSON: Array<{tool, args, why, status: PENDING|DONE|ERROR, result?, at?}>
+  cursor    Int      @default(0) // index of the next step to run (stays AT a failed step for retry)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 

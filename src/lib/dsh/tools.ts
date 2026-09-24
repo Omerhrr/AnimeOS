@@ -5,6 +5,7 @@ import { scanArtContinuity, checkShotArtContinuity } from "@/lib/continuity-art"
 import { checkShotUniverseFacts } from "@/lib/universe-facts";
 import { startRepaintRun } from "@/lib/universe-repaint";
 import { isSpeakingCloseup } from "@/lib/animation/lipsync";
+import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -215,6 +216,31 @@ export const TOOL_DEFS: ToolDef[] = [
     description: "SUPERVISED AUTO RE-PAINT: start a runner over the universe-facts re-render queue (worst confidence first). Each step re-paints a flagged panel with a FACT-AWARE prompt (the flagged facts ride in as corrections), re-runs the vision check and records FIXED / STILL_BROKEN / ERROR; steps that come back still broken stop being retried automatically and wait for the director. You can pause/resume/abort between steps (repeated calls with the same action).",
     args: {
       maxItems: "number 1-8 (default 3) - how many queued panels the run visits",
+    },
+  },
+  {
+    name: "create_plan",
+    description: "Land a CROSS-TURN PLAN for work that will not fit this turn (multi-episode breakdowns, long production pushes, later-day continuations): an ordered list of tool calls with a why per step. The plan starts PROPOSED and shows up in the creator's plan review panel on the DSH view - NOTHING runs until the creator approves it there (or steers it). Once approved, run_plan executes its next steps a few per call, in this turn or any later conversation.",
+    args: {
+      title: "string - short plan name (e.g. 'Break Episode 2 into shots')",
+      goal: "string - what this plan accomplishes, in the creator's language",
+      steps: "JSON array of {tool, args, why} - the ordered production tool calls (max 12); args is the tool's args object",
+    },
+  },
+  {
+    name: "run_plan",
+    description: "Run the next steps of an APPROVED plan (the same execution path as a live turn; results are recorded on the plan and land as production events). A failed step parks the plan AT that step and stops the run - fix the cause and run again to retry. Call it again any time (this turn or a later conversation) to continue from where it stopped.",
+    args: {
+      planId: "string (optional - defaults to the most recent ACTIVE plan)",
+      maxSteps: "number 1-3 (default 1) - how many steps to run this call",
+    },
+  },
+  {
+    name: "steer_plan",
+    description: "Steer a cross-turn plan: approve (opens the runner after the creator's proposal review), pause (holds between steps), resume, or abort. Use approve only when the creator has clearly asked for the work to proceed.",
+    args: {
+      planId: "string (optional - defaults to the most recent PROPOSED/ACTIVE/PAUSED plan)",
+      action: "approve | pause | resume | abort",
     },
   },
   {
@@ -1118,6 +1144,50 @@ export async function executeTool(projectId: string, name: string, args: Record<
       case "get_production_context": {
         const ctx = await buildCompactContext(projectId);
         return { status: "OK", result: JSON.stringify(ctx) };
+      }
+
+      case "create_plan": {
+        const result = await createPlan(projectId, {
+          title: String(args.title ?? ""),
+          goal: String(args.goal ?? ""),
+          steps: args.steps,
+          source: "DSH",
+        });
+        if (!result.ok) return { status: "ERROR", result: result.error };
+        const p = result.plan;
+        return { status: "OK", result: `Plan '${p.title}' landed (id ${p.id.slice(-6)}, ${p.total} step(s)): ${p.steps.map((s, i) => `${i + 1}. ${s.tool}${s.why ? ` - ${s.why}` : ""}`).join(" | ")}. It is PROPOSED and waits in the creator's plan review panel (DSH view) - nothing runs until it is approved there. When it is ACTIVE, run_plan executes its next steps (1-3 per call) and reports each result.` };
+      }
+
+      case "run_plan": {
+        let planId = String(args.planId ?? "");
+        if (!planId) {
+          const active = await latestPlan(projectId, ["ACTIVE"]);
+          if (!active) return { status: "ERROR", result: "No ACTIVE plan to run - land one with create_plan and get it approved first." };
+          planId = active.id;
+        }
+        const maxSteps = Number(args.maxSteps ?? 1);
+        const result = await runPlanSteps(planId, Number.isFinite(maxSteps) ? maxSteps : 1);
+        if (!result.ok || !result.report) return { status: "ERROR", result: result.error ?? "run failed" };
+        const p = result.plan;
+        return { status: "OK", result: `Plan run (${p ? `${p.done}/${p.total} steps done${p.failed ? `, ${p.failed} failed` : ""}, status ${p.status}` : "progress above"}):\n${result.report}` };
+      }
+
+      case "steer_plan": {
+        const action = String(args.action ?? "").toLowerCase();
+        if (!["approve", "pause", "resume", "abort"].includes(action)) {
+          return { status: "ERROR", result: "action must be approve | pause | resume | abort" };
+        }
+        let planId = String(args.planId ?? "");
+        if (!planId) {
+          const pick = await latestPlan(projectId, action === "approve" ? ["PROPOSED"] : ["ACTIVE", "PAUSED"]);
+          if (!pick) return { status: "ERROR", result: action === "approve" ? "No PROPOSED plan to approve." : "No ACTIVE or PAUSED plan to steer." };
+          planId = pick.id;
+        }
+        const status = action === "approve" ? "ACTIVE" : action === "pause" ? "PAUSED" : action === "resume" ? "ACTIVE" : "ABORTED";
+        const result = await setPlanStatus(planId, status as "ACTIVE" | "PAUSED" | "ABORTED");
+        if (!result.ok) return { status: "ERROR", result: result.error ?? "steer failed" };
+        const p = await getPlan(planId);
+        return { status: "OK", result: `Plan '${p?.title ?? planId.slice(-6)}' is now ${p?.status ?? status} (${p ? `${p.done}/${p.total} steps done` : ""}).${action === "approve" ? " run_plan executes its next steps when you (or the creator) call for it." : ""}` };
       }
 
       case "create_project": {
@@ -2439,6 +2509,7 @@ export async function buildCompactContext(projectId: string) {
       terminology: true,
       continuityEvents: true,
       universeFacts: true,
+      dshPlans: { orderBy: { createdAt: "desc" as const }, take: 8 },
       loras: { include: { _count: { select: { shots: true } } } },
       artists: { include: { _count: { select: { shots: true } } } },
     },
@@ -2500,5 +2571,9 @@ export async function buildCompactContext(projectId: string) {
     continuity: project.continuityEvents.map((c) => `${c.entityName} ${c.kind}${c.episodeNumber ? ` @Ep${c.episodeNumber}` : ""}`),
     universeFacts: project.universeFacts.map((f) => `${f.category}: ${f.text}${f.active ? "" : " (inactive)"}`),
     terminology: project.terminology.map((t) => t.term),
+    plans: project.dshPlans.map((p) => {
+      const steps = parsePlanSteps(p.steps);
+      return `${p.status} '${p.title}' (${steps.filter((s) => s.status === "DONE").length}/${steps.length} done) - ${p.goal}`;
+    }),
   };
 }
