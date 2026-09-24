@@ -4,9 +4,13 @@ import path from "path";
 import { stageFor } from "@/lib/types";
 import { hasPoseProgram } from "@/lib/animation/poses";
 import {
-  buildSpeechProgram, describeSpeechProgram, isSpeakingCloseup,
+  isSpeakingCloseup,
   speechPayload, type SpeechProgram,
 } from "@/lib/animation/lipsync";
+import {
+  audioDrivenSpeechProgram, describeAudioSpeechProgram,
+  type AudioTake,
+} from "@/lib/animation/viseme-audio";
 import {
   bridgeStatus, submitRenderJob, pollJobProgress,
   pollLocalJob, localJobStale,
@@ -51,6 +55,43 @@ import {
 // loop are identical for all five drivers.
 // ─────────────────────────────────────────────────────────────
 
+/**
+ * Build a shot's lip-sync program with REAL AUDIO as the timing
+ * score: each VOICE cue's rendered take (public/voices/{cueId}.wav)
+ * is read from disk and analyzed into visemes, so the mouth performs
+ * what the voice actor actually said. Spans without a decodable take
+ * fall back to the text-derived performance.
+ */
+async function shotSpeechProgram(shot: {
+  shotType: string;
+  dialogue: string | null;
+  duration: number;
+  audioCues: Array<{ kind: string; startMs: number; voiceDurationMs: number | null; voiceUrl: string | null }>;
+}): Promise<{ program: SpeechProgram; note: string | null } | null> {
+  if (!isSpeakingCloseup(shot.shotType, shot.dialogue)) return null;
+  const voiceCues = shot.audioCues
+    .filter((c) => c.kind === "VOICE")
+    .sort((a, b) => a.startMs - b.startMs);
+  const takes: AudioTake[] = voiceCues.map((c) => {
+    let wav: Buffer | null = null;
+    if (c.voiceUrl) {
+      try {
+        const file = path.join(process.cwd(), "public", c.voiceUrl.split("?")[0].replace(/^\//, ""));
+        if (fs.existsSync(file)) wav = fs.readFileSync(file);
+      } catch {
+        wav = null; // unreadable take falls back to the text performance
+      }
+    }
+    return { startMs: c.startMs, durationMs: c.voiceDurationMs ?? 0, wav };
+  });
+  const program = audioDrivenSpeechProgram({
+    dialogue: shot.dialogue,
+    shotDurationMs: Math.round(shot.duration * 1000),
+    takes,
+  });
+  return { program, note: describeAudioSpeechProgram(program) };
+}
+
 export async function createRenderJob(projectId: string, shotId: string | null, mode: "PREVIEW" | "FINAL") {
   const lastAttempt = await db.renderJob.findFirst({
     where: { projectId, shotId, mode },
@@ -86,19 +127,14 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     : null;
 
   // LIP-SYNC: a speaking closeup (SPEECH dialogue + tight framing)
-  // performs its lines - the Blender stand-in drives its mouth rig
-  // from the viseme program, the img2vid prompt receives the lines
-  // as speech direction, and MOTION plans a blocking speech beat.
-  const speech: SpeechProgram | null = shot && isSpeakingCloseup(shot.shotType, shot.dialogue)
-    ? buildSpeechProgram({
-        dialogue: shot.dialogue,
-        shotDurationMs: Math.round(shot.duration * 1000),
-        voiceTakes: shot.audioCues
-          .filter((c) => c.kind === "VOICE")
-          .map((c) => ({ startMs: c.startMs, durationMs: c.voiceDurationMs ?? 0 })),
-      })
-    : null;
-  const lipNote = describeSpeechProgram(speech ?? { spans: [], visemes: [], lines: 0 });
+  // performs its lines - the viseme program is derived from the REAL
+  // TTS takes when they exist (audio-driven), the Blender stand-in
+  // drives its mouth rig from it, the img2vid prompt receives the
+  // lines as speech direction, and MOTION plans a blocking speech
+  // beat.
+  const built = shot ? await shotSpeechProgram(shot) : null;
+  const speech: SpeechProgram | null = built?.program ?? null;
+  const lipNote = built?.note ?? null;
 
   if (bridge.reachable && shot) {
     const project = await db.project.findUnique({ where: { id: projectId } });
@@ -223,6 +259,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       stage: lipNote ? `${stage} + ${lipNote}`.slice(0, 200) : stage,
       ...(clipMs > 0 ? { durationMs: clipMs } : {}),
       ...(providerTaskId ? { providerTaskId } : {}),
+      ...(lipNote ? { lipNote } : {}),
     },
   });
 
@@ -345,7 +382,7 @@ export async function tickRenderJob(jobId: string) {
           where: { id: jobId },
           data: {
             status: "REVIEW", progress: 100,
-            stage: (prog.stage?.slice(0, 60) || "Blender clip ready") + " - awaiting DSH inspection",
+            stage: [job.lipNote, prog.stage?.slice(0, 60) || "Blender clip ready"].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
             outputUrl: `/renders/${job.id}.mp4`,
             finishedAt: new Date(),
           },
@@ -387,7 +424,7 @@ export async function tickRenderJob(jobId: string) {
           where: { id: jobId },
           data: {
             status: "REVIEW", progress: 100,
-            stage: (job.providerTaskId ? "Img2Vid clip ready - z.ai interpolation model rendered the pose beat" : "Img2Vid clip ready - pose interpolation rendered").slice(0, 120),
+            stage: [job.lipNote, job.providerTaskId ? "Img2Vid clip ready - z.ai interpolation model rendered the pose beat" : "Img2Vid clip ready - pose interpolation rendered"].filter(Boolean).join(" - ").slice(0, 200),
             outputUrl: `/renders/${job.id}.mp4`,
             finishedAt: new Date(),
           },
@@ -417,15 +454,9 @@ export async function tickRenderJob(jobId: string) {
         : null;
       if (shot && (await detectFfmpeg())) {
         // rebuild the speech program so the takeover keeps the lip-sync
-        const takeoverSpeech = isSpeakingCloseup(shot.shotType, shot.dialogue)
-          ? buildSpeechProgram({
-              dialogue: shot.dialogue,
-              shotDurationMs: Math.round(shot.duration * 1000),
-              voiceTakes: shot.audioCues
-                .filter((c) => c.kind === "VOICE")
-                .map((c) => ({ startMs: c.startMs, durationMs: c.voiceDurationMs ?? 0 })),
-            })
-          : null;
+        // (audio-driven when the takes are on disk)
+        const rebuilt = await shotSpeechProgram(shot);
+        const takeoverSpeech = rebuilt?.program ?? null;
         job = await db.renderJob.update({
           where: { id: jobId },
           data: { driver: "MOTION", stage: "Img2Vid provider lost - MOTION engine taking over", startedAt: new Date() },
@@ -463,7 +494,7 @@ export async function tickRenderJob(jobId: string) {
             where: { id: jobId },
             data: {
               status: "REVIEW", progress: 100,
-              stage: prog.stage?.slice(0, 120) || "Blender render complete - awaiting DSH inspection",
+              stage: [job.lipNote, prog.stage?.slice(0, 120) || "Blender render complete - awaiting DSH inspection"].filter(Boolean).join(" - ").slice(0, 200),
               ...(hasClip ? { outputUrl: `/renders/${job.id}.mp4` } : {}),
               finishedAt: new Date(),
             },

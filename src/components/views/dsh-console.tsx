@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send, Loader2, Brain, ListChecks, Wrench, CircleCheck, CircleX, User,
   Sparkles, ChevronDown, ChevronUp, Volume2, Play, Square, Route, ClipboardList,
+  CalendarClock, Clock,
 } from "lucide-react";
 import { api, parseTrace, type DshMessageRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -175,6 +176,286 @@ function PlansPanel({ projectId }: { projectId: string }) {
                   </div>
                 ))}
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * CADENCE SCHEDULER: recurring studio work nobody has to click -
+ * nightly plan runs (approved plans walk a few steps per fire) and
+ * render-queue supervision (tick render jobs, start a supervised
+ * re-paint pass when the universe queue is dirty and no run is
+ * live). Every fire lands as a production event; the row keeps the
+ * last status + report so the creator can audit what ran overnight.
+ */
+interface ScheduleRow {
+  id: string;
+  name: string;
+  kind: "PLAN_RUN" | "REPAINT_QUEUE";
+  planId: string | null;
+  planTitle: string | null;
+  cadence: string;
+  cadenceLabel: string;
+  maxSteps: number;
+  enabled: boolean;
+  nextRunAt: string | null;
+  lastStatus: "OK" | "SKIPPED" | "ERROR" | null;
+  lastReport: string | null;
+  runCount: number;
+  createdAt: string;
+}
+
+const SCHED_STATUS_COLORS: Record<string, string> = {
+  OK: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  SKIPPED: "border-amber-400/30 text-amber-300 bg-amber-400/10",
+  ERROR: "border-rose-400/30 text-rose-300 bg-rose-400/10",
+};
+
+function nextRunLabel(iso: string | null): string {
+  if (!iso) return "unscheduled";
+  const diff = new Date(iso).getTime() - Date.now();
+  if (diff <= 0) return "due";
+  const mins = Math.round(diff / 60000);
+  if (mins < 60) return `in ${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `in ${hours}h`;
+  return `in ${Math.round(hours / 24)}d`;
+}
+
+function SchedulerPanel({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"PLAN_RUN" | "REPAINT_QUEUE">("PLAN_RUN");
+  const [cadence, setCadence] = useState("DAILY");
+  const [hourUtc, setHourUtc] = useState(2);
+  const [planId, setPlanId] = useState("");
+  const [maxSteps, setMaxSteps] = useState(3);
+
+  const schedulesQ = useQuery({
+    queryKey: ["studioSchedules", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/schedules?projectId=${projectId}`);
+      const body = (await res.json()) as { schedules?: ScheduleRow[] };
+      return body.schedules ?? [];
+    },
+    enabled: Boolean(projectId),
+    refetchInterval: (q) => ((q.state.data ?? []).some((s) => s.enabled) ? 8000 : false),
+  });
+  const plansQ = useQuery({
+    queryKey: ["dshPlans", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/dsh-plans?projectId=${projectId}`);
+      const body = (await res.json()) as { plans?: Array<{ id: string; title: string; status: string }> };
+      return body.plans ?? [];
+    },
+    enabled: Boolean(projectId) && open,
+  });
+  const schedules = schedulesQ.data ?? [];
+  const activePlans = (plansQ.data ?? []).filter((p) => p.status === "ACTIVE");
+
+  async function act(scheduleId: string, action: string) {
+    setBusyId(scheduleId);
+    setError(null);
+    try {
+      if (action === "delete") {
+        const res = await fetch(`/api/schedules?id=${scheduleId}`, { method: "DELETE" });
+        if (!res.ok) setError("Delete failed");
+      } else {
+        const res = await fetch("/api/schedules", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scheduleId, action }),
+        });
+        const body = (await res.json()) as { error?: string };
+        if (!res.ok) setError(body.error ?? "Schedule action failed");
+      }
+    } catch {
+      setError("Schedule action failed");
+    } finally {
+      setBusyId(null);
+      await qc.invalidateQueries({ queryKey: ["studioSchedules", projectId] });
+      await qc.invalidateQueries({ queryKey: ["project", projectId] });
+    }
+  }
+
+  async function create() {
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          name: name.trim() || (kind === "PLAN_RUN" ? "Nightly plan run" : "Render-queue watch"),
+          kind,
+          cadence,
+          hourUtc,
+          intervalHours: 1,
+          maxSteps,
+          planId: kind === "PLAN_RUN" && planId ? planId : null,
+        }),
+      });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) setError(body.error ?? "Create failed");
+      else setName("");
+    } catch {
+      setError("Create failed");
+    } finally {
+      setCreating(false);
+      await qc.invalidateQueries({ queryKey: ["studioSchedules", projectId] });
+      await qc.invalidateQueries({ queryKey: ["project", projectId] });
+    }
+  }
+
+  const onCount = schedules.filter((s) => s.enabled).length;
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02]">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2"
+      >
+        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-300">
+          <CalendarClock className="h-3.5 w-3.5" />
+          Cadence scheduler
+          {schedules.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded border border-amber-400/30 text-amber-300 bg-amber-400/10 normal-case tracking-normal">
+              {onCount} of {schedules.length} armed
+            </span>
+          )}
+        </span>
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 max-h-80 overflow-y-auto studio-scroll">
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            The studio keeps working between conversations: a PLAN_RUN schedule walks an approved plan a few steps per fire
+            (nightly breakdowns), REPAINT_QUEUE supervises renders and starts a re-paint pass when the universe queue is dirty.
+            Every fire lands as a production event with its outcome.
+          </p>
+          {error && (
+            <div className="text-[10px] text-rose-300 bg-rose-400/10 border border-rose-400/25 rounded-md px-2 py-1">{error}</div>
+          )}
+          <div className="rounded-lg border border-white/10 bg-black/20 p-2.5 space-y-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Schedule name (e.g. Nightly Episode 2 breakdown)"
+                className="flex-1 min-w-40 h-7 rounded-md border border-white/10 bg-black/30 px-2 text-[11px] outline-none focus:border-white/25"
+              />
+              <select
+                value={kind}
+                onChange={(e) => setKind(e.target.value as "PLAN_RUN" | "REPAINT_QUEUE")}
+                className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+              >
+                <option value="PLAN_RUN">Plan run</option>
+                <option value="REPAINT_QUEUE">Render-queue watch</option>
+              </select>
+              <select
+                value={cadence}
+                onChange={(e) => setCadence(e.target.value)}
+                className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+              >
+                <option value="HOURLY">Hourly</option>
+                <option value="DAILY">Nightly</option>
+                <option value="WEEKLY">Weekly</option>
+              </select>
+              {cadence !== "HOURLY" && (
+                <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  hour
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={hourUtc}
+                    onChange={(e) => setHourUtc(Math.min(23, Math.max(0, Number(e.target.value) || 0)))}
+                    className="w-12 h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+                  />
+                  UTC
+                </label>
+              )}
+              {kind === "PLAN_RUN" && (
+                <>
+                  <select
+                    value={planId}
+                    onChange={(e) => setPlanId(e.target.value)}
+                    className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none max-w-45"
+                  >
+                    <option value="">Latest ACTIVE plan</option>
+                    {activePlans.map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={maxSteps}
+                    onChange={(e) => setMaxSteps(Math.min(3, Math.max(1, Number(e.target.value) || 1)))}
+                    className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+                  >
+                    {[1, 2, 3].map((n) => (
+                      <option key={n} value={n}>{n} step{n === 1 ? "" : "s"}/fire</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <button
+                onClick={() => void create()}
+                disabled={creating}
+                className="h-7 rounded-md border border-amber-400/25 bg-amber-400/10 px-2.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+              >
+                {creating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Clock className="h-3 w-3" />}
+                Schedule
+              </button>
+            </div>
+          </div>
+          {schedules.length === 0 && (
+            <p className="text-[10px] text-muted-foreground italic">No schedules registered yet - the studio only works when you are in the room.</p>
+          )}
+          {schedules.map((s) => (
+            <div key={s.id} className="rounded-lg border border-white/10 bg-black/20 p-2.5 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", s.enabled ? "border-emerald-400/30 text-emerald-300 bg-emerald-400/10" : "border-white/20 text-muted-foreground bg-white/5")}>
+                  {s.enabled ? "ON" : "OFF"}
+                </span>
+                <span className="text-[12px] font-medium">{s.name}</span>
+                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", s.kind === "PLAN_RUN" ? "border-teal-400/30 text-teal-300 bg-teal-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
+                  {s.kind === "PLAN_RUN" ? "PLAN RUN" : "RENDER WATCH"}
+                </span>
+                {s.lastStatus && (
+                  <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", SCHED_STATUS_COLORS[s.lastStatus])}>
+                    last {s.lastStatus}
+                  </span>
+                )}
+                <span className="text-[9px] text-muted-foreground">{s.cadenceLabel}{s.kind === "PLAN_RUN" ? ` · ${s.maxSteps} step${s.maxSteps === 1 ? "" : "s"}/fire` : ""}</span>
+                <span className="flex-1" />
+                <span className="text-[9px] text-muted-foreground font-mono">{s.runCount} fire{s.runCount === 1 ? "" : "s"}</span>
+                <button onClick={() => void act(s.id, "run")} disabled={busyId === s.id || !s.enabled} className="h-6 rounded-md border border-teal-400/25 bg-teal-400/10 px-2 text-[10px] font-semibold text-teal-200 hover:bg-teal-400/20 transition-colors disabled:opacity-40 flex items-center gap-1">
+                  {busyId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}Run now
+                </button>
+                <button onClick={() => void act(s.id, s.enabled ? "disable" : "enable")} disabled={busyId === s.id} className="h-6 rounded-md border border-white/15 bg-white/5 px-2 text-[10px] text-muted-foreground hover:bg-white/10 transition-colors disabled:opacity-40">
+                  {s.enabled ? "Disarm" : "Arm"}
+                </button>
+                <button onClick={() => void act(s.id, "delete")} disabled={busyId === s.id} className="h-6 rounded-md border border-rose-400/25 bg-rose-400/10 px-2 text-[10px] text-rose-200 hover:bg-rose-400/20 transition-colors disabled:opacity-40">
+                  Delete
+                </button>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground">
+                <span>{s.kind === "PLAN_RUN" ? (s.planTitle ? `plan: ${s.planTitle}` : "latest ACTIVE plan") : "universe queue + render jobs"}</span>
+                <span>·</span>
+                <span className="font-mono">next fire {nextRunLabel(s.nextRunAt)}</span>
+              </div>
+              {s.lastReport && (
+                <p className="text-[10px] leading-relaxed text-muted-foreground/85 truncate" title={s.lastReport}>{s.lastReport}</p>
+              )}
             </div>
           ))}
         </div>
@@ -596,6 +877,7 @@ export function DshConsole() {
 
       <div className="flex-1 min-h-0 overflow-y-auto studio-scroll space-y-4 pr-1">
         {projectId && <PlansPanel projectId={projectId} />}
+        {projectId && <SchedulerPanel projectId={projectId} />}
 
         {messages.length === 0 && !busy && (
           <div className="studio-panel p-5">

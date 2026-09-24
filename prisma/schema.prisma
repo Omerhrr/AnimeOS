@@ -48,6 +48,7 @@ model Project {
   arcTemplates     ArcTemplate[]
   universeFacts    UniverseFact[]
   repaintRuns      RepaintRun[]
+  studioSchedules  StudioSchedule[]
 }
 
 model Season {
@@ -387,6 +388,11 @@ model RenderJob {
   // IMG2VID provider task id (async video-generation model). Host
   // protocol jobs poll by AnimeOS jobId; SDK jobs poll by this id.
   providerTaskId String?
+  // Speaking-closeup lip-sync note computed at submit ("audio-driven
+  // lip-sync on Lin Yue (1 line, 5 visemes from 1 real take)"). Kept
+  // through completion so the finished stage and queue cards keep
+  // naming the performance after the poll path rewrites the stage.
+  lipNote  String?
   startedAt  DateTime?
   finishedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -511,6 +517,42 @@ model DshPlan {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// CADENCE SCHEDULER (the studio runs between conversations)
+// ─────────────────────────────────────────────────────────────
+
+// A recurring job the studio performs on a cadence, without anyone
+// clicking: nightly breakdowns (run an approved plan a few steps a
+// night until it is DONE) and render-queue supervision (tick active
+// render jobs and start a supervised re-paint pass whenever the
+// universe-facts queue is dirty and no run is live). Everything a
+// fire does lands as a production event, and the last status/report
+// stay on the row so the creator can audit what the studio did
+// overnight. nextRunAt is the single source of truth for "due": the
+// engine loop (src/lib/scheduler.ts, started by instrumentation)
+// fires every enabled schedule whose nextRunAt has passed, then
+// advances it by the cadence.
+model StudioSchedule {
+  id            String    @id @default(cuid())
+  projectId     String
+  name          String
+  kind          String    @default("PLAN_RUN") // PLAN_RUN | REPAINT_QUEUE
+  planId        String?   // PLAN_RUN: explicit plan (null = the latest ACTIVE plan at fire time)
+  cadence       String    @default("DAILY") // HOURLY | DAILY | WEEKLY
+  intervalHours Int       @default(1) // HOURLY: every N hours (1..24)
+  hourUtc       Int       @default(2) // DAILY/WEEKLY: hour of day (0..23), studio-night default
+  weekday       Int       @default(1) // WEEKLY: 0=Sunday .. 6=Saturday
+  maxSteps      Int       @default(3) // PLAN_RUN: steps per fire (1..3)
+  enabled       Boolean   @default(true)
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  lastStatus    String?   // OK | SKIPPED | ERROR (null = never fired)
+  lastReport    String?   // what the last fire actually did
+  runCount      Int       @default(0)
+  createdAt     DateTime  @default(now())
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 // ─────────────────────────────────────────────────────────────

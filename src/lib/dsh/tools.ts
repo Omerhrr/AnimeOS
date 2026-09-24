@@ -6,6 +6,9 @@ import { checkShotUniverseFacts } from "@/lib/universe-facts";
 import { startRepaintRun } from "@/lib/universe-repaint";
 import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
+import {
+  createSchedule, fireScheduleNow, listSchedules, describeCadence,
+} from "@/lib/scheduler";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -241,6 +244,28 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       planId: "string (optional - defaults to the most recent PROPOSED/ACTIVE/PAUSED plan)",
       action: "approve | pause | resume | abort",
+    },
+  },
+  {
+    name: "create_schedule",
+    description: "Register a CADENCE SCHEDULE so the studio keeps working between conversations: PLAN_RUN runs an approved plan on a cadence (the nightly-breakdown pattern: land the plan, the creator approves it once, this walks maxSteps per night until DONE - a finished plan hands the slot to the next ACTIVE one) and REPAINT_QUEUE is render-queue supervision (ticks active render jobs, starts a supervised re-paint pass when the universe-facts queue is dirty and no run is live). Every fire lands as a production event with its outcome; the creator steers (enable/disable/run-now/delete) from the scheduler panel on the DSH view.",
+    args: {
+      name: "string - short schedule name (e.g. 'Nightly Episode 2 breakdown')",
+      kind: "PLAN_RUN | REPAINT_QUEUE",
+      planTitle: "string (PLAN_RUN optional - pins a plan by title; omit to always run the latest ACTIVE plan)",
+      cadence: "HOURLY | DAILY | WEEKLY (default DAILY)",
+      intervalHours: "number 1-24 (HOURLY: every N hours, default 1)",
+      hourUtc: "number 0-23 (DAILY/WEEKLY hour of day, default 2 = the studio night)",
+      weekday: "number 0-6 (WEEKLY: 0=Sunday .. 6=Saturday, default 1=Monday)",
+      maxSteps: "number 1-3 (PLAN_RUN: steps per fire, default 3)",
+    },
+  },
+  {
+    name: "steer_schedule",
+    description: "Steer a cadence schedule: run (fire it right now regardless of the clock and report the outcome), enable, disable (holds fires without deleting), or delete. Defaults to the latest registered schedule by the given name fragment.",
+    args: {
+      name: "string (optional - name fragment; defaults to the most recent schedule)",
+      action: "run | enable | disable | delete",
     },
   },
   {
@@ -1188,6 +1213,58 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!result.ok) return { status: "ERROR", result: result.error ?? "steer failed" };
         const p = await getPlan(planId);
         return { status: "OK", result: `Plan '${p?.title ?? planId.slice(-6)}' is now ${p?.status ?? status} (${p ? `${p.done}/${p.total} steps done` : ""}).${action === "approve" ? " run_plan executes its next steps when you (or the creator) call for it." : ""}` };
+      }
+
+      case "create_schedule": {
+        const kind = String(args.kind ?? "PLAN_RUN").toUpperCase();
+        let planId: string | null = null;
+        if (kind === "PLAN_RUN" && args.planTitle) {
+          const title = String(args.planTitle).trim();
+          const plan = await db.dshPlan.findFirst({
+            where: { projectId, title: { contains: title } },
+            orderBy: { createdAt: "desc" as const },
+          });
+          if (!plan) return { status: "ERROR", result: `No plan titled like '${title}' exists - land one with create_plan first, or omit planTitle to always run the latest ACTIVE plan.` };
+          planId = plan.id;
+        }
+        const result = await createSchedule(projectId, {
+          name: String(args.name ?? ""),
+          kind,
+          planId,
+          cadence: String(args.cadence ?? "DAILY"),
+          intervalHours: Number(args.intervalHours ?? 1),
+          hourUtc: Number(args.hourUtc ?? 2),
+          weekday: Number(args.weekday ?? 1),
+          maxSteps: Number(args.maxSteps ?? 3),
+        });
+        if (!result.ok) return { status: "ERROR", result: result.error };
+        const s = result.schedule;
+        return { status: "OK", result: `Schedule '${s.name}' registered (${s.kind === "PLAN_RUN" ? "runs an approved plan" : "render-queue supervision"}, ${s.cadenceLabel}, maxSteps ${s.maxSteps}). First fire: ${s.nextRunAt ?? "on the next tick"}. Every fire lands as a production event; the creator steers it from the scheduler panel (enable/disable/run now/delete).` };
+      }
+
+      case "steer_schedule": {
+        const action = String(args.action ?? "").toLowerCase();
+        if (!["run", "enable", "disable", "delete"].includes(action)) {
+          return { status: "ERROR", result: "action must be run | enable | disable | delete" };
+        }
+        const name = String(args.name ?? "").trim();
+        const schedules = await listSchedules(projectId);
+        if (schedules.length === 0) return { status: "ERROR", result: "This production has no schedules - register one with create_schedule." };
+        const pick = name
+          ? [...schedules].reverse().find((s) => s.name.toLowerCase().includes(name.toLowerCase()))
+          : schedules[schedules.length - 1];
+        if (!pick) return { status: "ERROR", result: `No schedule named like '${name}'. Registered: ${schedules.map((s) => s.name).join(", ")}.` };
+        if (action === "delete") {
+          await db.studioSchedule.delete({ where: { id: pick.id } });
+          return { status: "OK", result: `Schedule '${pick.name}' deleted.` };
+        }
+        if (action === "enable" || action === "disable") {
+          await db.studioSchedule.update({ where: { id: pick.id }, data: { enabled: action === "enable" } });
+          return { status: "OK", result: `Schedule '${pick.name}' ${action === "enable" ? "enabled - fires resume on its cadence" : "disabled - holds until enabled again"}.` };
+        }
+        const fired = await fireScheduleNow(pick.id);
+        if (!fired.ok) return { status: "ERROR", result: fired.error ?? "the fire failed" };
+        return { status: "OK", result: `Schedule '${pick.name}' fired now: ${fired.status} - ${fired.report}` };
       }
 
       case "create_project": {
@@ -2510,6 +2587,7 @@ export async function buildCompactContext(projectId: string) {
       continuityEvents: true,
       universeFacts: true,
       dshPlans: { orderBy: { createdAt: "desc" as const }, take: 8 },
+      studioSchedules: { orderBy: { createdAt: "asc" as const }, take: 30 },
       loras: { include: { _count: { select: { shots: true } } } },
       artists: { include: { _count: { select: { shots: true } } } },
     },
@@ -2574,6 +2652,11 @@ export async function buildCompactContext(projectId: string) {
     plans: project.dshPlans.map((p) => {
       const steps = parsePlanSteps(p.steps);
       return `${p.status} '${p.title}' (${steps.filter((s) => s.status === "DONE").length}/${steps.length} done) - ${p.goal}`;
+    }),
+    schedules: project.studioSchedules.map((s) => {
+      const when = s.nextRunAt ? `next fire ${s.nextRunAt.toISOString().slice(0, 16)}Z` : "unscheduled";
+      const last = s.lastStatus ? `, last ${s.lastStatus}: ${String(s.lastReport ?? "").slice(0, 90)}` : ", never fired";
+      return `${s.enabled ? "ON" : "OFF"} '${s.name}' (${s.kind}, ${describeCadence(s.cadence, s.intervalHours, s.hourUtc, s.weekday)}, ${when}${last})`;
     }),
   };
 }
