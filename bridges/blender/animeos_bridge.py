@@ -52,6 +52,18 @@
 # pass shows the character performing, not just the lens moving. The
 # /render payload's shot dict grows two optional fields:
 #   "poseStart": "STANCE", "poseEnd": "LUNGE"
+#
+# v3.2 upgrades the stand-in RIG with a FACE and HANDS. The head grows
+# a face (emissive eyes that squint and blink on a deterministic
+# schedule, brows that tilt angry or surprised, a mouth that opens
+# with effort) and both arms end in real hands (palm, four fingers
+# and a thumb) that curl into grips, spread to channel energy or
+# extend an index finger to point. Every pose in the vocabulary now
+# also carries a 7-channel FACE/HAND row (POSE_FACE below), eased
+# between the start and end pose exactly like the joints, so a LUNGE
+# snarls, a CAST spreads its fingers, a BOW closes its eyes and a
+# POINT extends the index. Idle micro-motion (brow drift, blinking)
+# keeps the face alive on holds.
 
 import argparse
 import base64
@@ -179,6 +191,94 @@ def lerp_pose(start, end, t):
     return tuple(a[i] + (b[i] - a[i]) * k for i in range(len(a)))
 
 
+# ─── per-pose face/hand channels (v3.2 rig upgrade) ──────────────
+#
+# Same 13-pose vocabulary, second table: every pose also expresses
+# through the face and the hands. Channels per row:
+#          brow  eye  mouth gripR gripL pointR pointL
+#   brow   degrees, + lifts the inner ends (surprised/worried),
+#          - knits them down (angry/focused)
+#   eye    openness 0..1.2 (1 = open, <0.6 squint, ~0 shut)
+#   mouth  openness 0..1 (0 = closed line, 1 = full shout)
+#   gripR/L  fist curl 0..1 (0 = open hand, 1 = full grip)
+#   pointR/L index-finger extension 0..1 (overrides the curl on
+#          the index so POINT keeps one finger straight)
+POSE_FACE = {
+    #        brow  eye  mouth gripR gripL pointR pointL
+    "STANCE": (  0, 1.00, 0.10, 0.55, 0.30,   0.0,   0.0),
+    "WALK":   (  0, 0.90, 0.15, 0.55, 0.25,   0.0,   0.0),
+    "LUNGE":  (-25, 1.10, 0.80, 0.90, 0.50,   0.0,   0.0),
+    "SLASH":  (-30, 1.00, 0.90, 1.00, 0.60,   0.0,   0.0),
+    "CAST":   ( 12, 0.45, 0.35, 0.10, 0.10,   0.0,   0.0),
+    "DRAW":   (-10, 0.60, 0.10, 0.90, 0.90,   0.0,   0.0),
+    "BLOCK":  (-18, 1.20, 0.60, 0.95, 0.95,   0.0,   0.0),
+    "LEAP":   ( 10, 1.20, 0.70, 0.70, 0.60,   0.0,   0.0),
+    "CROUCH": ( -5, 0.80, 0.20, 0.50, 0.40,   0.0,   0.0),
+    "FALL":   ( 18, 0.25, 0.85, 0.20, 0.20,   0.0,   0.0),
+    "RISE":   ( -8, 0.70, 0.30, 0.40, 0.35,   0.0,   0.0),
+    "BOW":    (  0, 0.05, 0.05, 0.30, 0.30,   0.0,   0.0),
+    "POINT":  (  4, 1.00, 0.45, 0.10, 0.30,   1.0,   0.0),
+}
+
+FACE_CHANNELS = 7  # brow, eye, mouth, gripR, gripL, pointR, pointL
+
+
+def normalize_face_row(row):
+    """Coerce a POSE_FACE row to FACE_CHANNELS floats (defensive: a
+    malformed table entry must never break a render)."""
+    vals = list(row)[:FACE_CHANNELS]
+    while len(vals) < FACE_CHANNELS:
+        vals.append(0.0)
+    return tuple(float(v) for v in vals)
+
+
+def face_row(pose):
+    return normalize_face_row(POSE_FACE.get(normalize_pose(pose) or "STANCE", POSE_FACE["STANCE"]))
+
+
+def lerp_face(start, end, t):
+    """Eased interpolation of the 7 face/hand channels between the
+    shot's start and end poses (same easing clock as the joints)."""
+    a = face_row(start)
+    b = face_row(end)
+    k = ease_in_out_cubic(t)
+    return tuple(a[i] + (b[i] - a[i]) * k for i in range(FACE_CHANNELS))
+
+
+def blink_openness(t_sec, eye):
+    """Deterministic blink: every ~2.6s the lids close for ~0.14s.
+    A function of t_sec only, so any frame re-renders identically."""
+    phase = t_sec % 2.6
+    if phase < 0.14:
+        return eye * 0.08
+    return eye
+
+
+def finger_curl(grip, point, is_index):
+    """Map grip 0..1 to a finger rotation in degrees. The index finger
+    straightens as `point` rises, so POINT keeps it extended while the
+    other fingers stay curled."""
+    base = clamp(grip, 0.0, 1.0) * 78.0
+    if is_index:
+        base *= 1.0 - clamp(point, 0.0, 1.0)
+    return base
+
+
+def thumb_curl(grip):
+    return clamp(grip, 0.0, 1.0) * 46.0
+
+
+def mouth_scale(mouth):
+    """Mouth slab scale on Z: 0.3 = closed line, ~1.7 = full shout."""
+    return 0.3 + 1.4 * clamp(mouth, 0.0, 1.0)
+
+
+def eye_scale(eye):
+    """Eye lid openness as a Z squash on the eye sphere (never fully
+    flat so the eyeball stays visible)."""
+    return max(0.12, clamp(eye, 0.0, 1.2))
+
+
 def camera_pose(shot_payload, scene_payload, t):
     """Camera position + look target for progress t (0..1) through the
     shot, driven by the movement grammar. Shots carrying a pose
@@ -198,9 +298,16 @@ def camera_pose(shot_payload, scene_payload, t):
     radius = dist
     h = height
     lateral = 0.0
-    # pose shots frame the FIGURE (prop-scale stand-in, ~0.8m tall);
-    # everything else frames the plinth + floating blade as before
-    target = [0.0, 0.0, height * (0.42 if has_poses else 0.75)]
+    # pose shots frame the FIGURE (prop-scale stand-in, ~0.9m tall):
+    # tight shot types aim at the HEAD (the face sits at ~0.84m after
+    # the 0.45x prop scale) so CLOSEUP/EXTREME_CLOSEUP actually frame
+    # the face and hands; wider framings keep the chest target so the
+    # whole body reads. Legacy plinth + floating blade scene keeps the
+    # old 0.75x height target.
+    if has_poses:
+        target = [0.0, 0.0, 0.84 if dist < 0.8 else 0.5]
+    else:
+        target = [0.0, 0.0, height * 0.75]
 
     if movement == "ORBIT":
         angle = 40.0 + (t - 0.5) * 44.0
@@ -242,7 +349,12 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
     """Skeletal stand-in: primitives parented under joint empties so the
     frame loop can articulate the character per frame. The figure faces
     -Y (toward the camera rig); the emissive blade sits in its right
-    hand, so slashes and casts carry the energy glow with them."""
+    hand, so slashes and casts carry the energy glow with them.
+
+    v3.2 rig upgrade: the head carries a FACE (emissive eyes under
+    squashable empties, tilting brows, an opening mouth) and both arms
+    end in HANDS (palm + four fingers + thumb under curl pivots), all
+    driven per frame from the POSE_FACE channels by apply_pose."""
     def empty(name, parent, loc):
         e = bpy.data.objects.new(name, None)
         scn.collection.objects.link(e)
@@ -274,6 +386,57 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
     hm.parent = head
     hm.location = (0.0, 0.0, 0.12)
 
+    # ── face (v3.2): eyes, brows, mouth on the -Y side of the head ──
+    eye_mat = bpy.data.materials.new("EyeMat")
+    eye_mat.use_nodes = True
+    en = eye_mat.node_tree.nodes
+    eb = en.get("Principled BSDF")
+    if eb:
+        en.remove(eb)
+    eye_emit = en.new("ShaderNodeEmission")
+    eye_emit.inputs[0].default_value = (0.72, 0.92, 1.0, 1.0)
+    eye_emit.inputs[1].default_value = 3.0
+    eye_out = en.get("Material Output")
+    eye_mat.node_tree.links.new(eye_emit.outputs[0], eye_out.inputs[0])
+
+    feature_mat = bpy.data.materials.new("FeatureMat")
+    feature_mat.use_nodes = True
+    fb = feature_mat.node_tree.nodes.get("Principled BSDF")
+    if fb:
+        fb.inputs["Base Color"].default_value = (0.012, 0.012, 0.016, 1.0)
+        fb.inputs["Roughness"].default_value = 0.9
+
+    def eye(side_sign, name):
+        piv = empty(name, head, (side_sign * 0.045, -0.105, 0.15))
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=0.018, location=(0, 0, 0))
+        m = bpy.context.active_object
+        m.name = name + "Mesh"
+        m.data.materials.append(eye_mat)
+        m.parent = piv
+        return piv
+
+    def brow(side_sign, name):
+        piv = empty(name, head, (side_sign * 0.048, -0.112, 0.185))
+        bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+        m = bpy.context.active_object
+        m.name = name + "Mesh"
+        m.scale = (0.028, 0.007, 0.006)
+        m.data.materials.append(feature_mat)
+        m.parent = piv
+        return piv
+
+    eye_l = eye(1.0, "EyeL")
+    eye_r = eye(-1.0, "EyeR")
+    brow_l = brow(1.0, "BrowL")
+    brow_r = brow(-1.0, "BrowR")
+    mouth = empty("Mouth", head, (0.0, -0.106, 0.052))
+    bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+    mm = bpy.context.active_object
+    mm.name = "MouthMesh"
+    mm.scale = (0.026, 0.006, 0.011)
+    mm.data.materials.append(feature_mat)
+    mm.parent = mouth
+
     r_shoulder = empty("RShoulder", spine, (-0.24, 0.0, 0.18))
     limb("RUpperArm", r_shoulder, (0.0, 0.0, -0.14), (0.045, 0.045, 0.14))
     r_elbow = empty("RElbow", r_shoulder, (0.0, 0.0, -0.28))
@@ -292,12 +455,53 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
     l_knee = empty("LKnee", l_hip, (0.0, 0.0, -0.46))
     limb("LShin", l_knee, (0.0, 0.0, -0.22), (0.045, 0.045, 0.22))
 
+    # ── hands (v3.2): palm + four fingers + thumb under curl pivots.
+    # Each hand lives under a Hand empty at the wrist (elbow-local
+    # z -0.26, just past the forearm mesh); the palm, finger pivots and
+    # thumb hang below it so curls wrap around whatever the hand holds.
+    def hand(prefix, parent_empty, thumb_side):
+        palm = empty(prefix + "Palm", parent_empty, (0.0, 0.0, -0.01))
+        bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+        pm = bpy.context.active_object
+        pm.name = palm.name + "Mesh"
+        pm.scale = (0.0225, 0.01, 0.03)
+        pm.data.materials.append(body_mat)
+        pm.parent = palm
+        fingers = []
+        index_x = 0.0055 * thumb_side  # the finger adjacent to the thumb
+        for fx in (-0.0165, -0.0055, 0.0055, 0.0165):
+            is_index = abs(fx - index_x) < 0.001
+            piv = empty(prefix + ("Index" if is_index else f"Finger{len(fingers)}"), palm, (fx, 0.0, -0.055))
+            bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+            fm = bpy.context.active_object
+            fm.name = piv.name + "Mesh"
+            fm.scale = (0.0048, 0.0055, 0.021)
+            fm.data.materials.append(body_mat)
+            fm.parent = piv
+            fm.location = (0.0, 0.0, -0.019)
+            fingers.append((piv, is_index))
+        tp = empty(prefix + "Thumb", palm, (thumb_side * 0.026, -0.002, -0.015))
+        bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0))
+        tm = bpy.context.active_object
+        tm.name = tp.name + "Mesh"
+        tm.scale = (0.005, 0.0055, 0.016)
+        tm.data.materials.append(body_mat)
+        tm.parent = tp
+        tm.location = (0.0, 0.0, -0.014)
+        tp.rotation_euler = (math.radians(20), 0.0, math.radians(-35 * thumb_side))
+        return fingers, tp
+
+    r_hand = empty("RHand", r_elbow, (0.0, 0.0, -0.26))
+    l_hand = empty("LHand", l_elbow, (0.0, 0.0, -0.26))
+    r_fingers, r_thumb = hand("R", r_hand, 1.0)   # right hand: thumb toward the body (+X inner)
+    l_fingers, l_thumb = hand("L", l_hand, -1.0)
+
     bpy.ops.mesh.primitive_cone_add(radius1=0.05, radius2=0.0, depth=1.2, vertices=6, location=(0, 0, 0))
     blade = bpy.context.active_object
     blade.name = "HandBlade"
     blade.data.materials.append(blade_mat)
-    blade.parent = empty("RHand", r_elbow, (0.0, 0.0, -0.26))
-    blade.location = (0.0, -0.10, -0.18)
+    blade.parent = r_hand
+    blade.location = (0.0, -0.05, -0.07)  # between palm and fingers: a gripped blade
     blade.rotation_euler = (math.radians(-72), 0.0, 0.0)
 
     # prop scale: the stand-in shares the scene's existing prop sizing
@@ -311,6 +515,12 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
         "rShoulder": r_shoulder, "rElbow": r_elbow,
         "lShoulder": l_shoulder, "lElbow": l_elbow,
         "rHip": r_hip, "rKnee": r_knee, "lHip": l_hip, "lKnee": l_knee,
+        # v3.2 face + hand rig
+        "eyeL": eye_l, "eyeR": eye_r,
+        "browL": brow_l, "browR": brow_r, "mouth": mouth,
+        "rFingers": r_fingers, "lFingers": l_fingers,
+        "rThumb": r_thumb, "lThumb": l_thumb,
+        "blade": blade,
     }
 
 
@@ -318,8 +528,16 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec):
     """Pose the stand-in for this frame: eased interpolation between the
     shot's start/end poses, plus a procedural walk cycle when either
     endpoint is WALK (stride swing on hips/shoulders, counter-swing on
-    the opposite arm, a small root bob)."""
+    the opposite arm, a small root bob).
+
+    v3.2: the pose also EXPRESSES - the 7 POSE_FACE channels (brow,
+    eye, mouth, grips, points) interpolate with the same easing clock
+    and drive the face and finger rig, a deterministic blink and a
+    slow brow drift keep holds alive, and the blade carries a small
+    follow-through tilt proportional to the swing rate of the right
+    shoulder (secondary motion)."""
     (root_x, root_y, spine_a, head_a, r_arm, r_elb, l_arm, l_elb, r_leg, r_knee, l_leg, l_knee) = lerp_pose(pose_start, pose_end, t)
+    (brow, eye, mouth, grip_r, grip_l, point_r, point_l) = lerp_face(pose_start, pose_end, t)
     walking = "WALK" in (normalize_pose(pose_start), normalize_pose(pose_end))
     leg_r = leg_l = arm_r = arm_l = 0.0
     bob = 0.0
@@ -346,6 +564,37 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec):
     figure["lHip"].rotation_euler = (math.radians(-l_leg - leg_l), 0.0, 0.0)
     figure["rKnee"].rotation_euler = (math.radians(r_knee), 0.0, 0.0)
     figure["lKnee"].rotation_euler = (math.radians(l_knee), 0.0, 0.0)
+
+    # ── face rig (v3.2): brows mirror their tilt so the inner ends
+    # move together (+ brow = inner up, surprised; - = angry knit),
+    # eyes squash with openness and blink on the deterministic
+    # schedule, the mouth slab opens with the channel value, and a
+    # slow sinus drift keeps the brows alive on holds
+    brow += math.sin(t_sec * math.pi * 2.0 * 0.9) * 1.5
+    eye = blink_openness(t_sec, eye)
+    figure["browL"].rotation_euler = (0.0, math.radians(brow), 0.0)
+    figure["browR"].rotation_euler = (0.0, math.radians(-brow), 0.0)
+    es = eye_scale(eye)
+    figure["eyeL"].scale = (1.0, 1.0, es)
+    figure["eyeR"].scale = (1.0, 1.0, es)
+    figure["mouth"].scale = (1.0, 1.0, mouth_scale(mouth))
+
+    # ── hand rig (v3.2): grip curls the fingers, point straightens the
+    # index, the thumb half-curls with the grip
+    for side, grip, point in (("r", grip_r, point_r), ("l", grip_l, point_l)):
+        for piv, is_index in figure[f"{side}Fingers"]:
+            piv.rotation_euler.x = math.radians(finger_curl(grip, point, is_index))
+        figure[f"{side}Thumb"].rotation_euler.x = math.radians(20 + thumb_curl(grip))
+
+    # ── blade follow-through: proportional to the eased swing rate of
+    # the right shoulder, clamped so fast slashes lag believably but
+    # never break the read of the pose
+    a_row = POSE_JOINTS[normalize_pose(pose_start) or "STANCE"]
+    b_row = POSE_JOINTS[normalize_pose(pose_end) or "STANCE"]
+    x = clamp(t, 0.0, 1.0)
+    k_deriv = 12.0 * x * x if x < 0.5 else 12.0 * (1.0 - x) * (1.0 - x)
+    lag = clamp((b_row[4] - a_row[4]) * k_deriv * 0.03, -12.0, 12.0)
+    figure["blade"].rotation_euler.x = math.radians(-72.0 + lag)
 
 
 def worker_run(job_file):
@@ -443,6 +692,14 @@ def worker_run(job_file):
         state["scriptMtime"] = os.path.getmtime(__file__)
         if pose_start or pose_end:
             figure = build_stand_in_figure(bpy, scn, mat, blade_mat)
+            # rig report: lets the pipeline (and E2E) assert the v3.2
+            # face/hand upgrade actually shipped in this worker
+            state["rig"] = {
+                "version": "v3.2",
+                "face": True, "hands": True,
+                "eyes": 2, "brows": 2, "fingers": 10,
+                "faceChannels": FACE_CHANNELS,
+            }
         else:
             bpy.ops.mesh.primitive_cylinder_add(radius=0.5, depth=0.9, location=(0, 0, 0.45))
             scn.collection.objects[-1].data.materials.append(mat)

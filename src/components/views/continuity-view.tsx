@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldAlert, Plus, Loader2, ScanEye } from "lucide-react";
+import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader } from "@/components/views/shared";
@@ -21,6 +21,8 @@ const KIND_COLORS: Record<string, string> = {
   TRANSFORMED: "border-violet-400/40 text-violet-300 bg-violet-400/10",
   ART_DRIFT: "border-rose-400/40 text-rose-300 bg-rose-400/10",
   ART_VERIFIED: "border-emerald-400/40 text-emerald-300 bg-emerald-400/10",
+  FACT_BROKEN: "border-rose-400/40 text-rose-300 bg-rose-400/10",
+  FACT_HELD: "border-emerald-400/40 text-emerald-300 bg-emerald-400/10",
   CUSTOM: "border-white/20 text-muted-foreground bg-white/5",
 };
 
@@ -188,6 +190,314 @@ function ArtContinuityPanel({ projectId }: { projectId: string }) {
   );
 }
 
+interface UniverseFactRow {
+  id: string;
+  text: string;
+  category: string;
+  source: string;
+  active: boolean;
+}
+
+interface UniverseQueueRow {
+  shotId: string;
+  ref: string;
+  description: string;
+  artUrl: string | null;
+  worst: number;
+  items: Array<{ factText: string; confidence: number; note: string; eventId: string }>;
+}
+
+interface UniversePanelData {
+  facts: UniverseFactRow[];
+  queue: UniverseQueueRow[];
+  shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>;
+}
+
+interface UniverseCheckResponse {
+  error?: string;
+  result?: {
+    shotId: string;
+    shotRef: string;
+    verdicts: Array<{ factId: string; text: string; holds: boolean; confidence: number; note: string }>;
+    broken: number;
+    summary: string;
+  };
+}
+
+const FACT_CATEGORIES = ["WORLD", "CHARACTER", "PROP", "LOCATION", "RULE"];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  WORLD: "border-sky-400/30 text-sky-300 bg-sky-400/10",
+  CHARACTER: "border-violet-400/30 text-violet-300 bg-violet-400/10",
+  PROP: "border-amber-400/30 text-amber-300 bg-amber-400/10",
+  LOCATION: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  RULE: "border-rose-400/30 text-rose-300 bg-rose-400/10",
+};
+
+/**
+ * Universe-facts vision checks: the production's canon rules of the
+ * world join the QA loop. Facts are authored here (or by DSH), a
+ * vision model judges panel art against the active facts with a
+ * confidence per fact, verdicts land as FACT_HELD / FACT_BROKEN
+ * events, and confident violations rank into the re-render queue
+ * (worst first) with a one-click re-render + re-check.
+ */
+function UniverseFactsPanel({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<UniversePanelData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [newFact, setNewFact] = useState("");
+  const [newCategory, setNewCategory] = useState("WORLD");
+  const [adding, setAdding] = useState(false);
+  const [shotId, setShotId] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [rerendering, setRerendering] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<{ ref: string; text: string; clean: boolean } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/universe-facts?projectId=${projectId}`);
+      const body = (await res.json()) as UniversePanelData;
+      setData(body);
+      if (!shotId) {
+        const firstWithArt = body.shots.find((s) => s.hasArt);
+        if (firstWithArt) setShotId(firstWithArt.shotId);
+      }
+    } catch {
+      setError("Load failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function addFact() {
+    if (!newFact.trim()) return;
+    setAdding(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/universe-facts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, text: newFact, category: newCategory }),
+      });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        setError(body.error ?? "Add failed");
+      } else {
+        setNewFact("");
+        await refresh();
+      }
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function toggleFact(fact: UniverseFactRow) {
+    await fetch(`/api/universe-facts/${fact.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: !fact.active }),
+    });
+    await refresh();
+  }
+
+  async function removeFact(id: string) {
+    await fetch(`/api/universe-facts/${id}`, { method: "DELETE" });
+    await refresh();
+  }
+
+  async function runCheck(targetShotId: string) {
+    if (!targetShotId) return;
+    setChecking(true);
+    setError(null);
+    setVerdict(null);
+    try {
+      const res = await fetch("/api/universe-facts/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shotId: targetShotId }),
+      });
+      const body = (await res.json()) as UniverseCheckResponse;
+      if (!res.ok || body.error || !body.result) {
+        setVerdict({ ref: "check", text: body.error ?? "Vision check failed", clean: false });
+      } else {
+        const r = body.result;
+        const lines = r.verdicts.map((v) => `${v.holds ? "HELD" : "BROKEN"} ${(v.confidence * 100).toFixed(0)}% ${v.text}`);
+        setVerdict({
+          ref: r.shotRef,
+          text: `${r.summary} (${lines.join(", ")})`,
+          clean: r.broken === 0,
+        });
+        await refresh();
+      }
+    } catch {
+      setVerdict({ ref: "check", text: "Vision check failed", clean: false });
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function rerenderAndCheck(row: UniverseQueueRow) {
+    setRerendering(row.shotId);
+    setError(null);
+    try {
+      const res = await fetch("/api/panel-art", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shotId: row.shotId, format: "MANHUA" }),
+      });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        setError(body.error ?? "Panel re-render failed");
+        return;
+      }
+      await runCheck(row.shotId);
+    } catch {
+      setError("Panel re-render failed");
+    } finally {
+      setRerendering(null);
+    }
+  }
+
+  const shotsWithArt = (data?.shots ?? []).filter((s) => s.hasArt);
+
+  return (
+    <div className="studio-panel p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Globe2 className="h-4 w-4 text-sky-300" /> Universe-facts vision checks
+          </h3>
+          <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 max-w-xl">
+            The world&apos;s canon joins the QA loop: register the rules of the universe, a vision model judges panel art
+            against them with a confidence per fact, and confident violations rank into the re-render queue below.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" className="border-sky-400/25 bg-sky-400/10 text-sky-200 hover:bg-sky-400/20" onClick={() => void refresh()} disabled={loading}>
+          {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
+          Load facts + queue
+        </Button>
+      </div>
+
+      {error && <p className="text-[11px] text-rose-300">{error}</p>}
+
+      {verdict && (
+        <div className={cn(
+          "rounded-lg border px-3 py-2 text-[11px] leading-relaxed",
+          verdict.clean ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-amber-400/25 bg-amber-400/10 text-amber-200"
+        )}>
+          <span className="font-semibold">{verdict.ref}</span> - {verdict.text}
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div className="flex gap-2 items-center flex-wrap">
+            <Input
+              value={newFact}
+              onChange={(e) => setNewFact(e.target.value)}
+              placeholder="e.g. Her blade glows cyan when spirit energy channels"
+              className="h-8 flex-1 min-w-[220px] bg-white/5 border-white/12 text-xs"
+              onKeyDown={(e) => { if (e.key === "Enter") void addFact(); }}
+            />
+            <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="h-8 rounded-md bg-white/5 border border-white/12 px-2 text-xs">
+              {FACT_CATEGORIES.map((c) => <option key={c} className="bg-card">{c}</option>)}
+            </select>
+            <button
+              onClick={() => void addFact()}
+              disabled={adding || !newFact.trim()}
+              className="h-8 rounded-md border border-sky-400/25 bg-sky-400/10 px-2.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40"
+            >
+              {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Add fact"}
+            </button>
+          </div>
+
+          {data.facts.length > 0 && (
+            <div className="space-y-1">
+              {data.facts.map((f) => (
+                <div key={f.id} className={cn("rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 flex items-center gap-2", !f.active && "opacity-50")}>
+                  <span className={cn("px-1.5 py-0.5 rounded border text-[9px] shrink-0", CATEGORY_COLORS[f.category] ?? CATEGORY_COLORS.WORLD)}>{f.category}</span>
+                  <span className="text-[11px] flex-1 min-w-0 truncate" title={f.text}>{f.text}</span>
+                  <span className="text-[9px] text-muted-foreground shrink-0">{f.source}</span>
+                  <button onClick={() => void toggleFact(f)} title={f.active ? "Deactivate: vision checks skip this fact" : "Activate"} className="shrink-0 text-muted-foreground hover:text-sky-300 transition-colors">
+                    <Power className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={() => void removeFact(f.id)} title="Delete fact" className="shrink-0 text-muted-foreground hover:text-rose-300 transition-colors">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2 items-center flex-wrap">
+            <select
+              value={shotId}
+              onChange={(e) => setShotId(e.target.value)}
+              className="h-8 flex-1 min-w-[240px] rounded-md bg-white/5 border border-white/12 px-2 text-xs"
+            >
+              <option value="" className="bg-card">Pick a shot with panel art…</option>
+              {shotsWithArt.map((s) => (
+                <option key={s.shotId} value={s.shotId} className="bg-card">{s.ref} - {s.description.slice(0, 60)}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => void runCheck(shotId)}
+              disabled={checking || !shotId}
+              title="Vision check: judge this panel against the active universe facts"
+              className="h-8 rounded-md border border-sky-400/25 bg-sky-400/10 px-2.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40"
+            >
+              {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Run fact check"}
+            </button>
+          </div>
+
+          {data.queue.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-semibold text-rose-300 uppercase tracking-wide">Re-render queue (worst confidence first)</p>
+              {data.queue.map((row) => (
+                <div key={row.shotId} className="rounded-lg border border-rose-400/20 bg-black/25 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-[10px] text-muted-foreground shrink-0">{row.ref}</span>
+                      <span className="text-[11px] truncate">{row.description}</span>
+                      <span className="px-1.5 py-0.5 rounded border border-rose-400/30 text-rose-300 bg-rose-400/10 text-[9px] shrink-0">
+                        worst {(row.worst * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => void rerenderAndCheck(row)}
+                      disabled={rerendering === row.shotId}
+                      title="Re-generate this panel, then run the fact check again"
+                      className="h-6 shrink-0 rounded-md border border-violet-400/25 bg-violet-400/10 px-2 text-[9px] font-semibold text-violet-200 hover:bg-violet-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+                    >
+                      {rerendering === row.shotId ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                      Re-render + re-check
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {row.items.map((it, i) => (
+                      <span key={i} title={it.note} className="px-1.5 py-0.5 rounded border border-rose-400/25 text-rose-200 bg-rose-400/10 text-[9px]">
+                        {(it.confidence * 100).toFixed(0)}% - {it.factText}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              {data.facts.length === 0
+                ? "No facts registered yet - add the first canon rule above (or ask DSH with add_universe_fact)."
+                : "Re-render queue empty: no confident universe-fact violations on the checked panels."}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function AddEventDialog() {
   const qc = useQueryClient();
   const { projectId } = useStudio();
@@ -275,6 +585,7 @@ export function ContinuityView({ project }: { project: import("@/lib/api-client"
       />
       <div className="space-y-2.5 max-h-[calc(100vh-13rem)] overflow-y-auto studio-scroll pr-1">
         <ArtContinuityPanel projectId={project.id} />
+        <UniverseFactsPanel projectId={project.id} />
         {(eventsQ.data ?? []).map((ev) => (
           <div key={ev.id} className="studio-panel p-4">
             <div className="flex items-start justify-between gap-3 flex-wrap">

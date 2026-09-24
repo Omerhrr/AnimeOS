@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { randomUUID } from "node:crypto";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { scanArtContinuity, checkShotArtContinuity } from "@/lib/continuity-art";
+import { checkShotUniverseFacts } from "@/lib/universe-facts";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -189,6 +190,22 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (optional, narrows the scan to one scene)",
       shotNumber: "number (optional, with sceneNumber targets one shot)",
       deep: "boolean (optional, vision art-vs-anchor check on the targeted shot - needs panel art and a model sheet)",
+    },
+  },
+  {
+    name: "add_universe_fact",
+    description: "Register a canonical UNIVERSE FACT for this production: a rule of the world the art must obey (the blade glows cyan when spirit energy channels, two moons hang over the arena, the antagonist never removes his mask). Vision checks judge panel art against the active facts and confident violations feed the re-render queue.",
+    args: {
+      text: "string - the fact, stated visually enough to be checkable on a panel",
+      category: "WORLD | CHARACTER | PROP | LOCATION | RULE (default WORLD)",
+    },
+  },
+  {
+    name: "check_universe_facts",
+    description: "Universe-facts vision check: a vision model judges a shot's panel art against the production's active universe facts and returns a holds/confidence verdict per fact. Verdicts persist as FACT_HELD / FACT_BROKEN continuity events; confident violations enter the re-render queue (Continuity view) for a one-click panel re-render and re-check.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
     },
   },
   {
@@ -1483,6 +1500,33 @@ export async function executeTool(projectId: string, name: string, args: Record<
         };
       }
 
+      case "add_universe_fact": {
+        const text = String(args.text ?? "").trim();
+        if (!text) return { status: "ERROR", result: "text required - state the fact so a panel can be checked against it (e.g. 'her blade glows cyan when spirit energy channels')." };
+        const cats = ["WORLD", "CHARACTER", "PROP", "LOCATION", "RULE"];
+        const category = cats.includes(String(args.category ?? "")) ? String(args.category) : "WORLD";
+        const fact = await db.universeFact.create({ data: { projectId, text: text.slice(0, 400), category, source: "DSH" } });
+        const activeCount = await db.universeFact.count({ where: { projectId, active: true } });
+        return { status: "OK", result: `Universe fact registered (${category}, ${activeCount} active): "${fact.text}" Vision checks now judge every panel against it - run check_universe_facts on a hero shot to audit the art, and confident violations feed the re-render queue in the Continuity view.` };
+      }
+
+      case "check_universe_facts": {
+        const scene = await resolveScene(projectId, args.sceneNumber ? Number(args.sceneNumber) : null);
+        if (!scene) return { status: "ERROR", result: "No scene exists - nothing to check." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        const result = await checkShotUniverseFacts(shot.id);
+        if (!result.ok) return { status: "ERROR", result: `Universe check failed for Shot ${String(shot.number).padStart(3, "0")}: ${result.error}` };
+        const r = result.result;
+        const lines = r.verdicts.map((v) => `${v.holds ? "HELD" : "BROKEN"} (conf ${v.confidence.toFixed(2)}) ${v.text}${v.note ? ` - ${v.note}` : ""}`);
+        const queueNote = r.broken > 0
+          ? ` ${r.broken} confident violation(s) entered the re-render queue - offer a panel re-render (generate_panel_art) and re-check the art after.`
+          : "";
+        return { status: "OK", result: `Universe-facts check on Shot ${String(shot.number).padStart(3, "0")} (${r.shotRef}): ${r.summary}\n${lines.join("\n")}${queueNote}` };
+      }
+
       case "render_shot": {
         let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
@@ -1503,7 +1547,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const poseTxt = poseChip(shot.poseStart, shot.poseEnd);
         const engineNote = job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
           ? poseTxt
-            ? `headless Blender sequence worker (Cycles) with the skeletal stand-in performing ${poseTxt}`
+            ? `headless Blender sequence worker (Cycles) with the articulated stand-in (face + hands) performing ${poseTxt}`
             : "headless Blender sequence worker (Cycles)"
           : job.driver === "IMG2VID"
             ? job.providerTaskId
@@ -2370,6 +2414,7 @@ export async function buildCompactContext(projectId: string) {
       assets: true,
       terminology: true,
       continuityEvents: true,
+      universeFacts: true,
       loras: { include: { _count: { select: { shots: true } } } },
       artists: { include: { _count: { select: { shots: true } } } },
     },
@@ -2429,6 +2474,7 @@ export async function buildCompactContext(projectId: string) {
     environments: project.environments.map((e) => e.name),
     assets: project.assets.map((a) => `${a.category}:${a.name}(${a.status})`),
     continuity: project.continuityEvents.map((c) => `${c.entityName} ${c.kind}${c.episodeNumber ? ` @Ep${c.episodeNumber}` : ""}`),
+    universeFacts: project.universeFacts.map((f) => `${f.category}: ${f.text}${f.active ? "" : " (inactive)"}`),
     terminology: project.terminology.map((t) => t.term),
   };
 }

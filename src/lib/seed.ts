@@ -421,4 +421,18 @@ export async function seedStudioTeam(projectId: string) {
       data: { dialogue: JSON.stringify([{ speaker: "Lin Yue", text: "The rain... it stopped.", kind: "THOUGHT" }]) },
     });
   }
+
+  // Universe facts: the demo production's canon rules of the world,
+  // checkable by the vision layer against any panel art
+  if (await db.universeFact.count({ where: { projectId } }) === 0) {
+    const facts: Array<{ text: string; category: string }> = [
+      { text: "Lin Yue's blade emits a cyan glow whenever spirit energy channels through it", category: "PROP" },
+      { text: "The Cloud Terrace arena sits under two moons in the night sky", category: "LOCATION" },
+      { text: "Chen Hao's iron half-mask covers the left side of his face and never comes off", category: "CHARACTER" },
+      { text: "Spirit energy in this world appears as golden particles drifting upward", category: "RULE" },
+    ];
+    for (const f of facts) {
+      await db.universeFact.create({ data: { projectId, text: f.text, category: f.category, source: "BIBLE" } });
+    }
+  }
 }

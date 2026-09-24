@@ -45,6 +45,7 @@ model Project {
   continuityEvents ContinuityEvent[]
   dshMessages      DshMessage[]
   arcTemplates     ArcTemplate[]
+  universeFacts    UniverseFact[]
 }
 
 model Season {
@@ -419,6 +420,23 @@ model ContinuityEvent {
   severity      String   @default("INFO") // INFO | WARNING | CRITICAL
   createdAt     DateTime @default(now())
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// UNIVERSE FACTS - the production's canon rules of the world (visual
+// and narrative): glowing blade spirits, two moons over the arena, a
+// masked antagonist. Vision checks compare panel art against the
+// active facts and land confidence-scored verdicts; low-confidence
+// violations feed the re-render queue in the Continuity view.
+model UniverseFact {
+  id         String   @id @default(cuid())
+  projectId  String
+  text       String
+  category   String   @default("WORLD") // WORLD | CHARACTER | PROP | LOCATION | RULE
+  source     String   @default("USER") // USER | DSH | BIBLE
+  active     Boolean  @default(true) // inactive facts are skipped by vision checks
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Terminology {

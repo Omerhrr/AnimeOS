@@ -1,0 +1,95 @@
+{
+  "project": "Immortal Path",
+  "episode": {
+    "number": 7,
+    "title": "The Storm Over Azure Mountain"
+  },
+  "mode": "PREVIEW",
+  "generatedAt": "2026-09-24T06:57:40.997Z",
+  "canvas": {
+    "width": 960,
+    "height": 540,
+    "fps": 24
+  },
+  "durationMs": 22750,
+  "shots": [
+    {
+      "shotId": "cmuf2gafi001dptum9phbaqkx",
+      "sceneNumber": 12,
+      "number": 1,
+      "startMs": 0,
+      "durationMs": 4200,
+      "movement": "CRANE",
+      "shotType": "ESTABLISHING",
+      "renderedNow": false,
+      "clip": "/renders/cut-cmuf2gafi001dptum9phbaqkx-50593.mp4"
+    },
+    {
+      "shotId": "cmuf2gafj001fptumrf1tu43y",
+      "sceneNumber": 12,
+      "number": 2,
+      "startMs": 4200,
+      "durationMs": 5000,
+      "movement": "TRACKING",
+      "shotType": "MEDIUM",
+      "renderedNow": false,
+      "clip": "/renders/cut-cmuf2gafj001fptumrf1tu43y-51855.mp4"
+    },
+    {
+      "shotId": "cmuf2gafk001hptum03bbx3p1",
+      "sceneNumber": 12,
+      "number": 3,
+      "startMs": 9200,
+      "durationMs": 2800,
+      "movement": "STATIC",
+      "shotType": "CLOSEUP",
+      "renderedNow": false,
+      "clip": "/renders/cut-cmuf2gafk001hptum03bbx3p1-53344.mp4"
+    },
+    {
+      "shotId": "cmuf2gafl001jptumk6iyylml",
+      "sceneNumber": 12,
+      "number": 4,
+      "startMs": 12000,
+      "durationMs": 4000,
+      "movement": "PAN",
+      "shotType": "WIDE",
+      "renderedNow": false,
+      "clip": "/renders/cut-cmuf2gafl001jptumk6iyylml-54309.mp4"
+    },
+    {
+      "shotId": "cmuf2gafm001lptum9inl9d0q",
+      "sceneNumber": 12,
+      "number": 5,
+      "startMs": 16000,
+      "durationMs": 4200,
+      "movement": "ORBIT",
+      "shotType": "LOW_ANGLE",
+      "renderedNow": false,
+      "clip": "/renders/cut-cmuf2gafm001lptum9inl9d0q-55563.mp4"
+    },
+    {
+      "shotId": "cmuf2gafn001nptumxpntl2ym",
+      "sceneNumber": 12,
+      "number": 6,
+      "startMs": 20200,
+      "durationMs": 3600,
+      "movement": "STATIC",
+      "shotType": "WIDE",
+      "renderedNow": false,
+      "clip": "/renders/cut-cmuf2gafn001nptumxpntl2ym-56885.mp4"
+    }
+  ],
+  "audio": {
+    "cueCount": 14,
+    "kinds": {
+      "AMBIENCE": 3,
+      "BGM": 2,
+      "SFX": 8,
+      "VOICE": 1
+    },
+    "synthesized": 1,
+    "realTakes": 0
+  },
+  "warnings": []
+}
