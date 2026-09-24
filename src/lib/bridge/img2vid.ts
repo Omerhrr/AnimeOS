@@ -78,6 +78,9 @@ export interface Img2VidSubmitPayload {
   width: number;
   height: number;
   mode: "PREVIEW" | "FINAL";
+  // LIP-SYNC: spoken lines for speaking closeups - a host provider
+  // that understands speech passes them to its model; others ignore.
+  speechLines?: string[] | null;
 }
 
 export interface Img2VidSubmitResult {
@@ -178,7 +181,8 @@ export function img2vidDurationClamp(seconds: number): number {
 /**
  * The animation prompt sent to the video model: identity lock on the
  * key art's character, the pose beat in performance words, the
- * camera program. Pure - E2E asserts on its wording.
+ * camera program - plus SPEECH DIRECTION when the shot is a speaking
+ * closeup (lips articulate the lines). Pure - E2E asserts on its wording.
  */
 export function buildImg2VidPrompt(input: {
   poseStart: string | null;
@@ -186,6 +190,7 @@ export function buildImg2VidPrompt(input: {
   movement: string | null;
   shotType: string;
   lighting: string | null;
+  speechLines?: string[] | null;
 }): string {
   const start = input.poseStart ? POSE_GLOSS[input.poseStart] ?? null : null;
   const endPose = input.poseEnd ? POSE_GLOSS[input.poseEnd] ?? null : null;
@@ -196,9 +201,14 @@ export function buildImg2VidPrompt(input: {
       : "The scene stays alive with subtle ambient motion.";
   const camera = MOVEMENT_GLOSS[input.movement?.toUpperCase() ?? ""] ?? "the camera holds still";
   const framing = SHOT_GLOSS[input.shotType.toUpperCase()] ?? "medium view";
+  const speech = (input.speechLines ?? []).filter((l) => l?.trim()).slice(0, 2);
+  const speechLine = speech.length > 0
+    ? `The main character SPEAKS out loud: "${speech.map((l) => l.trim().slice(0, 120)).join(" ... ")}" - the lips and jaw articulate the words in natural lip-sync, mouth opening on vowels, closing on lips, with subtle head emphasis on the stresses.`
+    : null;
   const parts = [
     "Animate this exact frame into a cinematic anime clip.",
     beat,
+    speechLine,
     `Camera work: ${camera}, ${framing}.`,
     input.lighting ? `Lighting mood: ${input.lighting}.` : null,
     "Keep the character's face, hair, outfit, colors and art style EXACTLY as in the source frame - same identity, same palette. Consistent single character, smooth natural motion, no cuts, no text, no watermark.",
@@ -236,6 +246,7 @@ export interface Img2VidZaiSubmitPayload {
   lighting: string | null;
   duration: number; // seconds
   mode: "PREVIEW" | "FINAL";
+  speechLines?: string[] | null;
 }
 
 export interface Img2VidZaiSubmitResult {

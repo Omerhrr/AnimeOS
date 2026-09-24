@@ -4,6 +4,10 @@ import path from "path";
 import { stageFor } from "@/lib/types";
 import { hasPoseProgram } from "@/lib/animation/poses";
 import {
+  buildSpeechProgram, describeSpeechProgram, isSpeakingCloseup,
+  speechPayload, type SpeechProgram,
+} from "@/lib/animation/lipsync";
+import {
   bridgeStatus, submitRenderJob, pollJobProgress,
   pollLocalJob, localJobStale,
 } from "@/lib/bridge/blender";
@@ -78,8 +82,23 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
   // Pick the first engine that can take the job.
   const bridge = await bridgeStatus(true);
   const shot = shotId
-    ? await db.shot.findUnique({ where: { id: shotId }, include: { scene: true } })
+    ? await db.shot.findUnique({ where: { id: shotId }, include: { scene: true, audioCues: true } })
     : null;
+
+  // LIP-SYNC: a speaking closeup (SPEECH dialogue + tight framing)
+  // performs its lines - the Blender stand-in drives its mouth rig
+  // from the viseme program, the img2vid prompt receives the lines
+  // as speech direction, and MOTION plans a blocking speech beat.
+  const speech: SpeechProgram | null = shot && isSpeakingCloseup(shot.shotType, shot.dialogue)
+    ? buildSpeechProgram({
+        dialogue: shot.dialogue,
+        shotDurationMs: Math.round(shot.duration * 1000),
+        voiceTakes: shot.audioCues
+          .filter((c) => c.kind === "VOICE")
+          .map((c) => ({ startMs: c.startMs, durationMs: c.voiceDurationMs ?? 0 })),
+      })
+    : null;
+  const lipNote = describeSpeechProgram(speech ?? { spans: [], visemes: [], lines: 0 });
 
   if (bridge.reachable && shot) {
     const project = await db.project.findUnique({ where: { id: projectId } });
@@ -95,6 +114,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         poseEnd: shot.poseEnd,
         lighting: shot.lighting,
         duration: shot.duration,
+        ...(speech ? { speech: speechPayload(speech) } : {}),
       },
       scene: {
         number: shot.scene.number,
@@ -152,6 +172,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         width,
         height,
         mode,
+        speechLines: speech && speech.spans.length > 0 ? speech.spans.map((s) => s.text) : null,
       });
       if (submit.submitted) {
         driver = "IMG2VID";
@@ -174,6 +195,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         lighting: shot.lighting,
         duration: shot.duration,
         mode,
+        speechLines: speech && speech.spans.length > 0 ? speech.spans.map((s) => s.text) : null,
       });
       if (submit.submitted && submit.taskId) {
         driver = "IMG2VID";
@@ -191,12 +213,17 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     driver = "MOTION";
     clipMs = Math.round(shot.duration * 1000);
     stage = "Motion: planning camera program";
-    startMotionJob(job.id, shot, mode);
+    startMotionJob(job.id, shot, mode, speech);
   }
 
   const finalJob = await db.renderJob.update({
     where: { id: job.id },
-    data: { driver, stage, ...(clipMs > 0 ? { durationMs: clipMs } : {}), ...(providerTaskId ? { providerTaskId } : {}) },
+    data: {
+      driver,
+      stage: lipNote ? `${stage} + ${lipNote}`.slice(0, 200) : stage,
+      ...(clipMs > 0 ? { durationMs: clipMs } : {}),
+      ...(providerTaskId ? { providerTaskId } : {}),
+    },
   });
 
   await db.productionEvent.create({
@@ -204,8 +231,8 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       projectId,
       actor: "SYSTEM",
       type: "RENDER",
-      summary: `Render job ${job.id.slice(-6)} queued - ${mode} attempt ${job.attempt} (${driver})`,
-      payload: JSON.stringify({ jobId: job.id, shotId, mode, driver }),
+      summary: `Render job ${job.id.slice(-6)} queued - ${mode} attempt ${job.attempt} (${driver}${lipNote ? `, ${lipNote}` : ""})`,
+      payload: JSON.stringify({ jobId: job.id, shotId, mode, driver, ...(lipNote ? { lipSync: lipNote } : {}) }),
     },
   });
 
@@ -214,7 +241,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
 
 // ── MOTION engine runner (async, updates the job as ffmpeg encodes) ──
 
-function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number }; shotType: string; lens: string | null; movement: string | null; poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number; number: number; artworkUrl: string | null }, mode: "PREVIEW" | "FINAL") {
+function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number }; shotType: string; lens: string | null; movement: string | null; poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number; number: number; artworkUrl: string | null }, mode: "PREVIEW" | "FINAL", speech: SpeechProgram | null = null) {
   void (async () => {
     let lastPct = -1;
     try {
@@ -241,6 +268,7 @@ function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: 
         mode,
         artworkUrl: shot.artworkUrl,
         shotNumber: shot.number,
+        speechSpans: speech && speech.spans.length > 0 ? speech.spans.map((s) => ({ startMs: s.startMs, endMs: s.endMs })) : null,
         onProgress: (ratio) => {
           const pct = Math.floor(ratio * 25) * 4;
           if (pct > lastPct) {
@@ -385,15 +413,25 @@ export async function tickRenderJob(jobId: string) {
     } else if (!prog.polled) {
       // provider lost mid-job - re-render locally with the MOTION engine
       const shot = job.shotId
-        ? await db.shot.findUnique({ where: { id: job.shotId }, include: { scene: true } })
+        ? await db.shot.findUnique({ where: { id: job.shotId }, include: { scene: true, audioCues: true } })
         : null;
       if (shot && (await detectFfmpeg())) {
+        // rebuild the speech program so the takeover keeps the lip-sync
+        const takeoverSpeech = isSpeakingCloseup(shot.shotType, shot.dialogue)
+          ? buildSpeechProgram({
+              dialogue: shot.dialogue,
+              shotDurationMs: Math.round(shot.duration * 1000),
+              voiceTakes: shot.audioCues
+                .filter((c) => c.kind === "VOICE")
+                .map((c) => ({ startMs: c.startMs, durationMs: c.voiceDurationMs ?? 0 })),
+            })
+          : null;
         job = await db.renderJob.update({
           where: { id: jobId },
           data: { driver: "MOTION", stage: "Img2Vid provider lost - MOTION engine taking over", startedAt: new Date() },
           include: { evaluation: true },
         });
-        startMotionJob(job.id, shot, (job.mode as "PREVIEW" | "FINAL") ?? "PREVIEW");
+        startMotionJob(job.id, shot, (job.mode as "PREVIEW" | "FINAL") ?? "PREVIEW", takeoverSpeech);
       } else {
         job = await db.renderJob.update({
           where: { id: jobId },

@@ -64,6 +64,17 @@
 # snarls, a CAST spreads its fingers, a BOW closes its eyes and a
 # POINT extends the index. Idle micro-motion (brow drift, blinking)
 # keeps the face alive on holds.
+#
+# v3.3 adds LIP-SYNC on speaking closeups: a shot with SPEECH dialogue
+# and a tight framing arrives with an extra payload field
+#   "speech": {"lines": n, "visemes": [{"s","e","o","w","r"}, ...]}
+# (millisecond viseme segments precomputed from the dialogue and its
+# voice-take windows). The worker samples the program per frame and
+# the mouth PERFORMS the lines - openness follows the phonemes, the
+# mouth spreads on "ee" vowels and purses on "oo", while the pose's
+# own mouth channel stays as the effort floor. The worker state
+# reports the program ({"speech": {"lines", "visemes"}}) so the
+# pipeline can assert the lip-sync shipped.
 
 import argparse
 import base64
@@ -271,6 +282,56 @@ def thumb_curl(grip):
 def mouth_scale(mouth):
     """Mouth slab scale on Z: 0.3 = closed line, ~1.7 = full shout."""
     return 0.3 + 1.4 * clamp(mouth, 0.0, 1.0)
+
+
+# ─── lip-sync (v3.3): viseme program for speaking closeups ──────
+#
+# A speaking closeup arrives with shot.speech = {"lines": n,
+# "visemes": [{s, e, o, w, r}, ...]} - millisecond viseme segments
+# built from the shot's SPEECH dialogue (and its rendered voice-take
+# windows when those exist). o = openness 0..1, w = wide spread
+# ("ee"), r = round purse ("oo"). The worker samples the program per
+# frame and the mouth rig PERFORMS the lines instead of holding the
+# pose's static mouth channel.
+
+VISEME_DECAY_MS = 90.0
+
+
+def parse_speech(shot_payload):
+    """Defensively extract the viseme program from the payload: a bad
+    shape must never break a render (falls back to no speech)."""
+    speech = shot_payload.get("speech") or {}
+    rows = speech.get("visemes") or []
+    out = []
+    for v in rows:
+        try:
+            s, e = float(v.get("s", 0)), float(v.get("e", 0))
+            o = clamp(float(v.get("o", 0)), 0.0, 1.0)
+            w = clamp(float(v.get("w", 0)), 0.0, 1.0)
+            r = clamp(float(v.get("r", 0)), 0.0, 1.0)
+            if e > s:
+                out.append((s, e, o, w, r))
+        except Exception:  # noqa: BLE001
+            continue
+    return out
+
+
+def speech_open_at(visemes, t_ms):
+    """Mouth shape at t_ms from the viseme program (mirrors the TS
+    sampleSpeech): the segment covering t, or a short decay out of the
+    previous one so the mouth never snaps between phonemes. None when
+    nothing is being spoken."""
+    prev = None
+    for (s, e, o, w, r) in visemes:
+        if s <= t_ms < e:
+            return {"o": o, "w": w, "r": r}
+        if t_ms < s:
+            if prev is not None and t_ms < prev[1] + VISEME_DECAY_MS:
+                k = 1.0 - (t_ms - prev[1]) / VISEME_DECAY_MS
+                return {"o": prev[2] * k, "w": prev[3] * k, "r": prev[4] * k}
+            return None
+        prev = (s, e, o, w, r)
+    return None
 
 
 def eye_scale(eye):
@@ -524,7 +585,7 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
     }
 
 
-def apply_pose(figure, pose_start, pose_end, t, t_sec):
+def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None):
     """Pose the stand-in for this frame: eased interpolation between the
     shot's start/end poses, plus a procedural walk cycle when either
     endpoint is WALK (stride swing on hips/shoulders, counter-swing on
@@ -535,7 +596,12 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec):
     and drive the face and finger rig, a deterministic blink and a
     slow brow drift keep holds alive, and the blade carries a small
     follow-through tilt proportional to the swing rate of the right
-    shoulder (secondary motion)."""
+    shoulder (secondary motion).
+
+    v3.3 LIP-SYNC: on a speaking closeup `speech` carries the sampled
+    viseme shape for this frame ({o, w, r}); the mouth then performs
+    the line (the pose's mouth channel stays as a floor for shouts)
+    and widens/purses with the vowels."""
     (root_x, root_y, spine_a, head_a, r_arm, r_elb, l_arm, l_elb, r_leg, r_knee, l_leg, l_knee) = lerp_pose(pose_start, pose_end, t)
     (brow, eye, mouth, grip_r, grip_l, point_r, point_l) = lerp_face(pose_start, pose_end, t)
     walking = "WALK" in (normalize_pose(pose_start), normalize_pose(pose_end))
@@ -577,7 +643,17 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec):
     es = eye_scale(eye)
     figure["eyeL"].scale = (1.0, 1.0, es)
     figure["eyeR"].scale = (1.0, 1.0, es)
-    figure["mouth"].scale = (1.0, 1.0, mouth_scale(mouth))
+    # lip-sync (v3.3): a viseme sample drives openness and shapes the
+    # mouth wide ("ee") or round ("oo"); the pose mouth stays as a
+    # floor so an effort shout is never flattened by a quiet phoneme
+    if speech is not None:
+        mouth = max(mouth * 0.35, speech.get("o", 0.0))
+        wide = speech.get("w", 0.0)
+        rnd = speech.get("r", 0.0)
+        sx = clamp(1.0 + 0.35 * wide - 0.45 * rnd, 0.55, 1.45)
+        figure["mouth"].scale = (sx, 1.0, mouth_scale(mouth))
+    else:
+        figure["mouth"].scale = (1.0, 1.0, mouth_scale(mouth))
 
     # ── hand rig (v3.2): grip curls the fingers, point straightens the
     # index, the thumb half-curls with the grip
@@ -687,9 +763,11 @@ def worker_run(job_file):
         pose_start = normalize_pose(shot.get("poseStart"))
         pose_end = normalize_pose(shot.get("poseEnd"))
         figure = None
+        speech_visemes = parse_speech(shot)
         state["posesRequested"] = [str(shot.get("poseStart")), str(shot.get("poseEnd"))]
         state["posesResolved"] = [pose_start, pose_end]
         state["scriptMtime"] = os.path.getmtime(__file__)
+        state["speech"] = {"lines": int((shot.get("speech") or {}).get("lines", 0) or 0), "visemes": len(speech_visemes)} if speech_visemes else None
         if pose_start or pose_end:
             figure = build_stand_in_figure(bpy, scn, mat, blade_mat)
             # rig report: lets the pipeline (and E2E) assert the v3.2
@@ -777,7 +855,8 @@ def worker_run(job_file):
 
             t_sec = (f - 1) / fps
             if figure:
-                apply_pose(figure, pose_start, pose_end, t, t_sec)
+                apply_pose(figure, pose_start, pose_end, t, t_sec,
+                           speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None)
             boost = 0.0
             for (start, dur, alpha) in windows:
                 if start <= t_sec <= start + dur:

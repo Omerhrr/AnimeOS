@@ -81,3 +81,7 @@ public/voices/*.wav
 !public/voices/.gitkeep
 public/auditions/*.wav
 !public/auditions/.gitkeep
+
+# e2e iter31 local artifacts
+scripts/.e2e31-frames/
+scripts/.e2e31-state.json

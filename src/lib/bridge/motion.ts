@@ -48,6 +48,10 @@ export interface CameraProgramInput {
   resolution: string; // "1920x1080"
   mode: "PREVIEW" | "FINAL";
   hasArt: boolean;
+  // LIP-SYNC (blocking): dialogue spans of a speaking closeup. ffmpeg
+  // cannot articulate a painted mouth, so each line lands as a soft
+  // speech beat - the frame breathes with the spoken words.
+  speechSpans?: Array<{ startMs: number; endMs: number }> | null;
 }
 
 export interface FlashWindow {
@@ -60,6 +64,7 @@ export interface CameraProgram {
   move: string; // normalized movement id
   moveLabel: string; // human wording for stage lines
   poseChipText: string | null; // "STANCE -> LUNGE" when the shot carries poses
+  speechBeat: boolean; // blocking speech beat present (speaking closeup)
   zoomFrom: number; // camera zoom relative to the plate (1 = full frame)
   zoomTo: number;
   uxFrom: number; // horizontal focus center 0..1
@@ -254,6 +259,18 @@ export function planCameraProgram(input: CameraProgramInput): CameraProgram {
     });
   }
 
+  // speech beat (blocking lip-sync): each spoken line breathes as a
+  // soft shimmer over its window - the cut stays readable as
+  // "someone is talking here" even without a real mouth. Windows are
+  // absolute seconds on the clip timeline (drawbox t is seconds).
+  const spans = (input.speechSpans ?? []).slice(0, 4);
+  const totalSec = durationHint(input);
+  for (const span of spans) {
+    const start = clamp(span.startMs / 1000, 0, Math.max(0, totalSec - 0.3));
+    const dur = clamp((span.endMs - span.startMs) / 1000, 0.25, 1.4);
+    pulses.push({ start, dur, alpha: 0.08 });
+  }
+
   // timing + resolution (PREVIEW renders smaller for queue speed)
   const durationSec = clamp(Number.isFinite(input.duration) && input.duration > 0 ? input.duration : 4, 0.8, 30);
   const fps = clamp(Math.round(input.fps || 24), 1, 60);
@@ -265,6 +282,7 @@ export function planCameraProgram(input: CameraProgramInput): CameraProgram {
     move,
     moveLabel: lensNote ? `${prof.label} (${lensNote})` : prof.label,
     poseChipText,
+    speechBeat: spans.length > 0,
     zoomFrom: Number(zoomFrom.toFixed(4)),
     zoomTo: Number(zoomTo.toFixed(4)),
     uxFrom: prof.uxFrom,
@@ -286,6 +304,11 @@ export function planCameraProgram(input: CameraProgramInput): CameraProgram {
   };
 }
 
+/** Shot duration the planner can rely on before the timing block runs. */
+function durationHint(input: CameraProgramInput): number {
+  return clamp(Number.isFinite(input.duration) && input.duration > 0 ? input.duration : 4, 0.8, 30);
+}
+
 /** Human one-liner for job stage text and DSH results. */
 export function describeProgram(p: CameraProgram, hasArt: boolean): string {
   const parts = [
@@ -296,6 +319,7 @@ export function describeProgram(p: CameraProgram, hasArt: boolean): string {
   if (p.fogAlpha > 0) parts.push(`fog veil ${p.fogAlpha.toFixed(2)}`);
   if (p.flashes.length > 0) parts.push(`${p.flashes.length} lightning flash${p.flashes.length === 1 ? "" : "es"}`);
   if (p.poseChipText) parts.push(`poses ${p.poseChipText} (blocking)`);
+  if (p.speechBeat) parts.push("speech beat (blocking lip-sync)");
   parts.push(hasArt ? "key art" : "procedural plate");
   return parts.join(" · ");
 }
@@ -397,6 +421,7 @@ export async function renderShotClip(opts: {
   mode: "PREVIEW" | "FINAL";
   artworkUrl?: string | null;
   shotNumber?: number;
+  speechSpans?: Array<{ startMs: number; endMs: number }> | null;
   onProgress?: (ratio: number) => void;
 }): Promise<ShotClipRender> {
   const program = planCameraProgram({
@@ -417,6 +442,7 @@ export async function renderShotClip(opts: {
     resolution: opts.resolution,
     mode: opts.mode,
     hasArt: Boolean(opts.artworkUrl),
+    speechSpans: opts.speechSpans ?? null,
   });
   const note = describeProgram(program, Boolean(opts.artworkUrl));
 

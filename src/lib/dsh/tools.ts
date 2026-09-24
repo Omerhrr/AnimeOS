@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { scanArtContinuity, checkShotArtContinuity } from "@/lib/continuity-art";
 import { checkShotUniverseFacts } from "@/lib/universe-facts";
+import { startRepaintRun } from "@/lib/universe-repaint";
+import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -206,6 +208,13 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
+    },
+  },
+  {
+    name: "run_repaint_queue",
+    description: "SUPERVISED AUTO RE-PAINT: start a runner over the universe-facts re-render queue (worst confidence first). Each step re-paints a flagged panel with a FACT-AWARE prompt (the flagged facts ride in as corrections), re-runs the vision check and records FIXED / STILL_BROKEN / ERROR; steps that come back still broken stop being retried automatically and wait for the director. You can pause/resume/abort between steps (repeated calls with the same action).",
+    args: {
+      maxItems: "number 1-8 (default 3) - how many queued panels the run visits",
     },
   },
   {
@@ -1522,9 +1531,17 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const r = result.result;
         const lines = r.verdicts.map((v) => `${v.holds ? "HELD" : "BROKEN"} (conf ${v.confidence.toFixed(2)}) ${v.text}${v.note ? ` - ${v.note}` : ""}`);
         const queueNote = r.broken > 0
-          ? ` ${r.broken} confident violation(s) entered the re-render queue - offer a panel re-render (generate_panel_art) and re-check the art after.`
+          ? ` ${r.broken} confident violation(s) entered the re-render queue - offer a panel re-render (generate_panel_art) or run the supervised runner (run_repaint_queue) and re-check the art after.`
           : "";
         return { status: "OK", result: `Universe-facts check on Shot ${String(shot.number).padStart(3, "0")} (${r.shotRef}): ${r.summary}\n${lines.join("\n")}${queueNote}` };
+      }
+
+      case "run_repaint_queue": {
+        const maxItems = Number(args.maxItems ?? 3);
+        const result = await startRepaintRun(projectId, Number.isFinite(maxItems) ? maxItems : 3);
+        if (!result.ok) return { status: "ERROR", result: result.error };
+        const run = result.run;
+        return { status: "OK", result: `Supervised re-paint run ${run.id.slice(-6)} started: ${run.total} queued panel(s) worst-first. Each step re-paints with the flagged facts as prompt corrections, re-runs the vision check, and records FIXED / STILL_BROKEN / ERROR - still-broken panels stop being retried and wait for the director. Progress lands as REPAINT steps in this run's trace and the Continuity view shows the live log; call run_repaint_queue again only to start ANOTHER pass after this one finishes.` };
       }
 
       case "render_shot": {
@@ -1558,7 +1575,14 @@ export async function executeTool(projectId: string, name: string, args: Record<
                 ? "built-in MOTION engine (poses play as a blocking approximation)"
                 : "built-in MOTION engine (camera grammar over key art)"
               : "simulator";
-        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} on the ${engineNote} - it will finish as a playable animated clip following the shot's camera grammar (${shot.movement ?? "STATIC"}, ${shot.shotType}${poseTxt ? `, character ${poseTxt}` : ""}); DSH will inspect the preview when it completes.` };
+        const lip = isSpeakingCloseup(shot.shotType, shot.dialogue)
+          ? job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
+            ? " The mouth lip-syncs the SPEECH lines (viseme program on the stand-in)."
+            : job.driver === "IMG2VID"
+              ? " The video model received the SPEECH lines as lip-sync direction."
+              : " The MOTION engine lands a blocking speech beat per line."
+          : "";
+        return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} on the ${engineNote} - it will finish as a playable animated clip following the shot's camera grammar (${shot.movement ?? "STATIC"}, ${shot.shotType}${poseTxt ? `, character ${poseTxt}` : ""}); DSH will inspect the preview when it completes.${lip}` };
       }
 
       case "set_shot_dialogue": {

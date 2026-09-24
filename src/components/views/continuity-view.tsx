@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power } from "lucide-react";
+import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power, Play, Pause, Square, PaintRoller } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader } from "@/components/views/shared";
@@ -224,6 +224,41 @@ interface UniverseCheckResponse {
   };
 }
 
+interface RepaintStepRow {
+  shotId: string;
+  ref: string;
+  factTexts: string[];
+  beforeWorst: number;
+  afterSummary: string;
+  afterBroken: number;
+  outcome: "FIXED" | "STILL_BROKEN" | "ERROR";
+  error?: string;
+  at: string;
+}
+
+interface RepaintRunRow {
+  id: string;
+  status: "RUNNING" | "PAUSED" | "DONE" | "ABORTED";
+  cap: number;
+  index: number;
+  total: number;
+  steps: RepaintStepRow[];
+  error: string | null;
+}
+
+const OUTCOME_COLORS: Record<string, string> = {
+  FIXED: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  STILL_BROKEN: "border-amber-400/30 text-amber-300 bg-amber-400/10",
+  ERROR: "border-rose-400/30 text-rose-300 bg-rose-400/10",
+};
+
+const RUN_STATUS_COLORS: Record<string, string> = {
+  RUNNING: "border-sky-400/30 text-sky-300 bg-sky-400/10",
+  PAUSED: "border-amber-400/30 text-amber-300 bg-amber-400/10",
+  DONE: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  ABORTED: "border-white/20 text-muted-foreground bg-white/5",
+};
+
 const FACT_CATEGORIES = ["WORLD", "CHARACTER", "PROP", "LOCATION", "RULE"];
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -253,6 +288,22 @@ function UniverseFactsPanel({ projectId }: { projectId: string }) {
   const [rerendering, setRerendering] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<{ ref: string; text: string; clean: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [run, setRun] = useState<RepaintRunRow | null>(null);
+  const [runCap, setRunCap] = useState(3);
+  const [runBusy, setRunBusy] = useState(false);
+
+  // poll the runner while it is live so the step log streams in
+  useEffect(() => {
+    if (!run || (run.status !== "RUNNING" && run.status !== "PAUSED")) return;
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/universe-facts/repaint?projectId=${projectId}`);
+        const body = (await res.json()) as { run: RepaintRunRow | null };
+        if (body.run) setRun(body.run);
+      } catch { /* next tick retries */ }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [run?.id, run?.status, run && run.status === "RUNNING", projectId]);
 
   async function refresh() {
     setLoading(true);
@@ -264,6 +315,7 @@ function UniverseFactsPanel({ projectId }: { projectId: string }) {
         const firstWithArt = body.shots.find((s) => s.hasArt);
         if (firstWithArt) setShotId(firstWithArt.shotId);
       }
+      await loadRun();
     } catch {
       setError("Load failed");
     } finally {
@@ -360,6 +412,49 @@ function UniverseFactsPanel({ projectId }: { projectId: string }) {
     }
   }
 
+  async function loadRun() {
+    try {
+      const res = await fetch(`/api/universe-facts/repaint?projectId=${projectId}`);
+      const body = (await res.json()) as { run: RepaintRunRow | null };
+      setRun(body.run);
+    } catch { /* surfaced by the next action */ }
+  }
+
+  async function startRun() {
+    setRunBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/universe-facts/repaint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, maxItems: runCap }),
+      });
+      const body = (await res.json()) as { run?: RepaintRunRow; error?: string };
+      if (!res.ok || !body.run) setError(body.error ?? "Run failed to start");
+      else setRun(body.run);
+    } catch {
+      setError("Run failed to start");
+    } finally {
+      setRunBusy(false);
+    }
+  }
+
+  async function steerRun(action: "pause" | "resume" | "abort") {
+    if (!run) return;
+    setRunBusy(true);
+    try {
+      await fetch("/api/universe-facts/repaint", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: run.id, action }),
+      });
+      await loadRun();
+      await refresh();
+    } finally {
+      setRunBusy(false);
+    }
+  }
+
   const shotsWithArt = (data?.shots ?? []).filter((s) => s.hasArt);
 
   return (
@@ -372,6 +467,8 @@ function UniverseFactsPanel({ projectId }: { projectId: string }) {
           <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 max-w-xl">
             The world&apos;s canon joins the QA loop: register the rules of the universe, a vision model judges panel art
             against them with a confidence per fact, and confident violations rank into the re-render queue below.
+            Every panel prompt carries the canon (fact-aware generation), and the supervised runner re-paints the
+            queue without the clicks.
           </p>
         </div>
         <Button size="sm" variant="outline" className="border-sky-400/25 bg-sky-400/10 text-sky-200 hover:bg-sky-400/20" onClick={() => void refresh()} disabled={loading}>
@@ -450,6 +547,68 @@ function UniverseFactsPanel({ projectId }: { projectId: string }) {
             >
               {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Run fact check"}
             </button>
+          </div>
+
+          {/* ── Supervised auto re-paint runner ── */}
+          <div className="rounded-lg border border-violet-400/15 bg-violet-400/[0.03] px-3 py-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-[10px] font-semibold text-violet-300 uppercase tracking-wide flex items-center gap-1.5">
+                <PaintRoller className="h-3.5 w-3.5" /> Supervised auto re-paint
+              </p>
+              {run && (
+                <span className={cn("px-1.5 py-0.5 rounded border text-[9px]", RUN_STATUS_COLORS[run.status])}>
+                  {run.status} {run.index}/{run.total}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2 items-center flex-wrap">
+              <select value={runCap} onChange={(e) => setRunCap(Number(e.target.value))} className="h-7 rounded-md bg-white/5 border border-white/12 px-2 text-[10px]" title="How many queued panels this run visits (worst confidence first)">
+                {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n} className="bg-card">{n} panel{n > 1 ? "s" : ""}</option>)}
+              </select>
+              {!run || run.status === "DONE" || run.status === "ABORTED" ? (
+                <button
+                  onClick={() => void startRun()}
+                  disabled={runBusy || data.queue.length === 0}
+                  title="Walk the re-render queue worst-first: each step re-paints with fact-aware prompts and re-checks"
+                  className="h-7 rounded-md border border-violet-400/25 bg-violet-400/10 px-2.5 text-[10px] font-semibold text-violet-200 hover:bg-violet-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+                >
+                  {runBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                  Start run
+                </button>
+              ) : (
+                <div className="flex gap-1.5">
+                  {run.status === "RUNNING" && (
+                    <button onClick={() => void steerRun("pause")} disabled={runBusy} className="h-7 rounded-md border border-amber-400/25 bg-amber-400/10 px-2 text-[10px] font-semibold text-amber-200 hover:bg-amber-400/20 transition-colors disabled:opacity-40 flex items-center gap-1">
+                      <Pause className="h-3 w-3" /> Pause
+                    </button>
+                  )}
+                  {run.status === "PAUSED" && (
+                    <button onClick={() => void steerRun("resume")} disabled={runBusy} className="h-7 rounded-md border border-sky-400/25 bg-sky-400/10 px-2 text-[10px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40 flex items-center gap-1">
+                      <Play className="h-3 w-3" /> Resume
+                    </button>
+                  )}
+                  <button onClick={() => void steerRun("abort")} disabled={runBusy} className="h-7 rounded-md border border-rose-400/25 bg-rose-400/10 px-2 text-[10px] font-semibold text-rose-200 hover:bg-rose-400/20 transition-colors disabled:opacity-40 flex items-center gap-1">
+                    <Square className="h-3 w-3" /> Abort
+                  </button>
+                </div>
+              )}
+              <span className="text-[9px] text-muted-foreground">each step: fact-aware re-paint, vision re-check, outcome logged; still-broken panels stop retrying and wait for you</span>
+            </div>
+            {run && run.steps.length > 0 && (
+              <div className="space-y-1">
+                {run.steps.map((s, i) => (
+                  <div key={i} className="rounded-md border border-white/10 bg-black/25 px-2.5 py-1.5 flex items-center gap-2 flex-wrap">
+                    <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold shrink-0", OUTCOME_COLORS[s.outcome])}>{s.outcome.replace("_", " ")}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground shrink-0">{s.ref}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{(s.beforeWorst * 100).toFixed(0)}% → {s.afterBroken === 0 ? "holds" : `${s.afterBroken} still broken`}</span>
+                    <span className="text-[10px] flex-1 min-w-[120px] truncate" title={s.error ?? s.afterSummary}>{s.error ?? s.afterSummary}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {run && run.status === "RUNNING" && (
+              <p className="text-[9px] text-sky-300 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> working: re-painting and re-checking (each step is a real generation + vision pass, tens of seconds)</p>
+            )}
           </div>
 
           {data.queue.length > 0 ? (

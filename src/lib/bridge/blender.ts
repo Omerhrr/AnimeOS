@@ -173,7 +173,14 @@ export async function bridgeStatus(force = false): Promise<BridgeStatus> {
 
 export interface BridgeJobPayload {
   jobId: string;
-  shot: { number: number; description: string; shotType: string; lens: string | null; movement: string | null; poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number };
+  shot: {
+    number: number; description: string; shotType: string; lens: string | null; movement: string | null;
+    poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number;
+    // LIP-SYNC: millisecond viseme program for speaking closeups
+    // (SPEECH dialogue + CLOSEUP/EXTREME_CLOSEUP). The worker drives
+    // the stand-in's mouth rig from it per frame.
+    speech?: { visemes: Array<{ s: number; e: number; o: number; w: number; r: number }>; lines: number } | null;
+  };
   scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number };
   project: { title: string; visualStyle: string; resolution: string; fps: number };
   mode: "PREVIEW" | "FINAL";

@@ -159,9 +159,46 @@ export function detectCast(projectCharacters: CastMember[], description: string)
     .slice(0, 3);
 }
 
+// ─── Fact-aware prompts (the world's canon rides into generation) ───
+
+interface CanonFact {
+  text: string;
+  category: string;
+}
+
+export const MAX_CANON_FACTS = 6;
+
+/**
+ * Compile active universe facts into prompt directives: each fact is
+ * restated as something the panel MUST show. Pure - E2E asserts on
+ * the wording, and every panel-art generation injects the result so
+ * the art is fact-aware BEFORE the vision check judges it.
+ */
+export function factCanonLines(facts: CanonFact[], max = MAX_CANON_FACTS): string[] {
+  return facts
+    .filter((f) => f.text?.trim())
+    .slice(0, max)
+    .map((f) => `${f.text.trim().slice(0, 150)} (${f.category.toLowerCase()})`);
+}
+
+/**
+ * The canon section injected into a panel prompt: the production's
+ * active universe facts, plus (for re-paints) the exact facts a
+ * previous vision check flagged, restated as hard corrections.
+ */
+export function factCanonSection(activeFacts: CanonFact[], emphasisFacts: string[] | null | undefined): string | null {
+  const canon = factCanonLines(activeFacts);
+  const emphasis = (emphasisFacts ?? []).map((t) => t.trim()).filter(Boolean).slice(0, 4)
+    .map((t) => `the previous check flagged this panel for: ${t.slice(0, 150)}`);
+  const lines: string[] = [];
+  if (canon.length > 0) lines.push(`Universe canon that MUST hold in this panel: ${canon.join("; ")}`);
+  if (emphasis.length > 0) lines.push(...emphasis);
+  return lines.length > 0 ? lines.join(". ") : null;
+}
+
 // ─── Panel art ──────────────────────────────────────────────
 
-export async function generateShotPanelArt(shotId: string, formatInput: unknown) {
+export async function generateShotPanelArt(shotId: string, formatInput: unknown, options?: { emphasisFacts?: string[] }) {
   const comicFormat: ComicFormatId = FORMAT_STYLE[String(formatInput) as ComicFormatId] ? (String(formatInput) as ComicFormatId) : "MANHUA";
 
   const shot = await db.shot.findUnique({
@@ -171,7 +208,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
       scene: {
         include: {
           environment: true,
-          episode: { include: { season: { include: { project: { include: { characters: { include: { states: true } } } } } } } },
+          episode: { include: { season: { include: { project: { include: { characters: { include: { states: true } }, universeFacts: { where: { active: true } } } } } } } },
         },
       },
     },
@@ -179,6 +216,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
   if (!shot) throw new Error("Shot not found");
 
   const project = shot.scene.episode.season.project;
+  const factCanon = factCanonSection(project.universeFacts, options?.emphasisFacts);
   const scene = shot.scene;
   const styleTokens = productionStyleTokens(project);
   const negativeTail = productionNegativeTokens(project);
@@ -231,6 +269,7 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown)
     scene.weather ? `${scene.weather.toLowerCase()} weather` : null,
     shot.lighting ? `Lighting: ${shot.lighting}` : null,
     cast ? `Characters:\n${cast}` : null,
+    factCanon,
     shot.poseStart ? `The featured character is captured mid-action at the start of the move: ${POSE_GLOSS[shot.poseStart] ?? "in motion"}` : null,
     prevContinuity,
     "single comic panel",

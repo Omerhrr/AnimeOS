@@ -46,6 +46,7 @@ model Project {
   dshMessages      DshMessage[]
   arcTemplates     ArcTemplate[]
   universeFacts    UniverseFact[]
+  repaintRuns      RepaintRun[]
 }
 
 model Season {
@@ -437,6 +438,24 @@ model UniverseFact {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Supervised auto re-paint runner: one pass over the universe-facts
+// re-render queue (worst confidence first). Each step re-generates a
+// flagged panel with fact-aware art prompts, re-runs the vision check
+// and records the outcome; steps that come back STILL_BROKEN stop
+// being retried automatically and wait for the director (supervision).
+model RepaintRun {
+  id        String   @id @default(cuid())
+  projectId String
+  status    String   @default("RUNNING") // RUNNING | PAUSED | DONE | ABORTED
+  cap       Int      @default(3) // max queue items the run will visit
+  index     Int      @default(0) // steps completed so far
+  steps     String   @default("[]") // JSON: Array<{shotId, ref, factTexts, beforeWorst, afterSummary, afterBroken, outcome, error, at}>
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model Terminology {
