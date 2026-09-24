@@ -539,6 +539,7 @@ export async function stagePublishPackage(
         checksPassed,
         checksTotal: pkg.conformance.length,
         title: pkg.title,
+        description: pkg.description,
         subtitle: { format: pkg.subtitle.format, cues: pkg.subtitle.cues, filename: pkg.subtitle.filename },
         integration: pkg.integration,
         cut: pkg.cut,

@@ -3,6 +3,7 @@ import {
   parseWavMono, frameAudio, loudnessGate, FRAME_MS,
 } from "@/lib/animation/viseme-audio";
 import type { NeuralUnit } from "@/lib/animation/viseme-neural";
+import { createHash } from "node:crypto";
 
 // ─────────────────────────────────────────────────────────────
 // ACOUSTIC MODEL SLOT - the WAV re-times the plan
@@ -26,21 +27,33 @@ import type { NeuralUnit } from "@/lib/animation/viseme-neural";
 //     model call, no generated pixel or sample - it only moves the
 //     plan's unit boundaries to where the voice actually spoke.
 //
-// The slot is a PROVIDER SLOT like the render engines: the built-in
-// DSP aligner ships on (ANIMEOS_ACOUSTIC=off turns it off; a future
-// forced-alignment model plugs into the same seam). Without a
-// decodable take or without speech in it, the plan falls back to
-// its even spread - the pipeline never blocks on the analysis.
+// The slot is a PROVIDER SLOT like the render engines, now with two
+// rungs:
+//
+//   • builtin-dsp (ships ON) - the deterministic aligner above. Fast,
+//     free, local, no model call.
+//   • neural (ANIMEOS_ACOUSTIC=neural) - an ASR model HEARS the take
+//     (z-ai audio.asr, base64 in, transcript out) and the transcript
+//     is aligned against the line's words: words the voice actually
+//     spoke keep their plan weight, words the voice skipped collapse
+//     to SIL so the mouth stops performing them. The ASR owns WHAT
+//     was said; the DSP warp still owns WHEN - the transcript carries
+//     no timestamps, so word evidence re-weights the plan and the
+//     energy runs place it. Any failure (offline model, mismatched
+//     transcript, undecodable take) degrades to the DSP-only path.
+//   • off (ANIMEOS_ACOUSTIC=off) - the plan's even spread, as before.
 // ─────────────────────────────────────────────────────────────
 
-export type AcousticProvider = "builtin-dsp" | "off";
+export type AcousticProvider = "builtin-dsp" | "neural" | "off";
 
 const OFF_VALUES = new Set(["off", "false", "0", "none", "no"]);
+const NEURAL_VALUES = new Set(["neural", "asr"]);
 
 /** The env-gated acoustic slot: built-in DSP aligner ships ON. */
 export function acousticProvider(): AcousticProvider {
   const raw = String(process.env.ANIMEOS_ACOUSTIC ?? "").trim().toLowerCase();
   if (OFF_VALUES.has(raw)) return "off";
+  if (NEURAL_VALUES.has(raw)) return "neural";
   return "builtin-dsp";
 }
 
@@ -146,6 +159,156 @@ export function analyzeAcoustics(wav: Buffer, span: { startMs: number; endMs: nu
 /** Short human note for stage lines: what the analysis found. */
 export function describeAcoustics(profile: AcousticProfile): string {
   return `${profile.nuclei.length} syllable anchor${profile.nuclei.length === 1 ? "" : "s"} over ${profile.runs.length} speech run${profile.runs.length === 1 ? "" : "s"} (${(profile.speechMs / 1000).toFixed(1)}s voiced)`;
+}
+
+// ─── The neural rung: ASR-guided word evidence ──────────────
+
+const ASR_TIMEOUT_MS = 14_000;
+const ASR_CACHE_MAX = 32;
+const asrCache = new Map<string, string | null>(); // null = known-bad take (do not re-ask)
+
+/**
+ * Transcribe one take through the ASR model. The transcript carries
+ * no timestamps - it is WORD EVIDENCE, not a timing source. Cached
+ * per take content; null on any failure (the caller degrades to the
+ * DSP-only warp).
+ */
+export async function transcribeTake(wav: Buffer): Promise<string | null> {
+  if (wav.length < 100) return null;
+  const key = createHash("md5").update(wav).digest("hex");
+  if (asrCache.has(key)) return asrCache.get(key) ?? null;
+
+  let text: string | null = null;
+  try {
+    const { default: ZAI } = await import("z-ai-web-dev-sdk");
+    const call = (async () => {
+      const zai = await ZAI.create();
+      const res = (await zai.audio.asr.create({ file_base64: wav.toString("base64") })) as { text?: unknown };
+      const t = String(res?.text ?? "").trim();
+      return t.length > 0 ? t : null;
+    })();
+    text = await Promise.race([
+      call,
+      new Promise<string | null>((resolve) => setTimeout(() => resolve(null), ASR_TIMEOUT_MS)),
+    ]);
+  } catch {
+    text = null; // offline / refused: the DSP-only path takes over
+  }
+
+  if (asrCache.size >= ASR_CACHE_MAX) {
+    const oldest = asrCache.keys().next().value;
+    if (oldest !== undefined) asrCache.delete(oldest);
+  }
+  asrCache.set(key, text);
+  return text;
+}
+
+/** Normalize one line into matchable tokens: CJK text becomes characters, latin text becomes lowercase words. */
+export function tokenizeLine(text: string): string[] {
+  const clean = String(text ?? "").toLowerCase().replace(/[\p{P}\p{S}]/gu, " ");
+  const hasCJK = /\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}/u.test(clean);
+  if (hasCJK) {
+    return [...clean.replace(/\s+/g, "")].filter((ch) => /\p{L}|\p{N}/u.test(ch));
+  }
+  return clean.split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Align the line's tokens against the ASR transcript as a bounded
+ * subsequence: a dialogue token is CONFIRMED when the transcript
+ * carries it at or after the current cursor (skipping up to
+ * MAX_SKIP transcript tokens of filler). Returns the confirmed token
+ * indices and how many the voice skipped.
+ */
+export function alignTokens(lineTokens: string[], transcriptTokens: string[], maxSkip = 4): { confirmed: Set<number>; missing: number } {
+  const confirmed = new Set<number>();
+  let cursor = 0;
+  let missing = 0;
+  for (let i = 0; i < lineTokens.length; i++) {
+    const limit = Math.min(transcriptTokens.length, cursor + maxSkip + 1);
+    let found = -1;
+    for (let j = cursor; j < limit; j++) {
+      const a = lineTokens[i];
+      const b = transcriptTokens[j];
+      if (a === b || (a.length >= 3 && b.startsWith(a)) || (b.length >= 3 && a.startsWith(b))) {
+        found = j;
+        break;
+      }
+    }
+    if (found >= 0) {
+      confirmed.add(i);
+      cursor = found + 1;
+    } else {
+      missing += 1;
+    }
+  }
+  return { confirmed, missing };
+}
+
+export interface AsrReweight {
+  units: NeuralUnit[]; // the plan with unspoken words collapsed to SIL
+  confirmed: number; // tokens the transcript backed
+  missing: number; // tokens the voice skipped
+}
+
+const ASR_MATCH_RATIO = 0.34; // below this the transcript reads as a different take - hands off
+const ASR_MIN_TOKENS = 2; // a one-token line cannot be aligned honestly
+
+/**
+ * Re-weight the plan from ASR word evidence: units are mapped onto
+ * the line's tokens by cumulative weight share, and units whose
+ * token range the transcript mostly fails to confirm collapse to
+ * SIL (the mouth stops performing words the voice skipped). Returns
+ * null when the transcript is unusable or clearly not this line -
+ * the caller keeps the plan untouched (honest DSP-only behavior).
+ */
+export function reweightUnitsForAsr(units: NeuralUnit[], lineText: string, transcript: string): AsrReweight | null {
+  const lineTokens = tokenizeLine(lineText);
+  const transcriptTokens = tokenizeLine(transcript);
+  if (lineTokens.length < ASR_MIN_TOKENS || transcriptTokens.length === 0) return null;
+  const spoken = units.filter((u) => u.v !== "SIL");
+  if (spoken.length === 0) return null;
+
+  const { confirmed, missing } = alignTokens(lineTokens, transcriptTokens);
+  const confirmedRatio = lineTokens.length > 0 ? confirmed.size / lineTokens.length : 0;
+  if (confirmedRatio < ASR_MATCH_RATIO) return null; // a different take (or the model refused): hands off
+
+  // token weights: latin words weigh their length, CJK chars weigh 1
+  const tokenWeights = lineTokens.map((t) => Math.max(1, t.length));
+  const totalTokenWeight = tokenWeights.reduce((a, b) => a + b, 0);
+  // each token's range along the 0..1 weight axis
+  const tokenRanges: Array<{ s: number; e: number; idx: number }> = [];
+  let acc = 0;
+  tokenWeights.forEach((w, idx) => {
+    tokenRanges.push({ s: acc / totalTokenWeight, e: (acc + w) / totalTokenWeight, idx });
+    acc += w;
+  });
+
+  // each unit owns the slice of the weight axis its planned weight
+  // covers; a unit collapses when the tokens it overlaps (weighted by
+  // that overlap) are mostly NOT confirmed
+  const spokenTotal = spoken.reduce((a, u) => a + u.w, 0);
+  const out = units.map((u) => ({ ...u }));
+  let unitCursor = 0;
+  for (let i = 0; i < units.length; i++) {
+    if (units[i].v === "SIL") continue;
+    const start = unitCursor / spokenTotal;
+    unitCursor += units[i].w;
+    const end = unitCursor / spokenTotal;
+    let confirmedOverlap = 0;
+    let totalOverlap = 0;
+    for (const r of tokenRanges) {
+      const o = Math.min(end, r.e) - Math.max(start, r.s);
+      if (o > 0) {
+        totalOverlap += o;
+        if (confirmed.has(r.idx)) confirmedOverlap += o;
+      }
+    }
+    if (totalOverlap > 0 && confirmedOverlap / totalOverlap < 0.5) {
+      out[i] = { ph: units[i].ph, v: "SIL", w: 0.2 };
+    }
+  }
+  return { units: out, confirmed: confirmed.size, missing };
 }
 
 // ─── The re-timing warp ─────────────────────────────────────

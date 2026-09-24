@@ -110,7 +110,8 @@ export interface TakePlan {
   variant: ResolvedVariant | null; // state voice variant overriding the cast voice for this line
   hints: ResolvedHints | null; // state speed/pitch hints bending the performance
   stateOverride: string | null; // per-line state override the line forces (null = auto state resolution)
-  voiceId: string; // effective voice: variant when active, else the cast voice
+  voiceId: string; // effective voice: variant when active, else the cast voice (or the character's trained clone)
+  clone: { voiceId: string; fallbackVoiceId: string } | null; // the trained-clone render path (null = catalog TTS)
   delivery: ResolvedDelivery & { source: DeliverySource };
   baseSpeed: number;
   speed: number; // effective: base x delivery multiplier x state speed hint
@@ -155,6 +156,11 @@ export async function resolveTakePlan(
   // state variant otherwise outranks the cast voice while it is effective
   const variant = isVoiceId(overrides.voice) ? null : performance.variant;
   const voiceId = variant?.voiceId ?? cast.voiceId;
+  // the trained-clone path: only when the clone resolved, no variant
+  // is deliberately overriding it, and a catalog fallback exists
+  const clone = cast.source === "clone" && !variant && cast.fallbackVoiceId
+    ? { voiceId: cast.voiceId, fallbackVoiceId: cast.fallbackVoiceId }
+    : null;
 
   // HOW it is played: the delivery chain, most specific first
   let delivery: ResolvedDelivery & { source: DeliverySource };
@@ -192,6 +198,7 @@ export async function resolveTakePlan(
     hints: performance.hints,
     stateOverride,
     voiceId,
+    clone,
     delivery,
     baseSpeed,
     speed,

@@ -270,6 +270,12 @@ model Character {
   // Per-artist voice casting: which roster artist speaks for this character
   voiceArtistId  String?
   voiceArtist    Artist?  @relation("VoiceCast", fields: [voiceArtistId], references: [id], onDelete: SetNull)
+  // Voice-clone slot: the character's own trained voice (trained once
+  // from their rendered takes through the configured cloning provider,
+  // ANIMEOS_VOICE_CLONE_URL). Performed on every line it can render;
+  // catalog TTS stays the honest fallback.
+  cloneVoiceId   String?
+  cloneTrainedAt DateTime?
   createdAt      DateTime @default(now())
   project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parent         Character?  @relation("Derivatives", fields: [parentId], references: [id])

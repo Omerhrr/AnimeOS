@@ -1,7 +1,7 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { buildSpeechProgram, buildVisemes, type SpeechProgram, type Viseme } from "@/lib/animation/lipsync";
 import { analyzeTakeVisemes, type AudioTake } from "@/lib/animation/viseme-audio";
-import { acousticProvider, analyzeAcoustics, retimedPlanVisemes } from "@/lib/animation/acoustic";
+import { acousticProvider, analyzeAcoustics, retimedPlanVisemes, transcribeTake, reweightUnitsForAsr } from "@/lib/animation/acoustic";
 
 // ─────────────────────────────────────────────────────────────
 // NEURAL VISEME PASS - a phoneme plan from the language model,
@@ -27,11 +27,17 @@ import { acousticProvider, analyzeAcoustics, retimedPlanVisemes } from "@/lib/an
 //     closes exactly where the voice acted it - now shaped by the
 //     words being said.
 //   4. ACOUSTIC RE-TIME - the acoustic-model slot (acoustic.ts,
-//     deterministic local DSP, ANIMEOS_ACOUSTIC=off disables)
-//     segments the take into real speech runs, silences and
-//     syllable anchors, and re-times the plan's units onto that
-//     timeline, so the plan's identity lands where the VOICE put
-//     the words - not where the script spread them.
+//     ANIMEOS_ACOUSTIC controls it) re-times the plan's units onto
+//     the take's timeline. The builtin-dsp rung (default) segments
+//     the take into real speech runs, silences and syllable anchors
+//     deterministically and warps the plan onto them. The neural
+//     rung (ANIMEOS_ACOUSTIC=neural) adds an ASR pass that HEARS the
+//     take: the transcript is aligned against the line's words and
+//     words the voice skipped collapse to SIL, so the mouth stops
+//     performing unspoken words - then the DSP warp places the
+//     result on the real energy timeline. Every failure degrades
+//     honestly: ASR offline or a mismatched transcript keeps the
+//     plan untouched (DSP-only), and =off restores the even spread.
 //
 // Every failure path degrades honestly: a refused/offline model or
 // a garbage plan falls back to the audio-only (then text) program,
@@ -218,6 +224,9 @@ export interface NeuralSpeechProgram extends SpeechProgram {
   planOk: boolean; // did the neural plan arrive?
   acousticSpans: number; // spans whose plan timing was re-timed from the WAV
   acousticAnchors: number; // syllable anchors the re-time snapped to
+  asrSpans: number; // spans whose plan was re-weighted from ASR word evidence
+  asrConfirmed: number; // line tokens the transcript backed
+  asrMissing: number; // line tokens the voice skipped
 }
 
 /**
@@ -238,12 +247,13 @@ export async function neuralSpeechProgram(input: {
     voiceTakes: input.takes.map((t) => ({ startMs: t.startMs, durationMs: t.durationMs })),
   });
   if (base.spans.length === 0) {
-    return { ...base, audioVisemes: 0, audioTakes: 0, neuralSpans: 0, neuralTextSpans: 0, planOk: false, acousticSpans: 0, acousticAnchors: 0 };
+    return { ...base, audioVisemes: 0, audioTakes: 0, neuralSpans: 0, neuralTextSpans: 0, planOk: false, acousticSpans: 0, acousticAnchors: 0, asrSpans: 0, asrConfirmed: 0, asrMissing: 0 };
   }
 
   const lineTexts = base.spans.map((s) => s.text);
   const plan = await neuralPhonemePlan(lineTexts);
-  const acousticOn = acousticProvider() !== "off";
+  const provider = acousticProvider();
+  const acousticOn = provider !== "off";
 
   const takes = [...input.takes].sort((a, b) => a.startMs - b.startMs);
   const paired = takes.length >= base.lines;
@@ -254,19 +264,40 @@ export async function neuralSpeechProgram(input: {
   let neuralTextSpans = 0;
   let acousticSpans = 0;
   let acousticAnchors = 0;
+  let asrSpans = 0;
+  let asrConfirmed = 0;
+  let asrMissing = 0;
 
-  base.spans.forEach((span, i) => {
+  for (let i = 0; i < base.spans.length; i++) {
+    const span = base.spans[i];
     const units = plan?.lines[Math.min(i, (plan?.lines.length ?? 1) - 1)];
     const take = paired ? takes[i] : undefined;
     const audio = take?.wav ? analyzeTakeVisemes(take.wav, { startMs: span.startMs, endMs: span.endMs }) : null;
     if (audio) {
+      let lineUnits = units;
       let planVisemes = plan && units ? planVisemesFromPlan(units, { startMs: span.startMs, endMs: span.endMs }) : [];
-      // ACOUSTIC RE-TIME: warp the plan's units onto the take's real
-      // speech runs / silences / syllable anchors before the conform.
-      if (planVisemes.length > 0 && acousticOn && units && take?.wav) {
+      // NEURAL RUNG: when the slot runs the ASR model, the take's
+      // transcript re-weights the plan first (words the voice skipped
+      // collapse to SIL); the transcript is word evidence, not timing.
+      if (planVisemes.length > 0 && provider === "neural" && units && take?.wav) {
+        const transcript = await transcribeTake(take.wav);
+        if (transcript) {
+          const reweight = reweightUnitsForAsr(units, span.text, transcript);
+          if (reweight) {
+            lineUnits = reweight.units;
+            planVisemes = planVisemesFromPlan(reweight.units, { startMs: span.startMs, endMs: span.endMs });
+            asrSpans += 1;
+            asrConfirmed += reweight.confirmed;
+            asrMissing += reweight.missing;
+          }
+        }
+      }
+      // DSP RUNG: warp the (possibly re-weighted) plan onto the take's
+      // real speech runs / silences / syllable anchors before the conform.
+      if (planVisemes.length > 0 && acousticOn && lineUnits && take?.wav) {
         const profile = analyzeAcoustics(take.wav, { startMs: span.startMs, endMs: span.endMs });
         if (profile) {
-          const retimed = retimedPlanVisemes(units, { startMs: span.startMs, endMs: span.endMs }, profile, NEURAL_VISEME_SHAPES);
+          const retimed = retimedPlanVisemes(lineUnits, { startMs: span.startMs, endMs: span.endMs }, profile, NEURAL_VISEME_SHAPES);
           if (retimed.length > 0) {
             planVisemes = retimed;
             acousticSpans += 1;
@@ -285,9 +316,9 @@ export async function neuralSpeechProgram(input: {
     } else {
       visemes.push(...buildVisemes([span]));
     }
-  });
+  }
 
-  return { ...base, visemes, audioVisemes, audioTakes, neuralSpans, neuralTextSpans, planOk: Boolean(plan), acousticSpans, acousticAnchors };
+  return { ...base, visemes, audioVisemes, audioTakes, neuralSpans, neuralTextSpans, planOk: Boolean(plan), acousticSpans, acousticAnchors, asrSpans, asrConfirmed, asrMissing };
 }
 
 /** Stage / event note naming what shaped the mouth. */
@@ -297,6 +328,7 @@ export function describeNeuralSpeechProgram(program: NeuralSpeechProgram): strin
   const who = speakers.length > 0 ? speakers.join(" + ") : "the cast";
   const parts: string[] = [];
   if (program.audioTakes > 0) parts.push(`${program.audioTakes} real take${program.audioTakes === 1 ? "" : "s"}`);
+  if (program.asrSpans > 0) parts.push(`ASR-confirmed ${program.asrConfirmed} word${program.asrConfirmed === 1 ? "" : "s"}${program.asrMissing > 0 ? ` (${program.asrMissing} skipped)` : ""}`);
   if (program.acousticSpans > 0) parts.push(`acoustic re-timed on ${program.acousticAnchors} syllable anchor${program.acousticAnchors === 1 ? "" : "s"}`);
   if (program.neuralSpans > 0) parts.push("neural phoneme shaping");
   if (program.neuralTextSpans > 0 && program.audioTakes === 0) parts.push("neural phoneme plan");

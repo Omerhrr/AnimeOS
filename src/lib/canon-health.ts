@@ -75,27 +75,74 @@ export interface RetireSuggestion {
   broken: number;
   holdRate: number; // 0..1
   worstBrokenConfidence: number | null;
+  trend: FactDriftTrend | null; // the drift curve's verdict, when one drove or backed the suggestion
+  delta: number | null; // curve delta (last - first confidence), when known
   reason: string;
 }
 
-/** Facts whose audit history says "the wording keeps failing". Pure. */
-export function retireSuggestionsFromRows(rows: FactHealthRow[]): RetireSuggestion[] {
-  return rows
+// A fact can earn the suggestion two ways: the HOLD RATE rule above,
+// or its DRIFT CURVE - confidence sliding steadily down episode over
+// episode is the same writing problem seen one episode earlier (the
+// violations have not all landed yet). Pure - the E2E drives it.
+export const CURVE_SUGGEST_DELTA = 0.12; // |delta| a DECLINING curve must exceed
+export const CURVE_SUGGEST_MIN_PANELS = 3; // curve points before the trend counts
+
+/** Facts whose audit history OR drift curve says "the wording keeps failing". Pure. */
+export function retireSuggestionsFromRows(rows: FactHealthRow[], curves: FactDrift[] = []): RetireSuggestion[] {
+  const holdRatePicks = rows
     .filter((r) => r.active && r.checkedPanels >= RETIRE_MIN_PANELS)
     .map((r) => ({ row: r, holdRate: r.held / r.checkedPanels }))
     .filter(({ holdRate }) => holdRate < RETIRE_HOLD_RATE)
-    .map(({ row, holdRate }) => ({
-      factId: row.factId,
-      text: row.text,
-      category: row.category,
-      checkedPanels: row.checkedPanels,
-      held: row.held,
-      broken: row.broken,
-      holdRate,
-      worstBrokenConfidence: row.worstBrokenConfidence,
-      reason: `failed on ${row.broken} of ${row.checkedPanels} audited panels (hold rate ${(holdRate * 100).toFixed(0)}%) - the wording keeps failing, reword or retire it instead of re-painting every panel`,
-    }))
-    .sort((a, b) => a.holdRate - b.holdRate);
+    .map(({ row, holdRate }) => {
+      const curve = curves.find((c) => c.factId === row.factId);
+      const trendNote = curve?.trend === "DECLINING" && curve.delta != null
+        ? `, and the curve is sliding ${(curve.delta * 100).toFixed(0)}%`
+        : "";
+      return {
+        factId: row.factId,
+        text: row.text,
+        category: row.category,
+        checkedPanels: row.checkedPanels,
+        held: row.held,
+        broken: row.broken,
+        holdRate,
+        worstBrokenConfidence: row.worstBrokenConfidence,
+        trend: (curve?.trend ?? null) as FactDriftTrend | null,
+        delta: curve?.delta ?? null,
+        reason: `failed on ${row.broken} of ${row.checkedPanels} audited panels (hold rate ${(holdRate * 100).toFixed(0)}%${trendNote}) - the wording keeps failing, reword or retire it instead of re-painting every panel`,
+      };
+    });
+
+  const picked = new Set(holdRatePicks.map((s) => s.factId));
+  const activeById = new Map(rows.map((r) => [r.factId, r]));
+  const curvePicks = curves
+    .filter((c) =>
+      !picked.has(c.factId)
+      && c.trend === "DECLINING"
+      && c.delta != null
+      && c.delta <= -CURVE_SUGGEST_DELTA
+      && c.panels >= CURVE_SUGGEST_MIN_PANELS
+      && activeById.get(c.factId)?.active === true)
+    .map((c) => {
+      const held = Math.round(c.holdRate * c.panels);
+      return {
+        factId: c.factId,
+        text: c.text,
+        category: c.category,
+        checkedPanels: c.panels,
+        held,
+        broken: c.panels - held,
+        holdRate: c.holdRate,
+        worstBrokenConfidence: null as number | null,
+        trend: "DECLINING" as FactDriftTrend,
+        delta: c.delta,
+        reason: `confidence sliding ${(c.delta! * 100).toFixed(0)}% across ${c.panels} audited panels over episode order (${(c.holdRate * 100).toFixed(0)}% held so far) - the wording is drifting out of holdable territory, reword or retire it before the re-render queue floods`,
+      };
+    });
+
+  return [...holdRatePicks, ...curvePicks].sort(
+    (a, b) => a.holdRate - b.holdRate || (a.delta ?? 0) - (b.delta ?? 0),
+  );
 }
 
 // ─── Fact-level drift curves ─────────────────────────────────
@@ -300,6 +347,8 @@ export async function canonHealthData(projectId: string): Promise<{ digest: Cano
   ]);
   const rows = factHealthFromEvents(facts, events);
   const { score, coverage, holdRate } = canonScoreFromRows(rows);
+  const drift = await factDriftData(projectId).catch(() => ({ curves: [], watch: [], headline: "fact drift curves unavailable" } as FactDriftData));
+  const suggestions = retireSuggestionsFromRows(rows, drift.curves);
 
   const since = Date.now() - 14 * 24 * 3600 * 1000;
   const recentHeld = events.filter((e) => e.kind === "FACT_HELD" && e.createdAt.getTime() >= since).length;
@@ -314,9 +363,6 @@ export async function canonHealthData(projectId: string): Promise<{ digest: Cano
   const worstFacts = [...activeRows]
     .sort((a, b) => rank(a) - rank(b) || (b.worstBrokenConfidence ?? 0) - (a.worstBrokenConfidence ?? 0))
     .slice(0, 5);
-
-  const suggestions = retireSuggestionsFromRows(rows);
-  const drift = await factDriftData(projectId).catch(() => ({ curves: [], watch: [], headline: "fact drift curves unavailable" } as FactDriftData));
 
   let headline: string;
   if (activeRows.length === 0) {

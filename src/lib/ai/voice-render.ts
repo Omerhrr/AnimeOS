@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
-import { resolveTakePlan, VoicePlanError, type TakeOverrides } from "@/lib/ai/voice-plan";
+import { resolveTakePlan, buildTakeSig, VoicePlanError, type TakeOverrides } from "@/lib/ai/voice-plan";
 import { shiftWavPlayback, ttsSpeedAndPitchFactor } from "@/lib/ai/wav-dsp";
 
 // ─────────────────────────────────────────────────────────────
@@ -99,21 +99,37 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
     throw err;
   }
 
-  let wav: Buffer;
+  let wav: Buffer | null = null;
+  let cloneDegraded: string | null = null;
   try {
-    const zai = await ZAI.create();
-    // state pitch hint: render at compensated speed, then shift the
-    // playback rate so the take lands on plan.speed with the bend
-    const { ttsSpeed, factor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
-    const res = await zai.audio.tts.create({
-      input: plan.spoken,
-      voice: plan.voiceId, // state voice variant when active, else the cast voice
-      speed: ttsSpeed,
-      response_format: "wav",
-      stream: false,
-    });
-    const arrayBuffer = await res.arrayBuffer();
-    wav = shiftWavPlayback(Buffer.from(new Uint8Array(arrayBuffer)), factor);
+    // the trained-clone path: the character's own voice performs when
+    // the cloning provider can render it; ANY failure degrades to the
+    // catalog fallback voice with an honest note
+    if (plan.clone) {
+      const { clonedTake } = await import("@/lib/ai/voice-clone");
+      const cloned = await clonedTake(plan.clone.voiceId, plan.spoken, plan.speed);
+      if (cloned) {
+        const { factor: cloneFactor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
+        wav = shiftWavPlayback(cloned, cloneFactor);
+      } else {
+        cloneDegraded = plan.clone.fallbackVoiceId;
+      }
+    }
+    if (!wav) {
+      const zai = await ZAI.create();
+      // state pitch hint: render at compensated speed, then shift the
+      // playback rate so the take lands on plan.speed with the bend
+      const { ttsSpeed, factor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
+      const res = await zai.audio.tts.create({
+        input: plan.spoken,
+        voice: cloneDegraded ?? plan.voiceId, // state voice variant when active, else the cast/clone voice
+        speed: ttsSpeed,
+        response_format: "wav",
+        stream: false,
+      });
+      const arrayBuffer = await res.arrayBuffer();
+      wav = shiftWavPlayback(Buffer.from(new Uint8Array(arrayBuffer)), factor);
+    }
   } catch (err) {
     throw new VoiceRenderError(`TTS render failed: ${err instanceof Error ? err.message : "unknown error"}`, 502);
   }
@@ -140,13 +156,20 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
     where: { id: cueId },
     data: {
       voiceUrl: `/voices/${file}?v=${Date.now()}`,
-      voiceActor: plan.voiceId, // the voice actually performed (variant or cast)
+      voiceActor: cloneDegraded ?? plan.voiceId, // the voice actually performed (clone degrade names the fallback)
       voiceCast: plan.cast.artistName,
       voiceSpeed: plan.baseSpeed, // base only; effective speed = base x delivery multiplier
       voiceDurationMs: actualMs,
       voiceState: plan.delivery.id,
       voiceStateLabel: stateLabel,
-      voiceSig: JSON.stringify(plan.sig), // snapshot for the direction diff
+      voiceSig: JSON.stringify(
+        // an honest signature: when the clone degraded to the catalog
+        // fallback, the take was made with THAT voice, so a later
+        // clone re-render diffs correctly
+        cloneDegraded
+          ? buildTakeSig(plan.text, cloneDegraded, plan.delivery.id, plan.baseSpeed, plan.sig.sh, plan.sig.p)
+          : plan.sig,
+      ),
       durationMs,
     },
   });
@@ -164,8 +187,8 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
     },
     cast: {
       artistName: plan.cast.artistName,
-      voiceId: plan.voiceId,
-      source: plan.cast.source,
+      voiceId: cloneDegraded ?? plan.voiceId,
+      source: cloneDegraded ? "clone-fallback" : plan.cast.source,
       variant: plan.variant ? { voiceId: plan.variant.voiceId, stateLabel: plan.variant.stateLabel } : null,
     },
     hints: plan.hints

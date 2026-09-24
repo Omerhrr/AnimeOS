@@ -327,6 +327,8 @@ function PublishingPanel({ project }: { project: StudioProject }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pkg, setPkg] = useState<PublishPackageUi | null>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadNote, setUploadNote] = useState<string | null>(null);
 
   const episodes = useMemo(
     () => project.seasons.flatMap((s) => s.episodes).sort((a, b) => a.number - b.number),
@@ -342,6 +344,7 @@ function PublishingPanel({ project }: { project: StudioProject }) {
     setBusy(true);
     setError(null);
     setPkg(null);
+    setUploadNote(null);
     try {
       const r = await api.stagePublish(episodeId, platform);
       setPkg(r);
@@ -350,6 +353,23 @@ function PublishingPanel({ project }: { project: StudioProject }) {
       setError(err instanceof Error ? err.message : "Publish staging failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  // the credential-gated half: run the platform's real upload adapter
+  // on a staged package - every outcome is recorded on the event
+  async function upload(eventId: string) {
+    setUploadingId(eventId);
+    setError(null);
+    setUploadNote(null);
+    try {
+      const r = await api.uploadPackage(eventId);
+      setUploadNote(`${r.ok ? "Upload OK" : "Upload FAILED"} - ${r.detail}`);
+      void infoQ.refetch();
+    } catch (err) {
+      setUploadNote(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingId(null);
     }
   }
 
@@ -437,8 +457,19 @@ function PublishingPanel({ project }: { project: StudioProject }) {
               <span className="text-muted-foreground shrink-0">{r.platformLabel}</span>
               <span className="text-muted-foreground tabular-nums shrink-0">{r.checksPassed}/{r.checksTotal} checks</span>
               {r.subtitleCues > 0 && <span className="text-muted-foreground shrink-0">{r.subtitleFormat.toUpperCase()} {r.subtitleCues}</span>}
+              {r.platform !== "STUDIO_INGEST" && (
+                <button
+                  onClick={() => void upload(r.id)}
+                  disabled={uploadingId === r.id}
+                  title="Run the platform's real upload adapter (credential-gated: the honest refusal names the missing env key)"
+                  className="h-5 shrink-0 rounded-md border border-sky-400/25 bg-sky-400/10 px-1.5 text-[9px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40"
+                >
+                  {uploadingId === r.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : "Upload"}
+                </button>
+              )}
             </div>
           ))}
+          {uploadNote && <p className={cn("text-[10px] leading-relaxed", uploadNote.startsWith("Upload OK") ? "text-emerald-300" : "text-amber-300")}>{uploadNote}</p>}
         </div>
       )}
     </div>

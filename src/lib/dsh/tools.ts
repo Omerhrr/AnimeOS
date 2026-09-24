@@ -16,6 +16,8 @@ import { canonHealthData } from "@/lib/canon-health";
 import { scheduleHealthData } from "@/lib/schedule-health";
 import { postDailyDigest } from "@/lib/digest";
 import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
+import { uploadStagedPackage, findStagedPackage } from "@/lib/comic/upload";
+import { trainCharacterVoice } from "@/lib/ai/voice-clone";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -312,6 +314,21 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       episodeNumber: "number (optional - defaults to the latest episode)",
       platform: "YOUTUBE | BILIBILI | DOUYIN | TIKTOK | STUDIO_INGEST",
+    },
+  },
+  {
+    name: "upload_package",
+    description: "Run the platform's REAL upload adapter on an episode's latest STAGED publish package (stage it with publish_cut first). Credential-gated and honest: YOUTUBE performs the resumable flow (metadata init + byte PUT), TIKTOK/DOUYIN the init-then-put flow, BILIBILI the multipart submit - each requires its env credential (ANIMEOS_YT_ACCESS_TOKEN, ANIMEOS_TIKTOK_TOKEN, ANIMEOS_DOUYIN_TOKEN, ANIMEOS_BILI_ACCESS_KEY) and reports FAILED with the missing key's name when absent; STUDIO_INGEST is an honest skip (the local package drop IS the deliverable). Every outcome - OK or FAILED - is appended to the package's PUBLISH event, so the delivery history stays auditable. Nothing uploads silently.",
+    args: {
+      episodeNumber: "number (optional - defaults to the latest episode)",
+      platform: "YOUTUBE | BILIBILI | DOUYIN | TIKTOK | STUDIO_INGEST",
+    },
+  },
+  {
+    name: "train_voice_clone",
+    description: "Train a character's VOICE CLONE through the configured cloning provider (ANIMEOS_VOICE_CLONE_URL): the character's rendered VOICE takes (up to 6, their real performed audio) are sent as reference material and the provider's trained voice id is persisted on the character - from then on their lines perform with THEIR voice wherever the provider can render it (state voice variants still deliberately override; the catalog voice stays the honest fallback when a clone render fails). Refuses honestly with no provider configured or no takes rendered yet.",
+    args: {
+      characterName: "string - a cast character with rendered voice takes",
     },
   },
   {
@@ -1853,7 +1870,45 @@ export async function executeTool(projectId: string, name: string, args: Record<
         const subtitle = pkg.subtitle.format === "none"
           ? pkg.subtitle.note
           : `${pkg.subtitle.format.toUpperCase()} with ${pkg.subtitle.cues} cue(s) (${pkg.subtitle.filename ?? "no file"})`;
-        return { status: "OK", result: `Publish package staged for EP${String(ep.number).padStart(2, "0")} -> ${pkg.platformLabel}: ${pkg.ready ? "READY" : "NOT READY"} (${pkg.conformance.filter((c) => c.ok).length}/${pkg.conformance.length} conformance checks: ${checks}). Package: title "${pkg.title}", ${subtitle}. ${pkg.integration.detail} Staging is local and honest - no network upload happened; the package landed as a PUBLISH event the render view's publishing panel shows, with the full checklist and metadata.` };
+        return { status: "OK", result: `Publish package staged for EP${String(ep.number).padStart(2, "0")} -> ${pkg.platformLabel}: ${pkg.ready ? "READY" : "NOT READY"} (${pkg.conformance.filter((c) => c.ok).length}/${pkg.conformance.length} conformance checks: ${checks}). Package: title "${pkg.title}", ${subtitle}. ${pkg.integration.detail} Staging is local and honest - no network upload happened; the package landed as a PUBLISH event the render view's publishing panel shows, with the full checklist and metadata. Upload it with upload_package when the credentials are set.` };
+      }
+
+      case "upload_package": {
+        const platformId = String(args.platform ?? "").trim();
+        if (!platformPreset(platformId)) {
+          return { status: "ERROR", result: `Unknown platform "${platformId || "(none)"}" - available: ${PLATFORM_PRESETS.map((p) => p.id).join(", ")}.` };
+        }
+        const ep = args.episodeNumber
+          ? await db.episode.findFirst({
+              where: { season: { projectId }, number: Number(args.episodeNumber) },
+              orderBy: { season: { number: "asc" } },
+            })
+          : await latestEpisode(projectId);
+        if (!ep) return { status: "ERROR", result: "No episode exists yet - create one with create_episode first." };
+        const eventId = await findStagedPackage(projectId, ep.number, platformId);
+        if (!eventId) {
+          return { status: "ERROR", result: `No staged publish package found for EP${String(ep.number).padStart(2, "0")} on ${platformId} - stage one with publish_cut first.` };
+        }
+        const result = await uploadStagedPackage(eventId);
+        if (!result.ok) return { status: "ERROR", result: result.error ?? "the upload could not run" };
+        const o = result.outcome;
+        return { status: o.ok ? "OK" : "ERROR", result: o.kind === "skip"
+          ? `${o.detail} The package's PUBLISH event recorded the skip.`
+          : `${o.ok ? "Upload OK" : "Upload FAILED"} for EP${String(ep.number).padStart(2, "0")} -> ${platformId}: ${o.detail} The outcome is appended to the package's PUBLISH event (the delivery history stays auditable), and the render view's publishing panel shows it.` };
+      }
+
+      case "train_voice_clone": {
+        const name = String(args.characterName ?? "").trim();
+        if (!name) return { status: "ERROR", result: "characterName is required." };
+        const character = await db.character.findFirst({ where: { projectId, name } });
+        if (!character) {
+          const known = await db.character.findMany({ where: { projectId }, select: { name: true } });
+          return { status: "ERROR", result: `No character named "${name}" in this production. Cast: ${known.map((c) => c.name).join(", ") || "none"}.` };
+        }
+        const result = await trainCharacterVoice(character.id);
+        if (!result.ok) return { status: "ERROR", result: `Voice clone training failed for ${name}: ${result.error}` };
+        const r = result.result;
+        return { status: "OK", result: `Voice clone trained for ${r.characterName}: voice ${r.voiceId} from ${r.takes} reference take(s) (${(r.totalMs / 1000).toFixed(1)}s of performed audio). Their lines now perform with their own voice wherever the clone provider can render it - a state voice variant still deliberately overrides, and the catalog voice stays the honest fallback when a clone render fails. Their existing takes are NOT re-rendered automatically: run diff_episode_direction or diff_all_episodes and pass reRender:true to move takes onto the new voice.` };
       }
 
       case "render_shot": {
@@ -2820,6 +2875,7 @@ export async function buildCompactContext(projectId: string) {
       name: c.name, role: c.role, derivative: c.derivativeType,
       modelSheet: Boolean(c.modelSheetUrl),
       voiceActor: c.voiceArtist ? `${c.voiceArtist.name} (${c.voiceArtist.voiceId ?? "no voice set"})` : null,
+      cloneVoice: c.cloneVoiceId ?? null,
       abilities: JSON.parse(c.abilities || "[]"),
       states: c.states.map((s) => ({ label: s.label, ep: s.episodeNumber, type: s.stateType, cultivation: s.cultivation, weapon: s.weapon, voiceVariant: s.voiceVariant ?? null, speedHint: s.speedHint ?? null, pitchHint: s.pitchHint ?? null, poses: poseChip(s.poseStart, s.poseEnd) ?? null })),
     })),

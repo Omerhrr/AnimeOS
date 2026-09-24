@@ -3,6 +3,7 @@ export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
 import { PLATFORM_PRESETS, stagePublishPackage, listPublishEvents } from "@/lib/comic/publish";
+import { uploadStagedPackage } from "@/lib/comic/upload";
 
 // ─────────────────────────────────────────────────────────────
 // PLATFORM PUBLISHING (the delivery spine's last mile)
@@ -12,6 +13,10 @@ import { PLATFORM_PRESETS, stagePublishPackage, listPublishEvents } from "@/lib/
 // POST { episodeId, platform } -> stage a publish package for one
 //                            episode on one platform (local,
 //                            honest: no network upload happens)
+// POST { action: "upload", eventId } -> run the platform's real
+//                            upload adapter on a staged package
+//                            (credential-gated; every outcome
+//                            recorded on the event)
 // ─────────────────────────────────────────────────────────────
 
 export async function GET(req: Request) {
@@ -37,12 +42,21 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  let body: { episodeId?: unknown; platform?: unknown };
+  let body: { episodeId?: unknown; platform?: unknown; action?: unknown; eventId?: unknown };
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: "a JSON body is required" }, { status: 400 });
   }
+
+  if (body.action === "upload") {
+    const eventId = String(body.eventId ?? "");
+    if (!eventId) return NextResponse.json({ error: "eventId is required for the upload action" }, { status: 400 });
+    const result = await uploadStagedPackage(eventId);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+    return NextResponse.json(result.outcome);
+  }
+
   const episodeId = String(body.episodeId ?? "");
   const platform = String(body.platform ?? "");
   if (!episodeId || !platform) {

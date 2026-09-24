@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, User, Users, Swords, Crown, Skull, Sparkles, Copy, Ghost, RefreshCcw,
-  ChevronRight, Wand2, Loader2, IdCard,
+  ChevronRight, Wand2, Loader2, IdCard, AudioLines,
 } from "lucide-react";
 import { api, parseStringArray, type CharacterFull, type StudioProject } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -453,6 +453,24 @@ export function CharactersView({ project }: { project: StudioProject }) {
     }
   };
 
+  // the voice-clone slot: train the character's own voice from their
+  // rendered takes (honest refusals surface as the button's title)
+  const [cloneNote, setCloneNote] = useState<string | null>(null);
+  const [cloneBusy, setCloneBusy] = useState<string | null>(null);
+  const trainClone = async (characterId: string) => {
+    setCloneBusy(characterId);
+    setCloneNote(null);
+    try {
+      const r = await api.trainVoiceClone(characterId);
+      setCloneNote(`Voice clone trained for ${r.characterName}: ${r.voiceId} (${r.takes} take(s))`);
+      await qc.invalidateQueries({ queryKey: ["project", project.id] });
+    } catch (err) {
+      setCloneNote(err instanceof Error ? err.message : "Voice clone training failed");
+    } finally {
+      setCloneBusy(null);
+    }
+  };
+
   return (
     <div>
       <SectionHeader
@@ -460,6 +478,9 @@ export function CharactersView({ project }: { project: StudioProject }) {
         sub="Persistent production entities - identity, development states, relationships, derivatives and animation libraries. Not just meshes."
         right={<CreateCharacterDialog />}
       />
+      {cloneNote && (
+        <p className={cn("text-[11px] mb-2 rounded-lg border px-3 py-2", cloneNote.startsWith("Voice clone trained") ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200" : "border-amber-400/25 bg-amber-400/10 text-amber-200")}>{cloneNote}</p>
+      )}
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {[...core, ...derivs].map((c) => {
           const Icon = ROLE_ICONS[c.role ?? "SUPPORTING"] ?? User;
@@ -497,6 +518,11 @@ export function CharactersView({ project }: { project: StudioProject }) {
                         ANCHOR
                       </span>
                     )}
+                    {c.cloneVoiceId && (
+                      <span title={`Voice clone trained (${c.cloneVoiceId}) - their lines perform with their own voice when the clone provider is configured`} className="inline-flex items-center rounded bg-violet-400/10 border border-violet-400/30 px-1 text-[8px] font-bold tracking-widest text-violet-300">
+                        CLONED
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] text-muted-foreground">{c.derivativeType ?? c.role ?? "Cast"}</div>
                 </div>
@@ -509,6 +535,17 @@ export function CharactersView({ project }: { project: StudioProject }) {
                   className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary transition-colors hover:bg-primary/20 print:hidden"
                 >
                   {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                </span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Train voice clone for ${c.name}`}
+                  title="Train the character's voice from their rendered takes (needs ANIMEOS_VOICE_CLONE_URL)"
+                  onClick={(e) => { e.stopPropagation(); void trainClone(c.id); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); void trainClone(c.id); } }}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-violet-400/30 bg-violet-400/10 text-violet-300 transition-colors hover:bg-violet-400/20"
+                >
+                  {cloneBusy === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AudioLines className="h-3.5 w-3.5" />}
                 </span>
               </div>
               {c.personality && (

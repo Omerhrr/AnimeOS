@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { classifyStateDelivery, type DeliveryId } from "@/lib/comic/delivery";
 import { defaultVoiceFor, isVoiceId } from "@/lib/comic/voice-catalog";
+import { cloneProvider } from "@/lib/ai/voice-clone";
 
 // ─────────────────────────────────────────────────────────────
 // VOICE CASTING + STATE-AWARE PERFORMANCE (server side)
@@ -33,7 +34,8 @@ export interface ResolvedDelivery {
 export interface ResolvedCast {
   voiceId: string;
   artistName: string | null; // cast artist when the take came from a voice casting
-  source: "cast" | "auto" | "manual";
+  source: "cast" | "auto" | "manual" | "clone";
+  fallbackVoiceId?: string | null; // the catalog voice behind a clone (honest degrade path)
 }
 
 /** A state-bound voice swap: while the state is effective, lines use this voice. */
@@ -203,8 +205,10 @@ export async function resolveAutoDelivery(
 
 /**
  * Per-artist voice casting: resolve the TTS voice a speaker's lines
- * are performed with. Priority: explicit voice argument > the cast
- * artist attached to the character > deterministic hash default.
+ * are performed with. Priority: explicit voice argument > the
+ * character's trained CLONE voice (when the cloning provider is
+ * configured) > the cast artist attached to the character >
+ * deterministic hash default.
  */
 export async function resolveVoiceCast(
   speaker: string,
@@ -221,6 +225,18 @@ export async function resolveVoiceCast(
         include: { voiceArtist: true },
       });
       const artist = character?.voiceArtist;
+      // the character's own trained voice outranks the catalog cast
+      // (that is the point of training it); the provider must be
+      // configured or the clone stays silent and honest
+      if (character?.cloneVoiceId && cloneProvider()) {
+        return {
+          voiceId: character.cloneVoiceId,
+          artistName: artist?.name ?? null,
+          source: "clone",
+          // the catalog voice that performs when the provider cannot
+          fallbackVoiceId: artist?.voiceId && isVoiceId(artist.voiceId) ? artist.voiceId : defaultVoiceFor(speaker),
+        };
+      }
       if (artist?.voiceId && isVoiceId(artist.voiceId)) {
         return { voiceId: artist.voiceId, artistName: artist.name, source: "cast" };
       }
