@@ -62,10 +62,13 @@ function EngineDriverCard() {
           <p className="text-[10px] text-muted-foreground/80 mt-1 font-mono">ANIMEOS_BLENDER_HOST={s.envHint}</p>
         )}
         {img2vid?.available && img2vid.provider === "host" && (
-          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">ANIMEOS_IMG2VID_HOST={img2vid.host} - pose-carrying hero shots route to the attached interpolation provider</p>
+          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">ANIMEOS_IMG2VID_HOST={img2vid.host} - PREVIZ slot: pose-carrying hero shots preview motion through the attached interpolation provider (finals stay on the designed engines)</p>
         )}
         {img2vid?.available && img2vid.provider === "zai" && (
-          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">img2vid provider: built-in z.ai interpolation model - pose-carrying hero shots become real AI video (ANIMEOS_IMG2VID=off disables)</p>
+          <p className="text-[10px] text-teal-200/80 mt-1 font-mono">img2vid PREVIZ slot: built-in interpolation model opted in (ANIMEOS_IMG2VID=on) - pose-carrying hero shots get motion previz only, never the final render</p>
+        )}
+        {!img2vid?.available && (
+          <p className="text-[10px] text-muted-foreground/60 mt-1">img2vid previz slot: off (default). The output is designed, not generated - opt in with ANIMEOS_IMG2VID=on or an attached host only for motion previz and benchmarks.</p>
         )}
       </div>
       {!live && (
@@ -425,7 +428,7 @@ export function RenderView({ project }: { project: StudioProject }) {
                         job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
                           ? "Rendered by a headless Blender sequence worker (Cycles; skeletal stand-in when the shot carries poses)"
                           : job.driver === "IMG2VID"
-                            ? "Rendered by the img2vid interpolation provider (pose-to-motion over key art)"
+                            ? "PREVIZ animatic from the interpolation provider (pose-to-motion over key art) - a previz pass, not a final render"
                             : job.driver === "MOTION"
                               ? "Rendered by the built-in MOTION engine (ffmpeg camera grammar over key art; poses as a blocking approximation)"
                               : "Rendered by the wall-clock simulator"
@@ -441,7 +444,7 @@ export function RenderView({ project }: { project: StudioProject }) {
                               : "bg-white/5 border-white/12 text-muted-foreground"
                       )}
                     >
-                      {job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL" ? "BLENDER" : job.driver === "IMG2VID" ? "IMG2VID" : job.driver === "MOTION" ? "MOTION" : "SIM"}
+                      {job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL" ? "BLENDER" : job.driver === "IMG2VID" ? "PREVIZ" : job.driver === "MOTION" ? "MOTION" : "SIM"}
                     </span>
                     <StatusBadge status={job.status} />
                   </div>

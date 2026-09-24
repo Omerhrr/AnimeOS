@@ -3,6 +3,7 @@ import { runPlanSteps, latestPlan, getPlan, type PlanView } from "@/lib/dsh/plan
 import { startRepaintRun, latestRepaintRun } from "@/lib/universe-repaint";
 import { universeReRenderQueue } from "@/lib/universe-facts";
 import { tickProjectJobs } from "@/lib/engine/render";
+import { postDailyDigest } from "@/lib/digest";
 
 // ─────────────────────────────────────────────────────────────
 // CADENCE SCHEDULER - the studio runs between conversations
@@ -19,6 +20,10 @@ import { tickProjectJobs } from "@/lib/engine/render";
 //     render job (advance progress, fail stale workers), then start
 //     a supervised re-paint pass whenever the universe-facts
 //     re-render queue is dirty and no run is live.
+//   • DAILY_DIGEST   - post a digest of the last 24 hours (renders,
+//     plan steps, schedule fires, canon/identity health, queue
+//     pressure) to the creator as a DIGEST production event; the
+//     digest panel on the DSH view shows it.
 //
 // nextRunAt is the single source of truth for "due". Every fire
 // claims its slot first (lastRunAt + nextRunAt advance BEFORE the
@@ -30,11 +35,11 @@ import { tickProjectJobs } from "@/lib/engine/render";
 // and the DSH steer_schedule tool fire one immediately.
 // ─────────────────────────────────────────────────────────────
 
-export type ScheduleKind = "PLAN_RUN" | "REPAINT_QUEUE";
+export type ScheduleKind = "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST";
 export type ScheduleCadence = "HOURLY" | "DAILY" | "WEEKLY";
 export type FireStatus = "OK" | "SKIPPED" | "ERROR";
 
-const SCHEDULE_KINDS: ScheduleKind[] = ["PLAN_RUN", "REPAINT_QUEUE"];
+const SCHEDULE_KINDS: ScheduleKind[] = ["PLAN_RUN", "REPAINT_QUEUE", "DAILY_DIGEST"];
 const SCHEDULE_CADENCES: ScheduleCadence[] = ["HOURLY", "DAILY", "WEEKLY"];
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -127,7 +132,7 @@ export function describeCadence(cadence: string, intervalHours: number, hourUtc:
 }
 
 function viewOf(row: ScheduleRow, planTitle: string | null): ScheduleView {
-  const kind = (SCHEDULE_KINDS as string[]).includes(row.kind) ? (row.kind as ScheduleKind) : "PLAN_RUN";
+  const kind = (SCHEDULE_KINDS as string[]).includes(row.kind) ? (row.kind as ScheduleKind) : (row.kind === "DAILY_DIGEST" ? "DAILY_DIGEST" : "PLAN_RUN");
   const cadence = (SCHEDULE_CADENCES as string[]).includes(row.cadence) ? (row.cadence as ScheduleCadence) : "DAILY";
   return {
     id: row.id,
@@ -186,7 +191,7 @@ export async function createSchedule(
   if (!name) return { ok: false, error: "name is required - what does this cadence do?" };
   const kind = String(input.kind ?? "PLAN_RUN").toUpperCase();
   if (!SCHEDULE_KINDS.includes(kind as ScheduleKind)) {
-    return { ok: false, error: "kind must be PLAN_RUN | REPAINT_QUEUE" };
+    return { ok: false, error: "kind must be PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST" };
   }
   const cadence = String(input.cadence ?? "DAILY").toUpperCase();
   if (!SCHEDULE_CADENCES.includes(cadence as ScheduleCadence)) {
@@ -222,7 +227,7 @@ export async function createSchedule(
       projectId,
       actor: "SYSTEM",
       type: "SCHEDULE",
-      summary: `Schedule '${row.name}' registered - ${kind === "PLAN_RUN" ? "runs an approved plan" : "render-queue supervision"}, ${describeCadence(cadence, intervalHours, hourUtc, weekday)}`,
+      summary: `Schedule '${row.name}' registered - ${kind === "PLAN_RUN" ? "runs an approved plan" : kind === "DAILY_DIGEST" ? "posts the daily digest to the creator" : "render-queue supervision"}, ${describeCadence(cadence, intervalHours, hourUtc, weekday)}`,
       payload: JSON.stringify({ scheduleId: row.id, kind, cadence }),
     },
   }).catch(() => {});
@@ -236,6 +241,15 @@ interface FireOutcome {
 
 /** Execute one schedule fire. Claims nothing - the caller advances the row. */
 async function fireSchedule(row: ScheduleRow): Promise<FireOutcome> {
+  if (row.kind === "DAILY_DIGEST") {
+    const result = await postDailyDigest(row.projectId);
+    if (!result.ok) return { status: "ERROR", report: result.error ?? "the digest failed to build" };
+    return {
+      status: "OK",
+      report: `posted the digest to the creator: ${result.digest.headline} - ${result.digest.lines.length - 1} section(s) riding it`,
+    };
+  }
+
   if (row.kind === "REPAINT_QUEUE") {
     // supervision part 1: advance every active render job (progress,
     // completions, stale-worker failures) for this production

@@ -182,10 +182,11 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     }
   }
 
-  // IMG2VID: interpolation-model providers. Hero shots that carry a
-  // pose program route to the attached host first, then the built-in
-  // z.ai video model, before the built-in engines; the provider
-  // animates the key art between the poses.
+  // IMG2VID: the optional PREVIZ slot. Hero shots that carry a pose
+  // program route to the attached host first, then the built-in model
+  // on explicit opt-in, before the built-in engines; the provider
+  // produces a motion previz animatic between the poses. The designed
+  // engines (Blender, MOTION) stay the render path of record.
   if (driver === "SIMULATOR" && shot && hasPoseProgram(shot.poseStart, shot.poseEnd) && img2vidProvider()) {
     const project = await db.project.findUnique({ where: { id: projectId } });
     const fps = project?.fps ?? 24;
@@ -237,7 +238,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       if (submit.submitted && submit.taskId) {
         driver = "IMG2VID";
         clipMs = Math.round(shot.duration * 1000);
-        stage = "Img2Vid: z.ai interpolation model generating the pose clip";
+        stage = "Img2Vid previz: interpolation model generating the pose animatic";
         providerTaskId = submit.taskId;
       } else {
         stage = `Img2Vid submit failed (${submit.error ?? "unknown"}) - trying the built-in engine`;

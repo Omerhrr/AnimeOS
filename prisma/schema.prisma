@@ -51,6 +51,7 @@ model Project {
   studioSchedules  StudioSchedule[]
   identityScores   IdentityScore[]
   panelEmbeddings  PanelEmbedding[]
+  planTemplates    PlanTemplate[]
 }
 
 model Season {
@@ -606,6 +607,37 @@ model ArcTemplate {
   // DB-level uniqueness for production templates; studio templates
   // (projectId null) are deduped in the API because SQLite treats
   // NULLs as distinct in unique indexes.
+  @@unique([projectId, name])
+}
+
+// ─────────────────────────────────────────────────────────────
+// CREATOR-AUTHORED PLAN TEMPLATE VARIATIONS
+// ─────────────────────────────────────────────────────────────
+
+// A creator-authored variation of a per-episode plan template:
+// the four built-ins (beat-breakdown, panel-pass, render-pass,
+// canon-audit) are code; a variation is a SAVED row the creator
+// authors in the plans panel (often cloned from a built-in and
+// reshaped - fewer shots, a different audit target). Landing one
+// resolves the same tokens the built-ins resolve ({episode},
+// {latestScene}, {title}) against the REAL episode row, so a
+// variation lands as a concrete, reviewable PROPOSED plan.
+// projectId null = studio-library variation shared by every
+// production, mirroring ArcTemplate's two scopes.
+model PlanTemplate {
+  id          String    @id @default(cuid())
+  projectId   String?   // null for studio-library variations shared across productions
+  baseId      String    @default("custom") // built-in id it was cloned from, or "custom"
+  name        String
+  summary     String
+  cadenceHint String    @default("nightly - a few steps per fire")
+  steps       String    @default("[]") // JSON Array<{tool, args, why}> with {episode}/{latestScene}/{title} tokens
+  usageCount  Int       @default(0) // how many plans actually landed from this variation
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
   @@unique([projectId, name])
 }
 

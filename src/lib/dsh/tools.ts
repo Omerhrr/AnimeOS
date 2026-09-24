@@ -6,14 +6,15 @@ import { checkShotUniverseFacts } from "@/lib/universe-facts";
 import { startRepaintRun } from "@/lib/universe-repaint";
 import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
-import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan } from "@/lib/dsh/plan-templates";
-import { IDENTITY_REPAINT_THRESHOLD, scoreProjectIdentity, scoreShotIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD } from "@/lib/identity";
+import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan, listPlanTemplates } from "@/lib/dsh/plan-templates";
+import { IDENTITY_REPAINT_THRESHOLD, scoreProjectIdentity, scoreShotIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD, identityDriftData } from "@/lib/identity";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
 } from "@/lib/scheduler";
 import { studioPulse } from "@/lib/studio-pulse";
 import { canonHealthData } from "@/lib/canon-health";
 import { scheduleHealthData } from "@/lib/schedule-health";
+import { postDailyDigest } from "@/lib/digest";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -149,7 +150,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_shot_poses",
-    description: "Set or clear a shot's character motion program: a start pose and an end pose the engines interpolate across the clip (a blocking pass on the Blender stand-in, an img2vid interpolation when a provider is attached, a blocking approximation with an impact beat on the MOTION engine). Poses: STANCE | WALK | LUNGE | SLASH | CAST | DRAW | BLOCK | LEAP | CROUCH | FALL | RISE | BOW | POINT. Pass empty strings to clear.",
+    description: "Set or clear a shot's character motion program: a start pose and an end pose the engines interpolate across the clip (a blocking pass on the Blender stand-in, a blocking approximation with an impact beat on the MOTION engine, and when the opt-in img2vid previz slot is enabled it previews the beat as an animatic - finals stay on the designed engines). Poses: STANCE | WALK | LUNGE | SLASH | CAST | DRAW | BLOCK | LEAP | CROUCH | FALL | RISE | BOW | POINT. Pass empty strings to clear.",
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
@@ -253,10 +254,10 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "create_schedule",
-    description: "Register a CADENCE SCHEDULE so the studio keeps working between conversations: PLAN_RUN runs an approved plan on a cadence (the nightly-breakdown pattern: land the plan, the creator approves it once, this walks maxSteps per night until DONE - a finished plan hands the slot to the next ACTIVE one) and REPAINT_QUEUE is render-queue supervision (ticks active render jobs, starts a supervised re-paint pass when the universe-facts queue is dirty and no run is live). Every fire lands as a production event with its outcome; the creator steers (enable/disable/run-now/delete) from the scheduler panel on the DSH view.",
+    description: "Register a CADENCE SCHEDULE so the studio keeps working between conversations: PLAN_RUN runs an approved plan on a cadence (the nightly-breakdown pattern: land the plan, the creator approves it once, this walks maxSteps per night until DONE - a finished plan hands the slot to the next ACTIVE one), REPAINT_QUEUE is render-queue supervision (ticks active render jobs, starts a supervised re-paint pass when the universe-facts queue is dirty and no run is live) and DAILY_DIGEST posts a digest of the last 24 hours to the creator (renders, plan steps, schedule fires, canon/identity health) as a production event the digest panel shows. Every fire lands as a production event with its outcome; the creator steers (enable/disable/run-now/delete) from the scheduler panel on the DSH view.",
     args: {
       name: "string - short schedule name (e.g. 'Nightly Episode 2 breakdown')",
-      kind: "PLAN_RUN | REPAINT_QUEUE",
+      kind: "PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST",
       planTitle: "string (PLAN_RUN optional - pins a plan by title; omit to always run the latest ACTIVE plan)",
       cadence: "HOURLY | DAILY | WEEKLY (default DAILY)",
       intervalHours: "number 1-24 (HOURLY: every N hours, default 1)",
@@ -275,10 +276,10 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "land_episode_plan",
-    description: "Land a PER-EPISODE PLAN TEMPLATE as a PROPOSED cross-turn plan: beat-breakdown opens a new story beat with a three-shot cinematography breakdown, panel-pass generates fact-aware panel art for a scene's first three shots and scans them, render-pass queues PREVIEW renders plus a voice-direction diff, canon-audit vision-verdicts the hero panel against the universe facts and runs the art-continuity scan. The plan waits in the creator's review panel (approve once, then run_plan or a nightly schedule walks it).",
+    description: "Land a PER-EPISODE PLAN TEMPLATE as a PROPOSED cross-turn plan: the built-ins beat-breakdown (opens a new story beat with a three-shot cinematography breakdown), panel-pass (fact-aware panel art for a scene's first three shots plus the art-continuity scan), render-pass (PREVIEW renders plus a voice-direction diff) and canon-audit (universe-facts vision verdict + art scan), PLUS any creator-authored variation saved in the plans panel (pass its id or exact name). The plan waits in the creator's review panel (approve once, then run_plan or a nightly schedule walks it).",
     args: {
       episodeNumber: "number - which episode the plan targets (defaults to the latest episode)",
-      template: "beat-breakdown | panel-pass | render-pass | canon-audit",
+      template: "beat-breakdown | panel-pass | render-pass | canon-audit, or a saved variation's id / exact name",
     },
   },
   {
@@ -292,8 +293,15 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "studio_pulse",
-    description: "One honest health readout of the whole studio, instant and provider-free: the canon score (universe-fact verdict history: coverage and hold rate), identity health (vision-scored panels, drift queue, provider-free affinity tripwire), schedule health (14-day fire outcomes, overdue and erroring cadences) and queue pressure (active renders, re-render queue). Call it when the creator asks how the production is doing, before promising deadlines, or after a night of scheduled fires.",
+    description: "One honest health readout of the whole studio, instant and provider-free: the canon score (universe-fact verdict history: coverage and hold rate, plus facts suggested for rewording/retirement), identity health (vision-scored panels, drift queue, provider-free affinity tripwire, per-character drift curves over episode order), schedule health (14-day fire outcomes, overdue and erroring cadences) and queue pressure (active renders, re-render queue). Call it when the creator asks how the production is doing, before promising deadlines, or after a night of scheduled fires.",
     args: {},
+  },
+  {
+    name: "post_digest",
+    description: "Post a production DIGEST to the creator right now: the last N hours of studio activity (renders, plan steps, schedule fires, canon and identity-drift headlines, queue pressure) aggregated into one readable message and landed as a DIGEST production event the digest panel shows. The DAILY_DIGEST schedule posts one automatically on its cadence; use this when the creator asks for a catch-up or an end-of-session summary.",
+    args: {
+      hours: "number 1-168 (optional - the window the digest covers, default 24)",
+    },
   },
   {
     name: "render_shot",
@@ -1266,7 +1274,8 @@ export async function executeTool(projectId: string, name: string, args: Record<
         });
         if (!result.ok) return { status: "ERROR", result: result.error };
         const s = result.schedule;
-        return { status: "OK", result: `Schedule '${s.name}' registered (${s.kind === "PLAN_RUN" ? "runs an approved plan" : "render-queue supervision"}, ${s.cadenceLabel}, maxSteps ${s.maxSteps}). First fire: ${s.nextRunAt ?? "on the next tick"}. Every fire lands as a production event; the creator steers it from the scheduler panel (enable/disable/run now/delete).` };
+        const kindNote = s.kind === "PLAN_RUN" ? "runs an approved plan" : s.kind === "DAILY_DIGEST" ? "posts the daily digest to the creator" : "render-queue supervision";
+        return { status: "OK", result: `Schedule '${s.name}' registered (${kindNote}, ${s.cadenceLabel}${s.kind === "PLAN_RUN" ? `, maxSteps ${s.maxSteps}` : ""}). First fire: ${s.nextRunAt ?? "on the next tick"}. Every fire lands as a production event; the creator steers it from the scheduler panel (enable/disable/run now/delete).` };
       }
 
       case "steer_schedule": {
@@ -1720,7 +1729,10 @@ export async function executeTool(projectId: string, name: string, args: Record<
 
       case "land_episode_plan": {
         const templateId = String(args.template ?? "").trim();
-        if (!templateId) return { status: "ERROR", result: `template is required - pick one of: ${EPISODE_TEMPLATE_IDS.join(", ")}` };
+        if (!templateId) {
+          const saved = await listPlanTemplates(projectId);
+          return { status: "ERROR", result: `template is required - built-ins: ${EPISODE_TEMPLATE_IDS.join(", ")}${saved.length ? `, saved variations: ${saved.map((t) => `'${t.name}'`).join(", ")}` : " (none authored yet)"}` };
+        }
         let episodeId: string | null = null;
         if (args.episodeNumber) {
           const ep = await db.episode.findFirst({
@@ -1799,6 +1811,13 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return { status: "OK", result: pulse.lines.join("\n") };
       }
 
+      case "post_digest": {
+        const hours = Number(args.hours ?? 24);
+        const result = await postDailyDigest(projectId, Number.isFinite(hours) ? hours : 24);
+        if (!result.ok) return { status: "ERROR", result: result.error ?? "the digest failed to build" };
+        return { status: "OK", result: `Digest posted to the creator (last ${result.digest.windowHours}h, ${result.digest.events} production event(s)):\n${result.digest.lines.join("\n")}\nThe digest panel on this view keeps the history; a DAILY_DIGEST schedule (create_schedule) posts one automatically on its cadence.` };
+      }
+
       case "render_shot": {
         let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
@@ -1823,8 +1842,8 @@ export async function executeTool(projectId: string, name: string, args: Record<
             : "headless Blender sequence worker (Cycles)"
           : job.driver === "IMG2VID"
             ? job.providerTaskId
-              ? "the built-in z.ai img2vid interpolation model (real pose-to-motion video)"
-              : "img2vid interpolation provider (pose-to-motion model)"
+              ? "the opt-in img2vid previz slot (a motion animatic, not a final render)"
+              : "the previz interpolation provider (a motion animatic, not a final render)"
             : job.driver === "MOTION"
               ? poseTxt
                 ? "built-in MOTION engine (poses play as a blocking approximation)"
@@ -1834,7 +1853,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
           ? job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"
             ? " The mouth lip-syncs the SPEECH lines (viseme program on the stand-in)."
             : job.driver === "IMG2VID"
-              ? " The video model received the SPEECH lines as lip-sync direction."
+              ? " The previz provider received the SPEECH lines as lip-sync direction (previz pass only)."
               : " The MOTION engine lands a blocking speech beat per line."
           : "";
         return { status: "OK", result: `${mode} render job queued for Shot ${String(shot.number).padStart(3, "0")} (Scene ${scene.number}). Job ${job.id.slice(-6)} on the ${engineNote} - it will finish as a playable animated clip following the shot's camera grammar (${shot.movement ?? "STATIC"}, ${shot.shotType}${poseTxt ? `, character ${poseTxt}` : ""}); DSH will inspect the preview when it completes.${lip}` };
@@ -2666,7 +2685,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -2709,6 +2728,9 @@ export async function buildCompactContext(projectId: string) {
   }),
     canonHealthData(projectId).catch(() => null),
     scheduleHealthData(projectId).catch(() => null),
+    identityDriftData(projectId).catch(() => null),
+    listPlanTemplates(projectId).catch(() => [] as Awaited<ReturnType<typeof listPlanTemplates>>),
+    db.productionEvent.findFirst({ where: { projectId, type: "DIGEST" }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
   ]);
   if (!project) return null;
 
@@ -2786,7 +2808,14 @@ export async function buildCompactContext(projectId: string) {
       const ref = `E${sh.scene.episode.number} Sc${sh.scene.number} S${String(sh.number).padStart(3, "0")}`;
       return `${ref} ${(row.worst * 100).toFixed(0)}% provider-free affinity${row.worst < 0.5 ? " WATCH" : ""} (tripwire only, vision score is the authority)`;
     }),
-    planTemplates: `per-episode templates ready to land with land_episode_plan: ${EPISODE_TEMPLATE_IDS.join(", ")}`,
+    planTemplates: `per-episode templates ready to land with land_episode_plan: built-ins ${EPISODE_TEMPLATE_IDS.join(", ")}${savedTemplates.length ? ` + ${savedTemplates.length} creator-authored variation(s): ${savedTemplates.map((t) => `'${t.name}' (${t.scope.toLowerCase()}, ${t.stepCount} steps)`).join(", ")}` : ""}`,
+    canonRetire: canon && canon.suggestions.length > 0
+      ? canon.suggestions.map((s) => `'${s.text.slice(0, 60)}' - ${s.reason}`)
+      : null,
+    identityDrift: drift ? drift.headline : null,
+    latestDigest: latestDigestEvent
+      ? `${latestDigestEvent.summary} (${latestDigestEvent.createdAt.toISOString().slice(0, 16)}Z)`
+      : null,
     canonHealth: canon ? canon.digest.headline : null,
     scheduleHealth: scheduleHealth ? scheduleHealth.headline : null,
   };

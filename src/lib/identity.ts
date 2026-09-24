@@ -350,15 +350,19 @@ export interface IdentityPanelData {
   threshold: number;
   average: number | null;
   embeddings: Record<string, AffinityRowData>; // per-shot provider-free affinity rows
+  drift: IdentityDriftData; // per-character curves over episode order
 }
 
 /** Panel feed for the Continuity view's identity panel. */
 export async function identityPanelData(projectId: string): Promise<IdentityPanelData> {
-  const project = await db.project.findUnique({
+  const [project, drift] = await Promise.all([
+    db.project.findUnique({
     where: { id: projectId },
     include: { characters: { include: { states: true } } },
-  });
-  if (!project) return { rows: [], queue: [], shots: [], threshold: IDENTITY_REPAINT_THRESHOLD, average: null, embeddings: {} };
+  }),
+    identityDriftData(projectId).catch(() => ({ characters: [], watch: [], headline: "identity drift curves unavailable" } as IdentityDriftData)),
+  ]);
+  if (!project) return { rows: [], queue: [], shots: [], threshold: IDENTITY_REPAINT_THRESHOLD, average: null, embeddings: {}, drift };
 
   const rows = await db.shot.findMany({
     where: { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
@@ -426,7 +430,152 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
     embeddingMap[e.shotId] = { worst: e.worst, hashHex: e.hashHex, computedAt: e.computedAt.toISOString(), entries: rows };
   }
 
-  return { rows: panelRows, queue, shots, threshold: IDENTITY_REPAINT_THRESHOLD, average, embeddings: embeddingMap };
+  return { rows: panelRows, queue, shots, threshold: IDENTITY_REPAINT_THRESHOLD, average, embeddings: embeddingMap, drift };
+}
+
+// ─────────────────────────────────────────────────────────────
+// PER-CHARACTER IDENTITY DRIFT CURVES
+//
+// One scored panel is a data point; the SEQUENCE of a character's
+// scores over episode order is a curve, and the curve answers the
+// question a single score cannot: is this character's resemblance
+// to their sheet stable across the show, improving, or slowly
+// sliding? Pure rollup + a loader, both exported for the E2E.
+// ─────────────────────────────────────────────────────────────
+
+export interface DriftPoint {
+  episode: number;
+  scene: number;
+  shot: number;
+  score: number; // that panel's similarity for this character
+  scoredAt: string;
+}
+
+export type DriftTrend = "IMPROVING" | "DECLINING" | "STABLE" | "FLAT";
+
+export interface CharacterDrift {
+  characterName: string;
+  points: DriftPoint[]; // ordered by episode, then scene, then shot
+  first: number | null; // earliest point's score
+  last: number | null; // latest point's score
+  delta: number | null; // last - first (null with fewer than 2 points)
+  trend: DriftTrend;
+  worstAspect: string | null; // lowest-mean aspect across the curve
+  panels: number;
+}
+
+export const DRIFT_TREND_THRESHOLD = 0.05; // |delta| below this reads as stable
+
+function driftTrend(delta: number | null, panels: number): DriftTrend {
+  if (panels < 2 || delta == null) return "FLAT";
+  if (delta <= -DRIFT_TREND_THRESHOLD) return "DECLINING";
+  if (delta >= DRIFT_TREND_THRESHOLD) return "IMPROVING";
+  return "STABLE";
+}
+
+/**
+ * Roll IdentityScore rows (one per shot) into per-character curves.
+ * Every cast member mentioned in ANY scored panel gets a curve,
+ * points ordered by episode/scene/shot. Pure - the E2E drives it.
+ */
+export function identityDriftFromRows(
+  rows: Array<{ scores: string; episode: number; scene: number; shot: number; scoredAt: Date | string }>,
+): CharacterDrift[] {
+  interface Acc {
+    points: DriftPoint[];
+    aspectSums: Map<string, { sum: number; n: number }>;
+  }
+  const byChar = new Map<string, Acc>();
+  for (const row of rows) {
+    let entries: IdentityScoreEntry[] = [];
+    try {
+      const parsed = JSON.parse(row.scores);
+      if (Array.isArray(parsed)) entries = parsed as IdentityScoreEntry[];
+    } catch {
+      continue;
+    }
+    const at = row.scoredAt instanceof Date ? row.scoredAt.toISOString() : String(row.scoredAt);
+    for (const entry of entries) {
+      if (!entry || typeof entry.characterName !== "string") continue;
+      const name = entry.characterName;
+      const acc: Acc = byChar.get(name) ?? { points: [], aspectSums: new Map() };
+      acc.points.push({
+        episode: row.episode,
+        scene: row.scene,
+        shot: row.shot,
+        score: Math.min(1, Math.max(0, Number(entry.similarity) || 0)),
+        scoredAt: at,
+      });
+      for (const [aspect, v] of Object.entries(entry.aspects ?? {})) {
+        const num = Number(v);
+        if (!Number.isFinite(num)) continue;
+        const cur = acc.aspectSums.get(aspect) ?? { sum: 0, n: 0 };
+        cur.sum += num;
+        cur.n += 1;
+        acc.aspectSums.set(aspect, cur);
+      }
+      byChar.set(name, acc);
+    }
+  }
+  return [...byChar.entries()].map(([characterName, acc]) => {
+    const points = acc.points.sort(
+      (a, b) => a.episode - b.episode || a.scene - b.scene || a.shot - b.shot || a.scoredAt.localeCompare(b.scoredAt),
+    );
+    const first = points.length > 0 ? points[0].score : null;
+    const last = points.length > 0 ? points[points.length - 1].score : null;
+    const delta = first != null && last != null && points.length >= 2 ? last - first : null;
+    let worstAspect: string | null = null;
+    let worstMean = 1.01;
+    for (const [aspect, { sum, n }] of acc.aspectSums) {
+      const mean = sum / n;
+      if (mean < worstMean) {
+        worstMean = mean;
+        worstAspect = aspect;
+      }
+    }
+    return {
+      characterName,
+      points,
+      first,
+      last,
+      delta,
+      trend: driftTrend(delta, points.length),
+      worstAspect,
+      panels: points.length,
+    };
+  }).sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0)); // steepest decline first
+}
+
+export interface IdentityDriftData {
+  characters: CharacterDrift[]; // every curved character, steepest decline first
+  watch: CharacterDrift[]; // the DECLINING subset
+  headline: string;
+}
+
+/** Per-character drift curves over episode order for one production. */
+export async function identityDriftData(projectId: string): Promise<IdentityDriftData> {
+  const rows = await db.identityScore.findMany({
+    where: { projectId },
+    include: { shot: { include: { scene: { include: { episode: true } } } } },
+    orderBy: { scoredAt: "asc" },
+    take: 400,
+  });
+  const characters = identityDriftFromRows(
+    rows.map((r) => ({
+      scores: r.scores,
+      episode: r.shot.scene.episode.number,
+      scene: r.shot.scene.number,
+      shot: r.shot.number,
+      scoredAt: r.scoredAt,
+    })),
+  );
+  const watch = characters.filter((c) => c.trend === "DECLINING");
+  const headline = characters.length === 0
+    ? "no identity drift curves yet - score a few panels"
+    : watch.length > 0
+      ? `${watch.length} of ${characters.length} curved character(s) DECLINING over episode order: ${watch.map((c) => `${c.characterName} ${(c.delta! * 100).toFixed(0)}%`).join(", ")}`
+      : `${characters.length} character curve(s), none declining`;
+  return { characters, watch, headline };
 }
 
 // ─────────────────────────────────────────────────────────────

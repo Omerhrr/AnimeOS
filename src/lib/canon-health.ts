@@ -49,7 +49,53 @@ export interface CanonHealthDigest {
   holdRate: number | null; // held / (held + broken) across all verdict events
   recent: { held: number; broken: number; days: number }; // last N days of verdict events
   worstFacts: FactHealthRow[]; // violated first, then unverified, by confidence
+  retireSuggestions: number; // facts suggested for rewording or retirement
   headline: string;
+}
+
+// ─── Per-fact auto-retire suggestions ────────────────────────
+//
+// A fact that fails on EVERY audited panel is usually not a broken
+// panel - it is a fact written in a way the art keeps failing (too
+// absolute, wrong scope, judging composition instead of canon).
+// Re-painting around it is waste: the suggestion is to REWORD it or
+// RETIRE it. A fact earns the suggestion when it has enough audits
+// (>= RETIRE_MIN_PANELS) and its hold rate fell below
+// RETIRE_HOLD_RATE. Pure - the E2E drives it directly.
+
+export const RETIRE_MIN_PANELS = 3; // audits before a fact can earn the suggestion
+export const RETIRE_HOLD_RATE = 0.34; // held/(held+broken) below this line
+
+export interface RetireSuggestion {
+  factId: string;
+  text: string;
+  category: string;
+  checkedPanels: number;
+  held: number;
+  broken: number;
+  holdRate: number; // 0..1
+  worstBrokenConfidence: number | null;
+  reason: string;
+}
+
+/** Facts whose audit history says "the wording keeps failing". Pure. */
+export function retireSuggestionsFromRows(rows: FactHealthRow[]): RetireSuggestion[] {
+  return rows
+    .filter((r) => r.active && r.checkedPanels >= RETIRE_MIN_PANELS)
+    .map((r) => ({ row: r, holdRate: r.held / r.checkedPanels }))
+    .filter(({ holdRate }) => holdRate < RETIRE_HOLD_RATE)
+    .map(({ row, holdRate }) => ({
+      factId: row.factId,
+      text: row.text,
+      category: row.category,
+      checkedPanels: row.checkedPanels,
+      held: row.held,
+      broken: row.broken,
+      holdRate,
+      worstBrokenConfidence: row.worstBrokenConfidence,
+      reason: `failed on ${row.broken} of ${row.checkedPanels} audited panels (hold rate ${(holdRate * 100).toFixed(0)}%) - the wording keeps failing, reword or retire it instead of re-painting every panel`,
+    }))
+    .sort((a, b) => a.holdRate - b.holdRate);
 }
 
 const CONFIDENCE_RE = /confidence (0\.\d+)/;
@@ -127,7 +173,7 @@ export function canonScoreFromRows(rows: FactHealthRow[]): { score: number | nul
 }
 
 /** Everything the Continuity view's canon-health panel needs in one GET. */
-export async function canonHealthData(projectId: string): Promise<{ digest: CanonHealthDigest; rows: FactHealthRow[] }> {
+export async function canonHealthData(projectId: string): Promise<{ digest: CanonHealthDigest; rows: FactHealthRow[]; suggestions: RetireSuggestion[] }> {
   const [facts, events] = await Promise.all([
     db.universeFact.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } }),
     db.continuityEvent.findMany({
@@ -153,13 +199,16 @@ export async function canonHealthData(projectId: string): Promise<{ digest: Cano
     .sort((a, b) => rank(a) - rank(b) || (b.worstBrokenConfidence ?? 0) - (a.worstBrokenConfidence ?? 0))
     .slice(0, 5);
 
+  const suggestions = retireSuggestionsFromRows(rows);
+
   let headline: string;
   if (activeRows.length === 0) {
     headline = "no active facts registered - the canon is empty (add_universe_fact)";
   } else if (verified === 0) {
     headline = `${activeRows.length} active fact(s), none audited yet - run check_universe_facts on a hero panel`;
   } else {
-    headline = `score ${(score! * 100).toFixed(0)}% ${band} - ${verified}/${activeRows.length} active fact(s) audited, ${violated} violated, hold rate ${holdRate == null ? "n/a" : `${(holdRate * 100).toFixed(0)}%`}`;
+    const retireNote = suggestions.length > 0 ? `, ${suggestions.length} suggested for rewording/retirement` : "";
+    headline = `score ${(score! * 100).toFixed(0)}% ${band} - ${verified}/${activeRows.length} active fact(s) audited, ${violated} violated${retireNote}, hold rate ${holdRate == null ? "n/a" : `${(holdRate * 100).toFixed(0)}%`}`;
   }
 
   return {
@@ -173,8 +222,10 @@ export async function canonHealthData(projectId: string): Promise<{ digest: Cano
       holdRate,
       recent: { held: recentHeld, broken: recentBroken, days: 14 },
       worstFacts,
+      retireSuggestions: suggestions.length,
       headline,
     },
     rows,
+    suggestions,
   };
 }

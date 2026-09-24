@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { canonHealthData } from "@/lib/canon-health";
 import { scheduleHealthData } from "@/lib/schedule-health";
 import { universeReRenderQueue } from "@/lib/universe-facts";
-import { IDENTITY_REPAINT_THRESHOLD, AFFINITY_WATCH_THRESHOLD } from "@/lib/identity";
+import { IDENTITY_REPAINT_THRESHOLD, AFFINITY_WATCH_THRESHOLD, identityDriftData } from "@/lib/identity";
 
 // ─────────────────────────────────────────────────────────────
 // STUDIO PULSE - one honest readout of the whole studio's health
@@ -31,13 +31,14 @@ export interface StudioPulse {
 /** Build the full pulse for one production. Safe on empty projects. */
 export async function studioPulse(projectId: string): Promise<StudioPulse> {
   const project = await db.project.findUnique({ where: { id: projectId }, select: { title: true } });
-  const [canon, schedules, identityRows, embeddings, activeJobs, rerenderQueue] = await Promise.all([
+  const [canon, schedules, identityRows, embeddings, activeJobs, rerenderQueue, drift] = await Promise.all([
     canonHealthData(projectId),
     scheduleHealthData(projectId),
     db.identityScore.findMany({ where: { projectId }, orderBy: { worst: "asc" } }),
     db.panelEmbedding.findMany({ where: { projectId }, orderBy: { worst: "asc" } }),
     db.renderJob.count({ where: { projectId, status: { in: ["QUEUED", "RENDERING"] } } }),
     universeReRenderQueue(projectId).catch(() => [] as Awaited<ReturnType<typeof universeReRenderQueue>>),
+    identityDriftData(projectId).catch(() => ({ characters: [], watch: [], headline: "identity drift curves unavailable" })),
   ]);
 
   const d = canon.digest;
@@ -54,6 +55,11 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
   const affinityLine = embeddings.length === 0
     ? "no affinity pass yet (provider-free, instant)"
     : `affinity pass on ${embeddings.length} panel(s), lowest ${(affinityWorst! * 100).toFixed(0)}%${affinityWorst! < AFFINITY_WATCH_THRESHOLD ? " (watch: far from the sheet)" : ""}`;
+  const driftLine = drift.characters.length === 0
+    ? "no per-character drift curves yet"
+    : drift.watch.length > 0
+      ? `DRIFT CURVES: ${drift.watch.map((c) => `${c.characterName} ${(c.delta! * 100).toFixed(0)}% over ${c.panels} panel(s)`).join(", ")} declining`
+      : `${drift.characters.length} character curve(s), none declining`;
 
   const scheduleLine = schedules.rows.length === 0
     ? schedules.headline
@@ -64,6 +70,8 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
   const headlineParts: string[] = [];
   if (d.score != null) headlineParts.push(`canon ${d.band}`);
   if (belowBar > 0) headlineParts.push(`${belowBar} identity drift`);
+  if (drift.watch.length > 0) headlineParts.push(`${drift.watch.length} declining character curve(s)`);
+  if (canon.suggestions.length > 0) headlineParts.push(`${canon.suggestions.length} fact(s) to reword/retire`);
   if (schedules.overdue > 0) headlineParts.push(`${schedules.overdue} schedule(s) overdue`);
   if (schedules.erroring > 0) headlineParts.push(`${schedules.erroring} schedule(s) erroring`);
   if (headlineParts.length === 0) headlineParts.push("no red flags");
@@ -72,7 +80,10 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
     `PULSE - ${project?.title ?? "production"}: ${headlineParts.join(", ")}`,
     `Canon: ${canonSummary}`,
     d.worstFacts.length > 0 ? `Canon worst: ${d.worstFacts.slice(0, 3).map((f) => `${f.status} - ${f.text.slice(0, 60)}`).join("; ")}` : "Canon worst: none",
-    `Identity: ${identityLine}; ${affinityLine}`,
+    canon.suggestions.length > 0
+      ? `Canon retire suggestions: ${canon.suggestions.map((s) => `"${s.text.slice(0, 50)}" (${s.reason.split(" - ")[0]})`).join("; ")}`
+      : "Canon retire suggestions: none",
+    `Identity: ${identityLine}; ${affinityLine}; ${driftLine}`,
     `Schedules: ${scheduleLine}`,
     `Queue: ${queueLine}`,
   ];
@@ -80,7 +91,7 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
   return {
     headline: headlineParts.join(", "),
     canon: canonSummary,
-    identity: `${identityLine}; ${affinityLine}`,
+    identity: `${identityLine}; ${affinityLine}; ${driftLine}`,
     schedules: scheduleLine,
     queue: queueLine,
     lines,

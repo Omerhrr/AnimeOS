@@ -1,9 +1,14 @@
 // ─────────────────────────────────────────────────────────────
-// IMG2VID PROVIDER (interpolation model behind the driver chain)
+// IMG2VID PREVIZ SLOT (interpolation model behind the driver chain)
 //
-// The third way a shot moves: an img2vid interpolation model turns
-// the shot's key art + pose pair into real character motion inside
-// the frame. Two providers speak the same driver contract:
+// The OPTIONAL third way a shot moves: an interpolation model turns
+// the shot's key art + pose pair into a previz animatic of the
+// character motion inside the frame. This is NOT a final-render
+// path: the designed engines (the Blender stand-in, the MOTION
+// engine) remain the render path of record. The slot exists for
+// (1) fast motion previz and (2) benchmarking the rig's blocking
+// against an interpolated approximation. Two providers speak the
+// same driver contract:
 //
 //   1. HOST   - point ANIMEOS_IMG2VID_HOST at any service that
 //      speaks this tiny protocol:
@@ -13,15 +18,15 @@
 //        GET  http://{host}/jobs/{jobId}
 //          → {"status", "progress", "videoUrl", "error"}
 //
-//   2. ZAI    - the built-in REAL provider: the z.ai async
-//      video-generation model (image + pose/camera prompt in, an
-//      interpolated clip out). Active whenever no host is attached
-//      and ANIMEOS_IMG2VID != "off" - no extra setup, hero shots
-//      route to a real interpolation model out of the box.
+//   2. ZAI    - the built-in provider, now OPT-IN: it takes jobs
+//      only when ANIMEOS_IMG2VID is explicitly set to on/zai/true
+//      ("off" and unset both leave the slot closed). Demoted to
+//      default-off: the studio's output is designed, not generated,
+//      and an interpolation model is previz, never the deliverable.
 //
 // Both download the finished clip into public/renders/{jobId}.mp4 -
 // the same output contract as the Blender bridge and the MOTION
-// engine. With ANIMEOS_IMG2VID=off and no host the slot is
+// engine. With no host attached and no explicit opt-in the slot is
 // invisible: the driver chain never touches it.
 // ─────────────────────────────────────────────────────────────
 
@@ -42,12 +47,13 @@ export function img2vidHost(): string | null {
 
 /**
  * Which provider takes img2vid jobs: the attached host wins, else
- * the built-in z.ai video model, else null (slot off).
+ * the built-in model ONLY on explicit opt-in (on/zai/true/previz).
+ * Demoted to default-off: previz is a choice, not a default.
  */
 export function img2vidProvider(): Img2VidProvider | null {
   if (img2vidHost()) return "host";
-  if (String(process.env[PROVIDER_ENV_KEY] ?? "").trim().toLowerCase() === "off") return null;
-  return "zai";
+  const flag = String(process.env[PROVIDER_ENV_KEY] ?? "").trim().toLowerCase();
+  return ["on", "zai", "true", "1", "previz"].includes(flag) ? "zai" : null;
 }
 
 export function img2vidStatus(): { available: boolean; host: string | null; provider: Img2VidProvider | null } {

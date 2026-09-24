@@ -568,7 +568,7 @@ export function PanelInspectorDialog({
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              The engines interpolate the character between the two poses across the clip: the Blender stand-in performs the beat, an img2vid provider animates the key art when one is attached, and the MOTION engine plays a blocking approximation with an impact beat.
+              The engines interpolate the character between the two poses across the clip: the Blender stand-in performs the beat and the MOTION engine plays a blocking approximation with an impact beat; the opt-in img2vid previz slot (off by default, ANIMEOS_IMG2VID=on) can preview the beat as an animatic but finals stay on the designed engines.
             </p>
           </div>
 

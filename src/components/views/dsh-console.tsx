@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Send, Loader2, Brain, ListChecks, Wrench, CircleCheck, CircleX, User,
   Sparkles, ChevronDown, ChevronUp, Volume2, Play, Square, Route, ClipboardList,
-  CalendarClock, Clock,
+  CalendarClock, Clock, Mail, Trash2, Wand2,
 } from "lucide-react";
 import { api, parseTrace, type DshMessageRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -78,6 +78,20 @@ interface TemplateEpisode {
   templates: Array<{ id: string; name: string; summary: string; cadenceHint: string; stepCount: number }>;
 }
 
+interface SavedTemplateRow {
+  id: string;
+  projectId: string | null;
+  scope: "PROJECT" | "STUDIO";
+  baseId: string;
+  name: string;
+  summary: string;
+  cadenceHint: string;
+  stepCount: number;
+  usageCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
 function PlansPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -87,6 +101,17 @@ function PlansPanel({ projectId }: { projectId: string }) {
   const [episodeId, setEpisodeId] = useState("");
   const [landing, setLanding] = useState<string | null>(null);
   const [landMsg, setLandMsg] = useState<string | null>(null);
+  // creator-authored variations: the authoring editor
+  const [showAuthor, setShowAuthor] = useState(false);
+  const [baseId, setBaseId] = useState("beat-breakdown");
+  const [vName, setVName] = useState("");
+  const [vSummary, setVSummary] = useState("");
+  const [vCadence, setVCadence] = useState("nightly - a few steps per fire");
+  const [vScope, setVScope] = useState<"PROJECT" | "STUDIO">("PROJECT");
+  const [vSteps, setVSteps] = useState<Array<{ tool: string; args: string; why: string }>>([]);
+  const [savingVar, setSavingVar] = useState(false);
+  const [varMsg, setVarMsg] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const plansQ = useQuery({
     queryKey: ["dshPlans", projectId],
@@ -102,13 +127,14 @@ function PlansPanel({ projectId }: { projectId: string }) {
     queryKey: ["planTemplates", projectId],
     queryFn: async () => {
       const res = await fetch(`/api/plan-templates?projectId=${projectId}`);
-      const body = (await res.json()) as { episodes?: TemplateEpisode[] };
-      return body.episodes ?? [];
+      const body = (await res.json()) as { episodes?: TemplateEpisode[]; saved?: SavedTemplateRow[] };
+      return { episodes: body.episodes ?? [], saved: body.saved ?? [] };
     },
     enabled: Boolean(projectId) && open,
   });
   const plans = plansQ.data ?? [];
-  const episodes = catalogQ.data ?? [];
+  const episodes = catalogQ.data?.episodes ?? [];
+  const savedTemplates = catalogQ.data?.saved ?? [];
   const pickedEpisode = episodes.find((e) => e.episodeId === episodeId) ?? episodes[0] ?? null;
   const proposed = plans.filter((p) => p.status === "PROPOSED").length;
   const active = plans.filter((p) => p.status === "ACTIVE" || p.status === "PAUSED").length;
@@ -153,6 +179,87 @@ function PlansPanel({ projectId }: { projectId: string }) {
     } finally {
       setLanding(null);
       await qc.invalidateQueries({ queryKey: ["dshPlans", projectId] });
+    }
+  }
+
+  // Authoring: load a built-in's resolved steps as the starting point,
+  // then edit every row (tool / args JSON / why) into a variation.
+  async function loadBase() {
+    if (!pickedEpisode) return;
+    setVarMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plan-templates?projectId=${projectId}&episodeId=${pickedEpisode.episodeId}&templateId=${baseId}`);
+      const body = (await res.json()) as { error?: string; steps?: Array<{ tool: string; args: Record<string, unknown>; why: string }> };
+      if (!res.ok || !body.steps) {
+        setError(body.error ?? "Loading the base failed");
+        return;
+      }
+      setVSteps(body.steps.map((s) => ({ tool: s.tool, args: JSON.stringify(s.args), why: s.why })));
+      setVarMsg(`Loaded the '${baseId}' built-in for ${pickedEpisode.title} - edit the rows, then save it as a variation.`);
+    } catch {
+      setError("Loading the base failed");
+    }
+  }
+
+  async function saveVariation() {
+    setSavingVar(true);
+    setVarMsg(null);
+    setError(null);
+    try {
+      const steps: Array<{ tool: string; args: Record<string, unknown>; why: string }> = [];
+      for (const [i, s] of vSteps.entries()) {
+        if (!s.tool.trim()) {
+          setError(`Step ${i + 1}: tool is required`);
+          return;
+        }
+        let args: Record<string, unknown> = {};
+        if (s.args.trim()) {
+          try {
+            args = JSON.parse(s.args) as Record<string, unknown>;
+          } catch {
+            setError(`Step ${i + 1}: args is not valid JSON (tip: {} is a valid empty arg set; tokens {episode}, {latestScene}, {title} resolve at landing)`);
+            return;
+          }
+        }
+        steps.push({ tool: s.tool.trim(), args, why: s.why.trim() });
+      }
+      const res = await fetch("/api/plan-templates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, baseId, name: vName, summary: vSummary, cadenceHint: vCadence, scope: vScope, steps }),
+      });
+      const body = (await res.json()) as { error?: string; template?: { name: string } };
+      if (!res.ok) {
+        setError(body.error ?? "Saving the variation failed");
+        return;
+      }
+      setVarMsg(`Variation '${body.template?.name ?? vName}' saved - it now lands like a built-in (Land as plan below or land_episode_plan).`);
+      setVName("");
+      setVSummary("");
+      setVSteps([]);
+      await qc.invalidateQueries({ queryKey: ["planTemplates", projectId] });
+    } finally {
+      setSavingVar(false);
+    }
+  }
+
+  async function removeVariation(id: string) {
+    setDeletingId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plan-templates?id=${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        setError(body.error ?? "Delete failed");
+      } else {
+        setVarMsg("Variation deleted.");
+      }
+    } catch {
+      setError("Delete failed");
+    } finally {
+      setDeletingId(null);
+      await qc.invalidateQueries({ queryKey: ["planTemplates", projectId] });
     }
   }
 
@@ -273,6 +380,158 @@ function PlansPanel({ projectId }: { projectId: string }) {
                   </div>
                 ))}
               </div>
+
+              {savedTemplates.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-300/90">Your variations</div>
+                  {savedTemplates.map((t) => (
+                    <div key={t.id} className="rounded-md border border-violet-400/15 bg-violet-400/[0.04] p-2 flex flex-col gap-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-medium">{t.name}</span>
+                        <span className="px-1 py-0.5 rounded border border-violet-400/30 text-violet-300 bg-violet-400/10 text-[8px] font-semibold">{t.scope === "STUDIO" ? "STUDIO LIBRARY" : "THIS PRODUCTION"}</span>
+                        <span className="text-[9px] text-muted-foreground font-mono">{t.stepCount} steps · from {t.baseId}</span>
+                        {t.usageCount > 0 && <span className="text-[9px] text-muted-foreground">· landed {t.usageCount}x</span>}
+                        <span className="flex-1" />
+                        <button
+                          onClick={() => void land(t.id)}
+                          disabled={landing === t.id || !pickedEpisode}
+                          title="Land this variation as a PROPOSED plan for the picked episode"
+                          className="h-6 rounded-md border border-teal-400/25 bg-teal-400/10 px-2 text-[10px] font-semibold text-teal-200 hover:bg-teal-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+                        >
+                          {landing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Land as plan"}
+                        </button>
+                        <button
+                          onClick={() => void removeVariation(t.id)}
+                          disabled={deletingId === t.id}
+                          title="Delete this variation (plans already landed from it are unaffected)"
+                          className="h-6 rounded-md border border-rose-400/25 bg-rose-400/10 px-2 text-[9px] text-rose-200 hover:bg-rose-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+                        >
+                          {deletingId === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2" title={t.summary}>{t.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-md border border-white/10 bg-black/20">
+                <button
+                  onClick={() => setShowAuthor((v) => !v)}
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-semibold text-violet-300 hover:text-violet-200"
+                >
+                  <Wand2 className="h-3 w-3" />
+                  {showAuthor ? "Hide the variation author" : "Author a variation"}
+                  <span className="flex-1" />
+                  {showAuthor ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+                </button>
+                {showAuthor && (
+                  <div className="px-2 pb-2 space-y-2">
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Clone a built-in for the picked episode, reshape its rows (tool, args JSON, why), and save it as your own
+                      template. In args, the tokens <span className="font-mono">{"{episode}"}</span>,{" "}
+                      <span className="font-mono">{"{latestScene}"}</span> and <span className="font-mono">{"{title}"}</span> resolve to the
+                      real episode numbers at landing time, so one variation serves every episode. Tools are validated against the
+                      DSH registry on save.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <select
+                        value={baseId}
+                        onChange={(e) => setBaseId(e.target.value)}
+                        className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+                      >
+                        <option value="beat-breakdown">beat-breakdown</option>
+                        <option value="panel-pass">panel-pass</option>
+                        <option value="render-pass">render-pass</option>
+                        <option value="canon-audit">canon-audit</option>
+                      </select>
+                      <button
+                        onClick={() => void loadBase()}
+                        disabled={!pickedEpisode}
+                        className="h-7 rounded-md border border-sky-400/25 bg-sky-400/10 px-2 text-[10px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40"
+                      >
+                        Load base steps
+                      </button>
+                      <select
+                        value={vScope}
+                        onChange={(e) => setVScope(e.target.value as "PROJECT" | "STUDIO")}
+                        className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+                        title="PROJECT saves it to this production; STUDIO shares it with every production"
+                      >
+                        <option value="PROJECT">This production</option>
+                        <option value="STUDIO">Studio library</option>
+                      </select>
+                    </div>
+                    <input
+                      value={vName}
+                      onChange={(e) => setVName(e.target.value)}
+                      placeholder="Variation name (e.g. Two-shot beat breakdown)"
+                      className="w-full h-7 rounded-md border border-white/10 bg-black/30 px-2 text-[11px] outline-none focus:border-white/25"
+                    />
+                    <input
+                      value={vSummary}
+                      onChange={(e) => setVSummary(e.target.value)}
+                      placeholder="What this variation does (becomes the plan's goal)"
+                      className="w-full h-7 rounded-md border border-white/10 bg-black/30 px-2 text-[11px] outline-none focus:border-white/25"
+                    />
+                    <input
+                      value={vCadence}
+                      onChange={(e) => setVCadence(e.target.value)}
+                      placeholder="Cadence hint (e.g. nightly - a few steps per fire)"
+                      className="w-full h-7 rounded-md border border-white/10 bg-black/30 px-2 text-[11px] outline-none focus:border-white/25"
+                    />
+                    {vSteps.map((s, i) => (
+                      <div key={i} className="rounded-md border border-white/10 bg-black/25 p-1.5 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-mono text-muted-foreground shrink-0">{String(i + 1).padStart(2, "0")}</span>
+                          <input
+                            value={s.tool}
+                            onChange={(e) => setVSteps((rows) => rows.map((r, j) => (j === i ? { ...r, tool: e.target.value } : r)))}
+                            placeholder="DSH tool (e.g. create_shot)"
+                            className="flex-1 h-6 rounded border border-white/10 bg-black/30 px-1.5 text-[10px] font-mono outline-none focus:border-white/25"
+                          />
+                          <button
+                            onClick={() => setVSteps((rows) => rows.filter((_, j) => j !== i))}
+                            title="Remove this step"
+                            className="h-6 rounded border border-rose-400/25 bg-rose-400/10 px-1.5 text-[9px] text-rose-200 hover:bg-rose-400/20"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <textarea
+                          value={s.args}
+                          onChange={(e) => setVSteps((rows) => rows.map((r, j) => (j === i ? { ...r, args: e.target.value } : r)))}
+                          placeholder='args JSON, e.g. {"episodeNumber":"{episode}","shotType":"MEDIUM"}'
+                          rows={2}
+                          className="w-full rounded border border-white/10 bg-black/30 px-1.5 py-1 text-[10px] font-mono outline-none focus:border-white/25 studio-scroll"
+                        />
+                        <input
+                          value={s.why}
+                          onChange={(e) => setVSteps((rows) => rows.map((r, j) => (j === i ? { ...r, why: e.target.value } : r)))}
+                          placeholder="why this step exists (one line)"
+                          className="w-full h-6 rounded border border-white/10 bg-black/30 px-1.5 text-[10px] outline-none focus:border-white/25"
+                        />
+                      </div>
+                    ))}
+                    {vSteps.length > 0 && vSteps.length < 12 && (
+                      <button
+                        onClick={() => setVSteps((rows) => [...rows, { tool: "", args: "{}", why: "" }])}
+                        className="h-6 rounded-md border border-white/15 bg-white/5 px-2 text-[10px] text-muted-foreground hover:bg-white/10"
+                      >
+                        + Add a step
+                      </button>
+                    )}
+                    <button
+                      onClick={() => void saveVariation()}
+                      disabled={savingVar || !vName.trim() || !vSummary.trim() || vSteps.length === 0}
+                      className="h-7 rounded-md border border-violet-400/25 bg-violet-400/10 px-2.5 text-[10px] font-semibold text-violet-200 hover:bg-violet-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+                    >
+                      {savingVar ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                      Save variation
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -292,7 +551,7 @@ function PlansPanel({ projectId }: { projectId: string }) {
 interface ScheduleRow {
   id: string;
   name: string;
-  kind: "PLAN_RUN" | "REPAINT_QUEUE";
+  kind: "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST";
   planId: string | null;
   planTitle: string | null;
   cadence: string;
@@ -352,7 +611,7 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<"PLAN_RUN" | "REPAINT_QUEUE">("PLAN_RUN");
+  const [kind, setKind] = useState<"PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST">("PLAN_RUN");
   const [cadence, setCadence] = useState("DAILY");
   const [hourUtc, setHourUtc] = useState(2);
   const [planId, setPlanId] = useState("");
@@ -415,7 +674,7 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          name: name.trim() || (kind === "PLAN_RUN" ? "Nightly plan run" : "Render-queue watch"),
+          name: name.trim() || (kind === "PLAN_RUN" ? "Nightly plan run" : kind === "DAILY_DIGEST" ? "Daily digest" : "Render-queue watch"),
           kind,
           cadence,
           hourUtc,
@@ -459,8 +718,8 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
         <div className="px-3 pb-3 space-y-2 max-h-80 overflow-y-auto studio-scroll">
           <p className="text-[10px] text-muted-foreground leading-relaxed">
             The studio keeps working between conversations: a PLAN_RUN schedule walks an approved plan a few steps per fire
-            (nightly breakdowns), REPAINT_QUEUE supervises renders and starts a re-paint pass when the universe queue is dirty.
-            Every fire lands as a production event with its outcome.
+            (nightly breakdowns), REPAINT_QUEUE supervises renders and starts a re-paint pass when the universe queue is dirty,
+            and DAILY_DIGEST posts a catch-up digest of the last 24 hours. Every fire lands as a production event with its outcome.
           </p>
           {digest && (
             <div className="flex flex-wrap gap-1.5 text-[9px]">
@@ -504,11 +763,12 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
               />
               <select
                 value={kind}
-                onChange={(e) => setKind(e.target.value as "PLAN_RUN" | "REPAINT_QUEUE")}
+                onChange={(e) => setKind(e.target.value as "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST")}
                 className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
               >
                 <option value="PLAN_RUN">Plan run</option>
                 <option value="REPAINT_QUEUE">Render-queue watch</option>
+                <option value="DAILY_DIGEST">Daily digest</option>
               </select>
               <select
                 value={cadence}
@@ -576,8 +836,8 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
                   {s.enabled ? "ON" : "OFF"}
                 </span>
                 <span className="text-[12px] font-medium">{s.name}</span>
-                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", s.kind === "PLAN_RUN" ? "border-teal-400/30 text-teal-300 bg-teal-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
-                  {s.kind === "PLAN_RUN" ? "PLAN RUN" : "RENDER WATCH"}
+                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", s.kind === "PLAN_RUN" ? "border-teal-400/30 text-teal-300 bg-teal-400/10" : s.kind === "DAILY_DIGEST" ? "border-sky-400/30 text-sky-300 bg-sky-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
+                  {s.kind === "PLAN_RUN" ? "PLAN RUN" : s.kind === "DAILY_DIGEST" ? "DAILY DIGEST" : "RENDER WATCH"}
                 </span>
                 {s.lastStatus && (
                   <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", SCHED_STATUS_COLORS[s.lastStatus])}>
@@ -598,7 +858,7 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
                 </button>
               </div>
               <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground">
-                <span>{s.kind === "PLAN_RUN" ? (s.planTitle ? `plan: ${s.planTitle}` : "latest ACTIVE plan") : "universe queue + render jobs"}</span>
+                <span>{s.kind === "PLAN_RUN" ? (s.planTitle ? `plan: ${s.planTitle}` : "latest ACTIVE plan") : s.kind === "DAILY_DIGEST" ? "posts the 24h digest to the creator" : "universe queue + render jobs"}</span>
                 <span>·</span>
                 <span className="font-mono">next fire {nextRunLabel(s.nextRunAt)}</span>
               </div>
@@ -607,6 +867,179 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * STUDIO DIGEST: the studio writes to the creator. The latest posted
+ * digests (a DAILY_DIGEST schedule posts them on its cadence; Post
+ * now lands one immediately) with the full section lines, plus an
+ * arm shortcut when no digest cadence exists yet.
+ */
+interface DigestRowUi {
+  id: string;
+  headline: string;
+  text: string;
+  windowHours: number;
+  events: number;
+  createdAt: string;
+}
+
+function DigestPanel({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [arming, setArming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const digestsQ = useQuery({
+    queryKey: ["studioDigests", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/digest?projectId=${projectId}`);
+      const body = (await res.json()) as { digests?: DigestRowUi[] };
+      return body.digests ?? [];
+    },
+    enabled: Boolean(projectId),
+    refetchInterval: (q) => ((q.state.data ?? []).length === 0 ? false : 30000),
+  });
+  const schedulesQ = useQuery({
+    queryKey: ["studioDigestArmed", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/schedules?projectId=${projectId}`);
+      const body = (await res.json()) as { schedules?: Array<{ id: string; kind: string; enabled: boolean }> };
+      return body.schedules ?? [];
+    },
+    enabled: Boolean(projectId), // the collapsed header chip reads this too
+  });
+  const digests = digestsQ.data ?? [];
+  const digestArmed = (schedulesQ.data ?? []).some((s) => s.kind === "DAILY_DIGEST" && s.enabled);
+
+  async function post() {
+    setPosting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/digest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) setError(body.error ?? "Post failed");
+    } catch {
+      setError("Post failed");
+    } finally {
+      setPosting(false);
+      await qc.invalidateQueries({ queryKey: ["studioDigests", projectId] });
+    }
+  }
+
+  async function arm() {
+    setArming(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, name: "Daily digest", kind: "DAILY_DIGEST", cadence: "DAILY", hourUtc: 2 }),
+      });
+      const body = (await res.json()) as { error?: string };
+      if (!res.ok) setError(body.error ?? "Arm failed");
+    } catch {
+      setError("Arm failed");
+    } finally {
+      setArming(false);
+      await qc.invalidateQueries({ queryKey: ["studioDigests", projectId] });
+      await qc.invalidateQueries({ queryKey: ["studioDigestArmed", projectId] });
+      await qc.invalidateQueries({ queryKey: ["studioSchedules", projectId] });
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02]">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2"
+      >
+        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-300">
+          <Mail className="h-3.5 w-3.5" />
+          Studio digest
+          {digests.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded border border-sky-400/30 text-sky-300 bg-sky-400/10 normal-case tracking-normal">
+              latest {digests[0].windowHours}h · {digests[0].events} event(s)
+            </span>
+          )}
+          {!digestArmed && (
+            <span className="px-1.5 py-0.5 rounded border border-amber-400/30 text-amber-300 bg-amber-400/10 normal-case tracking-normal">no digest cadence</span>
+          )}
+        </span>
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+      </button>
+      {open && (
+        <div className="px-3 pb-3 space-y-2 max-h-80 overflow-y-auto studio-scroll">
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            The studio writes to you: a digest aggregates a window of activity (renders queued, plan steps executed, schedule
+            fires, canon and identity-drift headlines, queue pressure) into one readable message. Arm the nightly cadence below,
+            or post one right now.
+          </p>
+          {error && (
+            <div className="text-[10px] text-rose-300 bg-rose-400/10 border border-rose-400/25 rounded-md px-2 py-1">{error}</div>
+          )}
+          <div className="flex gap-1.5 flex-wrap">
+            <button
+              onClick={() => void post()}
+              disabled={posting}
+              className="h-7 rounded-md border border-sky-400/25 bg-sky-400/10 px-2.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+            >
+              {posting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
+              Post digest now
+            </button>
+            {!digestArmed && (
+              <button
+                onClick={() => void arm()}
+                disabled={arming}
+                className="h-7 rounded-md border border-amber-400/25 bg-amber-400/10 px-2.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-400/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+              >
+                {arming ? <Loader2 className="h-3 w-3 animate-spin" /> : <CalendarClock className="h-3 w-3" />}
+                Arm nightly digest
+              </button>
+            )}
+          </div>
+          {digests.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground italic">No digests posted yet - press Post digest now, or arm the nightly cadence.</p>
+          ) : (
+            digests.map((d, i) => {
+              const lines = d.text.split("\n");
+              const isOpen = expanded === d.id;
+              return (
+                <div key={d.id} className="rounded-lg border border-white/10 bg-black/20 p-2.5 space-y-1.5">
+                  <button onClick={() => setExpanded(isOpen ? null : d.id)} className="w-full text-left">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {i === 0 && (
+                        <span className="px-1.5 py-0.5 rounded border border-sky-400/30 text-sky-300 bg-sky-400/10 text-[9px] font-semibold">LATEST</span>
+                      )}
+                      <span className="text-[11px] font-medium">{d.headline}</span>
+                      <span className="flex-1" />
+                      <span className="text-[9px] text-muted-foreground font-mono shrink-0">
+                        {d.createdAt.slice(5, 16).replace("T", " ")}Z
+                      </span>
+                    </div>
+                  </button>
+                  {(isOpen ? lines : lines.slice(0, 3)).map((line, j) => (
+                    <p key={j} className="text-[10px] text-muted-foreground/90 leading-relaxed">{line}</p>
+                  ))}
+                  {lines.length > 3 && (
+                    <button onClick={() => setExpanded(isOpen ? null : d.id)} className="text-[9px] text-sky-300/80 hover:text-sky-200">
+                      {isOpen ? "show less" : `+${lines.length - 3} more section(s)`}
+                    </button>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       )}
     </div>
@@ -1026,6 +1459,7 @@ export function DshConsole() {
 
       <div className="flex-1 min-h-0 overflow-y-auto studio-scroll space-y-4 pr-1">
         {projectId && <PlansPanel projectId={projectId} />}
+        {projectId && <DigestPanel projectId={projectId} />}
         {projectId && <SchedulerPanel projectId={projectId} />}
 
         {messages.length === 0 && !busy && (

@@ -211,6 +211,25 @@ interface IdentityRow {
   entries: IdentityEntry[];
 }
 
+interface DriftPointUi {
+  episode: number;
+  scene: number;
+  shot: number;
+  score: number;
+  scoredAt: string;
+}
+
+interface CharacterDriftUi {
+  characterName: string;
+  points: DriftPointUi[];
+  first: number | null;
+  last: number | null;
+  delta: number | null;
+  trend: "IMPROVING" | "DECLINING" | "STABLE" | "FLAT";
+  worstAspect: string | null;
+  panels: number;
+}
+
 interface IdentityData {
   rows: IdentityRow[];
   queue: Array<{ shotId: string; ref: string; description: string; worst: number; entries: IdentityEntry[] }>;
@@ -218,6 +237,35 @@ interface IdentityData {
   threshold: number;
   average: number | null;
   embeddings: Record<string, { worst: number; hashHex: string; computedAt: string; entries: Array<{ characterName: string; palette: number; structure: number; combined: number; note: string }> }>;
+  drift: { characters: CharacterDriftUi[]; watch: CharacterDriftUi[]; headline: string };
+}
+
+const DRIFT_TREND_COLORS: Record<string, string> = {
+  IMPROVING: "border-emerald-400/30 text-emerald-300 bg-emerald-400/10",
+  DECLINING: "border-rose-400/30 text-rose-300 bg-rose-400/10",
+  STABLE: "border-white/10 text-muted-foreground bg-white/5",
+  FLAT: "border-white/10 text-muted-foreground bg-white/5",
+};
+
+/**
+ * Tiny inline sparkline for a drift curve: one polyline over the
+ * character's per-panel scores in story order, 0..1 mapped to the
+ * 56x20 box. Pure SVG - no chart library.
+ */
+function DriftSparkline({ points }: { points: DriftPointUi[] }) {
+  if (points.length < 2) {
+    return <svg width="56" height="20" className="shrink-0"><line x1="4" y1="10" x2="52" y2="10" stroke="currentColor" strokeWidth="1" className="text-white/15" strokeDasharray="2 3" /></svg>;
+  }
+  const step = 48 / (points.length - 1);
+  const path = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${(4 + i * step).toFixed(1)},${(18 - p.score * 16).toFixed(1)}`)
+    .join(" ");
+  return (
+    <svg width="56" height="20" viewBox="0 0 56 20" className="shrink-0" aria-hidden>
+      <line x1="4" y1="18" x2="52" y2="18" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 /**
@@ -245,7 +293,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
     },
     enabled: Boolean(projectId),
   });
-  const data = dataQ.data ?? { rows: [], queue: [], shots: [], threshold: 0.6, average: null, embeddings: {} };
+  const data = dataQ.data ?? { rows: [], queue: [], shots: [], threshold: 0.6, average: null, embeddings: {}, drift: { characters: [], watch: [], headline: "no identity drift curves yet" } };
 
   async function affinityPass() {
     setAffinityRunning(true);
@@ -453,6 +501,41 @@ function IdentityPanel({ projectId }: { projectId: string }) {
         </div>
       )}
 
+      {data.drift && data.drift.characters.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-violet-300/90">Identity drift curves (per character over episode order)</div>
+            {data.drift.watch.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded border border-rose-400/30 text-rose-300 bg-rose-400/10 text-[9px] font-semibold">
+                {data.drift.watch.length} declining
+              </span>
+            )}
+          </div>
+          {data.drift.characters.slice(0, 8).map((c) => (
+            <div key={c.characterName} className="rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 flex items-center gap-2">
+              <span className={cn("text-current", c.trend === "DECLINING" ? "text-rose-300" : c.trend === "IMPROVING" ? "text-emerald-300" : "text-muted-foreground")}>
+                <DriftSparkline points={c.points} />
+              </span>
+              <span className="text-[11px] font-medium truncate" title={`${c.panels} scored panel(s), ${c.first == null ? "?" : (c.first * 100).toFixed(0)}% first -> ${c.last == null ? "?" : (c.last * 100).toFixed(0)}% latest`}>{c.characterName}</span>
+              <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold shrink-0", DRIFT_TREND_COLORS[c.trend])}>
+                {c.trend}{c.delta != null ? ` ${(c.delta >= 0 ? "+" : "")}${(c.delta * 100).toFixed(0)}%` : ""}
+              </span>
+              <span className="text-[9px] text-muted-foreground tabular-nums shrink-0" title="latest similarity for this character">
+                latest {c.last == null ? "-" : `${(c.last * 100).toFixed(0)}%`}
+              </span>
+              <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">{c.panels} panel{c.panels === 1 ? "" : "s"}</span>
+              {c.worstAspect && (
+                <span className="text-[9px] text-amber-300/90 shrink-0" title="the aspect scoring lowest across this character's curve">weak: {c.worstAspect}</span>
+              )}
+            </div>
+          ))}
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            Each polyline is one character&apos;s identity scores in story order (left = earliest episode). A DECLINING curve is a
+            conversation with the art pipeline, not one bad panel: check the weak aspect and consider a fresh sheet anchor.
+          </p>
+        </div>
+      )}
+
       {data.rows.length === 0 && (
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           Nothing scored yet. Generate panel art for shots whose cast carries a model sheet, then press Score worst 3 (or
@@ -479,6 +562,17 @@ interface FactHealthRowUi {
   lastNote: string;
 }
 
+interface RetireSuggestionUi {
+  factId: string;
+  text: string;
+  category: string;
+  checkedPanels: number;
+  held: number;
+  broken: number;
+  holdRate: number;
+  reason: string;
+}
+
 interface CanonHealthData {
   digest: {
     score: number | null;
@@ -490,9 +584,11 @@ interface CanonHealthData {
     holdRate: number | null;
     recent: { held: number; broken: number; days: number };
     worstFacts: FactHealthRowUi[];
+    retireSuggestions: number;
     headline: string;
   };
   rows: FactHealthRowUi[];
+  suggestions: RetireSuggestionUi[];
 }
 
 const FACT_STATUS_COLORS: Record<string, string> = {
@@ -518,6 +614,9 @@ const CANON_BAND_COLORS: Record<string, string> = {
 function CanonHealthPanel({ projectId }: { projectId: string }) {
   const [data, setData] = useState<CanonHealthData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -526,6 +625,59 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
       if (res.ok) setData((await res.json()) as CanonHealthData);
     } catch { /* surfaced on the next refresh */ }
     finally { setLoading(false); }
+  }
+
+  // The suggestion loop closes here: rewording rewrites the fact in
+  // place (its history stays, the wording is what keeps failing);
+  // retiring deactivates it so audits and prompts skip it.
+  async function reword(factId: string, current: string) {
+    const next = window.prompt("Reword the fact (it keeps failing as written):", current);
+    if (next == null || !next.trim() || next.trim() === current) return;
+    setActingId(factId);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/universe-facts/${factId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: next.trim() }),
+      });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        setError(body.error ?? "Reword failed");
+      } else {
+        setBanner("Fact reworded - audit a fresh panel to see whether the new wording holds");
+      }
+    } catch {
+      setError("Reword failed");
+    } finally {
+      setActingId(null);
+      await refresh();
+    }
+  }
+
+  async function retire(factId: string, text: string) {
+    setActingId(factId);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/universe-facts/${factId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      });
+      if (!res.ok) {
+        const body = (await res.json()) as { error?: string };
+        setError(body.error ?? "Retire failed");
+      } else {
+        setBanner(`Fact retired (deactivated): "${text.slice(0, 60)}" - it no longer rides prompts or audits`);
+      }
+    } catch {
+      setError("Retire failed");
+    } finally {
+      setActingId(null);
+      await refresh();
+    }
   }
 
   const d = data?.digest;
@@ -540,7 +692,8 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
           </h3>
           <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 max-w-xl">
             The universe-facts verdict history as a report card: the score mixes coverage (an unchecked canon is not a
-            healthy canon) with the hold rate of audited panels. Violated and never-verified facts surface first.
+            healthy canon) with the hold rate of audited panels. Violated and never-verified facts surface first; facts
+            that fail on nearly every audit earn a reword-or-retire suggestion instead of more re-paints.
           </p>
         </div>
         <Button size="sm" variant="outline" className="border-rose-400/25 bg-rose-400/10 text-rose-200 hover:bg-rose-400/20" onClick={() => void refresh()} disabled={loading}>
@@ -578,6 +731,42 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
               ))}
             </div>
           )}
+
+          {data && data.suggestions.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-amber-300/90">Auto-retire suggestions (reword, do not re-paint)</div>
+              {data.suggestions.map((s) => (
+                <div key={s.factId} className="rounded-lg border border-amber-400/20 bg-amber-400/[0.04] px-3 py-2 space-y-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="px-1.5 py-0.5 rounded border border-amber-400/30 text-amber-300 bg-amber-400/10 text-[9px] font-semibold shrink-0">{s.holdRate >= 0 ? `hold ${(s.holdRate * 100).toFixed(0)}%` : ""}</span>
+                    <span className="text-[11px] truncate flex-1" title={s.text}>{s.text}</span>
+                    <div className="flex gap-1.5 shrink-0">
+                      <button
+                        onClick={() => void reword(s.factId, s.text)}
+                        disabled={actingId === s.factId}
+                        title="Rewrite the fact so the art can actually hold it - history stays, wording changes"
+                        className="h-6 rounded-md border border-sky-400/25 bg-sky-400/10 px-2 text-[9px] font-semibold text-sky-200 hover:bg-sky-400/20 transition-colors disabled:opacity-40"
+                      >
+                        {actingId === s.factId ? <Loader2 className="h-3 w-3 animate-spin" /> : "Reword"}
+                      </button>
+                      <button
+                        onClick={() => void retire(s.factId, s.text)}
+                        disabled={actingId === s.factId}
+                        title="Deactivate the fact: it stops riding prompts and audits (reversible from the universe-facts panel)"
+                        className="h-6 rounded-md border border-rose-400/25 bg-rose-400/10 px-2 text-[9px] font-semibold text-rose-200 hover:bg-rose-400/20 transition-colors disabled:opacity-40"
+                      >
+                        Retire
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">{s.reason}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {banner && <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">{banner}</div>}
+          {error && <p className="text-[11px] text-rose-300">{error}</p>}
         </>
       )}
 

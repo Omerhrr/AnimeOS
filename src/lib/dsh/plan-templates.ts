@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { createPlan, type PlanStep } from "@/lib/dsh/plans";
+import { TOOL_DEFS } from "@/lib/dsh/tools";
 
 // ─────────────────────────────────────────────────────────────
 // PER-EPISODE PLAN TEMPLATES
@@ -188,27 +189,227 @@ export interface InstantiateResult {
   planId?: string;
 }
 
+// ─────────────────────────────────────────────────────────────
+// CREATOR-AUTHORED TEMPLATE VARIATIONS
+//
+// The four built-ins are code; a variation is a SAVED row the
+// creator authors in the plans panel (usually cloned from a
+// built-in and reshaped). Steps carry the same shape the built-ins
+// land ({tool, args, why}) plus three tokens the creator writes
+// into arg values so one variation serves every episode:
+//
+//   {episode}      -> the episode's real number at landing time
+//   {latestScene}  -> the episode's scene count (latest scene)
+//   {title}        -> the episode title
+//
+// Every tool is validated against the live DSH registry at SAVE
+// time and again at LANDING time, so a saved template can never
+// land a step the studio cannot execute.
+// ─────────────────────────────────────────────────────────────
+
+export interface SavedPlanTemplate {
+  id: string;
+  projectId: string | null; // null = studio-library variation
+  scope: "PROJECT" | "STUDIO";
+  baseId: string; // built-in it was cloned from, or "custom"
+  name: string;
+  summary: string;
+  cadenceHint: string;
+  stepCount: number;
+  usageCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface TemplateStepInput {
+  tool: string;
+  args: Record<string, unknown>;
+  why: string;
+}
+
+/** Deep-resolve the {episode}/{latestScene}/{title} tokens in arg values. */
+export function resolveTemplateValue(
+  value: unknown,
+  ctx: { episode: number; latestScene: number; title: string },
+): unknown {
+  if (typeof value === "string") {
+    return value
+      .split("{episode}").join(String(ctx.episode))
+      .split("{latestScene}").join(String(ctx.latestScene))
+      .split("{title}").join(ctx.title);
+  }
+  if (Array.isArray(value)) return value.map((v) => resolveTemplateValue(v, ctx));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = resolveTemplateValue(v, ctx);
+    return out;
+  }
+  return value;
+}
+
+/** Validate a steps payload against the LIVE DSH tool registry. */
+export function validateTemplateSteps(raw: unknown): { ok: true; steps: TemplateStepInput[] } | { ok: false; error: string } {
+  if (!Array.isArray(raw)) return { ok: false, error: "steps must be a JSON array of {tool, args, why}" };
+  if (raw.length === 0) return { ok: false, error: "a template needs at least one step" };
+  if (raw.length > 12) return { ok: false, error: "a template is capped at 12 steps (the same cap a plan has)" };
+  const known = new Set(TOOL_DEFS.map((t) => t.name));
+  const steps: TemplateStepInput[] = [];
+  for (const [i, s] of raw.entries()) {
+    const step = (s ?? {}) as Record<string, unknown>;
+    const tool = String(step.tool ?? "").trim();
+    if (!tool) return { ok: false, error: `step ${i + 1}: tool is required` };
+    if (!known.has(tool)) return { ok: false, error: `step ${i + 1}: '${tool}' is not a DSH tool - pick from the registry` };
+    const args = step.args && typeof step.args === "object" && !Array.isArray(step.args)
+      ? (step.args as Record<string, unknown>)
+      : {};
+    steps.push({ tool, args, why: String(step.why ?? "").trim() });
+  }
+  return { ok: true, steps };
+}
+
+function parseSavedSteps(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function viewSaved(row: {
+  id: string; projectId: string | null; baseId: string; name: string; summary: string;
+  cadenceHint: string; steps: string; usageCount: number; lastUsedAt: Date | null; createdAt: Date;
+}, stepCount: number): SavedPlanTemplate {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    scope: row.projectId == null ? "STUDIO" : "PROJECT",
+    baseId: row.baseId,
+    name: row.name,
+    summary: row.summary,
+    cadenceHint: row.cadenceHint,
+    stepCount,
+    usageCount: row.usageCount,
+    lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** Save a creator-authored variation (PROJECT scope by default, STUDIO library on request). */
+export async function savePlanTemplate(
+  projectId: string | null,
+  input: { baseId?: string; name: string; summary: string; cadenceHint?: string; steps: unknown; scope?: string },
+): Promise<{ ok: true; template: SavedPlanTemplate } | { ok: false; error: string }> {
+  const name = String(input.name ?? "").trim();
+  if (!name) return { ok: false, error: "name is required" };
+  const summary = String(input.summary ?? "").trim();
+  if (!summary) return { ok: false, error: "summary is required - what does this variation do?" };
+  const cadenceHint = String(input.cadenceHint ?? "").trim() || "nightly - a few steps per fire";
+  const check = validateTemplateSteps(input.steps);
+  if (!check.ok) return { ok: false, error: check.error };
+  const scope = String(input.scope ?? "PROJECT").toUpperCase();
+  const pid = scope === "STUDIO" ? null : projectId;
+  const clash = await db.planTemplate.findFirst({ where: { projectId: pid, name: { equals: name } } });
+  if (clash) {
+    return { ok: false, error: `a variation named '${name}' already exists in this scope - pick another name` };
+  }
+  try {
+    const row = await db.planTemplate.create({
+      data: {
+        projectId: pid,
+        baseId: String(input.baseId ?? "custom").trim() || "custom",
+        name: name.slice(0, 120),
+        summary: summary.slice(0, 400),
+        cadenceHint: cadenceHint.slice(0, 160),
+        steps: JSON.stringify(check.steps),
+      },
+    });
+    return { ok: true, template: viewSaved(row, check.steps.length) };
+  } catch {
+    return { ok: false, error: "saving the variation failed (name clash?)" };
+  }
+}
+
+/** Saved variations visible to a production: its own + the studio library. */
+export async function listPlanTemplates(projectId: string): Promise<SavedPlanTemplate[]> {
+  const rows = await db.planTemplate.findMany({
+    where: { OR: [{ projectId }, { projectId: null }] },
+    orderBy: { createdAt: "desc" },
+  });
+  return rows.map((r) => {
+    const parsed = parseSavedSteps(r.steps);
+    const count = Array.isArray(parsed) ? parsed.length : 0;
+    return viewSaved(r, count);
+  });
+}
+
+export async function deletePlanTemplate(id: string): Promise<{ ok: boolean; error?: string }> {
+  const row = await db.planTemplate.findUnique({ where: { id } });
+  if (!row) return { ok: false, error: "template not found" };
+  await db.planTemplate.delete({ where: { id } });
+  return { ok: true };
+}
+
+/** Resolved steps of a built-in for one episode (the authoring dialog's "load base"). */
+export function builtInStepsFor(ep: EpisodeTemplateEpisode, templateId: string): PlanStep[] | null {
+  if (!(EPISODE_TEMPLATE_IDS as readonly string[]).includes(templateId)) return null;
+  const template = buildEpisodeTemplates(ep).find((t) => t.id === templateId);
+  return template ? template.steps : null;
+}
+
 /**
- * Land a template as a PROPOSED plan (source CREATOR). Refuses a
- * duplicate: the same template on the same episode while a plan with
- * the identical title is still waiting in review or in flight.
+ * Land a template as a PROPOSED plan (source CREATOR). templateId is
+ * a built-in id, OR a saved variation's id / exact name. Refuses a
+ * duplicate: the same title while a plan with it is still waiting in
+ * review or in flight.
  */
 export async function instantiateEpisodePlan(
   projectId: string,
   episodeId: string,
   templateId: string,
 ): Promise<InstantiateResult> {
-  if (!(EPISODE_TEMPLATE_IDS as readonly string[]).includes(templateId)) {
-    return { ok: false, error: `Unknown template '${templateId}' - pick one of: ${EPISODE_TEMPLATE_IDS.join(", ")}` };
-  }
   const episodes = await listTemplateEpisodes(projectId);
   const ep = episodes.find((e) => e.episodeId === episodeId);
   if (!ep) return { ok: false, error: "Episode not found in this production" };
 
-  const template = buildEpisodeTemplates(ep).find((t) => t.id === templateId);
-  if (!template) return { ok: false, error: "Template build failed" };
+  let title: string;
+  let goal: string;
+  let steps: PlanStep[];
+  let savedRowId: string | null = null;
 
-  const title = `E${String(ep.number).padStart(2, "0")} - ${template.name}`;
+  if ((EPISODE_TEMPLATE_IDS as readonly string[]).includes(templateId)) {
+    const template = buildEpisodeTemplates(ep).find((t) => t.id === templateId);
+    if (!template) return { ok: false, error: "Template build failed" };
+    title = `E${String(ep.number).padStart(2, "0")} - ${template.name}`;
+    goal = template.summary;
+    steps = template.steps;
+  } else {
+    const saved = await db.planTemplate.findFirst({
+      where: {
+        AND: [
+          { OR: [{ id: templateId }, { name: { equals: templateId } }] },
+          { OR: [{ projectId }, { projectId: null }] },
+        ],
+      },
+    });
+    if (!saved) {
+      return { ok: false, error: `Unknown template '${templateId}' - pick a built-in (${EPISODE_TEMPLATE_IDS.join(", ")}) or a saved variation (id or exact name, see the plans panel)` };
+    }
+    const parsed = validateTemplateSteps(parseSavedSteps(saved.steps));
+    if (!parsed.ok) {
+      return { ok: false, error: `Saved variation '${saved.name}' no longer validates: ${parsed.error}` };
+    }
+    const ctx = { episode: ep.number, latestScene: Math.max(1, ep.sceneCount), title: ep.title };
+    steps = parsed.steps.map((s) => ({
+      tool: s.tool,
+      args: (resolveTemplateValue(s.args, ctx) ?? {}) as Record<string, unknown>,
+      why: s.why,
+      status: "PENDING" as const,
+    }));
+    title = `E${String(ep.number).padStart(2, "0")} - ${saved.name}`;
+    goal = saved.summary;
+    savedRowId = saved.id;
+  }
+
   const live = await db.dshPlan.findFirst({
     where: { projectId, title, status: { in: ["PROPOSED", "ACTIVE", "PAUSED"] } },
   });
@@ -218,10 +419,16 @@ export async function instantiateEpisodePlan(
 
   const result = await createPlan(projectId, {
     title,
-    goal: template.summary,
-    steps: template.steps,
+    goal,
+    steps,
     source: "CREATOR",
   });
   if (!result.ok) return { ok: false, error: result.error };
+  if (savedRowId) {
+    await db.planTemplate.update({
+      where: { id: savedRowId },
+      data: { usageCount: { increment: 1 }, lastUsedAt: new Date() },
+    }).catch(() => {});
+  }
   return { ok: true, planId: result.plan.id, planTitle: result.plan.title };
 }
