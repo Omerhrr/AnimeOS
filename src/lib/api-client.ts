@@ -539,6 +539,20 @@ export const api = {
   exportCut: (episodeId: string, mode: "PREVIEW" | "FINAL" = "PREVIEW") =>
     j<EpisodeCutResult>(`/api/episodes/${episodeId}/cut`, { method: "POST", body: JSON.stringify({ mode }) }),
 
+  // platform publishing: per-platform packages staged on the delivery spine
+  publishInfo: (projectId: string) =>
+    j<{ presets: Array<{ id: string; label: string; blurb: string; orientation: string; width: number; height: number; maxDurationSec: number; titleMaxChars: number; subtitleFormat: string; notes: string[]; envKeys: string[] }>; recent: Array<{ id: string; platform: string; platformLabel: string; ready: boolean; checksPassed: number; checksTotal: number; title: string; url: string; file: string; subtitleCues: number; subtitleFormat: string; createdAt: string }> }>(`/api/publish?projectId=${projectId}`),
+  stagePublish: (episodeId: string, platform: string) =>
+    j<{ platform: string; platformLabel: string; title: string; description: string; tags: string[]; ready: boolean; subtitle: { format: string; filename: string | null; cues: number; note: string }; conformance: Array<{ label: string; ok: boolean; detail: string }>; checklist: string[]; integration: { configured: boolean; detail: string; envKeys: string[] }; cut: { url: string; file: string; durationMs: number; width: number; height: number; fps: number; bytes: number } }>("/api/publish", {
+      method: "POST", body: JSON.stringify({ episodeId, platform }),
+    }),
+
+  // reworded-fact re-audit helper: re-check the panels that audited the old wording
+  reauditFact: (projectId: string, factId: string, oldText: string) =>
+    j<{ factId: string; oldText: string; newText: string; targets: number; audited: number; held: number; broken: number; summary: string; results: Array<{ shotId: string; ref: string; ok: boolean; error?: string; holds?: number; broken?: number; note?: string }> }>("/api/canon-health", {
+      method: "POST", body: JSON.stringify({ projectId, action: "reaudit", factId, oldText }),
+    }),
+
   // sound-design cues
   audioCues: (shotId: string) => j<AudioCueRow[]>(`/api/audio-cues?shotId=${shotId}`),
   createAudioCue: (body: Record<string, unknown>) => j<AudioCueRow>("/api/audio-cues", { method: "POST", body: JSON.stringify(body) }),

@@ -279,3 +279,166 @@ export async function universePanelData(projectId: string) {
     })),
   };
 }
+
+// ─────────────────────────────────────────────────────────────
+// REWORDED-FACT RE-AUDIT HELPER
+//
+// When a fact is reworded, every verdict it ever earned was judged
+// against the OLD wording (events carry the fact text as their
+// entity name), so the new wording starts with a clean slate the
+// old panels never saw. This helper closes that loop: it finds the
+// panels that audited the old wording and re-runs the vision check
+// on them, so the SAME panels answer whether the NEW wording holds.
+// Re-audits replace the per-panel verdict sets (the standard check
+// behavior), so the health rollup, the drift curves and the
+// re-render queue all read the new wording's history afterwards.
+// ─────────────────────────────────────────────────────────────
+
+export interface ReauditTarget {
+  shotId: string;
+  ref: string;
+  hasArt: boolean;
+  lastAt: string; // when this panel last audited the old wording
+}
+
+/**
+ * The panels whose verdict history matches the given (old) fact
+ * text, newest audit first. Pure key matching: the fact text sliced
+ * to 90 chars is the event entity name the pipeline writes.
+ */
+export async function reauditTargetsForFact(oldText: string): Promise<ReauditTarget[]> {
+  const events = await db.continuityEvent.findMany({
+    where: { kind: { in: [...UNIVERSE_EVENT_KINDS] }, entityName: oldText.trim().slice(0, 90) },
+    orderBy: { createdAt: "desc" },
+    take: 240,
+  });
+  if (events.length === 0) return [];
+
+  const shotIds = new Set<string>();
+  const lastAt = new Map<string, Date>();
+  for (const ev of events) {
+    const m = ev.description.match(SHOT_ID_TAG);
+    if (!m) continue;
+    const shotId = m[1];
+    shotIds.add(shotId);
+    if (!lastAt.has(shotId) || (lastAt.get(shotId)!.getTime() < ev.createdAt.getTime())) {
+      lastAt.set(shotId, ev.createdAt);
+    }
+  }
+  if (shotIds.size === 0) return [];
+
+  const shots = await db.shot.findMany({
+    where: { id: { in: [...shotIds] } },
+    include: { scene: { include: { episode: true } } },
+  });
+  return shots
+    .map((shot) => ({
+      shotId: shot.id,
+      ref: shotRefOf(shot),
+      hasArt: Boolean(shot.artworkUrl),
+      lastAt: (lastAt.get(shot.id) ?? shot.createdAt).toISOString(),
+    }))
+    .sort((a, b) => b.lastAt.localeCompare(a.lastAt)); // newest audits first
+}
+
+export interface ReauditOutcome {
+  shotId: string;
+  ref: string;
+  ok: boolean;
+  error?: string; // why the panel could not be re-audited (missing art, ...)
+  holds?: number; // this fact's fresh verdicts that held
+  broken?: number; // this fact's fresh verdicts that broke
+  note?: string; // the fresh verdict's note for this fact
+  summary?: string;
+}
+
+export interface ReauditResult {
+  factId: string;
+  oldText: string;
+  newText: string;
+  targets: number; // panels that audited the old wording
+  audited: number; // panels actually re-checked
+  held: number;
+  broken: number;
+  results: ReauditOutcome[];
+  summary: string;
+}
+
+export const REAUDIT_CAP = 6; // panels re-audited per call (the rest wait for the queue)
+
+/**
+ * Re-audit the panels that judged the OLD wording of a fact against
+ * its CURRENT (new) wording. Non-art panels are reported honestly as
+ * skipped; each successful panel replaces its verdict set through
+ * the standard check path. Lands a CONTINUITY production event.
+ */
+export async function reauditRewordedFact(
+  factId: string,
+  oldText: string,
+  cap = REAUDIT_CAP,
+): Promise<{ ok: true; result: ReauditResult } | { ok: false; error: string }> {
+  const fact = await db.universeFact.findUnique({ where: { id: factId } });
+  if (!fact) return { ok: false, error: "Fact not found" };
+  if (!fact.active) return { ok: false, error: "This fact is retired - reactivate it before re-auditing" };
+  const old = String(oldText ?? "").trim();
+  if (!old) return { ok: false, error: "The old wording is required (the panels are found by what they audited)" };
+  if (old === fact.text.trim()) {
+    return { ok: false, error: "That is already the fact's current wording - nothing was reworded" };
+  }
+
+  const targets = await reauditTargetsForFact(old);
+  const results: ReauditOutcome[] = [];
+  for (const target of targets.slice(0, Math.max(1, cap))) {
+    if (!target.hasArt) {
+      results.push({ shotId: target.shotId, ref: target.ref, ok: false, error: "no panel art to check" });
+      continue;
+    }
+    const check = await checkShotUniverseFacts(target.shotId);
+    if (!check.ok) {
+      results.push({ shotId: target.shotId, ref: target.ref, ok: false, error: check.error });
+      continue;
+    }
+    const mine = check.result.verdicts.filter((v) => v.factId === fact.id);
+    const held = mine.filter((v) => v.holds).length;
+    const broken = mine.length - held;
+    results.push({
+      shotId: target.shotId,
+      ref: target.ref,
+      ok: true,
+      holds: held,
+      broken,
+      note: mine[0]?.note ?? "",
+      summary: check.result.summary,
+    });
+  }
+
+  const audited = results.filter((r) => r.ok).length;
+  const held = results.reduce((a, r) => a + (r.holds ?? 0), 0);
+  const broken = results.reduce((a, r) => a + (r.broken ?? 0), 0);
+  const skipped = results.length - audited;
+
+  let summary: string;
+  if (targets.length === 0) {
+    summary = `no panels ever audited the old wording - audit a fresh panel to see whether the new wording holds`;
+  } else {
+    summary = `${audited} of ${targets.length} prior panel(s) re-audited under the new wording: ${held} held / ${broken} broke${skipped > 0 ? ` (${skipped} skipped)` : ""}`;
+    if (targets.length > results.length) {
+      summary += `, ${targets.length - results.length} older panel(s) left for the re-render queue`;
+    }
+  }
+
+  await db.productionEvent.create({
+    data: {
+      projectId: fact.projectId,
+      actor: "USER",
+      type: "CONTINUITY",
+      summary: `Reworded fact re-audited - "${fact.text.slice(0, 60)}": ${summary}`,
+      payload: JSON.stringify({ factId: fact.id, oldText: old.slice(0, 200), newText: fact.text.slice(0, 200), targets: targets.length, audited, held, broken, results }),
+    },
+  });
+
+  return {
+    ok: true,
+    result: { factId: fact.id, oldText: old, newText: fact.text, targets: targets.length, audited, held, broken, results, summary },
+  };
+}

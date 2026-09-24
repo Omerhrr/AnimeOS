@@ -642,8 +642,10 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
   }
 
   // The suggestion loop closes here: rewording rewrites the fact in
-  // place (its history stays, the wording is what keeps failing);
-  // retiring deactivates it so audits and prompts skip it.
+  // place, then the RE-AUDIT HELPER re-runs the vision check on the
+  // panels that judged the old wording, so the same panels answer
+  // whether the new wording holds; retiring deactivates it so audits
+  // and prompts skip it.
   async function reword(factId: string, current: string) {
     const next = window.prompt("Reword the fact (it keeps failing as written):", current);
     if (next == null || !next.trim() || next.trim() === current) return;
@@ -659,8 +661,21 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
         setError(body.error ?? "Reword failed");
+        return;
+      }
+      setBanner("Fact reworded - re-auditing the panels that judged the old wording…");
+      const re = await fetch("/api/canon-health", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reaudit", factId, oldText: current }),
+      });
+      const reBody = (await re.json()) as { error?: string; targets?: number; audited?: number; held?: number; broken?: number; summary?: string };
+      if (!re.ok) {
+        setBanner(`Fact reworded - but the re-audit could not run: ${reBody.error ?? "unknown error"}. Audit a fresh panel instead.`);
+      } else if ((reBody.targets ?? 0) === 0) {
+        setBanner("Fact reworded - no panels ever audited the old wording, so audit a fresh panel to see whether the new wording holds");
       } else {
-        setBanner("Fact reworded - audit a fresh panel to see whether the new wording holds");
+        setBanner(`Fact reworded + re-audited - ${reBody.summary ?? `${reBody.audited} panel(s) re-checked`}. The new wording's history starts on those panels.`);
       }
     } catch {
       setError("Reword failed");

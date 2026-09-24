@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable,
-  Layers, ListFilter, Play, Clapperboard, Timer,
+  Layers, ListFilter, Play, Clapperboard, Timer, Send,
 } from "lucide-react";
 import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -296,6 +296,155 @@ function EpisodeCutCard({ project }: { project: StudioProject }) {
   );
 }
 
+interface PublishPackageUi {
+  platform: string;
+  platformLabel: string;
+  title: string;
+  description: string;
+  tags: string[];
+  ready: boolean;
+  subtitle: { format: string; filename: string | null; cues: number; note: string };
+  conformance: Array<{ label: string; ok: boolean; detail: string }>;
+  checklist: string[];
+  integration: { configured: boolean; detail: string; envKeys: string[] };
+  cut: { url: string; file: string; durationMs: number; width: number; height: number; fps: number; bytes: number };
+}
+
+interface PublishInfoUi {
+  presets: Array<{ id: string; label: string; blurb: string; orientation: string; width: number; height: number; maxDurationSec: number; titleMaxChars: number; subtitleFormat: string; notes: string[]; envKeys: string[] }>;
+  recent: Array<{ id: string; platform: string; platformLabel: string; ready: boolean; checksPassed: number; checksTotal: number; title: string; url: string; file: string; subtitleCues: number; subtitleFormat: string; createdAt: string }>;
+}
+
+/**
+ * Platform publishing: the delivery spine's last mile. A staged
+ * package is a real conformance check of the exported cut against
+ * the platform preset, plus metadata + subtitle sidecars - staged
+ * locally and honestly (no network upload happens in this build).
+ */
+function PublishingPanel({ project }: { project: StudioProject }) {
+  const [episodeId, setEpisodeId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<string>("YOUTUBE");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pkg, setPkg] = useState<PublishPackageUi | null>(null);
+
+  const episodes = useMemo(
+    () => project.seasons.flatMap((s) => s.episodes).sort((a, b) => a.number - b.number),
+    [project.seasons]
+  );
+
+  const infoQ = useQuery({ queryKey: ["publishInfo", project.id], queryFn: () => api.publishInfo(project.id) });
+  const info = infoQ.data;
+  const preset = info?.presets.find((p) => p.id === platform);
+
+  async function stage() {
+    if (!episodeId) return;
+    setBusy(true);
+    setError(null);
+    setPkg(null);
+    try {
+      const r = await api.stagePublish(episodeId, platform);
+      setPkg(r);
+      void infoQ.refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Publish staging failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (episodes.length === 0) return null;
+
+  return (
+    <div className="studio-panel p-4 mb-5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Send className="h-4 w-4 text-sky-300" />
+        <span className="text-sm font-semibold">Publishing</span>
+        <span className="text-[11px] text-muted-foreground">stage the exported cut for a platform: conformance checks, metadata, subtitle sidecar - packages are staged locally, upload stays a manual (or credential-gated) hand-off</span>
+      </div>
+      <div className="flex items-center gap-3 mt-3 flex-wrap">
+        <select
+          value={episodeId ?? ""}
+          onChange={(e) => { setEpisodeId(e.target.value || null); setPkg(null); setError(null); }}
+          className="h-7 rounded-lg bg-white/5 border border-white/12 text-[11px] px-2 text-foreground"
+          aria-label="Episode to publish"
+        >
+          <option value="">Pick an episode…</option>
+          {episodes.map((ep) => (
+            <option key={ep.id} value={ep.id}>E{String(ep.number).padStart(2, "0")} · {ep.title}</option>
+          ))}
+        </select>
+        <select
+          value={platform}
+          onChange={(e) => { setPlatform(e.target.value); setPkg(null); setError(null); }}
+          className="h-7 rounded-lg bg-white/5 border border-white/12 text-[11px] px-2 text-foreground"
+          aria-label="Platform preset"
+        >
+          {(info?.presets ?? [{ id: "YOUTUBE", label: "YouTube", blurb: "", orientation: "LANDSCAPE", width: 1920, height: 1080, maxDurationSec: 0, titleMaxChars: 0, subtitleFormat: "srt", notes: [], envKeys: [] }]).map((p) => (
+            <option key={p.id} value={p.id}>{p.label} · {p.width}x{p.height} {p.orientation === "VERTICAL" ? "(9:16)" : "(16:9)"}</option>
+          ))}
+        </select>
+        <Button size="sm" className="h-7 text-[11px]" disabled={busy || !episodeId} onClick={() => void stage()}>
+          {busy ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Send className="h-3 w-3 mr-1.5" />}
+          {busy ? "Checking conformance…" : "Stage package"}
+        </Button>
+        {preset && <span className="text-[10px] text-muted-foreground">{preset.blurb}</span>}
+      </div>
+
+      {error && <p className="text-[11px] text-rose-300 mt-2">{error}</p>}
+
+      {pkg && (
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={cn("px-2 py-1 rounded-md border text-[10px] font-semibold", pkg.ready ? "border-emerald-400/30 text-emerald-300 bg-emerald-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
+              {pkg.ready ? "READY" : "NOT READY"} · {pkg.conformance.filter((c) => c.ok).length}/{pkg.conformance.length} checks
+            </span>
+            <span className="text-[11px] font-medium truncate max-w-md" title={pkg.title}>{pkg.title}</span>
+            <span className="text-[10px] text-muted-foreground">{pkg.platformLabel}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {pkg.conformance.map((c) => (
+              <span
+                key={c.label}
+                title={c.detail}
+                className={cn("px-1.5 py-0.5 rounded border text-[9px] font-medium", c.ok ? "border-emerald-400/25 text-emerald-300/90 bg-emerald-400/[0.06]" : "border-rose-400/30 text-rose-300 bg-rose-400/10")}
+              >
+                {c.ok ? "OK" : "FAIL"} {c.label}
+              </span>
+            ))}
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 space-y-1 text-[10px] text-muted-foreground leading-relaxed">
+            <div><span className="text-foreground/80">description:</span> {pkg.description.slice(0, 180)}{pkg.description.length > 180 ? "…" : ""}</div>
+            <div><span className="text-foreground/80">tags:</span> {pkg.tags.join(" · ")}</div>
+            <div><span className="text-foreground/80">subtitles:</span> {pkg.subtitle.format === "none" ? pkg.subtitle.note : `${pkg.subtitle.format.toUpperCase()} ${pkg.subtitle.cues} cue(s) -> ${pkg.subtitle.filename}`}</div>
+            <div><span className="text-foreground/80">integration:</span> {pkg.integration.detail}</div>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+            {pkg.checklist.map((c, i) => <span key={i} className="before:content-['•'] before:mr-1">{c}</span>)}
+          </div>
+        </div>
+      )}
+
+      {info && info.recent.length > 0 && (
+        <div className="mt-3 space-y-1">
+          <div className="text-[10px] uppercase tracking-[0.14em] text-sky-300/90">Staged packages</div>
+          {info.recent.slice(0, 5).map((r) => (
+            <div key={r.id} className="rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 flex items-center gap-2 text-[10px]">
+              <span className={cn("px-1.5 py-0.5 rounded border font-semibold shrink-0", r.ready ? "border-emerald-400/25 text-emerald-300 bg-emerald-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
+                {r.ready ? "READY" : "BLOCKED"}
+              </span>
+              <span className="text-[11px] truncate flex-1" title={r.title}>{r.title}</span>
+              <span className="text-muted-foreground shrink-0">{r.platformLabel}</span>
+              <span className="text-muted-foreground tabular-nums shrink-0">{r.checksPassed}/{r.checksTotal} checks</span>
+              {r.subtitleCues > 0 && <span className="text-muted-foreground shrink-0">{r.subtitleFormat.toUpperCase()} {r.subtitleCues}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RenderView({ project }: { project: StudioProject }) {
   const qc = useQueryClient();
   const { projectId, openPreview } = useStudio();
@@ -353,6 +502,7 @@ export function RenderView({ project }: { project: StudioProject }) {
       <BatchRenderCard project={project} />
 
       <EpisodeCutCard project={project} />
+      <PublishingPanel project={project} />
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mr-1">

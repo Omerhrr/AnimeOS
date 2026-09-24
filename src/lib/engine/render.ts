@@ -63,10 +63,13 @@ import { finishTelemetry, takeoverSpan } from "@/lib/engine/telemetry";
  * Build a shot's lip-sync program with REAL AUDIO as the timing
  * score and a NEURAL PHONEME PLAN as the shape score: each VOICE
  * cue's rendered take (public/voices/{cueId}.wav) is read from disk
- * and analyzed into visemes, then the plan's wide/round identity is
- * conformed onto the audio envelope (a refused model degrades to the
- * audio-only pass). Spans without a decodable take perform from the
- * plan (or the per-character text table as the last resort).
+ * and analyzed into visemes, the plan's wide/round identity is
+ * conformed onto the audio envelope, and the ACOUSTIC MODEL SLOT
+ * re-times the plan's units onto the take's real syllable timeline
+ * (a refused model degrades to the audio-only pass; ANIMEOS_ACOUSTIC
+ * =off keeps the plan's even spread). Spans without a decodable take
+ * perform from the plan (or the per-character text table as the last
+ * resort).
  */
 async function shotSpeechProgram(shot: {
   shotType: string;

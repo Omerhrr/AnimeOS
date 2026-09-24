@@ -15,6 +15,7 @@ import { studioPulse } from "@/lib/studio-pulse";
 import { canonHealthData } from "@/lib/canon-health";
 import { scheduleHealthData } from "@/lib/schedule-health";
 import { postDailyDigest } from "@/lib/digest";
+import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
 import { createRenderJob } from "@/lib/engine/render";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -303,6 +304,14 @@ export const TOOL_DEFS: ToolDef[] = [
     description: "Post a production DIGEST to the creator right now: the last N hours of studio activity (renders, plan steps, schedule fires, canon and identity-drift headlines, queue pressure) aggregated into one readable message and landed as a DIGEST production event the digest panel shows. The DAILY_DIGEST schedule posts one automatically on its cadence; use this when the creator asks for a catch-up or an end-of-session summary.",
     args: {
       hours: "number 1-168 (optional - the window the digest covers, default 24)",
+    },
+  },
+  {
+    name: "publish_cut",
+    description: "Stage a PLATFORM PUBLISH PACKAGE for an episode on the delivery spine: the episode's latest exported cut is probed and conformance-checked against the platform preset (duration cap, canvas/aspect - a 16:9 cut honestly FAILS on a 9:16 platform, file size, frame rate, bitrate), and the package carries the metadata (title/description/tags clamped to the platform's limits), a provenance credits line, and an SRT subtitle sidecar built from the episode's dialogue timed through the cut manifest. Platforms: YOUTUBE, BILIBILI, DOUYIN, TIKTOK, STUDIO_INGEST (distributor mezzanine). Staging is local and honest: no network upload happens - the package lands as a PUBLISH event the render view's publishing panel shows, with an upload checklist and the integration status (credentials present or manual hand-off).",
+    args: {
+      episodeNumber: "number (optional - defaults to the latest episode)",
+      platform: "YOUTUBE | BILIBILI | DOUYIN | TIKTOK | STUDIO_INGEST",
     },
   },
   {
@@ -1825,6 +1834,28 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return { status: "OK", result: `Digest posted to the creator (last ${result.digest.windowHours}h, ${result.digest.events} production event(s)):\n${result.digest.lines.join("\n")}\nThe digest panel on this view keeps the history; a DAILY_DIGEST schedule (create_schedule) posts one automatically on its cadence.` };
       }
 
+      case "publish_cut": {
+        const platformId = String(args.platform ?? "").trim();
+        if (!platformPreset(platformId)) {
+          return { status: "ERROR", result: `Unknown platform "${platformId || "(none)"}" - available: ${PLATFORM_PRESETS.map((p) => p.id).join(", ")}.` };
+        }
+        const ep = args.episodeNumber
+          ? await db.episode.findFirst({
+              where: { season: { projectId }, number: Number(args.episodeNumber) },
+              orderBy: { season: { number: "asc" } },
+            })
+          : await latestEpisode(projectId);
+        if (!ep) return { status: "ERROR", result: "No episode exists yet - create one with create_episode first." };
+        const staged = await stagePublishPackage(ep.id, platformId);
+        if (!staged.ok) return { status: "ERROR", result: `Publish staging failed for EP${String(ep.number).padStart(2, "0")}: ${staged.error}` };
+        const pkg = staged.pkg;
+        const checks = pkg.conformance.map((c) => `${c.ok ? "OK" : "FAIL"} ${c.label} (${c.detail})`).join(", ");
+        const subtitle = pkg.subtitle.format === "none"
+          ? pkg.subtitle.note
+          : `${pkg.subtitle.format.toUpperCase()} with ${pkg.subtitle.cues} cue(s) (${pkg.subtitle.filename ?? "no file"})`;
+        return { status: "OK", result: `Publish package staged for EP${String(ep.number).padStart(2, "0")} -> ${pkg.platformLabel}: ${pkg.ready ? "READY" : "NOT READY"} (${pkg.conformance.filter((c) => c.ok).length}/${pkg.conformance.length} conformance checks: ${checks}). Package: title "${pkg.title}", ${subtitle}. ${pkg.integration.detail} Staging is local and honest - no network upload happened; the package landed as a PUBLISH event the render view's publishing panel shows, with the full checklist and metadata.` };
+      }
+
       case "render_shot": {
         let scene: Awaited<ReturnType<typeof latestScene>> = null;
         if (args.sceneNumber) {
@@ -2692,7 +2723,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -2738,6 +2769,7 @@ export async function buildCompactContext(projectId: string) {
     identityDriftData(projectId).catch(() => null),
     listPlanTemplates(projectId).catch(() => [] as Awaited<ReturnType<typeof listPlanTemplates>>),
     db.productionEvent.findFirst({ where: { projectId, type: "DIGEST" }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
+    db.productionEvent.findFirst({ where: { projectId, type: "PUBLISH" }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
   ]);
   if (!project) return null;
 
@@ -2823,6 +2855,9 @@ export async function buildCompactContext(projectId: string) {
     identityDrift: drift ? drift.headline : null,
     latestDigest: latestDigestEvent
       ? `${latestDigestEvent.summary} (${latestDigestEvent.createdAt.toISOString().slice(0, 16)}Z)`
+      : null,
+    latestPublish: latestPublishEvent
+      ? `${latestPublishEvent.summary} (${latestPublishEvent.createdAt.toISOString().slice(0, 16)}Z)`
       : null,
     canonHealth: canon ? canon.digest.headline : null,
     scheduleHealth: scheduleHealth ? scheduleHealth.headline : null,

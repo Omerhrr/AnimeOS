@@ -24,7 +24,7 @@ import { buildSpeechProgram, buildVisemes, type SpeechProgram, type Viseme } fro
 // as the fallback for spans without a decodable take.
 // ─────────────────────────────────────────────────────────────
 
-const FRAME_MS = 10; // analysis hop
+export const FRAME_MS = 10; // analysis hop
 const WINDOW_MS = 25; // analysis window
 const MIN_RUN_MS = 50; // shorter runs snap into their neighbor
 const MAX_VISEMES = 600; // payload safety cap (same as the text path)
@@ -81,13 +81,13 @@ export function parseWavMono(buf: Buffer): PcmWav | null {
   }
 }
 
-interface AudioFrame {
+export interface AudioFrame {
   rms: number;
   zcr: number; // 0..1 fraction of sign flips inside the window
 }
 
 /** Frame the mixdown: RMS energy + zero-crossing rate per FRAME_MS hop. */
-function frameAudio(wav: PcmWav): AudioFrame[] {
+export function frameAudio(wav: PcmWav): AudioFrame[] {
   const hop = Math.max(1, Math.round((wav.sampleRate * FRAME_MS) / 1000));
   const win = Math.max(hop, Math.round((wav.sampleRate * WINDOW_MS) / 1000));
   const out: AudioFrame[] = [];
@@ -112,6 +112,15 @@ function frameAudio(wav: PcmWav): AudioFrame[] {
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
+}
+
+/** The robust loudness reference + gate the envelope path uses (shared DNA). */
+export function loudnessGate(frames: AudioFrame[]): { peak: number; gate: number } | null {
+  if (frames.length < 4) return null;
+  const sorted = [...frames.map((f) => f.rms)].sort((a, b) => a - b);
+  const peak = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+  if (peak < 0.008) return null; // near-silence: nothing to perform
+  return { peak, gate: Math.max(0.014, peak * 0.14) };
 }
 
 /**
