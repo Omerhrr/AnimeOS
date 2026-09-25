@@ -1056,3 +1056,27 @@ Stage Summary:
 - Identity scoring now measures the panel-vs-render gap (the honest low scores are the roadmap's stand-in-rig problem made numerical)
 - Cloudveil Ascent E01 exists again end to end (60.0s cut + staged packages); FINAL-all grinds resumably across sessions
 - Key files: src/lib/animation/acoustic.ts, src/lib/universe-facts.ts, src/lib/comic/publish.ts, src/lib/scheduler.ts, src/lib/identity.ts, src/lib/dsh/{tools,evaluator}.ts, src/app/api/{canon-health,identity,schedules,audio-cues}/, src/components/views/{continuity-view,dsh-console,render-view,sound-timeline-dialog}.tsx, scripts/production-run.ts, scripts/blender-smoke-test.py, prisma/schema.prisma
+
+---
+Task ID: 42
+Agent: Super Z (main)
+Task: investigate the user report that renders are "just shapes", the cinematic preview shows "a default three.js scene", no real characters/scenery anywhere, comic mode the only thing that works
+
+Work Log:
+- Investigation confirmed all three complaints at the source: the Blender worker built a skeletal STAND-IN figure out of primitive cubes + an ico-sphere head on a flat plate with sphere rocks (no design data ever reached the 3D path), and cinematic-preview.tsx hardcoded one cultivator scene (cone robe + sphere head) regardless of production
+- The design data existed all along (painted model sheets with visual anchors, appearance JSON, wardrobe/weapon states, environment briefs) but only fed the 2D panel-art path
+- NEW: src/lib/animation/design.ts compiles that design text into JSON DNA (character: hair color/style, robe, accent, skin, weapon type, energy color, build; environment: terrain, timeOfDay, weather, sky/fog/ground/key-light colors, features) - pure, deterministic, shared by both 3D consumers; hairColorOf reads color words only NEAR hair anchors so "storm-grey eyes" never dyes "black hair"
+- render.ts attaches shot.cast + scene.environment DNA to every Blender payload; /api/scenes GET exposes the same DNA for the scene's detected cast
+- animeos_bridge.py v4.0 DESIGNED PASS: build_designed_figure (same joint hierarchy as v3.x so apply_pose/lip-sync/camera math is untouched; smooth-shaded capsules, layered robes with sleeves/cuffs/sash/skirt panels, per-DNA hairstyle topknot/ponytail/braid/long/short, per-DNA sword/staff/spear with the character's energy color, high collar, stylized eyes with poking irises) + build_designed_set (terrace/peak/forest/gorge/temple terrain + moons/pagoda/bell/banners/pillars/bamboo/cloudsea/lanterns/waterfall/stream, time-of-day sky and key light); legacy stand-in paths kept as the no-DNA fallback
+- cinematic-preview.tsx rebuilt design-driven: figures from cast DNA, set from environment DNA, weather particles, moons/sun per time-of-day, design chips in the header; agent-browser E2E verified (Lin Yue vs Demon Lord Wei figures built from their DNA in the Ancient Temple terrain)
+- Bugs found and fixed through the debug-render loop: 118-degree sun shining UP through the ground; hex colors fed as sRGB into LINEAR slots (everything ~2x too light - the sRGB-to-linear transfer function); full-scale camera table framing a 0.9m prop-scale figure (1.9x distances, chest/face targets, front-side base angles so tight shots never land on the back of the hair); framing now keyed to framed = has_poses OR cast (a no-pose EXTREME_CLOSEUP hovered at 1.16m over the figure - flat black frames); hero key light so night wides never lose the subject; night fill scale; terrace tiles z-fighting into black patches (sparse + z-jittered); prim() helper after a background-mode active_object flake left one unscaled 2m tile
+- Cloudveil Ascent E01 re-rendered 12/12 through the designed pipeline (PREVIEW, serialized workers, ~5 render chunks), identity re-scored against the sheets (honest 20-35% - the stylized-procedural gap documented in the README)
+- Scripts: scripts/verify-design-dna.ts, scripts/smoke-designed-render.ts, scripts/reset-e01-renders.ts, scripts/check-rerender-state.ts, scripts/fail-stale-jobs.ts
+- tsc clean (src), eslint clean, em-dash clean; README render/preview/identity sections updated
+
+Stage Summary:
+- The 3D path now renders the DESIGNED characters and sets from the same design text the painted sheets and panels come from - "just shapes" is fixed at the architecture level, not cosmetic
+- The browser preview and the Blender worker agree on the production's look through one shared DNA module
+- E01's shipped clips show robed, coiffed, weapon-carrying characters on themed sets with night/dawn skies; FINAL-all re-grind remains resumable (scripts/production-run.ts finalall)
+- Identity stays honest: stylized-procedural figures score low against painted sheets - the gap is documented, the vision scorer is the referee
+- Key files: src/lib/animation/design.ts (new), src/lib/engine/render.ts, src/lib/bridge/blender.ts, src/app/api/scenes/route.ts, src/components/preview/cinematic-preview.tsx, src/lib/ai/art.ts, src/lib/api-client.ts, bridges/blender/animeos_bridge.py (v4.0), README.md

@@ -369,12 +369,20 @@ def camera_pose(shot_payload, scene_payload, t):
     if movement not in ("ORBIT", "PAN", "TRACKING", "CRANE", "DOLLY_IN", "DOLLY_OUT", "TILT_UP", "TILT_DOWN"):
         movement = "STATIC"
     has_poses = bool(normalize_pose(shot_payload.get("poseStart")) or normalize_pose(shot_payload.get("poseEnd")))
-    if has_poses:
+    # the DESIGNED figure is the subject whenever cast DNA exists -
+    # posed or just standing - so the prop-scale framing applies to
+    # every cast shot (the s3.2 lesson: a no-pose EXTREME_CLOSEUP kept
+    # the full-scale table and hovered at 1.16m over a 0.9m figure,
+    # grading a flat rectangle of terrace)
+    framed = has_poses or bool(shot_payload.get("cast"))
+    if framed:
         # prop-scale distance: the designed figure stands ~0.9m tall
         # (0.45x), and the lens table was tuned for full-scale sets -
         # at 1.25x a MEDIUM saw only 0.43m of frame height (a shins-
-        # only closeup). 1.9x puts a waist-up MEDIUM at ~1.9m.
-        dist *= 1.9
+        # only closeup). 1.9x puts a waist-up MEDIUM at ~1.9m; wide
+        # framings cap tighter so a night establishing never loses
+        # the subject entirely
+        dist *= 1.9 if dist <= 1.2 else 1.35
 
     angle = 40.0
     radius = dist
@@ -384,32 +392,38 @@ def camera_pose(shot_payload, scene_payload, t):
     # height (NOT the 1.2-1.6m lens heights - those pitched every
     # pose shot down onto the hero's head), tight shot types aim at
     # the FACE (0.84m post-scale), wider framings at the chest (0.62m)
-    if has_poses:
+    if framed:
         h = 0.62 + height * 0.12
         target = [0.0, 0.0, 0.84 if dist < 1.2 else 0.62]
+        # and the camera stays on the figure's FRONT side: the figure
+        # faces -Y, and the old base-angle formula (0.9 + n*0.7 rad)
+        # landed tight framings on the back of the hair - a black
+        # frame. Small spread around -100 deg keeps every shot on the
+        # face while shot-to-shot variety survives.
+        angle = math.radians(-100.0 + 16.0 * ((shot_payload.get("number") or 1) % 7))
     else:
         target = [0.0, 0.0, height * 0.75]
 
     if movement == "ORBIT":
-        angle = 40.0 + (t - 0.5) * 44.0
+        angle = angle + (t - 0.5) * 44.0
         radius = dist * (1.0 + 0.05 * math.sin(t * math.pi))
     elif movement == "DOLLY_IN":
         radius = dist * (1.0 - 0.28 * t)
     elif movement == "DOLLY_OUT":
         radius = dist * (0.72 + 0.28 * t)
     elif movement == "PAN":
-        angle = 40.0 + math.sin((t - 0.5) * math.pi) * 24.0
+        angle = angle + math.sin((t - 0.5) * math.pi) * 24.0
     elif movement == "TRACKING":
         lateral = (t - 0.5) * dist * 0.42
     elif movement == "CRANE":
-        h = h + (1.1 if has_poses else 2.2) * (1.0 - t)
+        h = h + (1.1 if framed else 2.2) * (1.0 - t)
         radius = dist * (1.0 + 0.1 * t)
     elif movement == "TILT_UP":
-        target[2] = (0.3 + 0.55 * t) if has_poses else height * (0.35 + 0.55 * t)
+        target[2] = (0.3 + 0.55 * t) if framed else height * (0.35 + 0.55 * t)
     elif movement == "TILT_DOWN":
-        target[2] = (0.8 - 0.55 * t) if has_poses else height * (0.9 - 0.55 * t)
+        target[2] = (0.8 - 0.55 * t) if framed else height * (0.9 - 0.55 * t)
 
-    if has_poses:
+    if framed and has_poses:
         # follow the subject: the pose program can carry the figure
         # toward the lens (LUNGE root travel), so the rig backs off by
         # the same world travel (table value x prop scale) and keeps
@@ -1462,9 +1476,10 @@ def worker_run(job_file):
 
         rim_e = float(scene_p.get("rimLightIntensity", 0.5))
         energy_e = float(scene_p.get("energyIntensity", 0.6))
-        # night sets run dim fills (a 1200W studio wash turns moonlight
+        # night sets run dimmer fills (a 1200W studio wash turns moonlight
         # into overcast noon); day keeps the full studio fill
-        fill_scale = 0.6 if (env and str(env.get("timeOfDay") or "night") in ("night", "dusk")) else 1.0
+        night = bool(env and str(env.get("timeOfDay") or "night") in ("night", "dusk"))
+        fill_scale = 0.85 if night else 1.0
         for i, e in enumerate((rim_e, energy_e)):
             light_data = bpy.data.lights.new(f"Fill{i}", "AREA")
             light_data.size = 4.0
@@ -1473,6 +1488,20 @@ def worker_run(job_file):
             light.rotation_euler = (math.radians(-55), math.radians(20 * (i or -1)), 0)
             light.location = ((3.5, -4.0, 2.6) if i == 0 else (-3.0, 3.5, 3.2))
             scn.collection.objects.link(light)
+        if hero:
+            # the HERO KEY: a soft dedicated light on the subject so a
+            # night wide never loses the figure in the darkness (the
+            # s3.2 lesson - an establishing night frame graded to a
+            # flat black rectangle and identity scored 0%)
+            key_data = bpy.data.lights.new("HeroKey", "AREA")
+            key_data.size = 1.6
+            key_data.energy = 140.0 if night else 260.0
+            kcol = hero.get("bladeColor", "#cfe0ee") if night else "#f2ede2"
+            key_data.color = hex_to_rgb(kcol)
+            hero_key = bpy.data.objects.new("HeroKey", key_data)
+            hero_key.location = (0.7, -1.6, 1.9)   # front-above the figure (it faces -Y)
+            hero_key.rotation_euler = (math.radians(-38), 0, 0)
+            scn.collection.objects.link(hero_key)
 
         # ── render settings ──
         windows = lightning_windows(job_id, lightning, duration_sec)
