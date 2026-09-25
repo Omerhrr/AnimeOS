@@ -25,6 +25,7 @@ import { RenderView } from "@/components/views/render-view";
 import { ContinuityView } from "@/components/views/continuity-view";
 import { TerminologyView } from "@/components/views/terminology-view";
 import { HistoryView } from "@/components/views/history-view";
+import { UserMenu } from "@/components/studio/user-menu";
 
 const CinematicPreview = dynamic(
   () => import("@/components/preview/cinematic-preview").then((m) => m.CinematicPreview),
@@ -133,6 +134,7 @@ function Shell() {
           <Button size="icon" variant="outline" className="sm:hidden h-8 w-8 border-white/15 bg-white/5" onClick={() => setView("dsh")} aria-label="Direct with DSH">
             <MessageSquareDot className="h-3.5 w-3.5" />
           </Button>
+          <UserMenu />
         </div>
       </header>
 

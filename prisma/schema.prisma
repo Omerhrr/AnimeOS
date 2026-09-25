@@ -738,3 +738,25 @@ model PanelEmbedding {
   shot       Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
+
+// ─────────────────────────────────────────────────────────────
+// MULTI-USER STUDIO (auth + roles)
+// ─────────────────────────────────────────────────────────────
+
+// A studio member. The workspace is shared (every signed-in member
+// sees the same productions - a small team studio, not per-user
+// silos) and the role gates WRITES: VIEWER is read-only, EDITOR can
+// direct DSH and edit everything, OWNER additionally manages the
+// roster itself (roles, membership). The FIRST account ever
+// registered becomes OWNER automatically; everyone after registers
+// as VIEWER and waits for an OWNER's promotion.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String // bcrypt hash (never leaves the server)
+  role         String   @default("VIEWER") // OWNER | EDITOR | VIEWER
+  lastSeenAt   DateTime? // bumped on each successful API auth (roster liveness)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
