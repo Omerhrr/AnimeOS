@@ -99,3 +99,8 @@ public/renders/cuts/*
 !public/renders/cuts/.gitkeep
 # Render identity posters (ffmpeg frames extracted from clips, regenerable)
 public/renders/posters/
+
+# Blender native runtime + asset library (regenerable, large)
+.blender-runtime/
+assets/blender/
+public/assets-blender/

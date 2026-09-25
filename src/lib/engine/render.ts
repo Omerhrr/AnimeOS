@@ -21,6 +21,7 @@ import {
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
 import { detectCast } from "@/lib/ai/art";
+import { assetsForRender } from "@/lib/blender/assets";
 import {
   img2vidHost, img2vidProvider, submitImg2VidJob, pollImg2VidJob,
   submitImg2VidZaiJob, pollImg2VidZaiJob,
@@ -193,6 +194,16 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         })
       : null;
 
+    // ASSET LIBRARY: READY .blend assets for this exact cast and
+    // environment ride every payload - the worker loads the DESIGNED
+    // asset instead of rebuilding procedurally (missing names are
+    // honestly absent and the worker falls back to the DNA builders)
+    const assetRefs = await assetsForRender(
+      projectId,
+      cast.map((c) => c.name),
+      shot.scene.environment?.name ?? null,
+    );
+
     const payload = {
       jobId: job.id,
       shot: {
@@ -218,6 +229,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         rimLightIntensity: shot.scene.rimLightIntensity,
         ...(env ? { environment: env } : {}),
       },
+      ...((assetRefs.cast.length > 0 || assetRefs.environment) ? { assets: assetRefs } : {}),
       project: {
         title: project?.title ?? "AnimeOS",
         visualStyle: project?.visualStyle ?? "DONGHUA",

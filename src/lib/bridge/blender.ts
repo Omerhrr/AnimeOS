@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import fs from "fs";
 import path from "path";
+import { ensureResident, residentHost, provisionBlender } from "@/lib/blender/runtime";
 
 // ─────────────────────────────────────────────────────────────
 // LIVE BLENDER BRIDGE (§31 - replaceable engine driver)
@@ -19,15 +20,23 @@ import path from "path";
 //      Start one with:
 //        blender -b -P bridges/blender/animeos_bridge.py -- --port 8100
 //
-//   2. LOCAL WORKERS - when a `blender` binary exists on this
-//      machine, each job spawns its own headless worker process
+//   2. RESIDENT RUNTIME - the studio's own headless bridge server
+//      (src/lib/blender/runtime.ts auto-starts and owns it). Same
+//      HTTP protocol as the env host, warm (no per-job startup).
+//      When the app boots with a Blender binary present, the first
+//      status probe brings the resident up; when no binary exists,
+//      provisioning self-heals in the background.
+//
+//   3. LOCAL WORKERS - when a `blender` binary exists on this
+//      machine but the resident is down, each job spawns its own
+//      headless worker process
 //        blender -b -P animeos_bridge.py -- --worker --job <file>
 //      which renders the clip and streams per-frame progress into a
 //      small JSON state file the render pipeline polls. One local
 //      worker at a time (a 4GB-class box renders one 3D clip at a
 //      time); extra jobs fall through to the MOTION engine.
 //
-// If neither exists the render pipeline uses the built-in MOTION
+// If none of these exist the render pipeline uses the built-in MOTION
 // engine (ffmpeg camera moves over key art) or, failing that, the
 // wall-clock simulator - nothing breaks.
 // ─────────────────────────────────────────────────────────────
@@ -37,7 +46,7 @@ const BLENDER_BIN_ENV = process.env.ANIMEOS_BLENDER_BIN ?? "";
 const PROBE_TIMEOUT_MS = 1200;
 const WORKER_TIMEOUT_MS = 15 * 60_000;
 
-export type BridgeSource = "env" | "local" | null;
+export type BridgeSource = "env" | "resident" | "local" | null;
 
 export interface BridgeStatus {
   mode: "LIVE_BLENDER" | "MOTION" | "SIMULATOR";
@@ -54,6 +63,7 @@ let localBinCache: string | null | undefined; // undefined = not probed yet
 let localVersionCache: string | null = null;
 let lastProbe: { at: number; live: boolean } = { at: 0, live: false };
 let localWorkers = 0; // running local worker count (serialize 3D renders)
+let provisionKicked = false; // self-heal provisioning fired once per lifetime
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 4000): Promise<Response> {
   const controller = new AbortController();
@@ -151,8 +161,33 @@ export async function bridgeStatus(force = false): Promise<BridgeStatus> {
     }
   }
 
-  // 2. local headless workers (per-job subprocess, one at a time)
+  // 2. resident runtime (the studio's own server, auto-started)
+  if (!HOST_ENV) {
+    // warm the resident in the background (first call after boot) and
+    // self-heal a missing binary by provisioning it - both fire-and-forget
+    void ensureResident().catch(() => {});
+    const rHost = residentHost();
+    if (rHost) {
+      const info = await probeHost(rHost);
+      if (info) {
+        lastProbe = { at: Date.now(), live: true };
+        return {
+          mode: "LIVE_BLENDER", source: "resident", host: rHost, reachable: true,
+          blenderVersion: info.version, scene: info.scene || null, busy: info.busy,
+          detail: `Resident Blender ${info.version} at ${rHost} - the studio's own runtime, warm and health-checked (auto-restart on failure)`,
+        };
+      }
+    }
+  }
+
+  // 3. local headless workers (per-job subprocess, one at a time)
   const bin = localBlenderBin();
+  if (!bin && !provisionKicked) {
+    // no binary anywhere: kick self-healing provisioning once per
+    // server lifetime - the studio installs its own Blender
+    provisionKicked = true;
+    void provisionBlender().catch(() => {});
+  }
   if (bin) {
     const version = await blenderVersion(bin);
     lastProbe = { at: Date.now(), live: true };
@@ -186,6 +221,7 @@ interface CharacterDesignDnaWire {
   weaponType: string;
   bladeColor: string;
   build: string;
+  beard?: boolean;
 }
 interface EnvironmentDesignDnaWire {
   name: string;
@@ -212,30 +248,38 @@ export interface BridgeJobPayload {
     cast?: CharacterDesignDnaWire[];
   };
   scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number; environment?: EnvironmentDesignDnaWire };
+  // ASSET LIBRARY (v4.1): paths to accepted .blend assets for this
+  // exact cast and environment. When present and readable the worker
+  // loads the DESIGNED asset instead of rebuilding procedurally;
+  // missing files fall back to the DNA builders honestly.
+  assets?: {
+    cast: Array<{ name: string; path: string }>;
+    environment: { name: string; path: string } | null;
+  };
   project: { title: string; visualStyle: string; resolution: string; fps: number };
   mode: "PREVIEW" | "FINAL";
 }
 
 export interface BridgeSubmitResult {
   submitted: boolean;
-  path: "env" | "local" | null;
+  path: "env" | "resident" | "local" | null;
   error?: string;
 }
 
-/** Submit a render job to the env-host bridge over HTTP. */
-async function submitEnvJob(payload: BridgeJobPayload): Promise<BridgeSubmitResult> {
+/** Submit a render job to a bridge server over HTTP (env host or resident). */
+async function submitHttpJob(payload: BridgeJobPayload, source: "env" | "resident"): Promise<BridgeSubmitResult> {
   const status = await bridgeStatus(true);
-  if (!status.reachable || status.source !== "env" || !status.host) return { submitted: false, path: null, error: status.detail };
+  if (!status.reachable || status.source !== source || !status.host) return { submitted: false, path: null, error: status.detail };
   try {
     const res = await fetchWithTimeout(
       `http://${status.host}/render`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
       5000
     );
-    if (!res.ok) return { submitted: false, path: "env", error: `Blender /render responded ${res.status}` };
-    return { submitted: true, path: "env" };
+    if (!res.ok) return { submitted: false, path: source, error: `Blender /render responded ${res.status}` };
+    return { submitted: true, path: source };
   } catch (err) {
-    return { submitted: false, path: "env", error: err instanceof Error ? err.message : "Blender submit failed" };
+    return { submitted: false, path: source, error: err instanceof Error ? err.message : "Blender submit failed" };
   }
 }
 
@@ -306,15 +350,17 @@ export function localWorkerBusy(): boolean {
   return localWorkers > 0;
 }
 
-/** Submit wherever a real Blender can take the job: env host first, then a local worker. */
+/** Submit wherever a real Blender can take the job: env host, then the resident, then a local worker. */
 export async function submitRenderJob(payload: BridgeJobPayload): Promise<BridgeSubmitResult> {
-  const envResult = await submitEnvJob(payload);
+  const envResult = await submitHttpJob(payload, "env");
   if (envResult.submitted) return envResult;
   if (!HOST_ENV || envResult.error) {
-    // no env host configured, or it refused - try a local worker
+    // no env host configured, or it refused - try the resident, then a local worker
+    const resident = await submitHttpJob(payload, "resident");
+    if (resident.submitted) return resident;
     const local = submitLocalJob(payload);
     if (local.submitted) return local;
-    return { submitted: false, path: null, error: envResult.error ?? local.error };
+    return { submitted: false, path: null, error: envResult.error ?? resident.error ?? local.error };
   }
   return envResult;
 }

@@ -916,6 +916,15 @@ def build_designed_figure(bpy, scn, dna, mats):
     # nose hint
     sphere("NoseMesh", head, (0.0, -0.112, 0.095), 0.012, skin_mat, scale=(0.7, 0.7, 0.9))
 
+    # elder beard (v4.1): when the design text flags one, a shaded
+    # beard hangs from chin and jaw, moving with the head
+    if dna.get("beard"):
+        beard_mat = principled_mat(bpy, "BeardMat", shade_hex(str(dna.get("hairColor") or "#16161d"), 2.6), 0.55)
+        sphere("BeardChin", head, (0.0, -0.095, 0.005), 0.032, beard_mat, scale=(1.05, 0.75, 2.1))
+        sphere("BeardJawL", head, (0.052, -0.07, 0.03), 0.022, beard_mat, scale=(0.8, 0.7, 1.7))
+        sphere("BeardJawR", head, (-0.052, -0.07, 0.03), 0.022, beard_mat, scale=(0.8, 0.7, 1.7))
+        sphere("BeardLip", head, (0.0, -0.104, 0.075), 0.018, beard_mat, scale=(1.1, 0.7, 0.9))
+
     # ── hair: cap + fringe + back mass + style piece (the cap hugs
     #    the skull - a bigger sphere swallows the face) ──
     style = str(dna.get("hairStyle") or "short")
@@ -1248,6 +1257,90 @@ def build_designed_set(bpy, scn, env, mats, job_id):
     return report
 
 
+# ── v4.1 ASSET LIBRARY: load DESIGNED .blend assets built at design
+#    time (bridges/blender/asset_builder.py + the DSH designer loop)
+#    instead of rebuilding procedurally per job. Missing files fall
+#    back to the v4.0 DNA builders honestly.
+
+def load_blend_objects(bpy, scn, path):
+    """Append every object of a library .blend into the current scene.
+    Returns the list of newly linked objects (name collisions get
+    Blender's .NNN suffix, resolved later by base name)."""
+    with bpy.data.libraries.load(path, link=False) as (data_from, data_to):
+        data_to.objects = [n for n in data_from.objects]
+    new = []
+    for ob in bpy.data.objects:
+        if ob.users == 0:
+            try:
+                scn.collection.objects.link(ob)
+                new.append(ob)
+            except Exception:  # noqa: BLE001
+                pass
+    return new
+
+
+def base_name(ob_name):
+    """Strip Blender's numeric collision suffix: 'Root.001' -> 'Root'."""
+    dot = ob_name.rfind(".")
+    if dot > 0 and ob_name[dot + 1:].isdigit():
+        return ob_name[:dot]
+    return ob_name
+
+
+def resolve_loaded_figure(new_objects):
+    """Rebuild the figure dict from an appended character asset: the
+    SAME rig contract build_designed_figure returns, resolved by base
+    object name, so apply_pose / lip-sync / camera math work on the
+    loaded asset unchanged."""
+    by_base = {}
+    for ob in new_objects:
+        by_base.setdefault(base_name(ob.name), ob)
+
+    def need(key, name):
+        ob = by_base.get(name)
+        if ob is None:
+            return None
+        return ob
+
+    figure = {
+        "root": need("root", "Root"), "spine": need("spine", "Spine"),
+        "head": need("head", "Head"),
+        "rShoulder": need("rShoulder", "RShoulder"), "rElbow": need("rElbow", "RElbow"),
+        "lShoulder": need("lShoulder", "LShoulder"), "lElbow": need("lElbow", "LElbow"),
+        "rHip": need("rHip", "RHip"), "rKnee": need("rKnee", "RKnee"),
+        "lHip": need("lHip", "LHip"), "lKnee": need("lKnee", "LKnee"),
+        "eyeL": need("eyeL", "EyeL"), "eyeR": need("eyeR", "EyeR"),
+        "browL": need("browL", "BrowL"), "browR": need("browR", "BrowR"),
+        "mouth": need("mouth", "Mouth"),
+        "rThumb": need("rThumb", "RThumb"), "lThumb": need("lThumb", "LThumb"),
+        "blade": need("blade", "HandBlade"),
+        "headMesh": need("headMesh", "HeadMesh"),
+    }
+    fingers = {"r": [], "l": []}
+    for ob in new_objects:
+        base = base_name(ob.name)
+        if base.endswith("Index"):
+            side = "r" if base.startswith("R") else "l"
+            fingers[side].append((ob, True))
+        elif "Finger" in base and base.endswith("Mesh") is False and base[-1].isdigit():
+            side = "r" if base.startswith("R") else "l"
+            fingers[side].append((ob, False))
+    figure["rFingers"] = fingers["r"]
+    figure["lFingers"] = fingers["l"]
+    missing = [k for k, v in figure.items() if v is None and k not in ("headMesh", "blade")]
+    if missing:
+        return None, missing
+    return figure, []
+
+
+def load_env_asset(bpy, scn, path):
+    """Append an environment asset: geometry only arrives (the builder
+    never saves lights/cameras), the worker's lighting pass still owns
+    the sky. Returns the object count for the honest state report."""
+    new = load_blend_objects(bpy, scn, path)
+    return len(new)
+
+
 def shade_hex(h, k):
     """Darken/lighten a hex color by factor k (used for silhouettes)."""
     r, g, b = hex_to_rgb(h)
@@ -1312,8 +1405,33 @@ def worker_run(job_file):
         cast = (shot.get("cast") or []) if isinstance(shot.get("cast"), list) else []
         env = scene_p.get("environment") if isinstance(scene_p.get("environment"), dict) else None
         hero = cast[0] if cast else None
+        # v4.1: library assets for this exact cast + environment (design
+        # once, render many). Missing/unreadable files fall back to the
+        # procedural builders - every decision lands in the state.
+        assets_p = payload.get("assets") if isinstance(payload.get("assets"), dict) else {}
+        asset_cast = assets_p.get("cast") if isinstance(assets_p.get("cast"), list) else []
+        asset_env = assets_p.get("environment") if isinstance(assets_p.get("environment"), dict) else None
+
+        def try_load_cast_asset(entry):
+            if not isinstance(entry, dict):
+                return None
+            p = entry.get("path")
+            if not isinstance(p, str) or not p or not os.path.isfile(p):
+                return None
+            try:
+                loaded = load_blend_objects(bpy, scn, p)
+                fig, missing = resolve_loaded_figure(loaded)
+                if fig is None:
+                    state.setdefault("assetNotes", []).append(
+                        f"{entry.get('name', 'cast')}: rig contract incomplete (missing {', '.join(missing[:6])})")
+                    return None
+                return fig
+            except Exception as exc:  # noqa: BLE001
+                state.setdefault("assetNotes", []).append(f"{entry.get('name', 'cast')}: load failed: {exc}")
+                return None
+
         state["design"] = {
-            "version": "v4.0",
+            "version": "v4.1",
             "figure": hero.get("name") if hero else None,
             "weapon": hero.get("weaponType") if hero else None,
             "set": env.get("name") if env else None,
@@ -1321,32 +1439,45 @@ def worker_run(job_file):
             "cast": [c.get("name") for c in cast],
         }
 
-        # ── designed set when the environment DNA arrived, legacy
-        #    plate otherwise ──
-        if env:
-            build_designed_set(bpy, scn, env, {}, job_id)
-        else:
-            ground_mesh = bpy.data.meshes.new("Ground")
-            ground_mesh.from_pydata([(-14, -14, 0), (14, -14, 0), (14, 14, 0), (-14, 14, 0)], [], [(0, 1, 2, 3)])
-            ground_mesh.update()
-            ground = bpy.data.objects.new("Ground", ground_mesh)
-            scn.collection.objects.link(ground)
-            mat = bpy.data.materials.new("SetMat")
-            mat.use_nodes = True
-            bsdf = mat.node_tree.nodes.get("Principled BSDF")
-            if bsdf:
-                bsdf.inputs["Base Color"].default_value = (0.035, 0.05, 0.045, 1.0)
-                bsdf.inputs["Roughness"].default_value = 0.95
-            ground.data.materials.append(mat)
+        # ── the set: library environment asset first, designed DNA
+        #    build second, legacy plate last ──
+        env_from_asset = False
+        if asset_env:
+            p = asset_env.get("path")
+            if isinstance(p, str) and p and os.path.isfile(p):
+                try:
+                    env_loaded = load_env_asset(bpy, scn, p)
+                    env_from_asset = env_loaded > 0
+                    state["setSource"] = f"asset:{asset_env.get('name', 'environment')} ({env_loaded} objects)"
+                except Exception as exc:  # noqa: BLE001
+                    state["setSource"] = f"asset load failed: {exc}"
+            else:
+                state["setSource"] = "asset file missing - procedural set"
+        if not env_from_asset:
+            if env:
+                build_designed_set(bpy, scn, env, {}, job_id)
+            else:
+                ground_mesh = bpy.data.meshes.new("Ground")
+                ground_mesh.from_pydata([(-14, -14, 0), (14, -14, 0), (14, 14, 0), (-14, 14, 0)], [], [(0, 1, 2, 3)])
+                ground_mesh.update()
+                ground = bpy.data.objects.new("Ground", ground_mesh)
+                scn.collection.objects.link(ground)
+                mat = bpy.data.materials.new("SetMat")
+                mat.use_nodes = True
+                bsdf = mat.node_tree.nodes.get("Principled BSDF")
+                if bsdf:
+                    bsdf.inputs["Base Color"].default_value = (0.035, 0.05, 0.045, 1.0)
+                    bsdf.inputs["Roughness"].default_value = 0.95
+                ground.data.materials.append(mat)
 
-            rng = mulberry32(fnv1a(job_id) or 424242)
-            for i in range(9):
-                size = 0.25 + rng() * 0.8
-                bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=size,
-                                                      location=((rng() - 0.5) * 16, (rng() - 0.5) * 16, size * 0.35))
-                rock = bpy.context.active_object
-                rock.scale = (1.0, 0.8 + rng() * 0.4, 0.6 + rng() * 0.5)
-                rock.data.materials.append(mat)
+                rng = mulberry32(fnv1a(job_id) or 424242)
+                for i in range(9):
+                    size = 0.25 + rng() * 0.8
+                    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=size,
+                                                          location=((rng() - 0.5) * 16, (rng() - 0.5) * 16, size * 0.35))
+                    rock = bpy.context.active_object
+                    rock.scale = (1.0, 0.8 + rng() * 0.4, 0.6 + rng() * 0.5)
+                    rock.data.materials.append(mat)
 
         # ── subject: the DESIGNED hero when cast DNA arrived (posed or
         #    standing), the legacy stand-in on pose shots without DNA,
@@ -1370,9 +1501,17 @@ def worker_run(job_file):
                 "blade": emission_mat(bpy, "BladeMat", energy_hex, 2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0),
                 "boots": principled_mat(bpy, "BootsMat", "#241a12", 0.8),
             }
-            figure = build_designed_figure(bpy, scn, hero, hero_mats)
+            # v4.1: the library asset IS the designed character when one
+            # exists - built once at design time, loaded here with the
+            # same rig contract; materials come with it
+            figure = try_load_cast_asset(asset_cast[0] if asset_cast else None)
+            if figure is not None:
+                state["figureSource"] = f"asset:{hero.get('name', 'cast')}"
+            else:
+                figure = build_designed_figure(bpy, scn, hero, hero_mats)
+                state["figureSource"] = "procedural:v4.0-designed"
             state["rig"] = {
-                "version": "v4.0-designed",
+                "version": "v4.1" if state.get("figureSource", "").startswith("asset") else "v4.0-designed",
                 "face": True, "hands": True,
                 "eyes": 2, "brows": 2, "fingers": 10,
                 "faceChannels": FACE_CHANNELS,
@@ -1383,15 +1522,20 @@ def worker_run(job_file):
             # facing the hero (static stance - blocking depth)
             if len(cast) > 1:
                 other = cast[1]
-                other_mats = {
-                    "robe": principled_mat(bpy, "RobeMatB", other.get("robeColor", "#4a5560"), 0.82),
-                    "accent": principled_mat(bpy, "AccentMatB", other.get("robeAccent", "#a8842c"), 0.7),
-                    "skin": principled_mat(bpy, "SkinMatB", other.get("skinTone", "#d9b48f"), 0.5),
-                    "hair": principled_mat(bpy, "HairMatB", other.get("hairColor", "#16161d"), 0.35),
-                    "blade": hero_mats["blade"],
-                    "boots": principled_mat(bpy, "BootsMatB", "#241a12", 0.8),
-                }
-                other_rig = build_designed_figure(bpy, scn, other, other_mats)
+                other_rig = try_load_cast_asset(asset_cast[1] if len(asset_cast) > 1 else None)
+                if other_rig is None:
+                    other_mats = {
+                        "robe": principled_mat(bpy, "RobeMatB", other.get("robeColor", "#4a5560"), 0.82),
+                        "accent": principled_mat(bpy, "AccentMatB", other.get("robeAccent", "#a8842c"), 0.7),
+                        "skin": principled_mat(bpy, "SkinMatB", other.get("skinTone", "#d9b48f"), 0.5),
+                        "hair": principled_mat(bpy, "HairMatB", other.get("hairColor", "#16161d"), 0.35),
+                        "blade": hero_mats["blade"],
+                        "boots": principled_mat(bpy, "BootsMatB", "#241a12", 0.8),
+                    }
+                    other_rig = build_designed_figure(bpy, scn, other, other_mats)
+                    state["secondFigureSource"] = "procedural:v4.0-designed"
+                else:
+                    state["secondFigureSource"] = f"asset:{other.get('name', 'cast')}"
                 other_rig["root"].location = (0.6, 1.7, 0.0)
                 other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(166))
                 apply_pose(other_rig, "STANCE", "STANCE", 0.0, 0.0)

@@ -19,6 +19,11 @@ import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/com
 import { uploadStagedPackage, findStagedPackage } from "@/lib/comic/upload";
 import { trainCharacterVoice } from "@/lib/ai/voice-clone";
 import { createRenderJob } from "@/lib/engine/render";
+import {
+  blenderAssetLibrary, buildBlenderAsset, inspectBlenderAsset, refreshAssetPreview,
+  type BlenderAssetKind,
+} from "@/lib/blender/assets";
+import { runBlenderScript } from "@/lib/blender/runtime";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -40,10 +45,15 @@ import type { ArcPlaybackChip, AuditionPreview, EnsembleAuditionPreview } from "
 // ─────────────────────────────────────────────────────────────
 // DSH PRODUCTION TOOL API (§6/§7)
 //
-// DSH never writes raw engine scripts. It decides WHAT needs to
-// happen and calls domain tools; this executor translates those
-// decisions into production state changes. The engine bridge
-// (Blender driver) sits below this layer.
+// DSH decides WHAT needs to happen and calls domain tools; this
+// executor translates those decisions into production state
+// changes. The engine bridge (Blender driver) sits below this
+// layer - and since the Blender native-runtime iteration the
+// designer tools (blender_exec, blender_asset_build) also reach
+// INTO Blender directly: the studio's own runtime runs real bpy
+// design passes at design time, so assets are DESIGNED once and
+// every render consumes the library instead of rebuilding
+// procedural stand-ins.
 // ─────────────────────────────────────────────────────────────
 
 export interface ToolDef {
@@ -332,6 +342,43 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       characterName: "string - a cast character with rendered voice takes",
     },
+  },
+  {
+    name: "blender_exec",
+    description: "THE DESIGNER SEAM: run ONE bpy python script inside the studio's own headless Blender runtime (a short-lived sandboxed worker with a timeout and captured output). This is raw Blender capability, not an integration - the script can build, modify, measure or render anything in the scene graph. Use it for asset refinements the deterministic builder cannot express: a more articulated sleeve, an extra banner row, a measured silhouette tweak. The script receives --out <dir> after -- (sys.argv) for any files it writes; print progress and a final one-line result. Scripts are capped in size and time; a missing runtime refuses honestly until the runtime is provisioned.",
+    args: {
+      script: "string - a complete python script using bpy (64KB cap)",
+      purpose: "string - what this pass designs or refines (lands in the event log)",
+    },
+  },
+  {
+    name: "blender_viewport_shot",
+    description: "Re-render an asset's PREVIEW (a lit 512px Cycles turntable frame) from its accepted .blend in the library - no rebuild. Use after a blender_exec refinement pass touched the asset file in place, or when the library preview is stale.",
+    args: {
+      refName: "string - the asset's character/environment name",
+      kind: "CHARACTER | ENVIRONMENT (default CHARACTER)",
+    },
+  },
+  {
+    name: "blender_asset_build",
+    description: "DESIGN a library asset for a character or environment: compiles the production's design text (model-sheet anchor, appearance, active wardrobe/weapon, environment brief) into DNA and runs the deterministic v4.1 builder in the studio's Blender runtime - one versioned .blend + a lit preview PNG lands in the library (design once, render many). From then on every render job of this exact cast/environment loads the ASSET instead of rebuilding procedural stand-ins. Rebuild freely to iterate: each build bumps the version. An optional guidance line is stored with the asset's audit.",
+    args: {
+      kind: "CHARACTER | ENVIRONMENT",
+      refName: "string - the character's or environment's exact name",
+      guidance: "string (optional - a design note stored on the asset's audit)",
+    },
+  },
+  {
+    name: "blender_asset_inspect",
+    description: "Vision-inspect a CHARACTER asset's library preview against its canonical model sheet (the same referee the panels and renders answer to): a 0..1 similarity plus a note lands on the asset. Environment assets honestly skip (no canonical sheet exists - their identity is judged on the render pass). Use in the design loop: build, inspect, refine, inspect - until the score clears the bar.",
+    args: {
+      refName: "string - the character asset's name",
+    },
+  },
+  {
+    name: "blender_asset_library",
+    description: "Read the whole Blender ASSET LIBRARY: every asset with kind, status, version, identity score and preview path, plus library stats (ready/failed counts, average accepted identity). Call it before designing (what already exists?) and after (what cleared the bar?).",
+    args: {},
   },
   {
     name: "render_shot",
@@ -1913,6 +1960,76 @@ export async function executeTool(projectId: string, name: string, args: Record<
         if (!result.ok) return { status: "ERROR", result: `Voice clone training failed for ${name}: ${result.error}` };
         const r = result.result;
         return { status: "OK", result: `Voice clone trained for ${r.characterName}: voice ${r.voiceId} from ${r.takes} reference take(s) (${(r.totalMs / 1000).toFixed(1)}s of performed audio). Their lines now perform with their own voice wherever the clone provider can render it - a state voice variant still deliberately overrides, and the catalog voice stays the honest fallback when a clone render fails. Their existing takes are NOT re-rendered automatically: run diff_episode_direction or diff_all_episodes and pass reRender:true to move takes onto the new voice.` };
+      }
+
+      case "blender_exec": {
+        const script = String(args.script ?? "").trim();
+        const purpose = String(args.purpose ?? "blender designer pass").trim();
+        if (!script) return { status: "ERROR", result: "script is required - a complete python script using bpy." };
+        if (!/\bbpy\b/.test(script)) {
+          return { status: "ERROR", result: "this seam runs Blender python: the script must import or use bpy." };
+        }
+        const res = await runBlenderScript(script, purpose.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 40) || "designer");
+        const note = res.ok
+          ? `bpy pass done (${purpose}): artifacts ${res.artifacts.length ? res.artifacts.map((a) => a.split("/").pop()).join(", ") : "none on disk"}`
+          : `bpy pass failed: ${res.log.slice(-400)}`;
+        return { status: res.ok ? "OK" : "ERROR", result: `${note}\n\nOutput tail:\n${res.log.slice(-1200)}` };
+      }
+
+      case "blender_viewport_shot": {
+        const refName = String(args.refName ?? "").trim();
+        const kind = (String(args.kind ?? "CHARACTER").toUpperCase() === "ENVIRONMENT" ? "ENVIRONMENT" : "CHARACTER") as BlenderAssetKind;
+        if (!refName) return { status: "ERROR", result: "refName is required." };
+        const asset = await db.blenderAsset.findUnique({
+          where: { projectId_kind_refName: { projectId, kind, refName } },
+        });
+        if (!asset) return { status: "ERROR", result: `No ${kind.toLowerCase()} asset for "${refName}" - design one first with blender_asset_build.` };
+        const res = await refreshAssetPreview(asset.id);
+        if (!res.ok) return { status: "ERROR", result: `Preview refresh failed: ${res.log.slice(-300)}` };
+        return { status: "OK", result: `Preview re-rendered for ${kind.toLowerCase()} ${refName} (v${asset.version}) from its accepted .blend - ${res.previewPath ?? "no preview path"}. The preview is a lit 512px Cycles frame of the asset alone; the render worker still owns shot lighting.` };
+      }
+
+      case "blender_asset_build": {
+        const kindRaw = String(args.kind ?? "").toUpperCase();
+        if (kindRaw !== "CHARACTER" && kindRaw !== "ENVIRONMENT") {
+          return { status: "ERROR", result: "kind must be CHARACTER or ENVIRONMENT." };
+        }
+        const refName = String(args.refName ?? "").trim();
+        if (!refName) return { status: "ERROR", result: "refName is required - the character's or environment's exact name." };
+        const guidance = String(args.guidance ?? "").trim() || null;
+        const res = await buildBlenderAsset(projectId, kindRaw, refName, guidance);
+        if (!res.ok) return { status: "ERROR", result: `Asset build failed for ${refName}: ${res.log.slice(-400)}` };
+        const inspectHint = kindRaw === "CHARACTER"
+          ? " Run blender_asset_inspect on it to see where identity stands against the sheet."
+          : "";
+        return { status: "OK", result: `DESIGNED ${kindRaw.toLowerCase()} asset built and accepted into the library: ${refName} v${res.version} - ${res.objects} objects, ${res.tris.toLocaleString()} tris, ${(res.buildMs / 1000).toFixed(1)}s in the Blender runtime${guidance ? ` (guidance recorded: "${guidance}")` : ""}. Every render job of this exact ${kindRaw === "CHARACTER" ? "cast" : "environment"} now loads this asset instead of rebuilding procedural stand-ins.${inspectHint}` };
+      }
+
+      case "blender_asset_inspect": {
+        const refName = String(args.refName ?? "").trim();
+        if (!refName) return { status: "ERROR", result: "refName is required." };
+        const asset = await db.blenderAsset.findFirst({
+          where: { projectId, refName, kind: { in: ["CHARACTER", "ENVIRONMENT"] } },
+        });
+        if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - design one first with blender_asset_build.` };
+        const res = await inspectBlenderAsset(asset.id);
+        if (!res.ok) return { status: "ERROR", result: `Asset inspection failed: ${res.error}` };
+        if (res.skipped) return { status: "OK", result: `${res.note} (environment assets are judged on the render pass, not the preview).` };
+        const pct = res.score !== null ? `${Math.round(res.score * 100)}%` : "n/a";
+        return { status: "OK", result: `Asset identity for ${refName}: ${pct} vs the canonical sheet${res.note ? ` - ${res.note}` : ""}. The stylized-procedural gap is expected to keep this honest and low; iterate with blender_asset_build + blender_exec and re-inspect.` };
+      }
+
+      case "blender_asset_library": {
+        const lib = await blenderAssetLibrary(projectId);
+        if (lib.total === 0) {
+          return { status: "OK", result: "The Blender asset library is empty - no DESIGNED .blend assets yet. Design the cast and environments with blender_asset_build (design once, render many: ready assets are loaded by every render job of that cast/environment)." };
+        }
+        const avg = lib.avgIdentity !== null ? `${Math.round(lib.avgIdentity * 100)}%` : "not yet scored";
+        const rows = lib.assets.map((a) => {
+          const score = a.identityScore !== null ? `${Math.round(a.identityScore * 100)}%` : "-";
+          return `${a.kind === "CHARACTER" ? "char" : "env "} ${a.refName}: ${a.status} v${a.version}, identity ${score}, ${a.previewPath ?? "no preview"}`;
+        });
+        return { status: "OK", result: `Blender asset library: ${lib.total} assets (${lib.ready} ready, ${lib.failed} failed, ${lib.building} building), average accepted identity ${avg}.\n${rows.join("\n")}\nReady character/environment assets ride every matching render payload - the worker loads them instead of procedural stand-ins.` };
       }
 
       case "render_shot": {

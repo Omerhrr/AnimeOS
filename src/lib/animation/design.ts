@@ -29,6 +29,8 @@ export interface CharacterDesignDna {
   weaponType: WeaponType;
   bladeColor: string; // hex emissive (weapon energy / spirit glow)
   build: Build;
+  /** Elders flagged by the design text ("long white beard") grow one. */
+  beard: boolean;
   /** The design text the DNA was compiled from (audit trail). */
   source: string;
 }
@@ -70,7 +72,10 @@ const HAIR_COLOR_WORDS: Array<[RegExp, string]> = [
 const ROBE_COLORS: Array<[RegExp, string]> = [
   [/jade[- ]?teal|jade[- ]?green|jade robes?/, "#2f6d63"],
   [/storm[- ]?grey|storm[- ]?gray|\bgrey\b robes?|\bgray\b robes?/, "#4a5560"],
-  [/\bwhite\b robes?|moon[- ]?white/, "#d9dce1"],
+  // frost/snow/moon-white + "white <word> robes" so "frost-white dueling
+  // robes" and "moon-white robes" win before the generic \bblack\b
+  // catch-all eats them via a nearby "ink-black braid"
+  [/frost[- ]?white|snow[- ]?white|moon[- ]?white|\bwhite\b robes?|\bwhite\b [a-z-]+ robes?/, "#d9dce1"],
   [/\bblack\b robes?|ink[- ]?dark|shadow[- ]?dark|\bblack\b/, "#1a1b21"],
   [/\bazure\b/, "#2e6f9e"],
   [/\bcrimson\b|\bscarlet\b|\bred\b/, "#8e2f3c"],
@@ -198,6 +203,7 @@ export function characterDesignDna(input: CharacterDesignInput): CharacterDesign
     weaponType: weaponTypeOf(text),
     bladeColor: firstMatch(text, BLADE_COLORS, "#5eead4"),
     build: buildOf(text, input.role),
+    beard: /\bbeard\b|\bwhiskers\b/.test(text),
     source: text.slice(0, 400),
   };
 }

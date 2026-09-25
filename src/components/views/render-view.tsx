@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable,
+  MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable, Boxes,
   Layers, ListFilter, Play, Clapperboard, Timer, Send,
 } from "lucide-react";
 import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
@@ -16,10 +16,13 @@ import { cn } from "@/lib/utils";
 
 function EngineDriverCard() {
   const bridgeQ = useQuery({ queryKey: ["bridge"], queryFn: api.bridgeStatus, refetchInterval: 5000 });
+  const runtimeQ = useQuery({ queryKey: ["blender-runtime"], queryFn: api.blenderRuntime, refetchInterval: 8000 });
   const s = bridgeQ.data;
+  const rt = runtimeQ.data;
   const live = s?.mode === "LIVE_BLENDER" && s.reachable;
   const motion = s?.mode === "MOTION";
   const img2vid = (s as BridgeStatusInfo | undefined)?.img2vid;
+  const resident = rt?.resident;
 
   return (
     <div className={cn(
@@ -50,9 +53,14 @@ function EngineDriverCard() {
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">
           {live
-            ? `Blender ${s?.blenderVersion ?? ""} attached${s?.source === "local" ? " (headless worker pool)" : ` at ${s?.host ?? ""}`}${s?.scene && s.source !== "local" ? ` · scene “${s.scene}”` : ""} - animated sequence renders flow back into the queue.`
+            ? `Blender ${s?.blenderVersion ?? ""} attached${s?.source === "resident" ? " (resident runtime)" : s?.source === "local" ? " (headless worker pool)" : ` at ${s?.host ?? ""}`}${s?.scene && s.source !== "local" && s.source !== "resident" ? ` · scene “${s.scene}”` : ""} - animated sequence renders flow back into the queue.`
             : s?.detail ?? "Probing bridge…"}
         </p>
+        {resident && (
+          <p className="text-[10px] text-muted-foreground/80 mt-1 font-mono">
+            RUNTIME: blender {rt?.version ?? "-"} · binary {rt?.binary ? "present" : "missing"}{rt?.provisioning ? " · PROVISIONING" : ""} · resident {resident.healthy ? "healthy" : resident.running ? "running" : "down"} on :{resident.port} · restarts {resident.restarts}{resident.lastError ? ` · ${resident.lastError}` : ""}
+          </p>
+        )}
         {!live && (
           <p className="text-[10px] text-muted-foreground/80 mt-1">
             Every job renders a sequenced clip driven by the shot&apos;s camera grammar (movement · shot type · lens · lighting · fog · lightning · energy) plus the character&apos;s pose program (start pose → end pose), and muxes with the episode stems at export.
@@ -76,6 +84,79 @@ function EngineDriverCard() {
           Attach one: run <span className="font-mono">blender -b -P bridges/blender/animeos_bridge.py</span>, then set <span className="font-mono">ANIMEOS_BLENDER_HOST=127.0.0.1:8100</span>.
         </p>
       )}
+    </div>
+  );
+}
+
+// Blender ASSET LIBRARY (design once, render many): the DESIGNED
+// characters and environments the studio's own Blender runtime built,
+// with version, preview and the honest identity score vs the sheets.
+function BlenderAssetLibraryCard() {
+  const { projectId } = useStudio();
+  const assetsQ = useQuery({
+    queryKey: ["blender-assets", projectId],
+    queryFn: () => api.blenderAssets(projectId ?? ""),
+    enabled: Boolean(projectId),
+    refetchInterval: 10000,
+  });
+  const lib = assetsQ.data;
+  if (!lib || lib.total === 0) {
+    return (
+      <div className="studio-panel p-4 mb-5">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Boxes className="h-4 w-4 text-fuchsia-300" />
+          Blender asset library
+        </div>
+        <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
+          No DESIGNED assets yet. DSH designs them with blender_asset_build: each character and environment becomes a versioned .blend in the library, and every render job of that cast/environment loads the asset instead of rebuilding procedural stand-ins.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="studio-panel p-4 mb-5">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Boxes className="h-4 w-4 text-fuchsia-300" />
+        Blender asset library
+        <span className="rounded bg-fuchsia-400/10 border border-fuchsia-400/30 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-fuchsia-300">
+          {lib.ready}/{lib.total} READY
+        </span>
+        {lib.avgIdentity !== null && (
+          <span className="rounded bg-white/5 border border-white/12 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-muted-foreground">
+            IDENTITY {Math.round(lib.avgIdentity * 100)}%
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mt-3">
+        {lib.assets.map((a) => (
+          <div key={a.id} className="rounded-lg border border-white/10 bg-white/[0.03] overflow-hidden">
+            <div className="aspect-square bg-black/40 relative">
+              {a.previewPath ? (
+                <img src={a.previewPath} alt={a.refName} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground/60">no preview</div>
+              )}
+              <span className="absolute top-1 left-1 rounded px-1 py-0.5 text-[8px] font-bold tracking-widest bg-black/60 text-white/80">
+                {a.kind === "CHARACTER" ? "CHAR" : "ENV"}
+              </span>
+              {a.identityScore !== null && (
+                <span className="absolute bottom-1 right-1 rounded px-1 py-0.5 text-[8px] font-bold tabular-nums bg-black/60 text-emerald-300">
+                  {Math.round(a.identityScore * 100)}%
+                </span>
+              )}
+            </div>
+            <div className="p-1.5">
+              <div className="text-[11px] font-medium truncate" title={a.refName}>{a.refName}</div>
+              <div className="text-[9px] text-muted-foreground font-mono">
+                v{a.version} · {a.status}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[10px] text-muted-foreground/70 mt-2">
+        READY assets ride every matching render payload - the worker loads the designed .blend instead of rebuilding procedural stand-ins. Identity is vision-scored against the canonical sheets (environments are judged on the render pass).
+      </p>
     </div>
   );
 }
@@ -532,6 +613,8 @@ export function RenderView({ project }: { project: StudioProject }) {
       />
 
       <EngineDriverCard />
+
+      <BlenderAssetLibraryCard />
 
       <BatchRenderCard project={project} />
 

@@ -19,6 +19,11 @@
 //   acoustics - persist the acoustic slot's alignment audit per take
 //   identity  - vision-score every finished render against the sheets
 //             (the shipping pixels, budget-aware)
+//   assets  - DESIGN the library assets: every character + environment
+//             becomes a versioned .blend (the v4.1 builder in the
+//             studio's Blender runtime) + preview, vision-inspected
+//             against the sheets - renders then load assets, not
+//             procedural stand-ins
 //   final   - one FINAL-mode Blender render (the money shot)
 //   finalall - FINAL-mode renders for EVERY shot (budget-aware,
 //             resumable: re-run until the count lands)
@@ -38,6 +43,7 @@ import { runRenderEvaluation } from "@/lib/dsh/evaluator";
 import { buildEpisodeCut } from "@/lib/comic/cut";
 import { auditVoiceTakeAcoustics } from "@/lib/animation/acoustic";
 import { scoreRenderIdentity } from "@/lib/identity";
+import { buildBlenderAsset, inspectBlenderAsset } from "@/lib/blender/assets";
 
 const db = new PrismaClient();
 const TITLE = "Cloudveil Ascent";
@@ -417,6 +423,54 @@ async function phaseAcoustics() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// PHASE: assets - DESIGN the library assets (design once, render
+// many): every character + environment becomes a versioned .blend
+// + preview through the v4.1 builder; character assets get a
+// vision inspection against their canonical sheet. Resumable: an
+// existing READY asset is left alone unless REBUILD=1.
+// ─────────────────────────────────────────────────────────────
+async function phaseAssets() {
+  const p = await project();
+  const rebuild = process.env.REBUILD === "1";
+  const cast = await db.character.findMany({ where: { projectId: p.id }, orderBy: { name: "asc" } });
+  const envs = await db.environment.findMany({ where: { projectId: p.id }, orderBy: { name: "asc" } });
+  if (cast.length === 0 && envs.length === 0) {
+    log("no cast or environments found - run setup first");
+    return;
+  }
+  for (const c of cast) {
+    const existing = await db.blenderAsset.findUnique({
+      where: { projectId_kind_refName: { projectId: p.id, kind: "CHARACTER", refName: c.name } },
+    });
+    if (existing?.status === "READY" && !rebuild) {
+      log(`asset exists: char ${c.name} v${existing.version} - skipping (REBUILD=1 to force)`);
+      continue;
+    }
+    log(`building character asset: ${c.name}...`);
+    const res = await buildBlenderAsset(p.id, "CHARACTER", c.name);
+    if (!res.ok) { log(`BUILD FAILED for ${c.name}: ${res.log.slice(-400)}`); continue; }
+    log(`built: char ${c.name} v${res.version} (${res.objects} objects, ${res.tris.toLocaleString()} tris, ${(res.buildMs / 1000).toFixed(1)}s)`);
+    const insp = await inspectBlenderAsset(res.assetId);
+    if (insp.ok && !insp.skipped) log(`inspected: char ${c.name} identity ${insp.score !== null ? `${Math.round(insp.score * 100)}%` : "n/a"}${insp.note ? ` - ${insp.note}` : ""}`);
+    else if (insp.error) log(`inspect skipped/failed: ${insp.error}`);
+  }
+  for (const e of envs) {
+    const existing = await db.blenderAsset.findUnique({
+      where: { projectId_kind_refName: { projectId: p.id, kind: "ENVIRONMENT", refName: e.name } },
+    });
+    if (existing?.status === "READY" && !rebuild) {
+      log(`asset exists: env ${e.name} v${existing.version} - skipping (REBUILD=1 to force)`);
+      continue;
+    }
+    log(`building environment asset: ${e.name}...`);
+    const res = await buildBlenderAsset(p.id, "ENVIRONMENT", e.name);
+    if (!res.ok) { log(`BUILD FAILED for ${e.name}: ${res.log.slice(-400)}`); continue; }
+    log(`built: env ${e.name} v${res.version} (${res.objects} objects, ${res.tris.toLocaleString()} tris, ${(res.buildMs / 1000).toFixed(1)}s)`);
+  }
+  log("ASSETS COMPLETE");
+}
+
+// ─────────────────────────────────────────────────────────────
 // PHASE: identity - vision-score every finished render against the
 // cast's model sheets (one vision call per shot, budget-aware)
 // ─────────────────────────────────────────────────────────────
@@ -597,7 +651,7 @@ const budget = Number(process.argv[3] ?? 8);
 const phases: Record<string, () => Promise<void>> = {
   setup: phaseSetup, sheets: phaseSheets, panels: phasePanels,
   voices: phaseVoices, renders: () => phaseRenders(budget),
-  acoustics: phaseAcoustics, identity: () => phaseIdentity(Math.min(budget, 9)),
+  acoustics: phaseAcoustics, assets: phaseAssets, identity: () => phaseIdentity(Math.min(budget, 9)),
   final: phaseFinal, finalall: () => phaseFinalAll(budget),
   cut: phaseCut, publish: phasePublish, verify: phaseVerify,
 };

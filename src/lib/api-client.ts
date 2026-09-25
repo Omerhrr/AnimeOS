@@ -310,7 +310,7 @@ export interface ArcPlaybackFeed {
 
 export interface BridgeStatusInfo {
   mode: "LIVE_BLENDER" | "MOTION" | "SIMULATOR";
-  source: "env" | "local" | null;
+  source: "env" | "resident" | "local" | null;
   host: string | null;
   reachable: boolean;
   blenderVersion: string | null;
@@ -319,6 +319,47 @@ export interface BridgeStatusInfo {
   detail: string;
   envHint: string | null;
   img2vid?: { available: boolean; host: string | null; provider?: "host" | "zai" | null };
+}
+
+export interface BlenderRuntimeStatus {
+  binary: string | null;
+  version: string | null;
+  versionTag: string;
+  provisioning: boolean;
+  provisionLog: string | null;
+  resident: {
+    running: boolean;
+    healthy: boolean;
+    port: number;
+    pid: number | null;
+    startedAt: string | null;
+    uptimeMs: number;
+    restarts: number;
+    lastError: string | null;
+  };
+}
+
+export interface BlenderAssetRow {
+  id: string;
+  kind: "CHARACTER" | "ENVIRONMENT";
+  refName: string;
+  status: string;
+  version: number;
+  previewPath: string | null;
+  blendPath: string | null;
+  identityScore: number | null;
+  inspectNote: string | null;
+  inspectedAt: string | null;
+  updatedAt: string;
+}
+
+export interface BlenderAssetLibraryInfo {
+  total: number;
+  ready: number;
+  building: number;
+  failed: number;
+  avgIdentity: number | null;
+  assets: BlenderAssetRow[];
 }
 
 export interface CharacterFull {
@@ -535,6 +576,10 @@ export const api = {
   renderJobs: (projectId: string) => j<RenderJobRow[]>(`/api/render-jobs?projectId=${projectId}`),
   dshMessages: (projectId: string) => j<DshMessageRow[]>(`/api/dsh?projectId=${projectId}`),
   bridgeStatus: () => j<BridgeStatusInfo>("/api/bridge"),
+  blenderRuntime: () => j<BlenderRuntimeStatus>("/api/blender-runtime"),
+  blenderAssets: (projectId: string) => j<BlenderAssetLibraryInfo>(`/api/blender-assets?projectId=${projectId}`),
+  blenderAssetAction: (body: { action: "build" | "inspect" | "preview"; projectId: string; kind?: string; refName?: string }) =>
+    j<Record<string, unknown>>("/api/blender-assets", { method: "POST", body: JSON.stringify(body) }),
 
   // commands
   createProject: (body: Record<string, unknown>) => j<{ id: string }>("/api/projects", { method: "POST", body: JSON.stringify(body) }),

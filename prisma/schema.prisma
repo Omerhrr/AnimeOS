@@ -52,6 +52,39 @@ model Project {
   identityScores   IdentityScore[]
   panelEmbeddings  PanelEmbedding[]
   planTemplates    PlanTemplate[]
+  blenderAssets    BlenderAsset[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// BLENDER ASSET LIBRARY (Blender as a native capability)
+//
+// Design-time assets the studio's own Blender runtime produces and
+// version: DESIGNED characters and environments as real .blend
+// files with a turntable preview, built once by the DSH designer
+// loop and consumed by every render job afterwards (design once,
+// render many). The render worker loads these instead of rebuilding
+// the procedural stand-ins; a missing file falls back honestly.
+// ─────────────────────────────────────────────────────────────
+model BlenderAsset {
+  id            String   @id @default(cuid())
+  projectId     String
+  kind          String   // CHARACTER | ENVIRONMENT
+  refName       String   // the character's or environment's exact name
+  status        String   @default("DRAFT") // DRAFT | BUILDING | READY | FAILED
+  version       Int      @default(0) // bumped on every accepted build
+  blendPath     String?  // assets/blender/... the accepted .blend
+  previewPath   String?  // the turntable preview png (served from /assets-blender/)
+  buildLog      String?  // tail of the last build attempt's output
+  designSource  String?  // the design text the asset was built from (audit)
+  identityScore Float?   // latest vision score of the preview vs the model sheet (0..1)
+  inspectNote   String?  // the vision model's note on the asset preview
+  inspectedAt   DateTime?
+  meta          String?  // JSON {dna, objects, polyCount, buildMs, ...}
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, refName])
 }
 
 model Season {
