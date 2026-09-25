@@ -229,6 +229,8 @@ interface CharacterDriftUi {
   trend: "IMPROVING" | "DECLINING" | "STABLE" | "FLAT";
   worstAspect: string | null;
   panels: number;
+  reanchoredAt: string | null;
+  baseline: number;
 }
 
 interface IdentityData {
@@ -237,7 +239,7 @@ interface IdentityData {
   shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>;
   threshold: number;
   average: number | null;
-  embeddings: Record<string, { worst: number; hashHex: string; computedAt: string; entries: Array<{ characterName: string; palette: number; structure: number; combined: number; note: string }> }>;
+  embeddings: Record<string, { worst: number; hashHex: string; computedAt: string; entries: Array<{ characterName: string; palette: number; structure: number; blockStructure?: number; blockPalette?: number; combined: number; note: string }> }>;
   drift: { characters: CharacterDriftUi[]; watch: CharacterDriftUi[]; headline: string };
 }
 
@@ -251,9 +253,11 @@ const DRIFT_TREND_COLORS: Record<string, string> = {
 /**
  * Tiny inline sparkline for a drift curve: one polyline over the
  * per-panel scores (identity) or confidences (facts) in story order,
- * 0..1 mapped to the 56x20 box. Pure SVG - no chart library.
+ * 0..1 mapped to the 56x20 box. `reanchorIndex` draws a dashed
+ * vertical marker where a re-anchor restarted the trend baseline.
+ * Pure SVG - no chart library.
  */
-function DriftSparkline({ points }: { points: Array<{ score: number }> }) {
+function DriftSparkline({ points, reanchorIndex }: { points: Array<{ score: number }>; reanchorIndex?: number | null }) {
   if (points.length < 2) {
     return <svg width="56" height="20" className="shrink-0"><line x1="4" y1="10" x2="52" y2="10" stroke="currentColor" strokeWidth="1" className="text-white/15" strokeDasharray="2 3" /></svg>;
   }
@@ -261,9 +265,15 @@ function DriftSparkline({ points }: { points: Array<{ score: number }> }) {
   const path = points
     .map((p, i) => `${i === 0 ? "M" : "L"}${(4 + i * step).toFixed(1)},${(18 - p.score * 16).toFixed(1)}`)
     .join(" ");
+  const markerX = reanchorIndex != null && reanchorIndex > 0 && reanchorIndex < points.length
+    ? 4 + reanchorIndex * step
+    : null;
   return (
     <svg width="56" height="20" viewBox="0 0 56 20" className="shrink-0" aria-hidden>
       <line x1="4" y1="18" x2="52" y2="18" stroke="currentColor" strokeWidth="0.5" className="text-white/10" />
+      {markerX != null && (
+        <line x1={markerX.toFixed(1)} y1="2" x2={markerX.toFixed(1)} y2="18" stroke="currentColor" strokeWidth="1" className="text-violet-300/80" strokeDasharray="2 2" />
+      )}
       <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
@@ -282,6 +292,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
   const [batching, setBatching] = useState(false);
   const [affinityRunning, setAffinityRunning] = useState(false);
   const [repainting, setRepainting] = useState<string | null>(null);
+  const [reanchoring, setReanchoring] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
 
@@ -371,6 +382,36 @@ function IdentityPanel({ projectId }: { projectId: string }) {
       setError(err instanceof Error ? err.message : "Re-paint failed");
     } finally {
       setRepainting(null);
+    }
+  }
+
+  async function reanchor(characterName: string) {
+    setReanchoring(characterName);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch("/api/identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reanchor", projectId, characterName, rescore: 3 }),
+      });
+      const body = (await res.json()) as {
+        error?: string;
+        result?: { newAnchor: string; rescored: Array<{ ref: string; entryForCharacter: number | null }>; rescoreErrors: Array<{ ref: string; error: string }> };
+      };
+      if (!res.ok || body.error) setError(body.error ?? "Re-anchor failed");
+      else if (body.result) {
+        const r = body.result;
+        const rescored = r.rescored.length > 0
+          ? ` Re-scored against the new sheet: ${r.rescored.map((s) => `${s.ref} ${s.entryForCharacter != null ? `${(s.entryForCharacter * 100).toFixed(0)}%` : "?"}`).join(", ")}.`
+          : " No recent scored panels to re-score yet.";
+        setBanner(`${characterName} re-anchored: canonical sheet regenerated, drift baseline restarts (RE-ANCHORED marker on the curve). New anchor: ${r.newAnchor.slice(0, 140)}...${rescored}`);
+      }
+    } catch {
+      setError("Re-anchor failed");
+    } finally {
+      setReanchoring(null);
+      await qc.invalidateQueries({ queryKey: ["identity", projectId] });
     }
   }
 
@@ -493,7 +534,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
                 {data.embeddings?.[row.shotId]?.entries.map((e, i) => (
                   <span
                     key={`aff-${i}`}
-                    title={`Provider-free affinity tripwire (dHash + palette histogram vs the sheet): palette ${(e.palette * 100).toFixed(0)}%, structure ${(e.structure * 100).toFixed(0)}%. A tripwire, not a verdict - the vision score stays the authority.`}
+                    title={`Provider-free affinity tripwire, block-robust (3x3 region dHashes + quadrant palettes vs the sheet): block structure ${(Number(e.blockStructure ?? 0) * 100).toFixed(0)}%, global structure ${(e.structure * 100).toFixed(0)}%, palette ${(e.palette * 100).toFixed(0)}%. A reframe moves the global hash but not the blocks - a tripwire, not a verdict; the vision score stays the authority.`}
                     className={cn(
                       "px-1.5 py-0.5 rounded border text-[9px] tabular-nums border-sky-400/30 text-sky-200 bg-sky-400/10",
                       e.combined < 0.5 && "border-amber-400/30 text-amber-200 bg-amber-400/10"
@@ -519,27 +560,47 @@ function IdentityPanel({ projectId }: { projectId: string }) {
               </span>
             )}
           </div>
-          {data.drift.characters.slice(0, 8).map((c) => (
-            <div key={c.characterName} className="rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 flex items-center gap-2">
-              <span className={cn("text-current", c.trend === "DECLINING" ? "text-rose-300" : c.trend === "IMPROVING" ? "text-emerald-300" : "text-muted-foreground")}>
-                <DriftSparkline points={c.points} />
-              </span>
-              <span className="text-[11px] font-medium truncate" title={`${c.panels} scored panel(s), ${c.first == null ? "?" : (c.first * 100).toFixed(0)}% first -> ${c.last == null ? "?" : (c.last * 100).toFixed(0)}% latest`}>{c.characterName}</span>
-              <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold shrink-0", DRIFT_TREND_COLORS[c.trend])}>
-                {c.trend}{c.delta != null ? ` ${(c.delta >= 0 ? "+" : "")}${(c.delta * 100).toFixed(0)}%` : ""}
-              </span>
-              <span className="text-[9px] text-muted-foreground tabular-nums shrink-0" title="latest similarity for this character">
-                latest {c.last == null ? "-" : `${(c.last * 100).toFixed(0)}%`}
-              </span>
-              <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">{c.panels} panel{c.panels === 1 ? "" : "s"}</span>
-              {c.worstAspect && (
-                <span className="text-[9px] text-amber-300/90 shrink-0" title="the aspect scoring lowest across this character's curve">weak: {c.worstAspect}</span>
-              )}
-            </div>
-          ))}
+          {data.drift.characters.slice(0, 8).map((c) => {
+            const reanchorIndex = c.reanchoredAt
+              ? c.points.findIndex((p) => p.scoredAt > c.reanchoredAt!)
+              : -1;
+            return (
+              <div key={c.characterName} className="rounded-lg border border-white/10 bg-black/25 px-3 py-1.5 flex items-center gap-2">
+                <span className={cn("text-current", c.trend === "DECLINING" ? "text-rose-300" : c.trend === "IMPROVING" ? "text-emerald-300" : "text-muted-foreground")}>
+                  <DriftSparkline points={c.points} reanchorIndex={reanchorIndex} />
+                </span>
+                <span className="text-[11px] font-medium truncate" title={`${c.panels} scored panel(s), ${c.first == null ? "?" : (c.first * 100).toFixed(0)}% first -> ${c.last == null ? "?" : (c.last * 100).toFixed(0)}% latest${c.reanchoredAt ? " (trend baseline restarted at the re-anchor)" : ""}`}>{c.characterName}</span>
+                {c.reanchoredAt && (
+                  <span className="px-1.5 py-0.5 rounded border text-[9px] font-semibold shrink-0 border-violet-400/30 text-violet-300 bg-violet-400/10" title={`Canonical sheet regenerated ${new Date(c.reanchoredAt).toLocaleString()} - the trend baseline restarts there, earlier points stay as history`}>
+                    RE-ANCHORED
+                  </span>
+                )}
+                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold shrink-0", DRIFT_TREND_COLORS[c.trend])}>
+                  {c.trend}{c.delta != null ? ` ${(c.delta >= 0 ? "+" : "")}${(c.delta * 100).toFixed(0)}%` : ""}
+                </span>
+                <span className="text-[9px] text-muted-foreground tabular-nums shrink-0" title="latest similarity for this character">
+                  latest {c.last == null ? "-" : `${(c.last * 100).toFixed(0)}%`}
+                </span>
+                <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">{c.panels} panel{c.panels === 1 ? "" : "s"}</span>
+                {c.worstAspect && (
+                  <span className="text-[9px] text-amber-300/90 shrink-0" title="the aspect scoring lowest across this character's curve">weak: {c.worstAspect}</span>
+                )}
+                <button
+                  onClick={() => void reanchor(c.characterName)}
+                  disabled={reanchoring !== null}
+                  title="Regenerate this character's canonical model sheet from their current design text, restart the drift baseline and re-score recent panels against the new sheet - use when the design itself moved, not to chase one bad panel"
+                  className="ml-auto h-6 rounded-md border border-violet-400/25 bg-violet-400/10 px-2 text-[9px] font-semibold text-violet-200 hover:bg-violet-400/20 transition-colors disabled:opacity-40 shrink-0"
+                >
+                  {reanchoring === c.characterName ? <Loader2 className="h-3 w-3 animate-spin" /> : "Re-anchor"}
+                </button>
+              </div>
+            );
+          })}
           <p className="text-[10px] text-muted-foreground leading-relaxed">
             Each polyline is one character&apos;s identity scores in story order (left = earliest episode). A DECLINING curve is a
-            conversation with the art pipeline, not one bad panel: check the weak aspect and consider a fresh sheet anchor.
+            conversation with the art pipeline, not one bad panel: check the weak aspect, then either re-paint the weak panels or,
+            when the design itself moved, press Re-anchor to regenerate the canonical sheet - the dashed violet marker shows where
+            the trend baseline restarts. DSH does the same via reanchor_character.
           </p>
         </div>
       )}

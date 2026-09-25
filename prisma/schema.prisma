@@ -729,9 +729,10 @@ model PanelEmbedding {
   projectId  String
   shotId     String   @unique
   hashHex    String // panel structure hash (64-bit dHash, hex)
-  rows       String   @default("[]") // JSON [{characterName, palette, structure, combined, note}]
+  rows       String   @default("[]") // JSON [{characterName, palette, structure, blockStructure, blockPalette, combined, note}]
   worst      Float    @default(1) // min combined affinity across the panel's cast (higher = closer)
-  method     String   @default("dHash 64-bit + 4x4x4 palette histogram cosine, provider-free")
+  method     String   @default("block-v1: 64-bit dHash + 3x3 block dHashes + global/quadrant 4x4x4 palette histograms, provider-free")
+  meta       String? // JSON {blockHexes:[9 x 4-char hex]} - the panel's per-block hashes for audit
   computedAt DateTime @default(now())
   createdAt  DateTime @default(now())
   shot       Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)

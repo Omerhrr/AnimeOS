@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { detectCast } from "@/lib/ai/art";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { probeMedia, ffmpegPath } from "@/lib/bridge/motion";
-import { affinityBetween, embedPublicImage } from "@/lib/embedding";
+import { robustAffinityBetween, embedPublicImage } from "@/lib/embedding";
 
 // ─────────────────────────────────────────────────────────────
 // IDENTITY-SIMILARITY SCORING FOR PANELS
@@ -568,6 +568,8 @@ export interface CharacterDrift {
   trend: DriftTrend;
   worstAspect: string | null; // lowest-mean aspect across the curve
   panels: number;
+  reanchoredAt: string | null; // latest IDENTITY_REANCHOR event for this character
+  baseline: number; // points counted after the latest re-anchor (else all)
 }
 
 export const DRIFT_TREND_THRESHOLD = 0.05; // |delta| below this reads as stable
@@ -582,10 +584,16 @@ function driftTrend(delta: number | null, panels: number): DriftTrend {
 /**
  * Roll IdentityScore rows (one per shot) into per-character curves.
  * Every cast member mentioned in ANY scored panel gets a curve,
- * points ordered by episode/scene/shot. Pure - the E2E drives it.
+ * points ordered by episode/scene/shot. `reanchors` maps a character
+ * name to the ISO timestamp of their latest IDENTITY_REANCHOR event:
+ * the trend baseline RESTARTS there - points before the re-anchor
+ * keep their history on the curve but no longer drag the delta, so
+ * an old decline cannot poison the new sheet's baseline. Pure - the
+ * E2E drives it.
  */
 export function identityDriftFromRows(
   rows: Array<{ scores: string; episode: number; scene: number; shot: number; scoredAt: Date | string }>,
+  reanchors: Record<string, string> = {},
 ): CharacterDrift[] {
   interface Acc {
     points: DriftPoint[];
@@ -627,9 +635,12 @@ export function identityDriftFromRows(
     const points = acc.points.sort(
       (a, b) => a.episode - b.episode || a.scene - b.scene || a.shot - b.shot || a.scoredAt.localeCompare(b.scoredAt),
     );
-    const first = points.length > 0 ? points[0].score : null;
-    const last = points.length > 0 ? points[points.length - 1].score : null;
-    const delta = first != null && last != null && points.length >= 2 ? last - first : null;
+    const reanchoredAt = reanchors[characterName] ?? null;
+    const afterReanchor = reanchoredAt ? points.filter((p) => p.scoredAt > reanchoredAt) : points;
+    const baselinePoints = reanchoredAt && afterReanchor.length >= 2 ? afterReanchor : points;
+    const first = baselinePoints.length > 0 ? baselinePoints[0].score : null;
+    const last = baselinePoints.length > 0 ? baselinePoints[baselinePoints.length - 1].score : null;
+    const delta = first != null && last != null && baselinePoints.length >= 2 ? last - first : null;
     let worstAspect: string | null = null;
     let worstMean = 1.01;
     for (const [aspect, { sum, n }] of acc.aspectSums) {
@@ -645,9 +656,11 @@ export function identityDriftFromRows(
       first,
       last,
       delta,
-      trend: driftTrend(delta, points.length),
+      trend: driftTrend(delta, baselinePoints.length),
       worstAspect,
       panels: points.length,
+      reanchoredAt,
+      baseline: baselinePoints.length,
     };
   }).sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0)); // steepest decline first
 }
@@ -660,14 +673,27 @@ export interface IdentityDriftData {
 
 /** Per-character drift curves over episode order for one production. */
 export async function identityDriftData(projectId: string): Promise<IdentityDriftData> {
-  const rows = await db.identityScore.findMany({
-    // PANEL rows only: a shot scored from both its storyboard and its
-    // render would double-count as two points on the same episode slot
-    where: { projectId, source: "PANEL" },
-    include: { shot: { include: { scene: { include: { episode: true } } } } },
-    orderBy: { scoredAt: "asc" },
-    take: 400,
-  });
+  const [rows, reanchorEvents] = await Promise.all([
+    db.identityScore.findMany({
+      // PANEL rows only: a shot scored from both its storyboard and its
+      // render would double-count as two points on the same episode slot
+      where: { projectId, source: "PANEL" },
+      include: { shot: { include: { scene: { include: { episode: true } } } } },
+      orderBy: { scoredAt: "asc" },
+      take: 400,
+    }),
+    // the re-anchor markers: a regenerated canonical sheet restarts the
+    // trend baseline so an old decline cannot poison the new sheet
+    db.continuityEvent.findMany({
+      where: { projectId, kind: "IDENTITY_REANCHOR", entityName: { not: "" } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+  ]);
+  const reanchors: Record<string, string> = {};
+  for (const ev of reanchorEvents) {
+    if (!reanchors[ev.entityName]) reanchors[ev.entityName] = ev.createdAt.toISOString();
+  }
   const characters = identityDriftFromRows(
     rows.map((r) => ({
       scores: r.scores,
@@ -676,13 +702,17 @@ export async function identityDriftData(projectId: string): Promise<IdentityDrif
       shot: r.shot.number,
       scoredAt: r.scoredAt,
     })),
+    reanchors,
   );
   const watch = characters.filter((c) => c.trend === "DECLINING");
+  const reanchored = characters.filter((c) => c.reanchoredAt);
   const headline = characters.length === 0
     ? "no identity drift curves yet - score a few panels"
     : watch.length > 0
-      ? `${watch.length} of ${characters.length} curved character(s) DECLINING over episode order: ${watch.map((c) => `${c.characterName} ${(c.delta! * 100).toFixed(0)}%`).join(", ")}`
-      : `${characters.length} character curve(s), none declining`;
+      ? `${watch.length} of ${characters.length} curved character(s) DECLINING over episode order: ${watch.map((c) => `${c.characterName} ${(c.delta! * 100).toFixed(0)}%`).join(", ")} - reanchor_character regenerates a sheet and restarts its curve baseline`
+      : reanchored.length > 0
+        ? `${characters.length} character curve(s), none declining - ${reanchored.map((c) => c.characterName).join(", ")} re-anchored (baseline restarted)`
+        : `${characters.length} character curve(s), none declining`;
   return { characters, watch, headline };
 }
 
@@ -694,9 +724,11 @@ export const AFFINITY_WATCH_THRESHOLD = 0.5; // heuristic tripwire line, NOT the
 
 export interface AffinityEntry {
   characterName: string;
-  palette: number; // cosine of the 4x4x4 palette histograms
-  structure: number; // bit agreement of the 64-bit dHashes
-  combined: number; // mean of both
+  palette: number; // cosine of the global 4x4x4 palette histograms
+  structure: number; // bit agreement of the global 64-bit dHashes
+  blockStructure: number; // mean per-block 16-bit agreement (composition-robust)
+  blockPalette: number; // mean per-quadrant palette cosine (composition-robust)
+  combined: number; // mean of the two ROBUST axes (block-dominant)
   note: string;
 }
 
@@ -720,7 +752,7 @@ export interface AffinityScoredShot {
   computedAt: string;
 }
 
-/** Parse stored affinity rows defensively. */
+/** Parse stored affinity rows defensively (old rows read as zeros on the block axes). */
 export function parseAffinityRows(raw: string | null | undefined): AffinityEntry[] {
   if (!raw) return [];
   try {
@@ -732,6 +764,8 @@ export function parseAffinityRows(raw: string | null | undefined): AffinityEntry
         characterName: String(r.characterName ?? "?"),
         palette: Number(r.palette ?? 0),
         structure: Number(r.structure ?? 0),
+        blockStructure: Number(r.blockStructure ?? 0),
+        blockPalette: Number(r.blockPalette ?? 0),
         combined: Number(r.combined ?? 0),
         note: String(r.note ?? ""),
       }));
@@ -742,7 +776,7 @@ export function parseAffinityRows(raw: string | null | undefined): AffinityEntry
 
 /** Describe an affinity in one honest line. Pure. */
 export function describeAffinity(entry: AffinityEntry): string {
-  return `${entry.characterName} ${(entry.combined * 100).toFixed(0)}% affinity (palette ${(entry.palette * 100).toFixed(0)}%, structure ${(entry.structure * 100).toFixed(0)}%)`;
+  return `${entry.characterName} ${(entry.combined * 100).toFixed(0)}% affinity (block structure ${(entry.blockStructure * 100).toFixed(0)}%, global ${(entry.structure * 100).toFixed(0)}%, palette ${(entry.palette * 100).toFixed(0)}%)`;
 }
 
 /**
@@ -771,15 +805,17 @@ export async function scoreShotEmbedding(shotId: string): Promise<
   for (const member of cast) {
     const sheetEmbed = await embedPublicImage(member.modelSheetUrl as string);
     if (!sheetEmbed) continue;
-    const aff = affinityBetween(panelEmbed.palette, panelEmbed.hash, sheetEmbed.palette, sheetEmbed.hash);
+    const aff = robustAffinityBetween(panelEmbed, sheetEmbed);
     entries.push({
       characterName: member.name,
       palette: aff.palette,
       structure: aff.structure,
+      blockStructure: aff.blockStructure,
+      blockPalette: aff.blockPalette,
       combined: aff.combined,
       note: aff.combined < AFFINITY_WATCH_THRESHOLD
-        ? "far from the sheet in palette or structure - likely a different composition or grade, check the vision score"
-        : "artwork-level tripwire only: the vision identity score stays the authority",
+        ? `far from the sheet on the robust axes (block structure ${(aff.blockStructure * 100).toFixed(0)}%) while global structure reads ${(aff.structure * 100).toFixed(0)}% - a reframe moves the global hash, a real drift moves the blocks too`
+        : "block-robust tripwire only: the vision identity score stays the authority",
     });
   }
   if (entries.length === 0) return { ok: false, error: "Model sheets are missing on disk or unreadable" };
@@ -794,12 +830,14 @@ export async function scoreShotEmbedding(shotId: string): Promise<
       hashHex: panelEmbed.hashHex,
       rows: JSON.stringify(entries),
       worst,
+      meta: JSON.stringify({ blockHexes: panelEmbed.blockHexes }),
       computedAt,
     },
     update: {
       hashHex: panelEmbed.hashHex,
       rows: JSON.stringify(entries),
       worst,
+      meta: JSON.stringify({ blockHexes: panelEmbed.blockHexes }),
       computedAt,
     },
   });

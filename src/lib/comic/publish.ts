@@ -69,7 +69,7 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     maxTags: 15,
     tagMaxChars: 30,
     subtitleFormat: "srt",
-    envKeys: ["ANIMEOS_YT_CLIENT_ID", "ANIMEOS_YT_REFRESH_TOKEN"],
+    envKeys: ["ANIMEOS_YT_ACCESS_TOKEN"], // the key upload.ts's resumable adapter actually reads
     notes: ["upload the SRT as the episode's subtitle track", "made-for-kids flag must be set by the creator"],
   },
   {
@@ -105,7 +105,7 @@ export const PLATFORM_PRESETS: PlatformPreset[] = [
     maxTags: 5,
     tagMaxChars: 24,
     subtitleFormat: "none",
-    envKeys: ["ANIMEOS_DOUYIN_OPEN_ID", "ANIMEOS_DOUYIN_TOKEN"],
+    envKeys: ["ANIMEOS_DOUYIN_TOKEN"], // matches the init-then-put adapter in upload.ts
     notes: ["captions burn into the frame on this platform - the cut must carry them", "re-frame a 16:9 episode to 9:16 before staging"],
   },
   {

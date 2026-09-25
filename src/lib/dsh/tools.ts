@@ -8,6 +8,7 @@ import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
 import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan, listPlanTemplates } from "@/lib/dsh/plan-templates";
 import { IDENTITY_REPAINT_THRESHOLD, scoreProjectIdentity, scoreShotIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD, identityDriftData } from "@/lib/identity";
+import { reanchorByName, REANCHOR_DEFAULT_RESCORE, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
 } from "@/lib/scheduler";
@@ -306,6 +307,14 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (optional, defaults to latest scene)",
       shotNumber: "number (optional, defaults to shot 1)",
       limit: "number 1-8 (optional - batch-score that many panels worst-first instead of one)",
+    },
+  },
+  {
+    name: "reanchor_character",
+    description: "RE-ANCHOR a character's identity: regenerate their canonical model sheet from their CURRENT design text (appearance, the episode-resolved state's wardrobe/weapon, the production's art style) when their identity drift curve is DECLINING and the old sheet no longer matches the intended look. The new anchor replaces the canonical one (every future panel prompt carries it), an IDENTITY_REANCHOR event marks the moment, the drift-curve trend baseline RESTARTS there (old points stay as history), and up to 6 of their most recent scored panels are re-scored against the NEW sheet so the restarted curve has fresh points. This is a canonical decision: use it when the DESIGN moved (a wardrobe/weapon state changed the look) or the old anchor was wrong - never to chase one bad painter around a good anchor (re-paints fix panels; re-anchor fixes the reference).",
+    args: {
+      characterName: "string - the cast character to re-anchor",
+      rescore: `number 0-${REANCHOR_MAX_RESCORE} (optional - how many of their recent scored panels to re-score against the new sheet, default ${REANCHOR_DEFAULT_RESCORE})`,
     },
   },
   {
@@ -1888,6 +1897,23 @@ export async function executeTool(projectId: string, name: string, args: Record<
           : "";
         const drifted = s.verdict.worst < IDENTITY_REPAINT_THRESHOLD;
         return { status: "OK", result: `Identity score for ${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%${s.verdict.note ? ` (${s.verdict.note})` : ""}.${aspectLine}${affLine} ${drifted ? `That is below the ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% identity bar - the panel earned an IDENTITY_DRIFT event and a re-paint offer: regenerate the panel (generate_panel_art) and score again to confirm.` : "An IDENTITY_VERIFIED event recorded the panel."}` };
+      }
+
+      case "reanchor_character": {
+        const name = String(args.characterName ?? "").trim();
+        if (!name) return { status: "ERROR", result: "characterName is required." };
+        const rawRescore = Number(args.rescore ?? REANCHOR_DEFAULT_RESCORE);
+        const result = await reanchorByName(projectId, name, {
+          rescore: Number.isFinite(rawRescore) ? rawRescore : REANCHOR_DEFAULT_RESCORE,
+          actor: "DSH",
+        });
+        if (!result.ok) return { status: "ERROR", result: `Re-anchor failed: ${result.error}` };
+        const r = result.result;
+        const rescoreLine = r.rescored.length > 0
+          ? ` Re-scored ${r.rescored.length} recent panel(s) against the NEW sheet: ${r.rescored.map((s) => `${s.ref} ${s.entryForCharacter != null ? `${r.characterName} ${(s.entryForCharacter * 100).toFixed(0)}%` : `worst ${(s.worst * 100).toFixed(0)}%`}`).join(", ")}.`
+          : "";
+        const errLine = r.rescoreErrors.length > 0 ? ` Re-score skips: ${r.rescoreErrors.map((e) => `${e.ref} (${e.error})`).join("; ")}.` : "";
+        return { status: "OK", result: `Re-anchored ${r.characterName}: the canonical model sheet was regenerated from the current design text and the IDENTITY_REANCHOR event marks the baseline restart (the drift curve keeps the old points as history but the trend now measures the NEW sheet). New anchor: ${r.newAnchor.slice(0, 220)}${r.newAnchor.length > 220 ? "..." : ""}.${rescoreLine}${errLine} Future panel art carries the new anchor automatically; score more panels with score_panel_identity to confirm the curve is climbing.` };
       }
 
       case "studio_pulse": {

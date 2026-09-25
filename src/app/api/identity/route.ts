@@ -6,12 +6,14 @@ import {
   identityPanelData, scoreProjectIdentity, scoreShotIdentity, scoreRenderIdentity,
   scoreShotEmbedding, scoreProjectEmbeddings,
 } from "@/lib/identity";
+import { reanchorByName, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
 
 // ── Identity-similarity scoring for panels AND renders + the
-//    provider-free affinity pass.
+//    provider-free affinity pass + the re-anchor workflow.
 //
 // GET   ?projectId=                        -> scored rows (worst first, PANEL + RENDER) + drift queue + picker + affinity rows
 // POST  { shotId, mode?, source? }         -> mode "vision" (default): score ONE artifact against its cast's model sheets (source "panel" default | "render": a frame from the finished clip); mode "affinity": the instant local embedding pass
+// POST  { action:"reanchor", projectId, characterName, rescore? } -> regenerate a character's canonical sheet, land IDENTITY_REANCHOR, restart their drift baseline, re-score recent panels against the new anchor
 // PATCH { projectId, limit?, mode?, source? } -> batch score (worst existing scores first, then unscored)
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
@@ -26,6 +28,19 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (String(body.action ?? "") === "reanchor") {
+    const projectId = String(body.projectId ?? "");
+    const characterName = String(body.characterName ?? "");
+    if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+    if (!characterName) return NextResponse.json({ error: "characterName required" }, { status: 400 });
+    const rawRescore = Number(body.rescore ?? 3);
+    const result = await reanchorByName(projectId, characterName, {
+      rescore: Number.isFinite(rawRescore) ? rawRescore : 3,
+      actor: "USER",
+    });
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+    return NextResponse.json({ ok: true, result: { ...result.result, rescoreCap: REANCHOR_MAX_RESCORE } });
   }
   const shotId = String(body.shotId ?? "");
   if (!shotId) return NextResponse.json({ error: "shotId required" }, { status: 400 });
