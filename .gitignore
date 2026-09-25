@@ -104,3 +104,7 @@ public/renders/posters/
 .blender-runtime/
 assets/blender/
 public/assets-blender/
+
+# Translated subtitle documents (regenerable runtime artifacts)
+public/subtitles/*.srt
+!public/subtitles/.gitkeep

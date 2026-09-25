@@ -16,6 +16,7 @@ import {
   groupEnsembleSpans, type ArcSpan,
 } from "@/lib/comic/arcs";
 import { exportWebtoonSlices } from "@/lib/comic/export-slices";
+import { toast } from "@/hooks/use-toast";
 import { PanelArt } from "@/components/views/comic-panel-art";
 import { SpeechBubbles, DialogueEditor } from "@/components/views/comic-bubbles";
 import { ArcRuler } from "@/components/views/arc-ruler";
@@ -547,6 +548,37 @@ export function ComicView({ project }: { project: StudioProject }) {
     }
   };
 
+  // Book export (CBZ / PDF): the server assembles the SAME page layout
+  // this view reads into a paged book - the MANGA format's RTL binding
+  // is carried into ComicInfo.xml and the PDF viewer preferences.
+  const runBookExport = async (bookFormat: "cbz" | "pdf") => {
+    if (!episode || exporting !== null) return;
+    const direction = format === "MANGA" ? "rtl" : "ltr";
+    setExporting(`Building ${bookFormat.toUpperCase()}…`);
+    try {
+      const res = await fetch(`/api/export/book?episodeId=${encodeURIComponent(episode.id)}&format=${bookFormat}&direction=${direction}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast({ title: "Export refused", description: data.error ?? `HTTP ${res.status}` });
+        setExporting(null);
+        return;
+      }
+      const meta = JSON.parse(decodeURIComponent(res.headers.get("X-Book-Meta") ?? "{}"));
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = meta.filename ?? `${project.title.replace(/\s+/g, "-").toLowerCase()}-ep${String(episode.number).padStart(2, "0")}.${bookFormat}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setExporting(`${meta.pages ?? "?"} page(s) downloaded as ${bookFormat.toUpperCase()} ✓`);
+      setTimeout(() => setExporting(null), 3500);
+    } catch (err) {
+      console.error("Book export failed:", err);
+      setExporting("Export failed - see console");
+      setTimeout(() => setExporting(null), 4000);
+    }
+  };
+
   const stats = useMemo(() => {
     let pages = 0, panels = 0, splash = 0;
     for (const sp of scenePages)
@@ -738,6 +770,24 @@ export function ComicView({ project }: { project: StudioProject }) {
             {exporting !== null
               ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> {exporting}</>
               : <><Scissors className="h-3 w-3 mr-1" /> Export slices</>}
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="h-7 text-[11px] border-white/12 bg-white/5 print:hidden"
+            title={`Page book of this episode as CBZ (${cfg.readingDirection === "RTL" ? "manga RTL" : "LTR"} binding, ComicInfo.xml included)`}
+            disabled={exporting !== null || allShots.length === 0}
+            onClick={() => void runBookExport("cbz")}
+          >
+            <BookOpenCheck className="h-3 w-3 mr-1" /> Export CBZ
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="h-7 text-[11px] border-white/12 bg-white/5 print:hidden"
+            title={`Page book of this episode as PDF (${cfg.readingDirection === "RTL" ? "panels composed right-to-left, viewer Direction hint set" : "panels composed left-to-right"})`}
+            disabled={exporting !== null || allShots.length === 0}
+            onClick={() => void runBookExport("pdf")}
+          >
+            <FileDown className="h-3 w-3 mr-1" /> Export PDF
           </Button>
           <Button size="sm" variant="outline" className="h-7 text-[11px] border-white/12 bg-white/5 print:hidden" onClick={() => window.print()}>
             <FileDown className="h-3 w-3 mr-1" /> Print / PDF
