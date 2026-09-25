@@ -1129,3 +1129,56 @@ Stage Summary:
 - The provider-free tripwire survives reframes now (the roadmap's composition-robust embeddings item is closed with the numbers to prove it) and a DECLINING identity curve has a first-class exit: re-anchor the reference, restart the baseline, re-score against the new sheet
 - The re-paint-vs-re-anchor fork is doctrine, a tool, and a button - DSH answered it verbatim in a live turn
 - Key files: src/lib/embedding.ts, src/lib/identity.ts, src/lib/reanchor.ts (new), src/lib/dsh/{tools,prompts}.ts, src/app/api/identity/route.ts, src/components/views/continuity-view.tsx, src/lib/comic/publish.ts, src/app/api/route.ts, prisma/schema.prisma, scripts/check-block-affinity.ts (new), README.md, worklog.md
+
+---
+Task ID: 45
+Agent: Super Z (main)
+Task: Iteration 45 - the studio gets a door: multi-user auth with role-gated writes (NextAuth v4 credentials + JWT, Next 16 proxy gate, roster management)
+
+Work Log:
+- User model in the schema (bcrypt passwordHash, role OWNER/EDITOR/VIEWER, lastSeenAt liveness); first registered account becomes OWNER automatically, later registrations start VIEWER; db push + client regen (the running dev server held the stale Prisma client through its globalThis cache - a clean restart was genuinely required and performed)
+- src/lib/auth.ts: authOptions (credentials provider, jwt/session callbacks carrying uid+role, dev-fallback secret so no .env restart dance), sessionUser() re-reading the user row fresh from the DB per sensitive call (role changes land immediately where it matters), requireUser/requireRole/authGuardResponse, countOwners
+- src/proxy.ts (the Next 16 middleware convention): pages behind a session, mutating /api calls behind a role above VIEWER with an honest 403, /api/auth passthrough, /signin loop fixed (unauthenticated sign-in must pass through)
+- Routes: [...nextauth] handler, /api/auth/register (first=OWNER, honest notes), /api/studio/members (GET roster for any member, PATCH role for OWNER with last-OWNER 409), /api/studio/roster-size (count-only, public - feeds the sign-in hint)
+- UI: SessionProvider in the root layout, /signin page (register toggle, role explainer, first-account hint), header UserMenu (role badge, dropdown, Studio roster dialog with role selects + liveness, sign out)
+- E2E via curl + DB: unauth 401/redirect, owner sign-in 200s, viewer GET 200 POST 403, promote -> re-login -> write 200, self-demotion of the last OWNER 409; test artifacts cleaned (probe project deleted, viewer role restored)
+
+Stage Summary:
+- Commit cf50513; two enforcement layers documented (proxy claim gate + DB-fresh sensitive checks); NEXTAUTH_SECRET fallback is dev-only by design
+- Key files: prisma/schema.prisma, src/lib/auth.ts, src/proxy.ts, src/types/next-auth.d.ts, src/app/api/auth/*, src/app/api/studio/*, src/app/signin/page.tsx, src/components/auth/session-provider.tsx, src/components/studio/user-menu.tsx, src/app/layout.tsx
+
+---
+Task ID: 46
+Agent: Super Z (main)
+Task: Iteration 46 - subtitles translate through the Terminology memory (glossary-enforced translation engine, DSH tool #56, Subtitles view, doctrine rule 24)
+
+Work Log:
+- src/lib/subtitles/srt.ts: isomorphic tolerant SRT parser/serializer (BOM, CRLF, odd indices, unparseable blocks skipped + reported) shared client+server
+- src/lib/subtitles/translate.ts: fetchGlossary (Terminology rows -> per-language renderings), 14-cue batch LLM translation with the glossary injected (production title/logline/style context, subtitle-brevity rules, JSON-brace extraction like the evaluator, one honest retry), deterministic enforcement pass re-writing cues where a canonical term drifted, honest fallbacks (skipped cues keep source text), new-term suggestions aggregated + deduped, buildEpisodeDialogueCues (cumulative shot-duration timing)
+- POST /api/subtitles (EDITOR+; pasted SRT or episodeId; lands a TRANSLATION event; sourceCues returned for side-by-side)
+- DSH tool #56 translate_subtitles (TOOL_DEFS + executor case; writes the translated SRT to public/subtitles/, lands a DSH TRANSLATION event, reports enforcement counts + suggestions with the create_terminology nudge); buildCompactContext terminology line now carries fixed renderings per language (was bare terms); doctrine rule 24 (LOCALIZATION CARRIES THE GLOSSARY)
+- Subtitles view in the Pipeline nav: paste/upload SRT or episode pick, target language (project.subtitleLanguages first, memory-ready badges), side-by-side cue table with glossary-enforced cues highlighted, one-click suggestion adoption, .srt download
+- Fixed a pre-existing require() lint error in scripts/e2e-iter34.ts surfaced by the sweep (async dynamic import + awaited call sites); eslint fully clean now
+- E2E (scripts/e2e-iter46-subtitles.ts, 7/7): 56 tools registered once, rule 24 in the doctrine, context renderings, live EN->ja-JP tool run carrying all five seeded terms, file written
+
+Stage Summary:
+- Commit f72e851; the memory proposes through the prompt and disposes in the post-pass; live API run proved every canonical rendering (リン・ユエ, 蒼炎, 煉気期, 青雲山, 築基期) rides its cue
+- Key files: src/lib/subtitles/*, src/app/api/subtitles/route.ts, src/lib/dsh/tools.ts, src/lib/dsh/prompts.ts, src/components/views/subtitles-view.tsx, src/lib/api-client.ts, src/lib/store.ts, scripts/e2e-iter46-subtitles.ts
+
+---
+Task ID: 47
+Agent: Super Z (main)
+Task: Iteration 47 - the comic ships as a book: server-side CBZ + PDF exports from the same layout engine the browser reads (RTL binding included)
+
+Work Log:
+- src/lib/comic/export-book.ts: collectEpisodeBook assembles pages via the pure layoutScene (episode -> scenes -> shots canonical order; panels resolve art through the cut builder's guarded publicFile pattern; PNG IHDR + JPEG SOF marker scans sniff the REAL format - the art provider saves JPEG bytes under .png names - for true dimensions, embedding and file naming; no-art panels skipped and counted, all-empty pages never ship, artless episodes refuse honestly)
+- CBZ (JSZip): page-numbered images named by sniffed format, ComicInfo.xml (Series/Title/Number/PageCount + Manga flag carrying RTL for MANGA-format builds), manifest.json with per-page panel counts + skip ledger
+- PDF (pdf-lib): panels composed at their 6-col grid placements (rows split at colStart resets, heights from true aspect ratios, rowSpan tallies breathe, capped), RTL MIRRORS the composition and sets ViewerPreferences Direction R, paper-tinted pages, inked borders, outer-edge page numbers
+- GET /api/export/book (any signed-in member; honest 400 with the reason; lands an EXPORT event); Comic Mode header gained Export CBZ / Export PDF buttons (direction derived from the selected comic format, refusals surfaced as toasts)
+- README: 56-tool counts, Multi-user studio feature row, Subtitles view in the Studio UI row, translate_subtitles in the DSH row, roadmap items 6/7 rewritten to reflect what landed and what remains; .gitignore for public/subtitles/*.srt
+- E2E (scripts/e2e-iter47-book-export.ts, 16/16 on real generated panels): zip entries + ComicInfo flags + manifest, page-count parity CBZ<->PDF, RTL Direction hint verified through pdf-lib's catalog, HTTP downloads with proper headers and EXPORT events; the provider quirk (JPEG-in-.png) was caught by the E2E on the first run and fixed properly (magic-byte sniffing) instead of trusting filenames
+- Browser E2E across all three iterations: signin gate + redirect, owner sign-in, roster dialog with role controls and liveness, Subtitles view live translation (en-US + ja-JP) with glossary-enforced badges, Comic Mode export buttons landing real EXPORT events; console + dev.log clean
+
+Stage Summary:
+- Commit c72d959; the layout engine's single source of truth now drives browser AND book; iterations 45-47 pushed the studio to 56 DSH tools, 24 doctrine rules, and a shipped door
+- Key files: src/lib/comic/export-book.ts, src/app/api/export/book/route.ts, src/components/views/comic-view.tsx, scripts/e2e-iter47-book-export.ts, README.md, .gitignore
