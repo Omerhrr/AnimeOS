@@ -150,7 +150,7 @@ model Shot {
   lora        StyleLora? @relation(fields: [loraId], references: [id], onDelete: SetNull)
   artist      Artist?    @relation(fields: [artistId], references: [id], onDelete: SetNull)
   audioCues   AudioCue[]
-  identityScore IdentityScore?
+  identityScores IdentityScore[]
   panelEmbedding PanelEmbedding?
 
   @@unique([sceneId, number])
@@ -241,6 +241,7 @@ model AudioCue {
   voiceNote        String?   // directorial note attached to the delivery
   voiceCast        String?   // cast artist name that performed the last take
   voiceSig         String?   // take-input snapshot at render time (JSON: text/voice/delivery/speed) - diffs re-render only takes whose inputs moved
+  acousticReport   String?   // acoustic alignment audit (JSON: provider, runs, nuclei, confirmed/missing tokens, note) - the acoustic slot's persisted verdict on the take
   createdAt  DateTime @default(now())
   shot       Shot    @relation(fields: [shotId], references: [id], onDelete: Cascade)
 }
@@ -460,6 +461,7 @@ model UniverseFact {
   category   String   @default("WORLD") // WORLD | CHARACTER | PROP | LOCATION | RULE
   source     String   @default("USER") // USER | DSH | BIBLE
   active     Boolean  @default(true) // inactive facts are skipped by vision checks
+  lastRewordedFrom String? // the wording this fact replaced (set on reword, cleared after the re-audit sweep closes the loop)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -556,8 +558,9 @@ model StudioSchedule {
   id            String    @id @default(cuid())
   projectId     String
   name          String
-  kind          String    @default("PLAN_RUN") // PLAN_RUN | REPAINT_QUEUE
+  kind          String    @default("PLAN_RUN") // PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST | PUBLISH_RUN
   planId        String?   // PLAN_RUN: explicit plan (null = the latest ACTIVE plan at fire time)
+  publishConfig String?   // PUBLISH_RUN: JSON {episodeNumber, platform} - which episode gets staged for which platform each fire
   cadence       String    @default("DAILY") // HOURLY | DAILY | WEEKLY
   intervalHours Int       @default(1) // HOURLY: every N hours (1..24)
   hourUtc       Int       @default(2) // DAILY/WEEKLY: hour of day (0..23), studio-night default
@@ -667,7 +670,8 @@ model PlanTemplate {
 model IdentityScore {
   id         String   @id @default(cuid())
   projectId  String
-  shotId     String   @unique
+  shotId     String
+  source     String   @default("PANEL") // PANEL (storyboard art) | RENDER (a frame from the finished clip)
   scores     String   @default("[]") // JSON IdentityScoreEntry[]
   worst      Float    @default(1) // min similarity across the panel's cast
   castSize   Int      @default(0) // how many anchored cast members were judged
@@ -676,6 +680,8 @@ model IdentityScore {
   createdAt  DateTime @default(now())
   shot       Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([shotId, source])
 }
 
 // PROVIDER-FREE IDENTITY AFFINITY: a deterministic artwork-level

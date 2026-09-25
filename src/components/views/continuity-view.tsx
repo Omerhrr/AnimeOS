@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power, Play, Pause, Square, PaintRoller, Fingerprint, Activity, HeartPulse } from "lucide-react";
+import { ShieldAlert, Plus, Loader2, ScanEye, Globe2, RefreshCw, Wand2, Trash2, Power, Play, Pause, Square, PaintRoller, Fingerprint, Activity, HeartPulse, Clapperboard } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader } from "@/components/views/shared";
@@ -204,6 +204,7 @@ interface IdentityRow {
   ref: string;
   description: string;
   artUrl: string | null;
+  source?: "PANEL" | "RENDER"; // what the vision model judged: the storyboard or a frame from the finished clip
   worst: number | null;
   castSize: number;
   note: string | null;
@@ -232,7 +233,7 @@ interface CharacterDriftUi {
 
 interface IdentityData {
   rows: IdentityRow[];
-  queue: Array<{ shotId: string; ref: string; description: string; worst: number; entries: IdentityEntry[] }>;
+  queue: Array<{ shotId: string; ref: string; description: string; source?: "PANEL" | "RENDER"; worst: number; entries: IdentityEntry[] }>;
   shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>;
   threshold: number;
   average: number | null;
@@ -315,7 +316,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
     }
   }
 
-  async function scoreOne(shotId: string) {
+  async function scoreOne(shotId: string, source: "panel" | "render" = "panel") {
     setScoring(shotId);
     setError(null);
     setBanner(null);
@@ -323,7 +324,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
       const res = await fetch("/api/identity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shotId }),
+        body: JSON.stringify({ shotId, source }),
       });
       const body = (await res.json()) as { error?: string; scored?: { ref: string; verdict: { entries: IdentityEntry[]; worst: number } } };
       if (!res.ok || body.error) setError(body.error ?? "Identity scoring failed");
@@ -339,7 +340,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
     }
   }
 
-  async function batch() {
+  async function batch(source: "panel" | "render" = "panel") {
     setBatching(true);
     setError(null);
     setBanner(null);
@@ -347,10 +348,10 @@ function IdentityPanel({ projectId }: { projectId: string }) {
       const res = await fetch("/api/identity", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, limit: 3 }),
+        body: JSON.stringify({ projectId, limit: 3, source }),
       });
       const body = (await res.json()) as { scored?: Array<{ ref: string; verdict: { worst: number } }>; errors?: Array<{ ref: string; error: string }> };
-      setBanner(`Identity pass: ${body.scored?.length ?? 0} panel(s) scored${body.errors?.length ? `, ${body.errors.length} skipped` : ""} - worst-first rows updated below`);
+      setBanner(`${source === "render" ? "Render pass" : "Identity pass"}: ${body.scored?.length ?? 0} ${source === "render" ? "render(s)" : "panel(s)"} scored${body.errors?.length ? `, ${body.errors.length} skipped` : ""} - worst-first rows updated below`);
     } catch {
       setError("Identity pass failed");
     } finally {
@@ -393,9 +394,13 @@ function IdentityPanel({ projectId }: { projectId: string }) {
             {affinityRunning ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Activity className="h-4 w-4 mr-1.5" />}
             Affinity pass
           </Button>
-          <Button size="sm" variant="outline" className="border-violet-400/25 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20" onClick={() => void batch()} disabled={batching}>
+          <Button size="sm" variant="outline" className="border-violet-400/25 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20" onClick={() => void batch("panel")} disabled={batching} title="Vision-score the 3 worst storyboard panels against the cast's sheets">
             {batching ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <ScanEye className="h-4 w-4 mr-1.5" />}
-            Score worst 3
+            Score worst 3 panels
+          </Button>
+          <Button size="sm" variant="outline" className="border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-200 hover:bg-fuchsia-400/20" onClick={() => void batch("render")} disabled={batching} title="Vision-score a frame pulled from each finished render clip against the cast's sheets - the shipping pixels, not the storyboard">
+            {batching ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Clapperboard className="h-4 w-4 mr-1.5" />}
+            Score 3 renders
           </Button>
         </div>
       </div>
@@ -448,9 +453,12 @@ function IdentityPanel({ projectId }: { projectId: string }) {
       {data.rows.length > 0 && (
         <div className="space-y-1.5">
           {data.rows.slice(0, 8).map((row) => (
-            <div key={row.shotId} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+            <div key={`${row.shotId}-${row.source ?? "PANEL"}`} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 min-w-0">
+                  <span className={cn("px-1 py-0.5 rounded border text-[8px] font-semibold shrink-0", row.source === "RENDER" ? "border-fuchsia-400/30 text-fuchsia-300 bg-fuchsia-400/10" : "border-white/15 text-muted-foreground bg-white/5")}>
+                    {row.source === "RENDER" ? "RENDER" : "PANEL"}
+                  </span>
                   <span className="font-mono text-[10px] text-muted-foreground shrink-0">{row.ref}</span>
                   <span className="text-[11px] truncate">{row.description}</span>
                 </div>
@@ -460,12 +468,12 @@ function IdentityPanel({ projectId }: { projectId: string }) {
                     (row.worst ?? 1) < data.threshold ? "text-rose-300" : "text-emerald-300"
                   )}>worst {pct(row.worst)}</span>
                   <button
-                    onClick={() => void scoreOne(row.shotId)}
+                    onClick={() => void scoreOne(row.shotId, row.source === "RENDER" ? "render" : "panel")}
                     disabled={scoring === row.shotId}
-                    title="Vision score this panel against every featured character's model sheet"
+                    title={row.source === "RENDER" ? "Vision score a frame from this shot's finished render against every featured character's model sheet" : "Vision score this panel against every featured character's model sheet"}
                     className="h-6 rounded-md border border-violet-400/25 bg-violet-400/10 px-2 text-[9px] font-semibold text-violet-200 hover:bg-violet-400/20 transition-colors disabled:opacity-40"
                   >
-                    {scoring === row.shotId ? <Loader2 className="h-3 w-3 animate-spin" /> : "Score now"}
+                    {scoring === row.shotId ? <Loader2 className="h-3 w-3 animate-spin" /> : row.source === "RENDER" ? "Re-score render" : "Score now"}
                   </button>
                 </div>
               </div>
@@ -603,6 +611,7 @@ interface CanonHealthData {
   rows: FactHealthRowUi[];
   suggestions: RetireSuggestionUi[];
   drift: { curves: FactDriftUi[]; watch: FactDriftUi[]; headline: string };
+  rewordDrift?: Array<{ factId: string; text: string; oldText: string; category: string }>; // reworded facts the sweep still owes a re-audit
 }
 
 const FACT_STATUS_COLORS: Record<string, string> = {
@@ -709,6 +718,31 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
     }
   }
 
+  // the reword DRIFT SWEEP: every reworded fact (the PATCH that
+  // changed the text recorded the old wording) gets its panels
+  // re-audited under the new wording in one pass
+  const [sweeping, setSweeping] = useState(false);
+  async function sweepReworded() {
+    setSweeping(true);
+    setError(null);
+    setBanner(null);
+    try {
+      const res = await fetch("/api/canon-health", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action: "reaudit-drifted" }),
+      });
+      const body = (await res.json()) as { error?: string; closed?: number; pending?: number; summary?: string };
+      if (!res.ok || body.error) setError(body.error ?? "The re-audit sweep failed");
+      else setBanner(`Reword sweep - ${body.summary ?? "done"}`);
+    } catch {
+      setError("The re-audit sweep failed");
+    } finally {
+      setSweeping(false);
+      await refresh();
+    }
+  }
+
   const d = data?.digest;
   const bandColor = d?.band ? CANON_BAND_COLORS[d.band] : "";
 
@@ -730,6 +764,26 @@ function CanonHealthPanel({ projectId }: { projectId: string }) {
           Read canon health
         </Button>
       </div>
+
+      {(data?.rewordDrift?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 space-y-1.5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="text-[11px] text-amber-200">
+              <span className="font-semibold">{data!.rewordDrift!.length} reworded fact{data!.rewordDrift!.length === 1 ? "" : "s"}</span> still judging panels by the OLD wording
+              <span className="text-muted-foreground"> - the sweep re-audits them under the new wording and closes the loop</span>
+            </div>
+            <Button size="sm" variant="outline" className="border-amber-400/30 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20" onClick={() => void sweepReworded()} disabled={sweeping}>
+              {sweeping ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Wand2 className="h-4 w-4 mr-1.5" />}
+              Re-audit reworded
+            </Button>
+          </div>
+          {data!.rewordDrift!.slice(0, 3).map((f) => (
+            <p key={f.factId} className="text-[10px] text-muted-foreground truncate" title={`was: ${f.oldText}`}>
+              <span className="text-amber-200/80">{f.text.slice(0, 70)}</span> (was: {f.oldText.slice(0, 50)})
+            </p>
+          ))}
+        </div>
+      )}
 
       {d && (
         <>

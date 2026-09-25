@@ -97,3 +97,5 @@ public/renders/.frames-*/
 !public/renders/cuts/.gitkeep
 public/renders/cuts/*
 !public/renders/cuts/.gitkeep
+# Render identity posters (ffmpeg frames extracted from clips, regenerable)
+public/renders/posters/

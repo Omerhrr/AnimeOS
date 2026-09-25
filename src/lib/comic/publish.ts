@@ -262,6 +262,7 @@ export interface PublishPackage {
   checklist: string[];
   integration: { configured: boolean; detail: string; envKeys: string[] };
   cut: { url: string; file: string; durationMs: number; width: number; height: number; fps: number; bytes: number };
+  package: { dir: string; files: string[] } | null; // the staged hand-off folder (package.json + srt + checklist)
 }
 
 export interface PublishBuildInput {
@@ -365,7 +366,37 @@ export function buildPublishPackage(input: PublishBuildInput): PublishPackage {
       envKeys: preset.envKeys,
     },
     cut: { url: input.cutUrl, file: path.basename(input.cutUrl), durationMs: media.durationMs, width: media.width, height: media.height, fps: media.fps, bytes: media.bytes },
+    package: null,
   };
+}
+
+/**
+ * Write the hand-off folder for a staged package: package.json (the
+ * full metadata + conformance record), the SRT sidecar when one was
+ * built, and checklist.txt. Local, honest - the folder is what the
+ * creator zips for ingest or drags onto an upload form. Returns null
+ * when the write fails (the package still stages; the event notes it).
+ */
+export function writePackageFolder(pkg: PublishPackage, epTag: string): PublishPackage["package"] {
+  try {
+    const slug = path.basename(pkg.cut.file).replace(/\.mp4$/, "");
+    const dir = path.join(process.cwd(), "public", "renders", "cuts", "packages", epTag, pkg.platform.toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    const files: string[] = [];
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ ...pkg, package: null }, null, 2));
+    files.push("package.json");
+    if (pkg.subtitle.content) {
+      const srtName = pkg.subtitle.filename ?? `${slug}.srt`;
+      fs.writeFileSync(path.join(dir, srtName), pkg.subtitle.content);
+      files.push(srtName);
+    }
+    fs.writeFileSync(path.join(dir, "checklist.txt"), [...pkg.checklist, ""].join("\n"));
+    files.push("checklist.txt");
+    const publicDir = `/renders/cuts/packages/${epTag}/${pkg.platform.toLowerCase()}`;
+    return { dir: publicDir, files };
+  } catch {
+    return null;
+  }
 }
 
 // ─── Staging (server) ───────────────────────────────────────
@@ -384,6 +415,7 @@ export interface PublishEventRow {
   file: string;
   subtitleCues: number;
   subtitleFormat: string;
+  packageDir: string | null;
   createdAt: string;
 }
 
@@ -411,6 +443,7 @@ export async function listPublishEvents(projectId: string, take = 8): Promise<Pu
         file: String(cut.file ?? ""),
         subtitleCues: Number(subtitle.cues ?? 0),
         subtitleFormat: String(subtitle.format ?? "none"),
+        packageDir: p.package && typeof p.package === "object" ? String((p.package as { dir?: unknown }).dir ?? "") || null : null,
         createdAt: r.createdAt.toISOString(),
       }];
     } catch {
@@ -526,12 +559,16 @@ export async function stagePublishPackage(
   });
 
   const checksPassed = pkg.conformance.filter((c) => c.ok).length;
+  const pkgFolder = writePackageFolder(pkg, epTag);
+  if (pkgFolder) {
+    pkg.package = pkgFolder;
+  }
   await db.productionEvent.create({
     data: {
       projectId: project.id,
       actor: "USER",
       type: "PUBLISH",
-      summary: `Publish package staged - ${epTag} -> ${preset.label}: ${checksPassed}/${pkg.conformance.length} checks passed, ${pkg.ready ? "ready for upload" : "fix conformance before uploading"}`,
+      summary: `Publish package staged - ${epTag} -> ${preset.label}: ${checksPassed}/${pkg.conformance.length} checks passed, ${pkg.ready ? "ready for upload" : "fix conformance before uploading"}${pkgFolder ? `, hand-off folder ${pkgFolder.dir}` : ""}`,
       payload: JSON.stringify({
         platform: pkg.platform,
         platformLabel: pkg.platformLabel,
@@ -545,6 +582,7 @@ export async function stagePublishPackage(
         cut: pkg.cut,
         conformance: pkg.conformance,
         tags: pkg.tags,
+        package: pkgFolder,
       }),
     },
   });

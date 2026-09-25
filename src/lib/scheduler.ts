@@ -4,6 +4,7 @@ import { startRepaintRun, latestRepaintRun } from "@/lib/universe-repaint";
 import { universeReRenderQueue } from "@/lib/universe-facts";
 import { tickProjectJobs } from "@/lib/engine/render";
 import { postDailyDigest } from "@/lib/digest";
+import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
 
 // ─────────────────────────────────────────────────────────────
 // CADENCE SCHEDULER - the studio runs between conversations
@@ -35,11 +36,11 @@ import { postDailyDigest } from "@/lib/digest";
 // and the DSH steer_schedule tool fire one immediately.
 // ─────────────────────────────────────────────────────────────
 
-export type ScheduleKind = "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST";
+export type ScheduleKind = "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST" | "PUBLISH_RUN";
 export type ScheduleCadence = "HOURLY" | "DAILY" | "WEEKLY";
 export type FireStatus = "OK" | "SKIPPED" | "ERROR";
 
-const SCHEDULE_KINDS: ScheduleKind[] = ["PLAN_RUN", "REPAINT_QUEUE", "DAILY_DIGEST"];
+const SCHEDULE_KINDS: ScheduleKind[] = ["PLAN_RUN", "REPAINT_QUEUE", "DAILY_DIGEST", "PUBLISH_RUN"];
 const SCHEDULE_CADENCES: ScheduleCadence[] = ["HOURLY", "DAILY", "WEEKLY"];
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -49,6 +50,7 @@ export interface ScheduleRow {
   name: string;
   kind: string;
   planId: string | null;
+  publishConfig: string | null;
   cadence: string;
   intervalHours: number;
   hourUtc: number;
@@ -72,6 +74,8 @@ export interface ScheduleView {
   kind: ScheduleKind;
   planId: string | null;
   planTitle: string | null;
+  publishEpisode: number | null; // PUBLISH_RUN: episode staged each fire
+  publishPlatform: string | null; // PUBLISH_RUN: platform preset id
   cadence: ScheduleCadence;
   cadenceLabel: string;
   intervalHours: number;
@@ -138,6 +142,18 @@ export function describeCadence(cadence: string, intervalHours: number, hourUtc:
 function viewOf(row: ScheduleRow, planTitle: string | null): ScheduleView {
   const kind = (SCHEDULE_KINDS as string[]).includes(row.kind) ? (row.kind as ScheduleKind) : (row.kind === "DAILY_DIGEST" ? "DAILY_DIGEST" : "PLAN_RUN");
   const cadence = (SCHEDULE_CADENCES as string[]).includes(row.cadence) ? (row.cadence as ScheduleCadence) : "DAILY";
+  let publishEpisode: number | null = null;
+  let publishPlatform: string | null = null;
+  if (row.publishConfig) {
+    try {
+      const cfg = JSON.parse(row.publishConfig) as { episodeNumber?: unknown; platform?: unknown };
+      publishEpisode = Number(cfg.episodeNumber) || null;
+      publishPlatform = cfg.platform ? String(cfg.platform) : null;
+    } catch {
+      publishEpisode = null;
+      publishPlatform = null;
+    }
+  }
   return {
     id: row.id,
     projectId: row.projectId,
@@ -145,6 +161,8 @@ function viewOf(row: ScheduleRow, planTitle: string | null): ScheduleView {
     kind,
     planId: row.planId,
     planTitle,
+    publishEpisode,
+    publishPlatform,
     cadence,
     cadenceLabel: describeCadence(row.cadence, row.intervalHours, row.hourUtc, row.weekday),
     intervalHours: row.intervalHours,
@@ -181,6 +199,8 @@ export interface CreateScheduleInput {
   name: string;
   kind: string;
   planId?: string | null;
+  publishEpisode?: number | null; // PUBLISH_RUN: which episode gets staged
+  publishPlatform?: string | null; // PUBLISH_RUN: which platform preset receives it
   cadence?: string;
   intervalHours?: number;
   hourUtc?: number;
@@ -202,7 +222,7 @@ export async function createSchedule(
   if (!name) return { ok: false, error: "name is required - what does this cadence do?" };
   const kind = String(input.kind ?? "PLAN_RUN").toUpperCase();
   if (!SCHEDULE_KINDS.includes(kind as ScheduleKind)) {
-    return { ok: false, error: "kind must be PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST" };
+    return { ok: false, error: "kind must be PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST | PUBLISH_RUN" };
   }
   const cadence = String(input.cadence ?? "DAILY").toUpperCase();
   if (!SCHEDULE_CADENCES.includes(cadence as ScheduleCadence)) {
@@ -213,6 +233,19 @@ export async function createSchedule(
     const plan = await db.dshPlan.findFirst({ where: { id: String(input.planId), projectId } });
     if (!plan) return { ok: false, error: "planId does not match a plan of this production" };
     planId = plan.id;
+  }
+  // PUBLISH_RUN: the delivery spine's staged hand-off, on a cadence
+  let publishConfig: string | null = null;
+  if (kind === "PUBLISH_RUN") {
+    const epNum = Math.round(Number(input.publishEpisode ?? 1)) || 0;
+    if (epNum < 1) return { ok: false, error: "publishEpisode must be an episode number >= 1" };
+    const preset = platformPreset(String(input.publishPlatform ?? ""));
+    if (!preset) return { ok: false, error: `publishPlatform must be one of: ${PLATFORM_PRESETS.map((p) => p.id).join(", ")}` };
+    const ep = await db.episode.findFirst({
+      where: { number: epNum, season: { projectId } },
+    });
+    if (!ep) return { ok: false, error: `episode ${epNum} not found in this production` };
+    publishConfig = JSON.stringify({ episodeNumber: epNum, platform: preset.id });
   }
   const intervalHours = Math.min(24, Math.max(1, Math.round(Number(input.intervalHours ?? 1)) || 1));
   const hourUtc = Math.min(23, Math.max(0, Math.round(Number(input.hourUtc ?? 2)) || 0));
@@ -239,6 +272,7 @@ export async function createSchedule(
       name: name.slice(0, 120),
       kind,
       planId,
+      publishConfig,
       cadence,
       intervalHours,
       hourUtc,
@@ -255,7 +289,7 @@ export async function createSchedule(
       projectId,
       actor: "SYSTEM",
       type: "SCHEDULE",
-      summary: `Schedule '${row.name}' registered - ${kind === "PLAN_RUN" ? "runs an approved plan" : kind === "DAILY_DIGEST" ? "posts the daily digest to the creator" : "render-queue supervision"}, ${describeCadence(cadence, intervalHours, hourUtc, weekday)}`,
+      summary: `Schedule '${row.name}' registered - ${kind === "PLAN_RUN" ? "runs an approved plan" : kind === "DAILY_DIGEST" ? "posts the daily digest to the creator" : kind === "PUBLISH_RUN" ? "stages the delivery-spine publish package" : "render-queue supervision"}, ${describeCadence(cadence, intervalHours, hourUtc, weekday)}`,
       payload: JSON.stringify({ scheduleId: row.id, kind, cadence }),
     },
   }).catch(() => {});
@@ -306,6 +340,30 @@ async function fireSchedule(row: ScheduleRow): Promise<FireOutcome> {
       return { status: "SKIPPED", report: `${started.error} (${ticked} render job(s) ticked)` };
     }
     return { status: "OK", report: `started a supervised re-paint pass over ${started.run.total} queued panel(s), worst confidence first; ${ticked} render job(s) ticked` };
+  }
+
+  if (row.kind === "PUBLISH_RUN") {
+    let cfg: { episodeNumber?: unknown; platform?: unknown } = {};
+    try {
+      cfg = JSON.parse(row.publishConfig ?? "{}") as typeof cfg;
+    } catch {
+      return { status: "ERROR", report: "the schedule's publish config is corrupt - recreate the schedule" };
+    }
+    const epNum = Math.round(Number(cfg.episodeNumber)) || 0;
+    const preset = platformPreset(String(cfg.platform ?? ""));
+    if (!preset) return { status: "ERROR", report: `the schedule's platform is no longer a preset (${String(cfg.platform ?? "?")}) - recreate the schedule` };
+    const ep = await db.episode.findFirst({
+      where: { number: epNum, season: { projectId: row.projectId } },
+      select: { id: true },
+    });
+    if (!ep) return { status: "SKIPPED", report: `episode ${epNum} no longer exists - nothing to stage` };
+    const staged = await stagePublishPackage(ep.id, preset.id);
+    if (!staged.ok) return { status: "SKIPPED", report: staged.error };
+    const pkg = staged.pkg;
+    return {
+      status: "OK",
+      report: `staged EP${String(epNum).padStart(2, "0")} for ${preset.label}: ${pkg.conformance.filter((c) => c.ok).length}/${pkg.conformance.length} checks passed, ${pkg.ready ? "ready for upload" : "conformance needs fixing"}${pkg.package ? `, hand-off folder ${pkg.package.dir}` : ""}`,
+    };
   }
 
   // PLAN_RUN: explicit plan, else the project's latest ACTIVE plan

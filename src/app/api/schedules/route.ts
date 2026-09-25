@@ -40,6 +40,8 @@ export async function POST(req: Request) {
     name: String(body.name ?? ""),
     kind: String(body.kind ?? "PLAN_RUN"),
     planId: body.planId ? String(body.planId) : null,
+    publishEpisode: body.publishEpisode === undefined ? null : Number(body.publishEpisode),
+    publishPlatform: body.publishPlatform === undefined ? null : String(body.publishPlatform ?? ""),
     cadence: String(body.cadence ?? "DAILY"),
     intervalHours: Number(body.intervalHours ?? 1),
     hourUtc: Number(body.hourUtc ?? 2),

@@ -307,12 +307,13 @@ interface PublishPackageUi {
   conformance: Array<{ label: string; ok: boolean; detail: string }>;
   checklist: string[];
   integration: { configured: boolean; detail: string; envKeys: string[] };
+  package: { dir: string; files: string[] } | null; // the hand-off folder written next to the cut
   cut: { url: string; file: string; durationMs: number; width: number; height: number; fps: number; bytes: number };
 }
 
 interface PublishInfoUi {
   presets: Array<{ id: string; label: string; blurb: string; orientation: string; width: number; height: number; maxDurationSec: number; titleMaxChars: number; subtitleFormat: string; notes: string[]; envKeys: string[] }>;
-  recent: Array<{ id: string; platform: string; platformLabel: string; ready: boolean; checksPassed: number; checksTotal: number; title: string; url: string; file: string; subtitleCues: number; subtitleFormat: string; createdAt: string }>;
+  recent: Array<{ id: string; platform: string; platformLabel: string; ready: boolean; checksPassed: number; checksTotal: number; title: string; url: string; file: string; subtitleCues: number; subtitleFormat: string; packageDir: string | null; createdAt: string }>;
 }
 
 /**
@@ -438,6 +439,7 @@ function PublishingPanel({ project }: { project: StudioProject }) {
             <div><span className="text-foreground/80">tags:</span> {pkg.tags.join(" · ")}</div>
             <div><span className="text-foreground/80">subtitles:</span> {pkg.subtitle.format === "none" ? pkg.subtitle.note : `${pkg.subtitle.format.toUpperCase()} ${pkg.subtitle.cues} cue(s) -> ${pkg.subtitle.filename}`}</div>
             <div><span className="text-foreground/80">integration:</span> {pkg.integration.detail}</div>
+            <div><span className="text-foreground/80">hand-off folder:</span> {pkg.package ? <span className="font-mono text-sky-300/90">{pkg.package.dir}</span> : <span>not written (the cut or the disk write was unavailable - staging still stands)</span>}{pkg.package && <span> · {pkg.package.files.join(", ")}</span>}</div>
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
             {pkg.checklist.map((c, i) => <span key={i} className="before:content-['•'] before:mr-1">{c}</span>)}
@@ -457,6 +459,7 @@ function PublishingPanel({ project }: { project: StudioProject }) {
               <span className="text-muted-foreground shrink-0">{r.platformLabel}</span>
               <span className="text-muted-foreground tabular-nums shrink-0">{r.checksPassed}/{r.checksTotal} checks</span>
               {r.subtitleCues > 0 && <span className="text-muted-foreground shrink-0">{r.subtitleFormat.toUpperCase()} {r.subtitleCues}</span>}
+              {r.packageDir && <span className="font-mono text-sky-300/80 shrink-0" title={`hand-off folder: ${r.packageDir}`}>folder</span>}
               {r.platform !== "STUDIO_INGEST" && (
                 <button
                   onClick={() => void upload(r.id)}

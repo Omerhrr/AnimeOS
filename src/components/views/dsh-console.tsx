@@ -551,9 +551,11 @@ function PlansPanel({ projectId }: { projectId: string }) {
 interface ScheduleRow {
   id: string;
   name: string;
-  kind: "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST";
+  kind: "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST" | "PUBLISH_RUN";
   planId: string | null;
   planTitle: string | null;
+  publishEpisode: number | null;
+  publishPlatform: string | null;
   cadence: string;
   cadenceLabel: string;
   maxSteps: number;
@@ -611,11 +613,13 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<"PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST">("PLAN_RUN");
+  const [kind, setKind] = useState<"PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST" | "PUBLISH_RUN">("PLAN_RUN");
   const [cadence, setCadence] = useState("DAILY");
   const [hourUtc, setHourUtc] = useState(2);
   const [planId, setPlanId] = useState("");
   const [maxSteps, setMaxSteps] = useState(3);
+  const [publishEpisode, setPublishEpisode] = useState(1);
+  const [publishPlatform, setPublishPlatform] = useState("YOUTUBE");
 
   const schedulesQ = useQuery({
     queryKey: ["studioSchedules", projectId],
@@ -674,13 +678,15 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          name: name.trim() || (kind === "PLAN_RUN" ? "Nightly plan run" : kind === "DAILY_DIGEST" ? "Daily digest" : "Render-queue watch"),
+          name: name.trim() || (kind === "PLAN_RUN" ? "Nightly plan run" : kind === "DAILY_DIGEST" ? "Daily digest" : kind === "PUBLISH_RUN" ? `Publish staging EP${publishEpisode}` : "Render-queue watch"),
           kind,
           cadence,
           hourUtc,
           intervalHours: 1,
           maxSteps,
           planId: kind === "PLAN_RUN" && planId ? planId : null,
+          publishEpisode: kind === "PUBLISH_RUN" ? publishEpisode : null,
+          publishPlatform: kind === "PUBLISH_RUN" ? publishPlatform : null,
         }),
       });
       const body = (await res.json()) as { error?: string };
@@ -719,7 +725,8 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
           <p className="text-[10px] text-muted-foreground leading-relaxed">
             The studio keeps working between conversations: a PLAN_RUN schedule walks an approved plan a few steps per fire
             (nightly breakdowns), REPAINT_QUEUE supervises renders and starts a re-paint pass when the universe queue is dirty,
-            and DAILY_DIGEST posts a catch-up digest of the last 24 hours. Every fire lands as a production event with its outcome.
+            DAILY_DIGEST posts a catch-up digest of the last 24 hours, and PUBLISH_RUN stages the delivery-spine publish
+            package for an episode + platform on its cadence. Every fire lands as a production event with its outcome.
           </p>
           {digest && (
             <div className="flex flex-wrap gap-1.5 text-[9px]">
@@ -763,12 +770,13 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
               />
               <select
                 value={kind}
-                onChange={(e) => setKind(e.target.value as "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST")}
+                onChange={(e) => setKind(e.target.value as "PLAN_RUN" | "REPAINT_QUEUE" | "DAILY_DIGEST" | "PUBLISH_RUN")}
                 className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
               >
                 <option value="PLAN_RUN">Plan run</option>
                 <option value="REPAINT_QUEUE">Render-queue watch</option>
                 <option value="DAILY_DIGEST">Daily digest</option>
+                <option value="PUBLISH_RUN">Publish staging</option>
               </select>
               <select
                 value={cadence}
@@ -792,6 +800,31 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
                   />
                   UTC
                 </label>
+              )}
+              {kind === "PUBLISH_RUN" && (
+                <>
+                  <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    EP
+                    <input
+                      type="number"
+                      min={1}
+                      value={publishEpisode}
+                      onChange={(e) => setPublishEpisode(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-12 h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+                    />
+                  </label>
+                  <select
+                    value={publishPlatform}
+                    onChange={(e) => setPublishPlatform(e.target.value)}
+                    className="h-7 rounded-md border border-white/10 bg-black/30 px-1.5 text-[11px] outline-none"
+                  >
+                    <option value="YOUTUBE">YouTube</option>
+                    <option value="BILIBILI">Bilibili</option>
+                    <option value="DOUYIN">Douyin</option>
+                    <option value="TIKTOK">TikTok</option>
+                    <option value="STUDIO_INGEST">Studio ingest</option>
+                  </select>
+                </>
               )}
               {kind === "PLAN_RUN" && (
                 <>
@@ -836,9 +869,12 @@ function SchedulerPanel({ projectId }: { projectId: string }) {
                   {s.enabled ? "ON" : "OFF"}
                 </span>
                 <span className="text-[12px] font-medium">{s.name}</span>
-                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", s.kind === "PLAN_RUN" ? "border-teal-400/30 text-teal-300 bg-teal-400/10" : s.kind === "DAILY_DIGEST" ? "border-sky-400/30 text-sky-300 bg-sky-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
-                  {s.kind === "PLAN_RUN" ? "PLAN RUN" : s.kind === "DAILY_DIGEST" ? "DAILY DIGEST" : "RENDER WATCH"}
+                <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", s.kind === "PLAN_RUN" ? "border-teal-400/30 text-teal-300 bg-teal-400/10" : s.kind === "DAILY_DIGEST" ? "border-sky-400/30 text-sky-300 bg-sky-400/10" : s.kind === "PUBLISH_RUN" ? "border-fuchsia-400/30 text-fuchsia-300 bg-fuchsia-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
+                  {s.kind === "PLAN_RUN" ? "PLAN RUN" : s.kind === "DAILY_DIGEST" ? "DAILY DIGEST" : s.kind === "PUBLISH_RUN" ? "PUBLISH RUN" : "RENDER WATCH"}
                 </span>
+                {s.kind === "PUBLISH_RUN" && s.publishEpisode != null && (
+                  <span className="text-[9px] text-fuchsia-300/90 font-mono">EP{String(s.publishEpisode).padStart(2, "0")} -&gt; {s.publishPlatform}</span>
+                )}
                 {s.lastStatus && (
                   <span className={cn("px-1.5 py-0.5 rounded border text-[9px] font-semibold", SCHED_STATUS_COLORS[s.lastStatus])}>
                     last {s.lastStatus}

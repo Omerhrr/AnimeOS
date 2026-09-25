@@ -16,8 +16,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   const existing = await db.universeFact.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Universe fact not found" }, { status: 404 });
-  const data: { text?: string; category?: string; active?: boolean } = {};
-  if (typeof body.text === "string" && body.text.trim()) data.text = body.text.trim().slice(0, 400);
+  const data: { text?: string; category?: string; active?: boolean; lastRewordedFrom?: string | null } = {};
+  if (typeof body.text === "string" && body.text.trim()) {
+    const next = body.text.trim().slice(0, 400);
+    // a real reword starts the re-audit loop: the old wording is kept
+    // so the re-audit sweep can find the panels that audited it
+    if (next !== existing.text.trim()) data.lastRewordedFrom = existing.text;
+    data.text = next;
+  }
   if (CATEGORIES.includes(String(body.category ?? ""))) data.category = String(body.category);
   if (typeof body.active === "boolean") data.active = body.active;
   const fact = await db.universeFact.update({ where: { id }, data });

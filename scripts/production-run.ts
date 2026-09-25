@@ -16,10 +16,16 @@
 //   voices  - render every VOICE cue (real TTS)
 //   renders - serialized PREVIEW Blender renders + DSH inspection
 //             (budget-aware: `renders <minutes>` caps wall time)
+//   acoustics - persist the acoustic slot's alignment audit per take
+//   identity  - vision-score every finished render against the sheets
+//             (the shipping pixels, budget-aware)
 //   final   - one FINAL-mode Blender render (the money shot)
+//   finalall - FINAL-mode renders for EVERY shot (budget-aware,
+//             resumable: re-run until the count lands)
 //   cut     - export the episode cut + verify duration
 //   publish - stage platform packages on the delivery spine
-//   verify  - full DB + file + duration report
+//             (each staging now writes its hand-off folder)
+//   verify  - full DB + file + duration + quality report
 // ─────────────────────────────────────────────────────────────
 import fs from "fs";
 import path from "path";
@@ -30,6 +36,8 @@ import { renderVoiceTake } from "@/lib/ai/voice-render";
 import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
 import { runRenderEvaluation } from "@/lib/dsh/evaluator";
 import { buildEpisodeCut } from "@/lib/comic/cut";
+import { auditVoiceTakeAcoustics } from "@/lib/animation/acoustic";
+import { scoreRenderIdentity } from "@/lib/identity";
 
 const db = new PrismaClient();
 const TITLE = "Cloudveil Ascent";
@@ -208,7 +216,7 @@ async function phaseSetup() {
     if (!s.dialogue) continue;
     const sceneRow = await db.scene.findFirst({ where: { episodeId: eid, number: s.scene } });
     const shotRow = await db.shot.findFirst({ where: { sceneId: sceneRow!.id, number: s.number } });
-    const already = shotRow?.dialogue && (shotRow.dialogue as unknown[]).length > 0;
+    const already = shotRow?.dialogue && (shotRow.dialogue as unknown as unknown[]).length > 0;
     if (already) { log(`dialogue exists: s${s.scene}.${s.number}`); continue; }
     const out = await run(pid, "set_shot_dialogue", { sceneNumber: s.scene, shotNumber: s.number, lines: s.dialogue });
     log(`set_shot_dialogue s${s.scene}.${s.number}: ${out.status}`);
@@ -384,6 +392,100 @@ async function waitJob(jobId: string, deadline: number): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────
+// PHASE: acoustics - persist the acoustic slot's audit per VOICE cue
+// ─────────────────────────────────────────────────────────────
+async function phaseAcoustics() {
+  const shots = await allShots();
+  const cues = shots.flatMap((s) => s.audioCues).filter((c) => c.kind === "VOICE");
+  for (const c of cues) {
+    if (c.acousticReport) { log(`acoustic audit exists: ${c.label.slice(0, 40)}...`); continue; }
+    const result = await auditVoiceTakeAcoustics(
+      { id: c.id, label: c.label, startMs: c.startMs, durationMs: c.durationMs, voiceDurationMs: c.voiceDurationMs, voiceUrl: c.voiceUrl },
+      null,
+      (url: string) => {
+        try {
+          const file = path.join(process.cwd(), "public", url.split("?")[0].replace(/^\//, ""));
+          return fs.existsSync(file) ? fs.readFileSync(file) : null;
+        } catch { return null; }
+      },
+    );
+    if (!result.ok) { log(`audit failed: ${result.error}`); continue; }
+    await db.audioCue.update({ where: { id: c.id }, data: { acousticReport: JSON.stringify(result.report) } });
+    log(`audited: ${c.label.slice(0, 40)}... -> ${result.report.nuclei} anchors, ${result.report.retimed ? "warp armed" : "plan stands"}${result.report.confirmed != null ? `, ASR ${result.report.confirmed}/${result.report.tokens} words` : ""}`);
+  }
+  log("ACOUSTICS COMPLETE");
+}
+
+// ─────────────────────────────────────────────────────────────
+// PHASE: identity - vision-score every finished render against the
+// cast's model sheets (one vision call per shot, budget-aware)
+// ─────────────────────────────────────────────────────────────
+async function phaseIdentity(budgetMin: number) {
+  const p = await project();
+  const deadline = Date.now() + budgetMin * 60_000;
+  const shots = await allShots();
+  let scored = 0;
+  for (const s of shots) {
+    if (Date.now() > deadline) return log(`budget reached - identity scoring continues next run (${scored} scored this run)`);
+    const existing = await db.identityScore.findFirst({ where: { shotId: s.id, source: "RENDER" } });
+    if (existing) { log(`identity exists: s${s.scene.number}.${s.number} (${(existing.worst * 100).toFixed(0)}%)`); continue; }
+    const ref = `s${s.scene.number}.${s.number}`;
+    log(`identity scoring ${ref} ...`);
+    const res = await scoreRenderIdentity(s.id);
+    if (res.ok) {
+      scored += 1;
+      log(`identity ${ref}: ${res.scored.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(res.scored.verdict.worst * 100).toFixed(0)}%`);
+    } else {
+      log(`identity ${ref} skipped: ${res.error.slice(0, 100)}`);
+    }
+  }
+  log(`IDENTITY COMPLETE (${scored} newly scored)`);
+}
+
+// ─────────────────────────────────────────────────────────────
+// PHASE: finalall - FINAL-mode renders for EVERY shot, budget-aware
+// and resumable: each invocation finishes what it can, the DB state
+// is the progress, re-run until all shots carry a FINAL clip.
+// ─────────────────────────────────────────────────────────────
+async function phaseFinalAll(budgetMin: number) {
+  const p = await project();
+  const deadline = Date.now() + budgetMin * 60_000;
+  const shots = await allShots();
+
+  // resume any in-flight FINAL job first (its worker kept writing)
+  const active = await db.renderJob.findMany({
+    where: { projectId: p.id, mode: "FINAL", status: "RENDERING" },
+    orderBy: { createdAt: "asc" },
+  });
+  for (const j of active) {
+    log(`resuming in-flight FINAL job ${j.id} ...`);
+    await waitJob(j.id, deadline);
+  }
+
+  let done = 0;
+  for (const s of shots) {
+    const finished = await db.renderJob.findFirst({
+      where: { shotId: s.id, mode: "FINAL", outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
+    });
+    if (finished) { done += 1; continue; }
+    if (Date.now() > deadline) {
+      log(`budget reached - FINAL renders ${done}/${shots.length} complete, re-run to continue`);
+      return;
+    }
+    log(`FINAL render s${s.scene.number}.${s.number} (${s.duration}s, 48 samples) ...`);
+    const job = await createRenderJob(p.id, s.id, "FINAL");
+    const status = await waitJob(job.id, deadline);
+    if (status === "timeout") {
+      log(`budget reached mid-render - job ${job.id} continues in the next run (FINAL ${done}/${shots.length})`);
+      return;
+    }
+    if (status === "FAILED") { log(`FINAL render FAILED for s${s.scene.number}.${s.number}, continuing`); continue; }
+    done += 1;
+  }
+  log(`FINALALL COMPLETE: ${done}/${shots.length} shots rendered in FINAL mode`);
+}
+
+// ─────────────────────────────────────────────────────────────
 // PHASE: final - one FINAL-mode Blender render (the money shot)
 // ─────────────────────────────────────────────────────────────
 async function phaseFinal() {
@@ -463,10 +565,20 @@ async function phaseVerify() {
       orderBy: { createdAt: "desc" },
       include: { evaluation: true },
     });
+    const finalJob = await db.renderJob.findFirst({
+      where: { shotId: s.id, mode: "FINAL", outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
+      orderBy: { createdAt: "desc" },
+    });
+    const identity = await db.identityScore.findFirst({ where: { shotId: s.id, source: "RENDER" } });
     const panel = s.artworkUrl ? "panel=yes" : "panel=NO";
     const clip = job ? `clip=${job.outputUrl} [${job.driver}/${job.mode}${job.evaluation ? " inspected" : ""}]` : "clip=MISSING";
-    const voices = s.audioCues.filter((c) => c.kind === "VOICE").map((c) => (c.voiceUrl ? "voice=yes" : "voice=NO"));
-    log(`s${s.scene.number}.${s.number} ${s.duration}s ${s.shotType.padEnd(17)} ${panel} ${clip} ${voices.join(",")}`);
+    const finalTag = finalJob ? " FINAL=yes" : "";
+    const idTag = identity ? ` identity=${(identity.worst * 100).toFixed(0)}%` : "";
+    const voices = s.audioCues.filter((c) => c.kind === "VOICE").map((c) => {
+      const ac = c.acousticReport ? JSON.parse(c.acousticReport) as { retimed?: boolean; nuclei?: number } : null;
+      return `voice=${c.voiceUrl ? "yes" : "NO"}${ac ? `(acoustic:${ac.retimed ? "retimed" : "plan"},${ac.nuclei ?? 0} anchors)` : ""}`;
+    });
+    log(`s${s.scene.number}.${s.number} ${s.duration}s ${s.shotType.padEnd(17)} ${panel} ${clip}${finalTag}${idTag} ${voices.join(",")}`);
   }
   const cutsDir = path.join(process.cwd(), "public", "renders", "cuts");
   if (fs.existsSync(cutsDir)) {
@@ -485,7 +597,9 @@ const budget = Number(process.argv[3] ?? 8);
 const phases: Record<string, () => Promise<void>> = {
   setup: phaseSetup, sheets: phaseSheets, panels: phasePanels,
   voices: phaseVoices, renders: () => phaseRenders(budget),
-  final: phaseFinal, cut: phaseCut, publish: phasePublish, verify: phaseVerify,
+  acoustics: phaseAcoustics, identity: () => phaseIdentity(Math.min(budget, 9)),
+  final: phaseFinal, finalall: () => phaseFinalAll(budget),
+  cut: phaseCut, publish: phasePublish, verify: phaseVerify,
 };
 if (!phases[phase]) {
   console.error(`unknown phase '${phase}'. phases: ${Object.keys(phases).join(", ")}`);

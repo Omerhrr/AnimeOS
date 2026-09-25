@@ -89,9 +89,19 @@ Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (at
     summary = `DSH inspection pipeline hiccup (${err instanceof Error ? err.message : "unknown"}). Manual review required.`;
   }
 
-  const evaluation = await db.evaluation.create({
-    data: {
+  // A job can arrive at inspection twice (a killed run between the
+  // create and the job update, a manual re-inspect). Upsert on the
+  // job's unique key instead of racing the constraint.
+  await db.evaluation.upsert({
+    where: { renderJobId: job.id },
+    create: {
       renderJobId: job.id,
+      verdict,
+      summary,
+      findings: JSON.stringify(findings),
+      actions: JSON.stringify(actions),
+    },
+    update: {
       verdict,
       summary,
       findings: JSON.stringify(findings),
@@ -126,5 +136,5 @@ Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (at
     },
   });
 
-  return evaluation;
+  return db.evaluation.findUnique({ where: { renderJobId: job.id } });
 }

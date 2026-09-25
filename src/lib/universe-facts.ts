@@ -442,3 +442,107 @@ export async function reauditRewordedFact(
     result: { factId: fact.id, oldText: old, newText: fact.text, targets: targets.length, audited, held, broken, results, summary },
   };
 }
+
+// ─────────────────────────────────────────────────────────────
+// THE DRIFT SWEEP - batch re-audit for reworded facts
+//
+// The single-fact helper above needs the caller to know the OLD
+// wording. This sweep removes that step: every fact that was
+// reworded (lastRewordedFrom set by the PATCH that changed the text)
+// is re-audited against its recorded old wording, one CONTINUITY
+// event per fact plus a sweep summary. Facts the sweep closed clear
+// their reword marker; facts that could not close (no panels ever
+// audited the old wording, no art on disk) keep the marker so the
+// sweep picks them up again next time.
+// ─────────────────────────────────────────────────────────────
+
+export interface DriftedFactRow {
+  factId: string;
+  text: string; // the CURRENT wording
+  oldText: string; // the wording the panels audited
+  category: string;
+}
+
+/** Active facts whose wording changed since their last audit loop. */
+export async function driftedRewordedFacts(projectId: string): Promise<DriftedFactRow[]> {
+  const facts = await db.universeFact.findMany({
+    where: { projectId, active: true, lastRewordedFrom: { not: null } },
+    orderBy: { updatedAt: "desc" },
+  });
+  return facts.map((f) => ({
+    factId: f.id,
+    text: f.text,
+    oldText: String(f.lastRewordedFrom ?? ""),
+    category: f.category,
+  }));
+}
+
+export interface DriftSweepOutcome {
+  factId: string;
+  text: string;
+  ok: boolean;
+  closed: boolean; // the reword marker cleared (loop done for this fact)
+  summary?: string;
+  error?: string;
+}
+
+export interface DriftSweepResult {
+  swept: number;
+  closed: number;
+  pending: number; // markers left open (nothing to audit yet, or a failure)
+  outcomes: DriftSweepOutcome[];
+  summary: string;
+}
+
+export const DRIFT_SWEEP_CAP = 3; // facts re-audited per sweep (vision work per panel)
+
+/**
+ * Re-audit EVERY reworded fact in the production (capped). Each
+ * target reuses the single-fact re-audit path, so panels found by
+ * the old wording answer the new one through the standard check.
+ */
+export async function reauditDriftedFacts(
+  projectId: string,
+  cap = DRIFT_SWEEP_CAP,
+): Promise<{ ok: false; error: string } | { ok: true; result: DriftSweepResult }> {
+  const drifted = await driftedRewordedFacts(projectId);
+  if (drifted.length === 0) {
+    return { ok: true, result: { swept: 0, closed: 0, pending: 0, outcomes: [], summary: "no reworded facts waiting for re-audit - the canon's wording and its audit history agree" } };
+  }
+  const outcomes: DriftSweepOutcome[] = [];
+  let closed = 0;
+  for (const d of drifted.slice(0, Math.max(1, cap))) {
+    const res = await reauditRewordedFact(d.factId, d.oldText);
+    if (!res.ok) {
+      outcomes.push({ factId: d.factId, text: d.text, ok: false, closed: false, error: res.error });
+      continue;
+    }
+    // an honest close: the marker clears when the re-audit actually
+    // re-checked a panel, OR when nothing ever audited the old
+    // wording (vacuous - the new wording's history starts clean and
+    // the marker would never serve again)
+    const didAudit = res.result.audited > 0 || res.result.targets === 0;
+    if (didAudit) {
+      await db.universeFact.update({ where: { id: d.factId }, data: { lastRewordedFrom: null } });
+      closed += 1;
+    }
+    outcomes.push({ factId: d.factId, text: d.text, ok: true, closed: didAudit, summary: res.result.summary });
+  }
+  const pending = drifted.length - closed;
+  const summary = drifted.length === 0
+    ? "no reworded facts waiting"
+    : `${closed} of ${Math.min(drifted.length, cap)} reworded fact(s) re-audited and closed${pending > 0 ? `, ${pending} still pending (no panels audited the old wording yet, or the cap cut the sweep)` : ""}`;
+  const project = await db.project.findUnique({ where: { id: projectId } });
+  if (project) {
+    await db.productionEvent.create({
+      data: {
+        projectId,
+        actor: "USER",
+        type: "CONTINUITY",
+        summary: `Reword drift sweep - ${summary}`,
+        payload: JSON.stringify({ swept: drifted.length, closed, pending, outcomes }),
+      },
+    });
+  }
+  return { ok: true, result: { swept: drifted.length, closed, pending, outcomes, summary } };
+}

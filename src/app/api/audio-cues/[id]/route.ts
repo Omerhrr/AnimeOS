@@ -1,8 +1,12 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 import { db } from "@/lib/db";
 import { isDeliveryId } from "@/lib/comic/delivery";
+import { auditVoiceTakeAcoustics } from "@/lib/animation/acoustic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -50,6 +54,37 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
   const updated = await db.audioCue.update({ where: { id }, data });
   return NextResponse.json(updated);
+}
+
+// ── POST : the acoustic slot's persisted audit for a VOICE cue's
+//    take (runs + syllable anchors +, under ANIMEOS_ACOUSTIC=neural,
+//    the ASR's word evidence). The report lands on the cue row and
+//    the sound timeline badges it.
+export async function POST(_req: Request, ctx: Ctx) {
+  const { id } = await ctx.params;
+  const cue = await db.audioCue.findUnique({
+    where: { id },
+    include: { shot: { select: { dialogue: true } } },
+  });
+  if (!cue) return NextResponse.json({ error: "Cue not found" }, { status: 404 });
+  if (cue.kind !== "VOICE") {
+    return NextResponse.json({ error: "acoustic audits apply to VOICE cues only" }, { status: 400 });
+  }
+  const result = await auditVoiceTakeAcoustics(
+    { id: cue.id, label: cue.label, startMs: cue.startMs, durationMs: cue.durationMs, voiceDurationMs: cue.voiceDurationMs, voiceUrl: cue.voiceUrl },
+    cue.shot.dialogue,
+    (url: string) => {
+      try {
+        const file = path.join(process.cwd(), "public", url.split("?")[0].replace(/^\//, ""));
+        return fs.existsSync(file) ? fs.readFileSync(file) : null;
+      } catch {
+        return null;
+      }
+    },
+  );
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  await db.audioCue.update({ where: { id }, data: { acousticReport: JSON.stringify(result.report) } });
+  return NextResponse.json(result.report);
 }
 
 export async function DELETE(_req: Request, ctx: Ctx) {

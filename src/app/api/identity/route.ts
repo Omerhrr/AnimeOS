@@ -3,16 +3,16 @@ export const maxDuration = 300; // scoring is real vision work (one call per pan
 
 import { NextResponse } from "next/server";
 import {
-  identityPanelData, scoreProjectIdentity, scoreShotIdentity,
+  identityPanelData, scoreProjectIdentity, scoreShotIdentity, scoreRenderIdentity,
   scoreShotEmbedding, scoreProjectEmbeddings,
 } from "@/lib/identity";
 
-// ── Identity-similarity scoring for panels + the provider-free
-//    affinity pass.
+// ── Identity-similarity scoring for panels AND renders + the
+//    provider-free affinity pass.
 //
-// GET   ?projectId=                        -> scored rows (worst first) + drift queue + picker + affinity rows
-// POST  { shotId, mode? }                  -> mode "vision" (default): score ONE panel against its cast's model sheets (vision); mode "affinity": the instant local embedding pass
-// PATCH { projectId, limit?, mode? }       -> batch score (worst existing scores first, then unscored)
+// GET   ?projectId=                        -> scored rows (worst first, PANEL + RENDER) + drift queue + picker + affinity rows
+// POST  { shotId, mode?, source? }         -> mode "vision" (default): score ONE artifact against its cast's model sheets (source "panel" default | "render": a frame from the finished clip); mode "affinity": the instant local embedding pass
+// PATCH { projectId, limit?, mode?, source? } -> batch score (worst existing scores first, then unscored)
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
@@ -34,7 +34,9 @@ export async function POST(req: Request) {
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json(result);
   }
-  const result = await scoreShotIdentity(shotId);
+  const result = String(body.source ?? "") === "render"
+    ? await scoreRenderIdentity(shotId)
+    : await scoreShotIdentity(shotId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result);
 }
@@ -53,6 +55,6 @@ export async function PATCH(req: Request) {
     const result = await scoreProjectEmbeddings(projectId, Number.isFinite(limit) ? limit : 8);
     return NextResponse.json(result);
   }
-  const result = await scoreProjectIdentity(projectId, Number.isFinite(limit) ? limit : 4);
+  const result = await scoreProjectIdentity(projectId, Number.isFinite(limit) ? limit : 4, String(body.source ?? "") === "render" ? "RENDER" : "PANEL");
   return NextResponse.json(result);
 }

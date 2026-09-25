@@ -162,7 +162,25 @@ export interface AudioCueRow {
   voiceNote: string | null;       // directorial note on the delivery
   voiceCast: string | null;       // cast artist name that performed the last take
   voiceSig?: string | null;       // take-input snapshot (JSON) stamped at render time for direction diffs
+  acousticReport?: AcousticReport | null; // the acoustic slot's persisted alignment audit (VOICE cues)
   cast?: { artistName: string; voiceId: string | null } | null; // resolved standing cast (VOICE cues)
+}
+
+export interface AcousticReport {
+  provider: "builtin-dsp" | "neural" | "off";
+  retimed: boolean;
+  speechRuns: number;
+  nuclei: number;
+  speechMs: number;
+  gapMs: number;
+  spanMs: number;
+  tokens: number;
+  confirmed: number | null;
+  missing: number | null;
+  matchRatio: number | null;
+  transcript: string | null;
+  note: string;
+  auditedAt: string;
 }
 
 export interface VoiceDiffRow {
@@ -543,13 +561,13 @@ export const api = {
 
   // platform publishing: per-platform packages staged on the delivery spine
   publishInfo: (projectId: string) =>
-    j<{ presets: Array<{ id: string; label: string; blurb: string; orientation: string; width: number; height: number; maxDurationSec: number; titleMaxChars: number; subtitleFormat: string; notes: string[]; envKeys: string[] }>; recent: Array<{ id: string; platform: string; platformLabel: string; ready: boolean; checksPassed: number; checksTotal: number; title: string; url: string; file: string; subtitleCues: number; subtitleFormat: string; createdAt: string }> }>(`/api/publish?projectId=${projectId}`),
+    j<{ presets: Array<{ id: string; label: string; blurb: string; orientation: string; width: number; height: number; maxDurationSec: number; titleMaxChars: number; subtitleFormat: string; notes: string[]; envKeys: string[] }>; recent: Array<{ id: string; platform: string; platformLabel: string; ready: boolean; checksPassed: number; checksTotal: number; title: string; url: string; file: string; subtitleCues: number; subtitleFormat: string; packageDir: string | null; createdAt: string }> }>(`/api/publish?projectId=${projectId}`),
   uploadPackage: (eventId: string) =>
     j<{ kind: string; platform: string; ok: boolean; detail: string; at: string }>("/api/publish", {
       method: "POST", body: JSON.stringify({ action: "upload", eventId }),
     }),
   stagePublish: (episodeId: string, platform: string) =>
-    j<{ platform: string; platformLabel: string; title: string; description: string; tags: string[]; ready: boolean; subtitle: { format: string; filename: string | null; cues: number; note: string }; conformance: Array<{ label: string; ok: boolean; detail: string }>; checklist: string[]; integration: { configured: boolean; detail: string; envKeys: string[] }; cut: { url: string; file: string; durationMs: number; width: number; height: number; fps: number; bytes: number } }>("/api/publish", {
+    j<{ platform: string; platformLabel: string; title: string; description: string; tags: string[]; ready: boolean; subtitle: { format: string; filename: string | null; cues: number; note: string }; conformance: Array<{ label: string; ok: boolean; detail: string }>; checklist: string[]; integration: { configured: boolean; detail: string; envKeys: string[] }; package: { dir: string; files: string[] } | null; cut: { url: string; file: string; durationMs: number; width: number; height: number; fps: number; bytes: number } }>("/api/publish", {
       method: "POST", body: JSON.stringify({ episodeId, platform }),
     }),
 
@@ -569,6 +587,7 @@ export const api = {
   audioCues: (shotId: string) => j<AudioCueRow[]>(`/api/audio-cues?shotId=${shotId}`),
   createAudioCue: (body: Record<string, unknown>) => j<AudioCueRow>("/api/audio-cues", { method: "POST", body: JSON.stringify(body) }),
   patchAudioCue: (id: string, body: Record<string, unknown>) => j<AudioCueRow>(`/api/audio-cues/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  auditAcoustics: (id: string) => j<AcousticReport>(`/api/audio-cues/${id}`, { method: "POST" }),
   deleteAudioCue: (id: string) => j<{ ok: boolean }>(`/api/audio-cues/${id}`, { method: "DELETE" }),
 
   // real TTS voice renders for VOICE cues (per character-state delivery,

@@ -1,7 +1,11 @@
 import ZAI from "z-ai-web-dev-sdk";
+import fs from "fs";
+import path from "path";
+import { spawn } from "child_process";
 import { db } from "@/lib/db";
 import { detectCast } from "@/lib/ai/art";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
+import { probeMedia, ffmpegPath } from "@/lib/bridge/motion";
 import { affinityBetween, embedPublicImage } from "@/lib/embedding";
 
 // ─────────────────────────────────────────────────────────────
@@ -105,9 +109,13 @@ export interface IdentityScoredShot {
   shotId: string;
   ref: string;
   episode: number;
+  source: IdentitySource;
   verdict: IdentityVerdict;
   scoredAt: string;
 }
+
+/** What the vision model looked at: the storyboard panel or a frame from the finished clip. */
+export type IdentitySource = "PANEL" | "RENDER";
 
 /** The shot row shape the identity pipeline needs (project + cast + sheets). */
 type IdentityShot = NonNullable<Awaited<ReturnType<typeof loadIdentityShot>>>;
@@ -131,18 +139,29 @@ async function loadIdentityShot(shotId: string) {
 
 /**
  * Guard + image loading shared by the real and raw paths: resolves
- * the sheeted cast and data-URLs the panel + every sheet.
+ * the sheeted cast and data-URLs the artifact under judgment (the
+ * panel art by default, or a caller-supplied render poster) plus
+ * every sheet.
  */
-async function prepareIdentityContext(shot: IdentityShot) {
-  if (!shot.artworkUrl) return { ok: false as const, error: "This shot has no panel art to score yet" };
+async function prepareIdentityContext(
+  shot: IdentityShot,
+  override?: { imageData: string; error: string }, // a RENDER source hands its poster here
+) {
   const episode = shot.scene.episode;
   const project = episode.season.project;
   const cast = detectCast(project.characters, shot.description).filter((c) => c.modelSheetUrl);
   if (cast.length === 0) {
     return { ok: false as const, error: "No featured character with a model sheet - generate a sheet first (the anchor is what identity is scored against)" };
   }
-  const artData = publicImageAsDataUrl(shot.artworkUrl);
-  if (!artData) return { ok: false as const, error: "Panel art is missing on disk" };
+  let artData: string;
+  if (override) {
+    artData = override.imageData;
+  } else {
+    if (!shot.artworkUrl) return { ok: false as const, error: "This shot has no panel art to score yet" };
+    const data = publicImageAsDataUrl(shot.artworkUrl);
+    if (!data) return { ok: false as const, error: "Panel art is missing on disk" };
+    artData = data;
+  }
   const sheets = cast
     .map((c) => ({ name: c.name, data: publicImageAsDataUrl(c.modelSheetUrl as string) }))
     .filter((s): s is { name: string; data: string } => Boolean(s.data));
@@ -165,16 +184,21 @@ function buildIdentityPrompt(sheets: Array<{ name: string }>): string {
 
 /**
  * Score ONE panel against its sheeted cast with the REAL vision
- * model: the panel art and every featured character's model sheet go
- * in as one image set; the raw verdict flows into the same persist
- * path as scoreShotIdentityFromRaw.
+ * model: the artifact (panel art, or a render's poster frame) and
+ * every featured character's model sheet go in as one image set; the
+ * raw verdict flows into the same persist path as
+ * scoreShotIdentityFromRaw.
  */
-export async function scoreShotIdentity(shotId: string): Promise<
+export async function scoreShotIdentity(shotId: string, source: IdentitySource = "PANEL"): Promise<
   { ok: true; scored: IdentityScoredShot } | { ok: false; error: string }
 > {
   const shot = await loadIdentityShot(shotId);
   if (!shot) return { ok: false, error: "Shot not found" };
-  const ctx = await prepareIdentityContext(shot);
+  const poster = source === "RENDER" ? await renderPosterForShot(shotId) : null;
+  if (source === "RENDER" && poster === null) {
+    return { ok: false, error: "This shot has no finished render to score yet - render it first" };
+  }
+  const ctx = await prepareIdentityContext(shot, poster ? { imageData: poster.dataUrl, error: "" } : undefined);
   if (!ctx.ok) return ctx;
 
   let raw = "";
@@ -197,7 +221,7 @@ export async function scoreShotIdentity(shotId: string): Promise<
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "identity scoring failed" };
   }
-  return persistIdentityVerdict(shot, ctx, raw);
+  return persistIdentityVerdict(shot, ctx, raw, source);
 }
 
 /**
@@ -207,14 +231,18 @@ export async function scoreShotIdentity(shotId: string): Promise<
  * when the vision provider is rate-limited (the provider loop itself
  * is proven by the live path and by earlier iterations).
  */
-export async function scoreShotIdentityFromRaw(shotId: string, raw: string): Promise<
+export async function scoreShotIdentityFromRaw(shotId: string, raw: string, source: IdentitySource = "PANEL"): Promise<
   { ok: true; scored: IdentityScoredShot } | { ok: false; error: string }
 > {
   const shot = await loadIdentityShot(shotId);
   if (!shot) return { ok: false, error: "Shot not found" };
-  const ctx = await prepareIdentityContext(shot);
+  const poster = source === "RENDER" ? await renderPosterForShot(shotId) : null;
+  if (source === "RENDER" && poster === null) {
+    return { ok: false, error: "This shot has no finished render to score yet - render it first" };
+  }
+  const ctx = await prepareIdentityContext(shot, poster ? { imageData: poster.dataUrl, error: "" } : undefined);
   if (!ctx.ok) return ctx;
-  return persistIdentityVerdict(shot, ctx, raw);
+  return persistIdentityVerdict(shot, ctx, raw, source);
 }
 
 /**
@@ -226,16 +254,18 @@ async function persistIdentityVerdict(
   shot: IdentityShot,
   ctx: { ok: true; episode: { number: number }; project: { id: string }; sheets: Array<{ name: string }>; shotRef: string },
   raw: string,
+  source: IdentitySource = "PANEL",
 ): Promise<{ ok: true; scored: IdentityScoredShot } | { ok: false; error: string }> {
   const verdict = parseIdentityVerdict(raw, ctx.sheets.map((s) => s.name));
   if (!verdict) return { ok: false, error: `vision model returned unparsable verdict: ${raw.slice(0, 120)}` };
 
   const scoredAt = new Date();
   await db.identityScore.upsert({
-    where: { shotId: shot.id },
+    where: { shotId_source: { shotId: shot.id, source } },
     create: {
       projectId: ctx.project.id,
       shotId: shot.id,
+      source,
       scores: JSON.stringify(verdict.entries),
       worst: verdict.worst,
       castSize: verdict.entries.length,
@@ -251,8 +281,8 @@ async function persistIdentityVerdict(
     },
   });
 
-  // replace prior identity events for this shot so the stream stays readable
-  const tag = `[identity ${ctx.shotRef}]`;
+  // replace prior identity events for this shot + source so the stream stays readable
+  const tag = `[identity ${ctx.shotRef} ${source}]`;
   await db.continuityEvent.deleteMany({
     where: { projectId: ctx.project.id, kind: { in: ["IDENTITY_VERIFIED", "IDENTITY_DRIFT"] }, description: { startsWith: tag } },
   });
@@ -278,6 +308,7 @@ async function persistIdentityVerdict(
       shotId: shot.id,
       ref: ctx.shotRef,
       episode: ctx.episode.number,
+      source,
       verdict,
       scoredAt: scoredAt.toISOString(),
     },
@@ -285,11 +316,75 @@ async function persistIdentityVerdict(
 }
 
 /**
- * Batch score: panels with art + an anchored cast, worst EXISTING
- * scores first, then never-scored panels (art-freshness order).
- * Capped - every panel is a real vision call.
+ * Extract ONE representative frame from a finished render clip with
+ * ffmpeg (40% into the clip - past the fade-in, before the tail) and
+ * return it as a data URL. The poster is cached per job id under
+ * public/renders/posters/. Returns null when ffmpeg or the clip is
+ * unavailable - the caller reports the gap honestly.
  */
-export async function scoreProjectIdentity(projectId: string, limit = 4): Promise<{ scored: IdentityScoredShot[]; errors: Array<{ ref: string; error: string }> }> {
+export async function extractRenderPoster(clipAbsPath: string, jobId: string): Promise<string | null> {
+  try {
+    if (!fs.existsSync(clipAbsPath)) return null;
+    const postersDir = path.join(process.cwd(), "public", "renders", "posters");
+    fs.mkdirSync(postersDir, { recursive: true });
+    const out = path.join(postersDir, `${jobId}.jpg`);
+    if (!fs.existsSync(out) || fs.statSync(out).size === 0) {
+      const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+      const probe = await probeMedia(clipAbsPath);
+      const dur = Math.max(0.5, probe?.durationSec ?? 5);
+      const at = (dur * 0.4).toFixed(2);
+      const ok = await new Promise<boolean>((resolve) => {
+        const child = spawn(ff, ["-y", "-ss", at, "-i", clipAbsPath, "-frames:v", "1", "-q:v", "3", out], {
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        child.on("close", (code) => resolve(code === 0));
+        child.on("error", () => resolve(false));
+      });
+      if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
+    }
+    const b64 = fs.readFileSync(out).toString("base64");
+    return `data:image/jpeg;base64,${b64}`;
+  } catch {
+    return null;
+  }
+}
+
+interface RenderPoster {
+  dataUrl: string;
+  jobId: string;
+}
+
+/** The latest finished clip for a shot, as a poster data URL. */
+async function renderPosterForShot(shotId: string): Promise<RenderPoster | null> {
+  const job = await db.renderJob.findFirst({
+    where: { shotId, outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!job?.outputUrl) return null;
+  const clipAbs = path.join(process.cwd(), "public", job.outputUrl.split("?")[0].replace(/^\//, ""));
+  const dataUrl = await extractRenderPoster(clipAbs, job.id);
+  return dataUrl ? { dataUrl, jobId: job.id } : null;
+}
+
+/**
+ * Score ONE shot's FINISHED RENDER (a frame pulled from the clip)
+ * against its cast's model sheets. The shipping pixels answer the
+ * casting-director question - the panel score judges the storyboard,
+ * this judges what actually lands in the cut. Persists under source
+ * RENDER so both verdicts live side by side.
+ */
+export async function scoreRenderIdentity(shotId: string): Promise<
+  { ok: true; scored: IdentityScoredShot } | { ok: false; error: string }
+> {
+  return scoreShotIdentity(shotId, "RENDER");
+}
+
+/**
+ * Batch score: panels with art + an anchored cast (PANEL) or shots
+ * with finished clips (RENDER), worst EXISTING scores first, then
+ * never-scored. Capped - every score is a real vision call.
+ */
+export async function scoreProjectIdentity(projectId: string, limit = 4, source: IdentitySource = "PANEL"): Promise<{ scored: IdentityScoredShot[]; errors: Array<{ ref: string; error: string }> }> {
   const project = await db.project.findUnique({
     where: { id: projectId },
     include: { characters: { include: { states: true } } },
@@ -297,9 +392,14 @@ export async function scoreProjectIdentity(projectId: string, limit = 4): Promis
   if (!project) return { scored: [], errors: [] };
 
   const rows = await db.shot.findMany({
-    where: { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
+    where: source === "RENDER"
+      ? {
+          scene: { episode: { season: { projectId } } },
+          renderJobs: { some: { outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } } },
+        }
+      : { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
     include: {
-      identityScore: true,
+      identityScores: true,
       scene: { include: { episode: { include: { season: { select: { number: true } } } } } },
     },
     orderBy: { artGeneratedAt: "desc" },
@@ -312,8 +412,10 @@ export async function scoreProjectIdentity(projectId: string, limit = 4): Promis
   const candidates = rows
     .filter((r) => castByDescription(r.description).length > 0)
     .sort((a, b) => {
-      const wa = a.identityScore?.worst ?? -1; // unscored first... no: scored-worst first
-      const wb = b.identityScore?.worst ?? -1;
+      const sa = a.identityScores.find((s) => s.source === source);
+      const sb = b.identityScores.find((s) => s.source === source);
+      const wa = sa?.worst ?? -1;
+      const wb = sb?.worst ?? -1;
       if (wa === -1 && wb === -1) return 0;
       if (wa === -1) return 1; // unscored after known-bad
       if (wb === -1) return -1;
@@ -324,7 +426,7 @@ export async function scoreProjectIdentity(projectId: string, limit = 4): Promis
   const scored: IdentityScoredShot[] = [];
   const errors: Array<{ ref: string; error: string }> = [];
   for (const row of candidates) {
-    const res = await scoreShotIdentity(row.id);
+    const res = source === "RENDER" ? await scoreRenderIdentity(row.id) : await scoreShotIdentity(row.id, "PANEL");
     if (res.ok) scored.push(res.scored);
     else errors.push({ ref: `E${row.scene.episode.number} Sc${row.scene.number} S${String(row.number).padStart(3, "0")}`, error: res.error });
   }
@@ -336,6 +438,7 @@ export interface IdentityPanelRow {
   ref: string;
   description: string;
   artUrl: string | null;
+  source: IdentitySource; // what the vision model judged: the panel or a render frame
   worst: number | null; // null = never scored
   castSize: number;
   note: string | null;
@@ -345,7 +448,7 @@ export interface IdentityPanelRow {
 
 export interface IdentityPanelData {
   rows: IdentityPanelRow[]; // scored rows, worst first
-  queue: Array<{ shotId: string; ref: string; description: string; worst: number; entries: IdentityScoreEntry[] }>; // worst < threshold
+  queue: Array<{ shotId: string; ref: string; description: string; source: IdentitySource; worst: number; entries: IdentityScoreEntry[] }>; // worst < threshold
   shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>; // score-now picker
   threshold: number;
   average: number | null;
@@ -367,7 +470,7 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
   const rows = await db.shot.findMany({
     where: { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
     include: {
-      identityScore: true,
+      identityScores: true,
       scene: { include: { episode: { include: { season: { select: { number: true } } } } } },
     },
     orderBy: [{ artGeneratedAt: "desc" }],
@@ -378,32 +481,35 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
     detectCast(project.characters, description).some((c) => c.modelSheetUrl);
 
   const panelRows: IdentityPanelRow[] = rows
-    .filter((r) => r.identityScore && hasAnchoredCast(r.description))
-    .map((r) => {
-      let entries: IdentityScoreEntry[] = [];
-      try {
-        const parsed = JSON.parse(r.identityScore!.scores);
-        if (Array.isArray(parsed)) entries = parsed as IdentityScoreEntry[];
-      } catch {
-        entries = [];
-      }
-      return {
-        shotId: r.id,
-        ref: `E${r.scene.episode.number} Sc${r.scene.number} S${String(r.number).padStart(3, "0")}`,
-        description: r.description,
-        artUrl: r.artworkUrl,
-        worst: r.identityScore!.worst,
-        castSize: r.identityScore!.castSize,
-        note: r.identityScore!.note,
-        scoredAt: r.identityScore!.scoredAt.toISOString(),
-        entries,
-      };
-    })
+    .filter((r) => r.identityScores.length > 0 && hasAnchoredCast(r.description))
+    .flatMap((r) =>
+      r.identityScores.map((score) => {
+        let entries: IdentityScoreEntry[] = [];
+        try {
+          const parsed = JSON.parse(score.scores);
+          if (Array.isArray(parsed)) entries = parsed as IdentityScoreEntry[];
+        } catch {
+          entries = [];
+        }
+        return {
+          shotId: r.id,
+          ref: `E${r.scene.episode.number} Sc${r.scene.number} S${String(r.number).padStart(3, "0")}`,
+          description: r.description,
+          artUrl: r.artworkUrl,
+          source: (score.source === "RENDER" ? "RENDER" : "PANEL") as IdentitySource,
+          worst: score.worst,
+          castSize: score.castSize,
+          note: score.note,
+          scoredAt: score.scoredAt.toISOString(),
+          entries,
+        };
+      }),
+    )
     .sort((a, b) => (a.worst ?? 1) - (b.worst ?? 1));
 
   const queue = panelRows
     .filter((r) => (r.worst ?? 1) < IDENTITY_REPAINT_THRESHOLD)
-    .map((r) => ({ shotId: r.shotId, ref: r.ref, description: r.description, worst: r.worst as number, entries: r.entries }));
+    .map((r) => ({ shotId: r.shotId, ref: r.ref, description: r.description, source: r.source, worst: r.worst as number, entries: r.entries }));
 
   const shots = rows.slice(0, 30).map((r) => ({
     shotId: r.id,
@@ -555,7 +661,9 @@ export interface IdentityDriftData {
 /** Per-character drift curves over episode order for one production. */
 export async function identityDriftData(projectId: string): Promise<IdentityDriftData> {
   const rows = await db.identityScore.findMany({
-    where: { projectId },
+    // PANEL rows only: a shot scored from both its storyboard and its
+    // render would double-count as two points on the same episode slot
+    where: { projectId, source: "PANEL" },
     include: { shot: { include: { scene: { include: { episode: true } } } } },
     orderBy: { scoredAt: "asc" },
     take: 400,

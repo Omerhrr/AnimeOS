@@ -428,3 +428,157 @@ export function retimedPlanVisemes(
   }
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────
+// THE PERSISTED AUDIT
+//
+// The render-time warp computes and discards its acoustic picture
+// every pass - the stage line summarizes it, then it is gone. This
+// audit PERSISTS one take's alignment report on the VOICE cue row:
+// what the DSP found (speech runs, syllable anchors, voiced share),
+// and under the neural rung what the ASR heard against the line's
+// words (confirmed / skipped tokens, the transcript itself). The
+// sound timeline reads the report back as a badge so the studio can
+// see WHICH takes the mouth trusts the acoustics on.
+// ─────────────────────────────────────────────────────────────
+
+export interface AcousticAuditReport {
+  provider: AcousticProvider;
+  retimed: boolean; // would the acoustic warp engage for this take
+  speechRuns: number;
+  nuclei: number; // syllable anchors
+  speechMs: number;
+  gapMs: number;
+  spanMs: number;
+  tokens: number; // matchable tokens in the spoken line
+  confirmed: number | null; // tokens the ASR backed (neural rung only)
+  missing: number | null; // tokens the voice skipped (neural rung only)
+  matchRatio: number | null;
+  transcript: string | null; // what the ASR heard (neural rung only)
+  note: string;
+  auditedAt: string;
+}
+
+/**
+ * The spoken line behind a VOICE cue: labels are authored as
+ * "Speaker: text", so the text after the first separator is the
+ * performance; a shot dialogue line whose text matches the label's
+ * tail is preferred (it is the canonical wording).
+ */
+function spokenLineOf(label: string, dialogue: unknown): string {
+  const tail = label.includes(": ") ? label.split(":").slice(1).join(":").trim() : label.trim();
+  const lines = parseDialogueSafe(dialogue);
+  for (const line of lines) {
+    const a = line.toLowerCase();
+    const b = tail.toLowerCase();
+    if (a && (b.includes(a) || a.includes(b))) return line;
+  }
+  return tail;
+}
+
+function parseDialogueSafe(dialogue: unknown): string[] {
+  if (typeof dialogue !== "string" || !dialogue.trim()) return [];
+  try {
+    const parsed = JSON.parse(dialogue) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((l) => String((l as { text?: unknown })?.text ?? "").trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export type AcousticAuditResult =
+  | { ok: true; report: AcousticAuditReport }
+  | { ok: false; error: string };
+
+/**
+ * Audit ONE VOICE cue's take: analyze the WAV through the acoustic
+ * slot, and under the neural rung align the ASR transcript against
+ * the line's words. Persists the report on the cue (auditable), and
+ * returns it. No plan is re-timed here - the render-time warp owns
+ * that; this is the evidence it works from, kept on the record.
+ */
+export async function auditVoiceTakeAcoustics(
+  cue: { id: string; label: string; startMs: number; durationMs: number; voiceDurationMs: number | null; voiceUrl: string | null },
+  dialogue: unknown,
+  readWav: (url: string) => Buffer | null,
+): Promise<AcousticAuditResult> {
+  const provider = acousticProvider();
+  const spanMs = Math.max(200, cue.voiceDurationMs ?? cue.durationMs);
+  const span = { startMs: cue.startMs, endMs: cue.startMs + spanMs };
+  const base: AcousticAuditReport = {
+    provider,
+    retimed: false,
+    speechRuns: 0,
+    nuclei: 0,
+    speechMs: 0,
+    gapMs: 0,
+    spanMs,
+    tokens: 0,
+    confirmed: null,
+    missing: null,
+    matchRatio: null,
+    transcript: null,
+    note: "",
+    auditedAt: new Date().toISOString(),
+  };
+
+  const line = spokenLineOf(cue.label, dialogue);
+  const lineTokens = tokenizeLine(line);
+  base.tokens = lineTokens.length;
+
+  if (!cue.voiceUrl) {
+    base.note = "no rendered take yet - the plan performs from text only";
+    return { ok: true, report: base };
+  }
+  const wav = readWav(cue.voiceUrl);
+  if (!wav) {
+    base.note = "take file unreadable on disk";
+    return { ok: true, report: base };
+  }
+  const profile = analyzeAcoustics(wav, span);
+  if (!profile) {
+    base.note = "take could not be decoded as speech (no usable runs)";
+    return { ok: true, report: base };
+  }
+  base.retimed = provider !== "off";
+  base.speechRuns = profile.runs.length;
+  base.nuclei = profile.nuclei.length;
+  base.speechMs = profile.speechMs;
+  base.gapMs = profile.gapMs;
+
+  if (provider === "neural") {
+    const transcript = await transcribeTake(wav);
+    if (transcript) {
+      base.transcript = transcript.slice(0, 160);
+      const transcriptTokens = tokenizeLine(transcript);
+      if (lineTokens.length >= 2 && transcriptTokens.length > 0) {
+        const { confirmed, missing } = alignTokens(lineTokens, transcriptTokens);
+        base.confirmed = confirmed.size;
+        base.missing = missing;
+        base.matchRatio = lineTokens.length > 0 ? confirmed.size / lineTokens.length : 0;
+        base.note = `ASR heard ${confirmed.size}/${lineTokens.length} words of the line; the render-time warp snaps to ${profile.nuclei.length} syllable anchor${profile.nuclei.length === 1 ? "" : "s"}`;
+      } else {
+        base.note = `ASR transcript too short to align against the line; the DSP warp owns timing (${profile.nuclei.length} anchors)`;
+      }
+    } else {
+      base.note = "ASR unavailable (offline or refused) - DSP-only evidence recorded";
+    }
+  } else if (provider === "off") {
+    base.note = `acoustic slot off - the plan's even spread stands (take carries ${profile.nuclei.length} anchors unused)`;
+  } else {
+    base.note = `DSP evidence recorded: ${profile.runs.length} speech run${profile.runs.length === 1 ? "" : "s"}, warp snaps to ${profile.nuclei.length} syllable anchor${profile.nuclei.length === 1 ? "" : "s"} at render`;
+  }
+  return { ok: true, report: base };
+}
+
+/** One-line human summary the UI badges read. */
+export function describeAcousticReport(r: AcousticAuditReport): string {
+  const head = r.retimed
+    ? `re-timed from the take (${(r.speechMs / 1000).toFixed(1)}s voiced of ${(r.spanMs / 1000).toFixed(1)}s, ${r.nuclei} anchor${r.nuclei === 1 ? "" : "s"})`
+    : "plan timing stands";
+  const tail = r.matchRatio != null ? ` - ASR ${r.confirmed}/${r.tokens} words` : "";
+  return `${head}${tail}`;
+}

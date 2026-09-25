@@ -178,6 +178,24 @@ export function SoundTimelineDialog({
     }
   }, [onChanged, selectedId]);
 
+  // the acoustic slot's persisted audit: what the DSP heard in the
+  // take (speech runs, syllable anchors) and, under the neural rung,
+  // what the ASR heard against the line's words
+  const [auditing, setAuditing] = useState(false);
+  async function auditAcoustics(cue: AudioCueRow) {
+    setAuditing(true);
+    setBatchMsg(null);
+    try {
+      const report = await api.auditAcoustics(cue.id);
+      setCues((cs) => cs.map((c) => (c.id === cue.id ? { ...c, acousticReport: report } : c)));
+      setBatchMsg(`Acoustic audit: ${report.note}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Acoustic audit failed");
+    } finally {
+      setAuditing(false);
+    }
+  }
+
   const renderAllVoices = useCallback(async () => {
     const pending = cues.filter((c) => c.kind === "VOICE" && !c.voiceUrl);
     if (pending.length === 0) {
@@ -534,10 +552,42 @@ export function SoundTimelineDialog({
                   ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> Rendering…</>
                   : <><AudioLines className="h-3.5 w-3.5 mr-1" /> {selected.voiceUrl ? "Re-render take" : "Render voice take"}</>}
               </Button>
+              <Button
+                size="sm" variant="outline"
+                className="h-8 border-white/12 bg-white/5 text-[11px]"
+                onClick={() => void auditAcoustics(selected)}
+                disabled={auditing}
+                title="Run the acoustic slot on the take: speech runs, syllable anchors and (ANIMEOS_ACOUSTIC=neural) the ASR's word evidence - persisted on the cue"
+              >
+                {auditing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <AudioLines className="h-3.5 w-3.5 mr-1" />}
+                Acoustic audit
+              </Button>
               <span className="text-[9px] text-muted-foreground">
                 Takes render with the speaker's cast artist voice, mixed into exported slice stems and the live preview.
               </span>
             </div>
+            {selected.acousticReport && (
+              <div className="rounded-md border border-white/10 bg-black/25 px-2.5 py-2 space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5 text-[9px]">
+                  <span className={cn("px-1.5 py-0.5 rounded border font-semibold", selected.acousticReport.retimed ? "border-emerald-400/30 text-emerald-300 bg-emerald-400/10" : "border-amber-400/30 text-amber-300 bg-amber-400/10")}>
+                    {selected.acousticReport.provider === "neural" ? "NEURAL" : selected.acousticReport.provider === "off" ? "SLOT OFF" : "DSP"}
+                  </span>
+                  <span className={cn("px-1.5 py-0.5 rounded border font-semibold", selected.acousticReport.retimed ? "border-emerald-400/30 text-emerald-300 bg-emerald-400/10" : "border-white/15 text-muted-foreground bg-white/5")}>
+                    {selected.acousticReport.retimed ? "mouth re-timed from the take" : "plan timing stands"}
+                  </span>
+                  <span className="font-mono text-muted-foreground tabular-nums">
+                    {selected.acousticReport.speechRuns} run{selected.acousticReport.speechRuns === 1 ? "" : "s"} · {selected.acousticReport.nuclei} anchor{selected.acousticReport.nuclei === 1 ? "" : "s"} · {(selected.acousticReport.speechMs / 1000).toFixed(1)}s voiced
+                  </span>
+                  {selected.acousticReport.confirmed != null && (
+                    <span className="font-mono text-cyan-300/90 tabular-nums">ASR {selected.acousticReport.confirmed}/{selected.acousticReport.tokens} words</span>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  {selected.acousticReport.note}
+                  {selected.acousticReport.transcript && <span className="text-cyan-300/80"> · heard: “{selected.acousticReport.transcript}”</span>}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

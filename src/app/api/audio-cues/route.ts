@@ -38,12 +38,22 @@ export async function GET(req: Request) {
   }
 
   const enriched = cues.map((cue) => {
+    // the acoustic slot's persisted audit is stored as JSON text -
+    // parse it for the client (a corrupt report reads as null)
+    let acousticReport: unknown = null;
+    if (cue.acousticReport) {
+      try {
+        acousticReport = JSON.parse(cue.acousticReport);
+      } catch {
+        acousticReport = null;
+      }
+    }
     if (cue.kind !== "VOICE" || !cue.label.includes(": ")) {
-      return { ...cue, cast: null };
+      return { ...cue, acousticReport, cast: null };
     }
     const speaker = cue.label.split(":")[0].trim().toLowerCase();
     const cast = castBySpeaker.get(speaker) ?? null;
-    return { ...cue, cast };
+    return { ...cue, acousticReport, cast };
   });
   return NextResponse.json(enriched);
 }

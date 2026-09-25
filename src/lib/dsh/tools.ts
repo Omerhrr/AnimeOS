@@ -257,11 +257,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "create_schedule",
-    description: "Register a CADENCE SCHEDULE so the studio keeps working between conversations: PLAN_RUN runs an approved plan on a cadence (the nightly-breakdown pattern: land the plan, the creator approves it once, this walks maxSteps per night until DONE - a finished plan hands the slot to the next ACTIVE one), REPAINT_QUEUE is render-queue supervision (ticks active render jobs, starts a supervised re-paint pass when the universe-facts queue is dirty and no run is live) and DAILY_DIGEST posts a digest of the last 24 hours to the creator (renders, plan steps, schedule fires, canon/identity health) as a production event the digest panel shows. Every fire lands as a production event with its outcome; the creator steers (enable/disable/run-now/delete) from the scheduler panel on the DSH view.",
+    description: "Register a CADENCE SCHEDULE so the studio keeps working between conversations: PLAN_RUN runs an approved plan on a cadence (the nightly-breakdown pattern: land the plan, the creator approves it once, this walks maxSteps per night until DONE - a finished plan hands the slot to the next ACTIVE one), REPAINT_QUEUE is render-queue supervision (ticks active render jobs, starts a supervised re-paint pass when the universe-facts queue is dirty and no run is live), DAILY_DIGEST posts a digest of the last 24 hours to the creator (renders, plan steps, schedule fires, canon/identity health) as a production event the digest panel shows, and PUBLISH_RUN stages the delivery-spine publish package (episode + platform preset) on a cadence, conformance checks and hand-off folder included. Every fire lands as a production event with its outcome; the creator steers (enable/disable/run-now/delete) from the scheduler panel on the DSH view.",
     args: {
       name: "string - short schedule name (e.g. 'Nightly Episode 2 breakdown')",
-      kind: "PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST",
+      kind: "PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST | PUBLISH_RUN",
       planTitle: "string (PLAN_RUN optional - pins a plan by title; omit to always run the latest ACTIVE plan)",
+      publishEpisode: "number (PUBLISH_RUN: which episode gets staged, default 1)",
+      publishPlatform: "string (PUBLISH_RUN: YOUTUBE | BILIBILI | DOUYIN | TIKTOK | STUDIO_INGEST)",
       cadence: "HOURLY | DAILY | WEEKLY (default DAILY)",
       intervalHours: "number 1-24 (HOURLY: every N hours, default 1)",
       hourUtc: "number 0-23 (DAILY/WEEKLY hour of day, default 2 = the studio night)",
@@ -1294,6 +1296,8 @@ export async function executeTool(projectId: string, name: string, args: Record<
           name: String(args.name ?? ""),
           kind,
           planId,
+          publishEpisode: args.publishEpisode === undefined ? null : Number(args.publishEpisode),
+          publishPlatform: args.publishPlatform === undefined ? null : String(args.publishPlatform ?? ""),
           cadence: String(args.cadence ?? "DAILY"),
           intervalHours: Number(args.intervalHours ?? 1),
           hourUtc: Number(args.hourUtc ?? 2),
@@ -1304,7 +1308,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
         });
         if (!result.ok) return { status: "ERROR", result: result.error };
         const s = result.schedule;
-        const kindNote = s.kind === "PLAN_RUN" ? "runs an approved plan" : s.kind === "DAILY_DIGEST" ? "posts the daily digest to the creator" : "render-queue supervision";
+        const kindNote = s.kind === "PLAN_RUN" ? "runs an approved plan" : s.kind === "DAILY_DIGEST" ? "posts the daily digest to the creator" : s.kind === "PUBLISH_RUN" ? `stages EP${s.publishEpisode} for ${s.publishPlatform} on the delivery spine` : "render-queue supervision";
         const deliveryNote = s.kind === "DAILY_DIGEST" && (s.webhookUrl || s.digestEmail)
           ? ` Delivery: ${s.webhookUrl ? "webhook" : ""}${s.webhookUrl && s.digestEmail ? " + " : ""}${s.digestEmail ? "email" : ""}.`
           : "";
