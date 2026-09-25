@@ -754,6 +754,17 @@ export const api = {
     j<DshTurnResult>("/api/dsh", { method: "POST", body: JSON.stringify({ projectId, message }) }),
   fetchTerminology: (projectId: string) =>
     j<Array<{ id: string; term: string; category: string | null; translations: string }>>(`/api/terminology?projectId=${projectId}`),
+  translateSubtitles: (body: { projectId: string; targetLang: string; srt?: string; episodeId?: string }) =>
+    j<{
+      targetLang: string;
+      sourceNote: string;
+      sourceCues: Array<{ index: number; startMs: number; endMs: number; text: string }>;
+      cues: Array<{ index: number; startMs: number; endMs: number; text: string }>;
+      srt: string;
+      glossary: Array<{ term: string; category: string | null; translation: string | null; known: Record<string, string> }>;
+      suggestions: Array<{ term: string; translation: string; hits: number }>;
+      stats: { cues: number; batches: number; glossarySize: number; termHits: number; suggestions: number; longestTargetLine: number; providerNote: string };
+    }>("/api/subtitles", { method: "POST", body: JSON.stringify({ action: "translate", ...body }) }),
 };
 
 export function parseFindings(raw: string | null | undefined): EvaluationFinding[] {

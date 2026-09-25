@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import {
   Clapperboard, MessageSquareDot, FolderKanban, Users, Film, GanttChartSquare,
-  MonitorPlay, ShieldAlert, Languages, History, Sparkles, Loader2, Gauge, BookOpen,
+  MonitorPlay, ShieldAlert, Languages, History, Sparkles, Loader2, Gauge, BookOpen, Captions,
 } from "lucide-react";
 import { useStudio, type StudioView, } from "@/lib/store";
 import { api } from "@/lib/api-client";
@@ -24,6 +24,7 @@ import { TimelineView } from "@/components/views/timeline-view";
 import { RenderView } from "@/components/views/render-view";
 import { ContinuityView } from "@/components/views/continuity-view";
 import { TerminologyView } from "@/components/views/terminology-view";
+import { SubtitlesView } from "@/components/views/subtitles-view";
 import { HistoryView } from "@/components/views/history-view";
 import { UserMenu } from "@/components/studio/user-menu";
 
@@ -43,6 +44,7 @@ const NAV: Array<{ id: StudioView; label: string; icon: React.ComponentType<{ cl
   { id: "render", label: "Render Queue", icon: MonitorPlay, group: "Pipeline" },
   { id: "continuity", label: "Continuity", icon: ShieldAlert, group: "Pipeline" },
   { id: "terminology", label: "Terminology", icon: Languages, group: "Pipeline" },
+  { id: "subtitles", label: "Subtitles", icon: Captions, group: "Pipeline" },
   { id: "history", label: "History", icon: History, group: "Pipeline" },
 ];
 
@@ -193,6 +195,7 @@ function Shell() {
               {view === "render" && <RenderView project={project} />}
               {view === "continuity" && <ContinuityView project={project} />}
               {view === "terminology" && <TerminologyView project={project} />}
+              {view === "subtitles" && <SubtitlesView project={project} />}
               {view === "history" && <HistoryView project={project} />}
             </div>
           )}

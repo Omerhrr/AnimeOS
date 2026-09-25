@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { scanArtContinuity, checkShotArtContinuity } from "@/lib/continuity-art";
 import { checkShotUniverseFacts } from "@/lib/universe-facts";
@@ -18,6 +20,8 @@ import { scheduleHealthData } from "@/lib/schedule-health";
 import { postDailyDigest } from "@/lib/digest";
 import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
 import { uploadStagedPackage, findStagedPackage } from "@/lib/comic/upload";
+import { parseSrt, serializeSrt } from "@/lib/subtitles/srt";
+import { buildEpisodeDialogueCues, normalizeLangTag, translateSubtitleCues } from "@/lib/subtitles/translate";
 import { trainCharacterVoice } from "@/lib/ai/voice-clone";
 import { createRenderJob } from "@/lib/engine/render";
 import {
@@ -557,6 +561,15 @@ export const TOOL_DEFS: ToolDef[] = [
       shotFrom: "number - first shot number of the arc (defaults to the start scene's first shot)",
       toSceneNumber: "number, episode scope only - the scene the arc ENDS in",
       shotTo: "number - last shot number of the arc, inclusive",
+    },
+  },
+  {
+    name: "translate_subtitles",
+    description: "Translate an episode's subtitles into a target language with the production's TERMINOLOGY MEMORY enforced as the glossary: every canonical term's fixed rendering is injected into the translation and a deterministic post-pass re-writes any cue the model drifted from (the memory proposes through the prompt, and disposes in the post-pass - 青焰 stays Azure Flame across every cue and every language). Source is either the episode's dialogue (timed by cumulative shot durations) or a raw SRT document passed directly. Terms the model rendered consistently that memory does not know yet come back as SUGGESTIONS worth adopting (adopt them with create_terminology so the next translation is even more consistent). The translated SRT is written to public/subtitles/ and lands as a TRANSLATION event the history feed shows.",
+    args: {
+      targetLang: "string - BCP-47 language tag like en-US, ja-JP, ko-KR, zh-TW",
+      episodeNumber: "number (optional - translate this episode's dialogue; defaults to the latest episode)",
+      srt: "string (optional - a raw SRT document to translate instead of the episode's dialogue)",
     },
   },
 ];
@@ -2916,6 +2929,74 @@ export async function executeTool(projectId: string, name: string, args: Record<
         return applyResolvedTemplate(projectId, ch, resolved.template, resolved.source, stateRes.label, args);
       }
 
+      case "translate_subtitles": {
+        const targetLang = normalizeLangTag(String(args.targetLang ?? "").trim());
+        if (!/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/i.test(targetLang)) {
+          return { status: "ERROR", result: `targetLang must be a language tag like en-US or ja-JP (got "${targetLang || "none"}").` };
+        }
+        const rawSrt = typeof args.srt === "string" ? args.srt.trim() : "";
+        let cues;
+        let sourceNote: string;
+        let epNumber: number | null = null;
+        if (rawSrt) {
+          const parsed = parseSrt(rawSrt);
+          if (parsed.cues.length === 0) {
+            return { status: "ERROR", result: "The passed SRT has no parseable cues - check the timecodes." };
+          }
+          cues = parsed.cues;
+          sourceNote = `pasted SRT (${parsed.cues.length} cues${parsed.skipped > 0 ? `, ${parsed.skipped} skipped` : ""})`;
+        } else {
+          const ep = args.episodeNumber
+            ? await db.episode.findFirst({
+                where: { season: { projectId }, number: Number(args.episodeNumber) },
+                orderBy: { season: { number: "asc" } },
+              })
+            : await latestEpisode(projectId);
+          if (!ep) return { status: "ERROR", result: "No episode exists yet - create one with create_episode first, or pass an srt document directly." };
+          const built = await buildEpisodeDialogueCues(ep.id);
+          if (built.cues.length === 0) {
+            return { status: "ERROR", result: `EP${String(ep.number).padStart(2, "0")}: ${built.note}.` };
+          }
+          cues = built.cues;
+          sourceNote = built.note;
+          epNumber = ep.number;
+        }
+
+        let outcome;
+        try {
+          outcome = await translateSubtitleCues(projectId, cues, targetLang);
+        } catch (err) {
+          return { status: "ERROR", result: `Translation failed: ${err instanceof Error ? err.message : String(err)}` };
+        }
+
+        // Persist the translated SRT under public/subtitles/.
+        const proj = await db.project.findUnique({ where: { id: projectId }, select: { title: true } });
+        const slug = String(proj?.title ?? "episode").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "episode";
+        const epTag = epNumber !== null ? `-ep${String(epNumber).padStart(2, "0")}` : "";
+        const filename = `${slug}${epTag}-${targetLang}.srt`;
+        try {
+          const dir = path.join(process.cwd(), "public", "subtitles");
+          await fs.promises.mkdir(dir, { recursive: true });
+          await fs.promises.writeFile(path.join(dir, filename), serializeSrt(outcome.cues), "utf8");
+        } catch {
+          return { status: "OK", result: `Translation finished (${outcome.stats.cues} cues, glossary ${outcome.stats.glossarySize}, ${outcome.stats.termHits} enforcement pass(es)) but the SRT file could not be written - the full document is in this result:\n\n${serializeSrt(outcome.cues)}` };
+        }
+
+        const suggestionsNote = outcome.suggestions.length > 0
+          ? ` New-term suggestions worth adopting into memory: ${outcome.suggestions.map((s) => `"${s.term}" -> "${s.translation}"`).join("; ")}. Adopt them with create_terminology.`
+          : "";
+        await db.productionEvent.create({
+          data: {
+            projectId,
+            actor: "DSH",
+            type: "TRANSLATION",
+            summary: `Subtitles translated to ${targetLang}: ${outcome.stats.cues} cues, glossary ${outcome.stats.glossarySize}, ${outcome.stats.termHits} enforcement pass(es) -> /subtitles/${filename}`,
+            payload: JSON.stringify({ targetLang, source: sourceNote, stats: outcome.stats, suggestions: outcome.suggestions, file: `/subtitles/${filename}` }),
+          },
+        });
+        return { status: "OK", result: `Subtitles translated to ${targetLang} (${sourceNote}; ${outcome.stats.cues} cues in ${outcome.stats.batches} batches, glossary ${outcome.stats.glossarySize} entr${outcome.stats.glossarySize === 1 ? "y" : "ies"}, ${outcome.stats.termHits} cue(s) needed the enforcement pass, ${outcome.stats.suggestions} suggestion(s), ${outcome.stats.providerNote}). Translated SRT: /subtitles/${filename}.${suggestionsNote}` };
+      }
+
       default:
         return { status: "ERROR", result: `Unknown tool: ${name}` };
     }
@@ -3030,7 +3111,21 @@ export async function buildCompactContext(projectId: string) {
     assets: project.assets.map((a) => `${a.category}:${a.name}(${a.status})`),
     continuity: project.continuityEvents.map((c) => `${c.entityName} ${c.kind}${c.episodeNumber ? ` @Ep${c.episodeNumber}` : ""}`),
     universeFacts: project.universeFacts.map((f) => `${f.category}: ${f.text}${f.active ? "" : " (inactive)"}`),
-    terminology: project.terminology.map((t) => t.term),
+    terminology: project.terminology.map((t) => {
+      let fixed: string[] = [];
+      try {
+        const parsed = JSON.parse(t.translations);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          fixed = Object.entries(parsed as Record<string, unknown>)
+            .filter(([, v]) => typeof v === "string" && (v as string).trim())
+            .slice(0, 4)
+            .map(([lang, v]) => `${lang}=${String(v).slice(0, 24)}`);
+        }
+      } catch {
+        fixed = [];
+      }
+      return `${t.term}${t.category ? ` [${t.category}]` : ""}${fixed.length > 0 ? ` (${fixed.join(", ")})` : ""}`;
+    }),
     plans: project.dshPlans.map((p) => {
       const steps = parsePlanSteps(p.steps);
       return `${p.status} '${p.title}' (${steps.filter((s) => s.status === "DONE").length}/${steps.length} done) - ${p.goal}`;

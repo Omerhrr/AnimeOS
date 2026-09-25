@@ -13,6 +13,7 @@ export type StudioView =
   | "render"
   | "continuity"
   | "terminology"
+  | "subtitles"
   | "history";
 
 interface StudioState {

@@ -83,9 +83,9 @@ function check(name: string, ok: boolean, detail = "") {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Synthesize a REAL PNG on disk with ffmpeg (the image provider's artifact slot). */
-function synthesizePng(file: string, size: string, color: string) {
+async function synthesizePng(file: string, size: string, color: string) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const { execSync } = require("node:child_process") as typeof import("node:child_process");
+  const { execSync } = await import("node:child_process");
   execSync(`ffmpeg -y -loglevel error -f lavfi -i color=c=${color}:s=${size} -frames:v 1 "${file}"`);
   if (!fs.existsSync(file) || fs.statSync(file).size === 0) throw new Error(`ffmpeg did not write ${file}`);
 }
@@ -209,7 +209,7 @@ if (step === "tool") {
     if (!c) throw new Error(`character ${characterName} missing`);
     const disk = path.join(process.cwd(), "public", "sheets", `${c.id}.png`);
     if (!(c.modelSheetUrl && fs.existsSync(disk))) {
-      synthesizePng(disk, "1024x1024", color);
+      await synthesizePng(disk, "1024x1024", color);
       const now = new Date();
       await db.character.update({
         where: { id: c.id },
@@ -227,7 +227,7 @@ if (step === "tool") {
       const result = await executeTool(projectId, "generate_panel_art", { sceneNumber: 1, shotNumber: shot.number });
       const after = await db.shot.findUnique({ where: { id: shot.id } });
       if (!(after?.artworkUrl && fs.existsSync(disk))) {
-        synthesizePng(disk, size, color);
+        await synthesizePng(disk, size, color);
         const now = new Date();
         await db.shot.update({ where: { id: shot.id }, data: { artworkUrl: `/panels/${shot.id}.png?v=${now.getTime()}`, artGeneratedAt: now } });
         return { real: false, shot: await db.shot.findUnique({ where: { id: shot.id } })!, result };
