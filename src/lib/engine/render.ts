@@ -19,6 +19,8 @@ import {
   pollLocalJob, localJobStale,
 } from "@/lib/bridge/blender";
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
+import { characterDesignDna, environmentDna } from "@/lib/animation/design";
+import { detectCast } from "@/lib/ai/art";
 import {
   img2vidHost, img2vidProvider, submitImg2VidJob, pollImg2VidJob,
   submitImg2VidZaiJob, pollImg2VidZaiJob,
@@ -139,7 +141,10 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
   // Pick the first engine that can take the job.
   const bridge = await bridgeStatus(true);
   const shot = shotId
-    ? await db.shot.findUnique({ where: { id: shotId }, include: { scene: true, audioCues: true } })
+    ? await db.shot.findUnique({
+        where: { id: shotId },
+        include: { scene: { include: { episode: true, environment: true } }, audioCues: true },
+      })
     : null;
 
   // LIP-SYNC: a speaking closeup (SPEECH dialogue + tight framing)
@@ -154,6 +159,40 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
 
   if (bridge.reachable && shot) {
     const project = await db.project.findUnique({ where: { id: projectId } });
+
+    // DESIGN PASS: compile the production's design text (model-sheet
+    // anchors, appearance notes, the active state's wardrobe/weapon,
+    // the environment brief) into renderable DNA so the 3D worker
+    // builds the DESIGNED characters and set, not anonymous stand-ins.
+    const episodeNumber = shot.scene.episode.number;
+    const castRows = await db.character.findMany({ where: { projectId }, include: { states: true } });
+    const cast = detectCast(castRows, shot.description)
+      .slice(0, 2)
+      .map((c) => {
+        const st = [...c.states]
+          .filter((s) => s.episodeNumber === null || s.episodeNumber <= episodeNumber)
+          .sort((a, b) => (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1) || b.createdAt.getTime() - a.createdAt.getTime())[0];
+        return characterDesignDna({
+          name: c.name,
+          role: c.role,
+          appearance: c.appearance,
+          modelSheetPrompt: c.modelSheetPrompt,
+          stateClothing: st?.clothing ?? null,
+          stateWeapon: st?.weapon ?? null,
+        });
+      });
+    const env = shot.scene.environment
+      ? environmentDna({
+          name: shot.scene.environment.name,
+          description: shot.scene.environment.description,
+          atmosphere: shot.scene.environment.atmosphere,
+          timeOfDay: shot.scene.environment.timeOfDay,
+          weather: shot.scene.environment.weather,
+          sceneTimeOfDay: shot.scene.timeOfDay,
+          sceneWeather: shot.scene.weather,
+        })
+      : null;
+
     const payload = {
       jobId: job.id,
       shot: {
@@ -167,6 +206,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),
+        ...(cast.length > 0 ? { cast } : {}),
       },
       scene: {
         number: shot.scene.number,
@@ -176,6 +216,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         energyIntensity: shot.scene.energyIntensity,
         cameraDistance: shot.scene.cameraDistance,
         rimLightIntensity: shot.scene.rimLightIntensity,
+        ...(env ? { environment: env } : {}),
       },
       project: {
         title: project?.title ?? "AnimeOS",

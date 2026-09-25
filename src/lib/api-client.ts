@@ -496,10 +496,35 @@ export interface EpisodeCutResult {
   audioKinds: Record<string, number>;
 }
 
+export interface CharacterDesignDnaView {
+  name: string;
+  hairColor: string;
+  hairStyle: string;
+  robeColor: string;
+  robeAccent: string;
+  skinTone: string;
+  weaponType: string;
+  bladeColor: string;
+  build: string;
+}
+
+export interface EnvironmentDesignDnaView {
+  name: string;
+  terrain: string;
+  timeOfDay: string;
+  weather: string;
+  skyColor: string;
+  fogColor: string;
+  groundColor: string;
+  keyLight: string;
+  features: string[];
+}
+
 export interface SceneAnalysis {
   scene: SceneWithShots;
   continuity: Array<{ entityName: string; kind: string; eventEpisode: number | null; description: string; severity: string; resolutions: string[] }>;
   capabilities: Array<{ requirement: string; category: string; present: boolean; detail: string }>;
+  design?: { cast: CharacterDesignDnaView[]; environment: EnvironmentDesignDnaView | null };
 }
 
 export const api = {

@@ -171,6 +171,34 @@ export async function bridgeStatus(force = false): Promise<BridgeStatus> {
   };
 }
 
+// DESIGN DNA: compiled by src/lib/animation/design.ts from the
+// production's design text (model-sheet anchors, appearance notes,
+// wardrobe/weapon states, environment briefs). The worker renders
+// the DESIGNED character and set from it; when it is absent the
+// worker falls back to the legacy stand-in figure and set.
+interface CharacterDesignDnaWire {
+  name: string;
+  hairColor: string;
+  hairStyle: string;
+  robeColor: string;
+  robeAccent: string;
+  skinTone: string;
+  weaponType: string;
+  bladeColor: string;
+  build: string;
+}
+interface EnvironmentDesignDnaWire {
+  name: string;
+  terrain: string;
+  timeOfDay: string;
+  weather: string;
+  skyColor: string;
+  fogColor: string;
+  groundColor: string;
+  keyLight: string;
+  features: string[];
+}
+
 export interface BridgeJobPayload {
   jobId: string;
   shot: {
@@ -180,8 +208,10 @@ export interface BridgeJobPayload {
     // (SPEECH dialogue + CLOSEUP/EXTREME_CLOSEUP). The worker drives
     // the stand-in's mouth rig from it per frame.
     speech?: { visemes: Array<{ s: number; e: number; o: number; w: number; r: number }>; lines: number } | null;
+    // DESIGN: the detected cast (index 0 = the hero the rig drives)
+    cast?: CharacterDesignDnaWire[];
   };
-  scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number };
+  scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number; environment?: EnvironmentDesignDnaWire };
   project: { title: string; visualStyle: string; resolution: string; fps: number };
   mode: "PREVIEW" | "FINAL";
 }

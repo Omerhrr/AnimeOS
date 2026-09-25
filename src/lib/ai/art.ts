@@ -111,6 +111,7 @@ export function shotLoraDirective(
 interface CastMember {
   id: string;
   name: string;
+  role?: string | null;
   appearance: string | null;
   modelSheetPrompt: string | null;
   modelSheetUrl?: string | null;
