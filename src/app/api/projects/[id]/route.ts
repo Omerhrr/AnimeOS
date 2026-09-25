@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireRole, authGuardResponse } from "@/lib/auth";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -62,13 +63,29 @@ export async function GET(_req: Request, ctx: Ctx) {
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // The human approval gate is studio POLICY: flipping it is OWNER-only
+  // and DB-fresh (the rest of the patch stays EDITOR-tunable).
+  let gateActor: string | null = null;
+  if (body.approvalGate !== undefined) {
+    const guard = await requireRole(req, "OWNER");
+    if (!guard.ok) return authGuardResponse(guard)!;
+    gateActor = guard.user.name;
+  }
+
   const data: Record<string, unknown> = {};
   for (const key of ["title", "logline", "format", "animationType", "visualStyle", "originalLanguage", "resolution", "status"]) {
     if (body[key] !== undefined) data[key] = String(body[key]);
   }
   if (body.fps !== undefined) data.fps = Number(body.fps);
   if (body.subtitleLanguages !== undefined) data.subtitleLanguages = JSON.stringify(body.subtitleLanguages);
+  if (body.approvalGate !== undefined) data.approvalGate = Boolean(body.approvalGate);
   // Per-production art style tuning (nullable free-text directives)
   for (const key of ["artStylePrompt", "artPalettePrompt", "artNegativePrompt"]) {
     if (body[key] !== undefined) {
@@ -77,6 +94,17 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
   }
   const project = await db.project.update({ where: { id }, data });
+  if (body.approvalGate !== undefined) {
+    await db.productionEvent.create({
+      data: {
+        projectId: project.id,
+        actor: "USER",
+        type: "PROJECT",
+        summary: `Human approval gate ${project.approvalGate ? "ARMED - DSH-approved renders now wait for a creator's approval" : "released - DSH approvals land directly"}`,
+        payload: JSON.stringify({ approvalGate: project.approvalGate, by: gateActor }),
+      },
+    });
+  }
   if (Object.keys(data).some((k) => k.startsWith("art"))) {
     await db.productionEvent.create({
       data: {

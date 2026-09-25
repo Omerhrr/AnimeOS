@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import {
   Clapperboard, MessageSquareDot, FolderKanban, Users, Film, GanttChartSquare,
   MonitorPlay, ShieldAlert, Languages, History, Sparkles, Loader2, Gauge, BookOpen, Captions,
+  MessagesSquare,
 } from "lucide-react";
 import { useStudio, type StudioView, } from "@/lib/store";
 import { api } from "@/lib/api-client";
@@ -25,6 +26,7 @@ import { RenderView } from "@/components/views/render-view";
 import { ContinuityView } from "@/components/views/continuity-view";
 import { TerminologyView } from "@/components/views/terminology-view";
 import { SubtitlesView } from "@/components/views/subtitles-view";
+import { ReviewsView } from "@/components/views/reviews-view";
 import { HistoryView } from "@/components/views/history-view";
 import { UserMenu } from "@/components/studio/user-menu";
 
@@ -42,6 +44,7 @@ const NAV: Array<{ id: StudioView; label: string; icon: React.ComponentType<{ cl
   { id: "comic", label: "Comic Mode", icon: BookOpen, group: "Production" },
   { id: "timeline", label: "Timeline", icon: GanttChartSquare, group: "Production" },
   { id: "render", label: "Render Queue", icon: MonitorPlay, group: "Pipeline" },
+  { id: "reviews", label: "Reviews", icon: MessagesSquare, group: "Pipeline" },
   { id: "continuity", label: "Continuity", icon: ShieldAlert, group: "Pipeline" },
   { id: "terminology", label: "Terminology", icon: Languages, group: "Pipeline" },
   { id: "subtitles", label: "Subtitles", icon: Captions, group: "Pipeline" },
@@ -193,6 +196,7 @@ function Shell() {
               {view === "comic" && <ComicView project={project} />}
               {view === "timeline" && <TimelineView project={project} />}
               {view === "render" && <RenderView project={project} />}
+              {view === "reviews" && <ReviewsView project={project} />}
               {view === "continuity" && <ContinuityView project={project} />}
               {view === "terminology" && <TerminologyView project={project} />}
               {view === "subtitles" && <SubtitlesView project={project} />}

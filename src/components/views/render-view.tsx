@@ -2,17 +2,64 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSession } from "next-auth/react";
 import {
   MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable, Boxes,
-  Layers, ListFilter, Play, Clapperboard, Timer, Send,
+  Layers, ListFilter, Play, Clapperboard, Timer, Send, MessagesSquare, ShieldAlert, XCircle,
 } from "lucide-react";
 import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge } from "@/components/views/shared";
+import { CommentThread } from "@/components/views/comment-thread";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
 import { formatSeconds, parseTelemetry, providerLedger } from "@/lib/engine/telemetry";
 import { cn } from "@/lib/utils";
+
+// The HUMAN GATE control (Iteration 48): studio policy, OWNER-only.
+// Armed, a DSH APPROVED inspection parks the render at REVIEW until a
+// creator releases it - the gate lives between the evaluator and the
+// queue's APPROVED state.
+function ApprovalGateControl({ project }: { project: StudioProject }) {
+  const qc = useQueryClient();
+  const { data: session } = useSession();
+  const isOwner = session?.user?.role === "OWNER";
+  const [busy, setBusy] = useState(false);
+  const armed = project.approvalGate;
+
+  async function toggle() {
+    if (!isOwner || busy) return;
+    setBusy(true);
+    try {
+      await api.setApprovalGate(project.id, !armed);
+      qc.invalidateQueries({ queryKey: ["project", project.id] });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not change the gate");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={() => void toggle()}
+      disabled={!isOwner || busy}
+      title={isOwner
+        ? armed ? "The human approval gate is ARMED - click to release it (DSH approvals land directly again)" : "Arm the human approval gate - DSH-approved renders will wait for a creator's approval"
+        : "Only an OWNER can arm or release the approval gate"}
+      className={cn(
+        "px-2.5 h-7 rounded-lg text-[11px] font-medium border transition-colors inline-flex items-center gap-1.5",
+        armed ? "bg-amber-400/15 text-amber-200 border-amber-400/40" : "text-muted-foreground border-white/10 bg-white/5 hover:text-foreground",
+        !isOwner && "cursor-not-allowed opacity-80"
+      )}
+    >
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldAlert className="h-3 w-3" />}
+      Human gate: {armed ? "ARMED" : "off"}
+    </button>
+  );
+}
 
 function EngineDriverCard() {
   const bridgeQ = useQuery({ queryKey: ["bridge"], queryFn: api.bridgeStatus, refetchInterval: 5000 });
@@ -563,8 +610,13 @@ function PublishingPanel({ project }: { project: StudioProject }) {
 export function RenderView({ project }: { project: StudioProject }) {
   const qc = useQueryClient();
   const { projectId, openPreview } = useStudio();
+  const { data: session } = useSession();
+  const canDirect = session?.user?.role === "OWNER" || session?.user?.role === "EDITOR";
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filter, setFilter] = useState<QueueFilter>("ALL");
+  // the human reject flow: which card is asking for a note, and the note
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNote, setRejectNote] = useState("");
 
   const jobsQ = useQuery({
     queryKey: ["renderJobs", projectId],
@@ -584,11 +636,21 @@ export function RenderView({ project }: { project: StudioProject }) {
     }
   }
 
+  async function sendReject(jobId: string) {
+    const note = rejectNote.trim();
+    if (!note) return;
+    await act(() => api.renderReject(jobId, note), jobId);
+    setRejectingId(null);
+    setRejectNote("");
+  }
+
   const jobs = jobsQ.data ?? [];
   const counts = useMemo(() => ({
     active: jobs.filter((j) => ["QUEUED", "RENDERING", "INSPECTING"].includes(j.status)).length,
     review: jobs.filter((j) => ["REVIEW", "NEEDS_REVISION"].includes(j.status)).length,
     approved: jobs.filter((j) => ["APPROVED"].includes(j.status)).length,
+    // DSH said APPROVED but the human gate holds the render at REVIEW
+    gateHeld: jobs.filter((j) => j.status === "REVIEW" && j.evaluation?.verdict === "APPROVED").length,
   }), [jobs]);
   // per-provider ledger: latency + cost aggregated over every job that
   // finished with telemetry (spans chain takeovers, credits bill the final provider)
@@ -626,10 +688,14 @@ export function RenderView({ project }: { project: StudioProject }) {
           <span className="px-2 py-0.5 rounded border border-amber-400/25 bg-amber-400/5 tabular-nums">{counts.active} active</span>
           <span className="px-2 py-0.5 rounded border border-violet-400/25 bg-violet-400/5 tabular-nums">{counts.review} in review</span>
           <span className="px-2 py-0.5 rounded border border-emerald-400/25 bg-emerald-400/5 tabular-nums">{counts.approved} approved</span>
+          {counts.gateHeld > 0 && (
+            <span className="px-2 py-0.5 rounded border border-amber-400/40 bg-amber-400/10 text-amber-200 tabular-nums font-medium" title="DSH approved these renders, but the human approval gate holds them at REVIEW until a creator releases them">{counts.gateHeld} awaiting approval</span>
+          )}
           {totalCredits > 0 && (
             <span className="px-2 py-0.5 rounded border border-sky-400/25 bg-sky-400/5 tabular-nums" title="Estimated cost over these jobs (hosted providers bill per clip-second)">~{totalCredits} credits</span>
           )}
         </div>
+        <ApprovalGateControl project={project} />
         <div className="ml-auto flex items-center gap-1">
           <ListFilter className="h-3.5 w-3.5 text-muted-foreground" />
           {FILTERS.map((f) => (
@@ -723,6 +789,18 @@ export function RenderView({ project }: { project: StudioProject }) {
                       View in 3D
                     </Button>
                   )}
+                  {job.shot && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-7 text-[11px] border-white/12 bg-white/5" title="Open the workplace thread on this shot">
+                          <MessagesSquare className="h-3 w-3 mr-1" /> Discuss
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 max-h-96 overflow-y-auto studio-scroll" align="end">
+                        <CommentThread anchorType="SHOT" anchorId={job.shot.id} label={`Shot ${String(job.shot.number).padStart(3, "0")}`} />
+                      </PopoverContent>
+                    </Popover>
+                  )}
                   {job.status === "NEEDS_REVISION" && (
                     <Button size="sm" className="h-7 text-[11px]" disabled={busyId === job.id}
                       onClick={() => act(() => api.renderApply(job.evaluation!.id), job.id)}>
@@ -736,14 +814,40 @@ export function RenderView({ project }: { project: StudioProject }) {
                       <RotateCcw className="h-3 w-3 mr-1" /> Retry
                     </Button>
                   )}
-                  {["NEEDS_REVISION", "REVIEW", "APPROVED"].includes(job.status) && job.shot && job.status !== "APPROVED" && (
+                  {canDirect && ["NEEDS_REVISION", "REVIEW", "APPROVED"].includes(job.status) && job.shot && job.status !== "APPROVED" && (
                     <Button size="sm" variant="outline" className="h-7 text-[11px] border-emerald-400/30 bg-emerald-400/5 text-emerald-200" disabled={busyId === job.id}
                       onClick={() => act(() => api.renderApprove(job.id), job.id)}>
-                      <ThumbsUp className="h-3 w-3 mr-1" /> Creator approve
+                      <ThumbsUp className="h-3 w-3 mr-1" /> Approve
+                    </Button>
+                  )}
+                  {canDirect && ["NEEDS_REVISION", "REVIEW"].includes(job.status) && (
+                    <Button size="sm" variant="outline" className="h-7 text-[11px] border-rose-400/30 bg-rose-400/5 text-rose-200"
+                      onClick={() => { setRejectingId(rejectingId === job.id ? null : job.id); setRejectNote(""); }}>
+                      <XCircle className="h-3 w-3 mr-1" /> Reject
                     </Button>
                   )}
                 </div>
               </div>
+
+              {rejectingId === job.id && (
+                <div className="mt-3 rounded-lg border border-rose-400/25 bg-rose-400/[0.04] p-3">
+                  <div className="text-[11px] font-medium text-rose-200 mb-1.5">Request a revision - the note lands in this shot's thread</div>
+                  <Textarea
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    placeholder="Say what to fix: camera closer on the blade glow, tighten the fog, re-time the beat..."
+                    className="min-h-[52px] text-[11px] bg-black/25 resize-none"
+                  />
+                  <div className="flex justify-end gap-1.5 mt-2">
+                    <Button size="sm" variant="outline" className="h-7 text-[11px] border-white/12 bg-white/5" onClick={() => { setRejectingId(null); setRejectNote(""); }}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" className="h-7 text-[11px]" disabled={!rejectNote.trim() || busyId === job.id} onClick={() => void sendReject(job.id)}>
+                      {busyId === job.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3 mr-1" />} Send
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {(() => {
                 const tel = parseTelemetry(job.telemetry);
@@ -800,13 +904,18 @@ export function RenderView({ project }: { project: StudioProject }) {
 
               {job.evaluation && !active && (
                 <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold">
+                  <div className="flex items-center gap-2 text-xs font-semibold flex-wrap">
                     {job.evaluation.verdict === "APPROVED" ? (
                       <><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /> DSH inspection - Approved</>
                     ) : (
                       <><ShieldX className="h-3.5 w-3.5 text-violet-300" /> DSH inspection - Needs revision</>
                     )}
                     {job.evaluation.applied && <span className="text-[10px] font-normal text-muted-foreground">(modifications applied)</span>}
+                    {job.evaluation.verdict === "APPROVED" && job.status === "REVIEW" && (
+                      <span className="text-[9px] font-bold tracking-widest rounded px-1.5 py-0.5 border border-amber-400/40 bg-amber-400/10 text-amber-200" title="The human approval gate is armed: DSH's approval is a recommendation - a creator releases this render">
+                        HELD AT THE HUMAN GATE
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed mt-1.5">{job.evaluation.summary}</p>
                   <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1 mt-2.5">

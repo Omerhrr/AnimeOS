@@ -29,6 +29,7 @@ model Project {
   artPalettePrompt  String? // palette / colour-mood tokens
   artNegativePrompt String? // extra negative tokens appended to the negative tail
   status           String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  approvalGate     Boolean  @default(false) // when on, an APPROVED DSH inspection parks the render at REVIEW until a human approves
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -53,6 +54,7 @@ model Project {
   panelEmbeddings  PanelEmbedding[]
   planTemplates    PlanTemplate[]
   blenderAssets    BlenderAsset[]
+  comments         Comment[]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -759,4 +761,32 @@ model User {
   lastSeenAt   DateTime? // bumped on each successful API auth (roster liveness)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  comments     Comment[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// WORKPLACE THREADS (the studio with more than one person in it)
+//
+// Comment threads anchored to the production's own artifacts:
+// EPISODE / SCENE / SHOT (a comic panel IS its shot) / TAKE (a
+// voice take is an AudioCue row) / FACT. Every signed-in member
+// may speak - VIEWERs write here and nowhere else - while
+// resolving stays with the thread's author and EDITOR+.
+// ─────────────────────────────────────────────────────────────
+model Comment {
+  id         String    @id @default(cuid())
+  projectId  String
+  anchorType String // EPISODE | SCENE | SHOT | TAKE | FACT
+  anchorId   String
+  authorId   String
+  authorName String // snapshot at write time (threads read true even if the display name moves)
+  body       String
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+  resolvedBy String? // user id of the resolver
+  createdAt  DateTime  @default(now())
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author     User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, anchorType, anchorId])
 }

@@ -34,6 +34,9 @@ export interface StudioProject {
   artPalettePrompt: string | null;
   artNegativePrompt: string | null;
   status: string;
+  // human approval gate (Iteration 48): when true, a DSH APPROVED
+  // inspection parks the render at REVIEW until a creator approves
+  approvalGate: boolean;
   loras: StyleLoraRow[];
   artists: ArtistRow[];
   seasons: Array<{
@@ -505,6 +508,22 @@ export interface RenderJobRow {
   } | null;
 }
 
+// a workplace comment (Iteration 48) - anchored to a production
+// artifact, authored by any signed-in member
+export interface CommentRow {
+  id: string;
+  projectId: string;
+  anchorType: string; // EPISODE | SCENE | SHOT | TAKE | FACT
+  anchorId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  resolved: boolean;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  createdAt: string;
+}
+
 export interface ProjectSummary {
   id: string;
   title: string;
@@ -750,6 +769,24 @@ export const api = {
     j<{ id: string }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "retry", jobId }) }),
   renderApprove: (jobId: string) =>
     j<{ ok: boolean }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "approve", jobId }) }),
+  // human revision request: the note is required and lands in the
+  // shot's comment thread as a first-class row
+  renderReject: (jobId: string, note: string) =>
+    j<{ ok: boolean }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "reject", jobId, note }) }),
+  // human approval gate: OWNER-only policy toggle
+  setApprovalGate: (projectId: string, approvalGate: boolean) =>
+    j<{ id: string }>(`/api/projects/${projectId}`, { method: "PATCH", body: JSON.stringify({ approvalGate }) }),
+
+  // workplace threads (Iteration 48): every signed-in member speaks,
+  // the author or EDITOR+ resolves
+  comments: (anchorType: string, anchorId: string) =>
+    j<CommentRow[]>(`/api/comments?anchorType=${anchorType}&anchorId=${anchorId}`),
+  projectComments: (projectId: string) =>
+    j<CommentRow[]>(`/api/comments?projectId=${projectId}`),
+  addComment: (anchorType: string, anchorId: string, body: string) =>
+    j<CommentRow>("/api/comments", { method: "POST", body: JSON.stringify({ anchorType, anchorId, body }) }),
+  resolveComment: (id: string, resolve: boolean) =>
+    j<CommentRow>("/api/comments", { method: "PATCH", body: JSON.stringify({ id, action: resolve ? "resolve" : "unresolve" }) }),
   dshTurn: (projectId: string, message: string) =>
     j<DshTurnResult>("/api/dsh", { method: "POST", body: JSON.stringify({ projectId, message }) }),
   fetchTerminology: (projectId: string) =>

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireRole, authGuardResponse } from "@/lib/auth";
 import { createRenderJob, tickProjectJobs, applyEvaluationActions } from "@/lib/engine/render";
 import { runRenderEvaluation } from "@/lib/dsh/evaluator";
 
@@ -56,7 +57,11 @@ export async function GET(req: Request) {
  *  - { action: "batch", episodeIds[], mode }         → queue a render per shot across episodes
  *  - { action: "apply", evaluationId }               → apply DSH modifications + re-render
  *  - { action: "retry", jobId }                      → re-render same shot (attempt+1)
- *  - { action: "approve", jobId }                    → human override approve → FINAL-eligible
+ *  - { action: "approve", jobId }                    → human approve (EDITOR+) → FINAL-eligible;
+ *                                                      with the approval gate on this is the ONLY
+ *                                                      way a DSH-approved render becomes APPROVED
+ *  - { action: "reject", jobId, note }               → human revision request (EDITOR+); the note
+ *                                                      lands in the shot's comment thread
  */
 export async function POST(req: Request) {
   let body: Record<string, unknown>;
@@ -127,16 +132,60 @@ export async function POST(req: Request) {
   }
 
   if (action === "approve") {
+    // Approving is a DIRECTION decision: DB-fresh EDITOR+ (a promoted
+    // member cannot ride a stale JWT claim past the human gate).
+    const guard = await requireRole(req, "EDITOR");
+    if (!guard.ok) return authGuardResponse(guard)!;
     const job = await db.renderJob.findUnique({ where: { id: String(body.jobId) } });
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
-    await db.renderJob.update({ where: { id: job.id }, data: { status: "APPROVED", stage: "Approved by creator" } });
+    await db.renderJob.update({ where: { id: job.id }, data: { status: "APPROVED", stage: `Approved by ${guard.user.name}` } });
     if (job.shotId) {
       await db.shot.update({ where: { id: job.shotId }, data: { status: "FINAL" } });
       const shot = await db.shot.findUnique({ where: { id: job.shotId }, include: { scene: true } });
       if (shot) await db.scene.update({ where: { id: shot.scene.id }, data: { status: "RENDERED" } });
     }
     await db.productionEvent.create({
-      data: { projectId: job.projectId, actor: "USER", type: "STATE_CHANGE", summary: `Creator approved render ${job.id.slice(-6)} → shot marked FINAL` },
+      data: { projectId: job.projectId, actor: "USER", type: "STATE_CHANGE", summary: `${guard.user.name} approved render ${job.id.slice(-6)} → shot marked FINAL` },
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "reject") {
+    // The other half of the human gate: a revision request with a
+    // REASON. The note is required (a reject without a why is noise)
+    // and lands in the shot's workplace thread as a first-class comment
+    // so the discussion and the queue tell the same story.
+    const guard = await requireRole(req, "EDITOR");
+    if (!guard.ok) return authGuardResponse(guard)!;
+    const job = await db.renderJob.findUnique({ where: { id: String(body.jobId) } });
+    if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    const note = String(body.note ?? "").trim();
+    if (!note) return NextResponse.json({ error: "A rejection note is required - say what to fix" }, { status: 400 });
+    await db.renderJob.update({
+      where: { id: job.id },
+      data: { status: "NEEDS_REVISION", stage: `Revision requested by ${guard.user.name}: ${note.slice(0, 120)}` },
+    });
+    if (job.shotId) {
+      await db.shot.update({ where: { id: job.shotId }, data: { status: "REVIEW" } });
+      await db.comment.create({
+        data: {
+          projectId: job.projectId,
+          anchorType: "SHOT",
+          anchorId: job.shotId,
+          authorId: guard.user.id,
+          authorName: guard.user.name,
+          body: `[Revision requested] ${note}`,
+        },
+      });
+    }
+    await db.productionEvent.create({
+      data: {
+        projectId: job.projectId,
+        actor: "USER",
+        type: "STATE_CHANGE",
+        summary: `${guard.user.name} requested revision on render ${job.id.slice(-6)}: "${note.slice(0, 80)}"`,
+        payload: JSON.stringify({ renderJobId: job.id, note }),
+      },
     });
     return NextResponse.json({ ok: true });
   }

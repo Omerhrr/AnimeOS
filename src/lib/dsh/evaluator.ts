@@ -109,21 +109,31 @@ Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (at
     },
   });
 
+  // The HUMAN GATE (Iteration 48): when the production's approvalGate
+  // is on, DSH's APPROVED verdict is a RECOMMENDATION, not a decision -
+  // the render parks at REVIEW (evaluation persisted, so the tick will
+  // never re-claim it) and only a creator's approve action releases it.
+  const gateHeld = verdict === "APPROVED" && (project?.approvalGate ?? false);
+
   await db.renderJob.update({
     where: { id: job.id },
     data: {
-      status: verdict === "APPROVED" ? "APPROVED" : "NEEDS_REVISION",
-      stage: verdict === "APPROVED" ? "Approved by DSH" : "Revision proposed",
+      status: gateHeld ? "REVIEW" : verdict === "APPROVED" ? "APPROVED" : "NEEDS_REVISION",
+      stage: gateHeld
+        ? "DSH approved - awaiting creator approval (human gate)"
+        : verdict === "APPROVED"
+          ? "Approved by DSH"
+          : "Revision proposed",
     },
   });
 
   await db.shot.update({
     where: { id: job.shot.id },
-    data: { status: verdict === "APPROVED" ? "APPROVED" : "REVIEW" },
+    data: { status: gateHeld ? "REVIEW" : verdict === "APPROVED" ? "APPROVED" : "REVIEW" },
   });
   await db.scene.update({
     where: { id: scene.id },
-    data: { status: verdict === "APPROVED" ? "APPROVED" : "REVIEW" },
+    data: { status: gateHeld ? "REVIEW" : verdict === "APPROVED" ? "APPROVED" : "REVIEW" },
   });
 
   await db.productionEvent.create({
@@ -131,8 +141,8 @@ Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (at
       projectId: job.projectId,
       actor: "DSH",
       type: "EVALUATION",
-      summary: `Preview inspection - Shot ${String(job.shot.number).padStart(3, "0")} attempt ${job.attempt} → ${verdict} (${actions.length} proposed modification(s))`,
-      payload: JSON.stringify({ renderJobId: job.id, verdict, findings, actions }),
+      summary: `Preview inspection - Shot ${String(job.shot.number).padStart(3, "0")} attempt ${job.attempt} → ${gateHeld ? "APPROVED (held at the human gate)" : verdict} (${actions.length} proposed modification(s))`,
+      payload: JSON.stringify({ renderJobId: job.id, verdict, gateHeld, findings, actions }),
     },
   });
 

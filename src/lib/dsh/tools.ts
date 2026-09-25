@@ -3006,7 +3006,7 @@ export async function executeTool(projectId: string, name: string, args: Record<
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -3053,6 +3053,11 @@ export async function buildCompactContext(projectId: string) {
     listPlanTemplates(projectId).catch(() => [] as Awaited<ReturnType<typeof listPlanTemplates>>),
     db.productionEvent.findFirst({ where: { projectId, type: "DIGEST" }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
     db.productionEvent.findFirst({ where: { projectId, type: "PUBLISH" }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
+    // The workplace (Iteration 48): renders parked at the human gate +
+    // the threads the crew is having about the work.
+    db.renderJob.count({ where: { projectId, status: "REVIEW", evaluation: { isNot: null } } }).catch(() => 0),
+    db.comment.count({ where: { projectId, resolved: false } }).catch(() => 0),
+    db.comment.findMany({ where: { projectId, resolved: false }, orderBy: { createdAt: "desc" as const }, take: 3 }).catch(() => []),
   ]);
   if (!project) return null;
 
@@ -3159,5 +3164,9 @@ export async function buildCompactContext(projectId: string) {
       : null,
     canonHealth: canon ? canon.digest.headline : null,
     scheduleHealth: scheduleHealth ? scheduleHealth.headline : null,
+    workplace:
+      project.approvalGate || openCommentCount > 0
+        ? `human gate ${project.approvalGate ? "ARMED (an APPROVED inspection parks the render; only a creator's approve releases it)" : "off"} - ${gateHeldCount} render(s) awaiting creator approval - ${openCommentCount} unresolved thread(s) the crew is having${openComments.length ? `: ${openComments.map((c) => `${c.authorName} on ${c.anchorType} "${c.body.slice(0, 70)}"`).join(" | ")}` : ""}`
+        : null,
   };
 }
