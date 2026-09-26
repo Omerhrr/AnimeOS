@@ -477,6 +477,7 @@ export interface BuilderRunResult {
   previewPath: string | null;
   loopPath: string | null;
   motionSummary: Record<string, unknown> | null;
+  variationSummary: Record<string, unknown> | null;
   objects: number;
   tris: number;
   outDir: string;
@@ -502,16 +503,17 @@ export async function runAssetBuilder(opts: {
   materialPath?: string; // a DESIGNED material recipe (design_material)
   rigPath?: string; // a DESIGNED lighting rig (design_lighting)
   motionPath?: string; // a DESIGNED motion preset (design_motion)
+  variationPath?: string; // a DESIGNED variation spec (design_variation)
   timeoutMs?: number;
 }): Promise<BuilderRunResult> {
   const bin = runtimeBlenderBin();
   if (!bin) {
-    return { ok: false, log: "no Blender binary - provision the runtime first", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, objects: 0, tris: 0, outDir: "" };
+    return { ok: false, log: "no Blender binary - provision the runtime first", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, variationSummary: null, objects: 0, tris: 0, outDir: "" };
   }
   fs.mkdirSync(opts.outDir, { recursive: true });
   const builder = path.join(process.cwd(), "bridges", "blender", "asset_builder.py");
   if (!fs.existsSync(builder)) {
-    return { ok: false, log: "asset_builder.py missing from bridges/blender", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, objects: 0, tris: 0, outDir: "" };
+    return { ok: false, log: "asset_builder.py missing from bridges/blender", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, variationSummary: null, objects: 0, tris: 0, outDir: "" };
   }
   const argv = ["-b", "-P", builder, "--", "--kind", opts.kind, "--dna", opts.dnaPath, "--out", opts.outDir];
   if (opts.name) argv.push("--name", opts.name);
@@ -519,6 +521,7 @@ export async function runAssetBuilder(opts: {
   if (opts.materialPath) argv.push("--material", opts.materialPath);
   if (opts.rigPath) argv.push("--rig", opts.rigPath);
   if (opts.motionPath) argv.push("--motion", opts.motionPath);
+  if (opts.variationPath) argv.push("--variation", opts.variationPath);
 
   const run = await new Promise<{ code: number | null; out: string; timedOut: boolean }>((resolve) => {
     const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } });
@@ -549,6 +552,15 @@ export async function runAssetBuilder(opts: {
       motionSummary = null;
     }
   }
+  const variationRaw = parseBuilderMarker(run.out.replace(/\r/g, "\n"), "VARIATION_SUMMARY");
+  let variationSummary: Record<string, unknown> | null = null;
+  if (variationRaw) {
+    try {
+      variationSummary = JSON.parse(variationRaw) as Record<string, unknown>;
+    } catch {
+      variationSummary = null;
+    }
+  }
   const objects = parseInt(parseBuilderMarker(run.out, "ASSET_OBJECTS") ?? "0", 10) || 0;
   const tris = parseInt(parseBuilderMarker(run.out, "ASSET_TRIS") ?? "0", 10) || 0;
   const err = parseBuilderMarker(run.out, "ASSET_ERROR");
@@ -561,6 +573,7 @@ export async function runAssetBuilder(opts: {
     previewPath,
     loopPath,
     motionSummary,
+    variationSummary,
     objects,
     tris,
     outDir: opts.outDir,

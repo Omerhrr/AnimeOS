@@ -6,14 +6,17 @@ import {
   isBlenderAssetKind,
   type BlenderAssetKind,
 } from "@/lib/blender/assets";
+import { runRoundtrip, latestExportsFor, isExportFormat } from "@/lib/blender/roundtrip";
 
 // ─────────────────────────────────────────────────────────────
 // BLENDER ASSET LIBRARY API (design once, render many)
 //
 // GET  /api/blender-assets?projectId=...            - the library
-// POST {action: build|inspect|preview, kind, refName} - design loop
-//      build also accepts material/lighting recipe names and a
-//      motion preset name (the baked performance)
+// POST {action: build|inspect|preview|export, kind, refName} - the loop
+//      build also accepts material/lighting recipe names, a motion
+//      preset name (the baked performance) and a variation preset
+//      name (the GN layout law); export takes a GLB|FBX format and
+//      verifies the round trip
 // ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -22,11 +25,12 @@ export async function GET(request: Request) {
   const access = await requireProjectAccess(request, projectId);
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const lib = await blenderAssetLibrary(projectId);
-  return NextResponse.json(lib);
+  const exports = await latestExportsFor(projectId);
+  return NextResponse.json({ ...lib, exports });
 }
 
 export async function POST(request: Request) {
-  let body: { action?: string; projectId?: string; kind?: string; refName?: string; material?: string; lighting?: string; motion?: string } = {};
+  let body: { action?: string; projectId?: string; kind?: string; refName?: string; material?: string; lighting?: string; motion?: string; variation?: string; format?: string; verify?: boolean } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -49,7 +53,21 @@ export async function POST(request: Request) {
       materialName: String(body.material ?? "").trim() || null,
       lightingName: String(body.lighting ?? "").trim() || null,
       motionName: String(body.motion ?? "").trim() || null,
+      variationName: String(body.variation ?? "").trim() || null,
     });
+    return NextResponse.json(res, { status: res.ok ? 200 : 500 });
+  }
+  if (action === "export") {
+    const refName = String(body.refName ?? "").trim();
+    if (!refName) return NextResponse.json({ error: "refName is required" }, { status: 400 });
+    const format = String(body.format ?? "GLB").toUpperCase();
+    if (!isExportFormat(format)) {
+      return NextResponse.json({ error: "format must be GLB or FBX" }, { status: 400 });
+    }
+    const asset = await db.blenderAsset.findFirst({ where: { projectId, refName } });
+    if (!asset) return NextResponse.json({ error: `no asset named ${refName}` }, { status: 404 });
+    const verify = body.verify === undefined ? true : Boolean(body.verify);
+    const res = await runRoundtrip(asset.id, format, verify);
     return NextResponse.json(res, { status: res.ok ? 200 : 500 });
   }
   if (action === "inspect") {
@@ -68,5 +86,5 @@ export async function POST(request: Request) {
     const res = await refreshAssetPreview(asset.id);
     return NextResponse.json(res, { status: res.ok ? 200 : 500 });
   }
-  return NextResponse.json({ error: `unknown action "${action}" (build | inspect | preview)` }, { status: 400 });
+  return NextResponse.json({ error: `unknown action "${action}" (build | inspect | preview | export)` }, { status: 400 });
 }

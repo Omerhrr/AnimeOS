@@ -357,85 +357,234 @@ def eye_scale(eye):
     return max(0.12, clamp(eye, 0.0, 1.2))
 
 
-def camera_pose(shot_payload, scene_payload, t):
-    """Camera position + look target for progress t (0..1) through the
-    shot, driven by the movement grammar. Shots carrying a pose
-    program reframe slightly: the stand-in figure replaces the props
-    as the subject, so the rig pulls back and lowers its target onto
-    the body."""
-    dist, lens, height = SHOT_FRAMING.get(str(shot_payload.get("shotType", "MEDIUM")).upper(), SHOT_FRAMING["MEDIUM"])
-    dist *= float(scene_payload.get("cameraDistance", 1.0))
-    movement = str(shot_payload.get("movement") or "STATIC").upper()
-    if movement not in ("ORBIT", "PAN", "TRACKING", "CRANE", "DOLLY_IN", "DOLLY_OUT", "TILT_UP", "TILT_DOWN"):
-        movement = "STATIC"
-    has_poses = bool(normalize_pose(shot_payload.get("poseStart")) or normalize_pose(shot_payload.get("poseEnd")))
-    # the DESIGNED figure is the subject whenever cast DNA exists -
-    # posed or just standing - so the prop-scale framing applies to
-    # every cast shot (the s3.2 lesson: a no-pose EXTREME_CLOSEUP kept
-    # the full-scale table and hovered at 1.16m over a 0.9m figure,
-    # grading a flat rectangle of terrace)
-    framed = has_poses or bool(shot_payload.get("cast"))
-    if framed:
-        # prop-scale distance: the designed figure stands ~0.9m tall
-        # (0.45x), and the lens table was tuned for full-scale sets -
-        # at 1.25x a MEDIUM saw only 0.43m of frame height (a shins-
-        # only closeup). 1.9x puts a waist-up MEDIUM at ~1.9m; wide
-        # framings cap tighter so a night establishing never loses
-        # the subject entirely
-        dist *= 1.9 if dist <= 1.2 else 1.35
+class _Framing:
+    """The per-shot framing context camera_pose computes once: the
+    shot-type table entry, the subject scale correction, the base
+    orbit angle and the look target. Both the whole-clip move and
+    every grammar beat pose the camera from this same context - a
+    beat never re-derives its own framing (a grammar that drifts
+    between beats is not direction, it is a slide show)."""
 
-    angle = 40.0
-    radius = dist
-    h = height
-    lateral = 0.0
-    # pose shots frame the DESIGNED figure: camera at chest/face
-    # height (NOT the 1.2-1.6m lens heights - those pitched every
-    # pose shot down onto the hero's head), tight shot types aim at
-    # the FACE (0.84m post-scale), wider framings at the chest (0.62m)
-    if framed:
-        h = 0.62 + height * 0.12
-        target = [0.0, 0.0, 0.84 if dist < 1.2 else 0.62]
-        # and the camera stays on the figure's FRONT side: the figure
-        # faces -Y, and the old base-angle formula (0.9 + n*0.7 rad)
-        # landed tight framings on the back of the hair - a black
-        # frame. Small spread around -100 deg keeps every shot on the
-        # face while shot-to-shot variety survives.
-        angle = math.radians(-100.0 + 16.0 * ((shot_payload.get("number") or 1) % 7))
-    else:
+    def __init__(self, shot_payload, scene_payload):
+        dist, lens, height = SHOT_FRAMING.get(str(shot_payload.get("shotType", "MEDIUM")).upper(), SHOT_FRAMING["MEDIUM"])
+        dist *= float(scene_payload.get("cameraDistance", 1.0))
+        has_poses = bool(normalize_pose(shot_payload.get("poseStart")) or normalize_pose(shot_payload.get("poseEnd")))
+        # the DESIGNED figure is the subject whenever cast DNA exists -
+        # posed or just standing - so the prop-scale framing applies to
+        # every cast shot (the s3.2 lesson: a no-pose EXTREME_CLOSEUP kept
+        # the full-scale table and hovered at 1.16m over a 0.9m figure,
+        # grading a flat rectangle of terrace)
+        framed = has_poses or bool(shot_payload.get("cast"))
+        if framed:
+            # prop-scale distance: the designed figure stands ~0.9m tall
+            # (0.45x), and the lens table was tuned for full-scale sets -
+            # at 1.25x a MEDIUM saw only 0.43m of frame height (a shins-
+            # only closeup). 1.9x puts a waist-up MEDIUM at ~1.9m; wide
+            # framings cap tighter so a night establishing never loses
+            # the subject entirely
+            dist *= 1.9 if dist <= 1.2 else 1.35
+
+        angle = 40.0
+        h = height
         target = [0.0, 0.0, height * 0.75]
+        # pose shots frame the DESIGNED figure: camera at chest/face
+        # height (NOT the 1.2-1.6m lens heights - those pitched every
+        # pose shot down onto the hero's head), tight shot types aim at
+        # the FACE (0.84m post-scale), wider framings at the chest (0.62m)
+        if framed:
+            h = 0.62 + height * 0.12
+            target = [0.0, 0.0, 0.84 if dist < 1.2 else 0.62]
+            # and the camera stays on the figure's FRONT side: the figure
+            # faces -Y, and the old base-angle formula (0.9 + n*0.7 rad)
+            # landed tight framings on the back of the hair - a black
+            # frame. Small spread around -100 deg keeps every shot on the
+            # face while shot-to-shot variety survives.
+            angle = math.radians(-100.0 + 16.0 * ((shot_payload.get("number") or 1) % 7))
+        self.dist = dist
+        self.lens = lens
+        self.height = height
+        self.has_poses = has_poses
+        self.framed = framed
+        self.angle = angle
+        self.h = h
+        self.target = target
+
+
+def apply_camera_move(movement, t, fr):
+    """One camera move at local progress t (0..1) over the framing
+    context fr: mutates nothing - returns the solved (radius, h,
+    angle, lateral, target, lens). Every move the vocabulary offers
+    lives here EXACTLY once; the whole-clip path and every grammar
+    beat share it, so a DOLLY_IN beat looks like the DOLLY_IN a
+    single-move shot performs."""
+    radius = fr.dist
+    h = fr.h
+    angle = fr.angle
+    lateral = 0.0
+    target = list(fr.target)
 
     if movement == "ORBIT":
         angle = angle + (t - 0.5) * 44.0
-        radius = dist * (1.0 + 0.05 * math.sin(t * math.pi))
+        radius = fr.dist * (1.0 + 0.05 * math.sin(t * math.pi))
     elif movement == "DOLLY_IN":
-        radius = dist * (1.0 - 0.28 * t)
+        radius = fr.dist * (1.0 - 0.28 * t)
     elif movement == "DOLLY_OUT":
-        radius = dist * (0.72 + 0.28 * t)
+        radius = fr.dist * (0.72 + 0.28 * t)
     elif movement == "PAN":
         angle = angle + math.sin((t - 0.5) * math.pi) * 24.0
     elif movement == "TRACKING":
-        lateral = (t - 0.5) * dist * 0.42
+        lateral = (t - 0.5) * fr.dist * 0.42
     elif movement == "CRANE":
-        h = h + (1.1 if framed else 2.2) * (1.0 - t)
-        radius = dist * (1.0 + 0.1 * t)
+        h = h + (1.1 if fr.framed else 2.2) * (1.0 - t)
+        radius = fr.dist * (1.0 + 0.1 * t)
     elif movement == "TILT_UP":
-        target[2] = (0.3 + 0.55 * t) if framed else height * (0.35 + 0.55 * t)
+        target[2] = (0.3 + 0.55 * t) if fr.framed else fr.height * (0.35 + 0.55 * t)
     elif movement == "TILT_DOWN":
-        target[2] = (0.8 - 0.55 * t) if framed else height * (0.9 - 0.55 * t)
+        target[2] = (0.8 - 0.55 * t) if fr.framed else fr.height * (0.9 - 0.55 * t)
+    return radius, h, angle, lateral, target, fr.lens
 
-    if framed and has_poses:
-        # follow the subject: the pose program can carry the figure
-        # toward the lens (LUNGE root travel), so the rig backs off by
-        # the same world travel (table value x prop scale) and keeps
-        # the body framed
+
+def _pose_follow(shot_payload, fr, radius, t):
+    """Follow the subject: the pose program can carry the figure
+    toward the lens (LUNGE root travel), so the rig backs off by the
+    same world travel (table value x prop scale) and keeps the body
+    framed. Whole-clip poses only - a grammar beat carries its own
+    poses and the worker passes t_local from the beat instead."""
+    if fr.framed and fr.has_poses:
         rx = lerp_pose(shot_payload.get("poseStart"), shot_payload.get("poseEnd"), t)[0]
-        radius += rx * 0.42
+        return radius + rx * 0.42
+    return radius
 
+
+def _solve_position(radius, h, angle, lateral):
     rad = math.radians(angle)
-    pos = [radius * math.sin(rad) + lateral, -radius * math.cos(rad), h]
+    return [radius * math.sin(rad) + lateral, -radius * math.cos(rad), h]
+
+
+def camera_pose(shot_payload, scene_payload, t):
+    """Camera position + look target for progress t (0..1) through the
+    shot, driven by the movement grammar (whole-clip path: ONE move
+    across the shot; grammar shots go through grammar_camera_pose)."""
+    fr = _Framing(shot_payload, scene_payload)
+    movement = str(shot_payload.get("movement") or "STATIC").upper()
+    if movement not in ("ORBIT", "PAN", "TRACKING", "CRANE", "DOLLY_IN", "DOLLY_OUT", "TILT_UP", "TILT_DOWN"):
+        movement = "STATIC"
+    radius, h, angle, lateral, target, lens = apply_camera_move(movement, t, fr)
+    radius = _pose_follow(shot_payload, fr, radius, t)
+    pos = _solve_position(radius, h, angle, lateral)
     if movement == "STATIC":
         pos[2] += math.sin(t * math.pi * 2) * 0.015  # breathing lock-off
     return pos, target, lens
+
+
+# ── v5.3 DIRECTED MOTION GRAMMAR: a shot that carries a grammar is
+#    DIRECTED beat by beat (crane down to find the hero, then push
+#    in as the sword clears the sheath) - the whole-clip movement is
+#    replaced by the beat under the playhead, posed in the beat's own
+#    local time and crossfaded into the next beat's start over the
+#    final 20% of every beat, so the camera never teleports between
+#    beats. A beat may also carry its own pose pair: the SUBJECT
+#    moves with the lens (stance through the crane, lunge through
+#    the push-in). ──
+
+GRAMMAR_FADE = 0.2  # the last 20% of a beat eases into the next beat
+
+def normalize_grammar(raw):
+    """Parse a shot's grammar payload into validated beats
+    [{move, from, to, poseStart, poseEnd}] or None. A corrupt
+    grammar degrades honestly to the whole-clip movement - a broken
+    note must never stop a shoot."""
+    if not isinstance(raw, list) or len(raw) < 2:
+        return None
+    beats = []
+    for b in raw:
+        if not isinstance(b, dict):
+            return None
+        move = str(b.get("move") or "").upper()
+        if move not in ("ORBIT", "PAN", "TRACKING", "CRANE", "DOLLY_IN", "DOLLY_OUT", "TILT_UP", "TILT_DOWN", "STATIC"):
+            return None
+        try:
+            frm = float(b.get("from"))
+            to = float(b.get("to"))
+        except (TypeError, ValueError):
+            return None
+        if not (0.0 <= frm < to <= 1.0):
+            return None
+        beats.append({
+            "move": move,
+            "from": frm,
+            "to": to,
+            "poseStart": b.get("poseStart"),
+            "poseEnd": b.get("poseEnd"),
+        })
+    if len(beats) < 2:
+        return None
+    return beats
+
+
+def _beat_at(beats, t):
+    """The active beat for progress t (the last beat catches t=1)."""
+    for i, b in enumerate(beats):
+        if b["from"] <= t < b["to"] or (i == len(beats) - 1 and t >= b["from"]):
+            return i, b
+    return 0, beats[0]
+
+
+def grammar_camera_pose(shot_payload, scene_payload, grammar, t):
+    """The grammar path: pose the ACTIVE beat in beat-local time, then
+    ease into the NEXT beat's start camera across the fade zone. Both
+    solves share the framing context, so the framing never drifts
+    between beats."""
+    fr = _Framing(shot_payload, scene_payload)
+    idx, beat = _beat_at(grammar, t)
+    span = max(1e-6, beat["to"] - beat["from"])
+    lt = clamp((t - beat["from"]) / span, 0.0, 1.0)
+    radius, h, angle, lateral, target, lens = apply_camera_move(beat["move"], lt, fr)
+
+    nxt = grammar[idx + 1] if idx + 1 < len(grammar) else None
+    if nxt is not None and lt > (1.0 - GRAMMAR_FADE):
+        k = ease_in_out_cubic((lt - (1.0 - GRAMMAR_FADE)) / GRAMMAR_FADE)
+        r2, h2, a2, lat2, t2, lens2 = apply_camera_move(nxt["move"], 0.0, fr)
+        radius = radius + (r2 - radius) * k
+        h = h + (h2 - h) * k
+        angle = angle + (a2 - angle) * k
+        lateral = lateral + (lat2 - lateral) * k
+        target = [target[i] + (t2[i] - target[i]) * k for i in range(3)]
+        lens = lens + (lens2 - lens) * k
+
+    # subject follow: a beat's own pose pair overrides the whole-clip
+    # pair on the BEAT clock (a lunge completes inside its beat); when
+    # the beat carries none, the global pair keeps its GLOBAL clock
+    if fr.framed:
+        ps = normalize_pose(beat.get("poseStart"))
+        pe = normalize_pose(beat.get("poseEnd"))
+        if ps or pe:
+            rx = lerp_pose(ps or pe, pe or ps, lt)[0]
+            radius += rx * 0.42
+        elif fr.has_poses:
+            rx = lerp_pose(shot_payload.get("poseStart"), shot_payload.get("poseEnd"), t)[0]
+            radius += rx * 0.42
+
+    pos = _solve_position(radius, h, angle, lateral)
+    if beat["move"] == "STATIC":
+        pos[2] += math.sin(t * math.pi * 2) * 0.015  # breathing lock-off
+    return pos, target, lens
+
+
+def grammar_pose_state(grammar, shot_payload, t):
+    """The pose pair + clock the figure performs at t under a grammar:
+    the active beat's own pair runs on the BEAT-LOCAL clock (a per-beat
+    lunge completes inside its beat); a beat without poses falls back
+    to the shot's global pair on the GLOBAL clock (lt=None - the whole-
+    clip pose program must not restart at every beat cut)."""
+    idx, beat = _beat_at(grammar, t)
+    span = max(1e-6, beat["to"] - beat["from"])
+    lt = clamp((t - beat["from"]) / span, 0.0, 1.0)
+    ps = normalize_pose(beat.get("poseStart"))
+    pe = normalize_pose(beat.get("poseEnd"))
+    if ps or pe:
+        return ps or pe, pe or ps, lt
+    return shot_payload.get("poseStart"), shot_payload.get("poseEnd"), None
 
 
 # ═══ WORKER MODE (runs inside a fresh headless Blender) ═══════
@@ -1855,6 +2004,19 @@ def worker_run(job_file):
         #    the plinth + floating blade otherwise ──
         pose_start = normalize_pose(shot.get("poseStart"))
         pose_end = normalize_pose(shot.get("poseEnd"))
+        # ── v5.3 DIRECTED MOTION GRAMMAR: a shot that arrives with a
+        #    grammar is played BEAT BY BEAT - the camera performs each
+        #    beat in its own local time and crossfades into the next,
+        #    and a beat's own pose pair moves the SUBJECT with the
+        #    lens. A corrupt grammar degrades honestly to the whole-
+        #    clip movement (normalize_grammar returns None). ──
+        grammar = normalize_grammar(shot.get("grammar"))
+        if grammar:
+            state["grammar"] = {
+                "beats": len(grammar),
+                "moves": [b["move"] for b in grammar],
+                "beatPoses": sum(1 for b in grammar if normalize_pose(b.get("poseStart")) or normalize_pose(b.get("poseEnd"))),
+            }
         figure = None
         speech_visemes = parse_speech(shot)
         state["posesRequested"] = [str(shot.get("poseStart")), str(shot.get("poseEnd"))]
@@ -2049,7 +2211,14 @@ def worker_run(job_file):
         # ── frame loop: camera grammar + lightning strobe per frame ──
         for f in range(1, frames_total + 1):
             t = (f - 1) / max(1, frames_total - 1)
-            pos, target, lens = camera_pose(shot, scene_p, t)
+            if grammar:
+                pos, target, lens = grammar_camera_pose(shot, scene_p, grammar, t)
+                g_start, g_end, g_t = grammar_pose_state(grammar, shot, t)
+                pose_t = g_t if g_t is not None else t
+                pose_s, pose_e = (g_start or pose_start), (g_end or pose_end)
+            else:
+                pos, target, lens = camera_pose(shot, scene_p, t)
+                pose_t, pose_s, pose_e = t, pose_start, pose_end
             cam.data.lens = lens
             cam.location = mathutils.Vector(pos)
             direction = mathutils.Vector(target) - cam.location
@@ -2057,7 +2226,7 @@ def worker_run(job_file):
 
             t_sec = (f - 1) / fps
             if figure:
-                apply_pose(figure, pose_start, pose_end, t, t_sec,
+                apply_pose(figure, pose_s, pose_e, pose_t, t_sec,
                            speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None)
             boost = 0.0
             for (start, dur, alpha) in windows:

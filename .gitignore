@@ -104,6 +104,8 @@ public/renders/posters/
 .blender-runtime/
 assets/blender/
 public/assets-blender/
+assets/exports/
+public/exports/
 
 # Translated subtitle documents (regenerable runtime artifacts)
 public/subtitles/*.srt

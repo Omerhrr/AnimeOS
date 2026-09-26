@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable, Boxes,
   Layers, ListFilter, Play, Clapperboard, Timer, Send, MessagesSquare, ShieldAlert, XCircle,
-  ClipboardCheck, Wrench,
+  ClipboardCheck, Wrench, Download,
 } from "lucide-react";
 import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -199,6 +199,31 @@ function BlenderAssetLibraryCard() {
       setBusy(null);
     }
   };
+  const runExport = async (refName: string, format: "GLB" | "FBX") => {
+    if (!projectId) return;
+    setBusy(`export:${refName}:${format}`);
+    setDesignNote(null);
+    try {
+      const res = (await api.blenderExport({ projectId, refName, format, verify: true })) as {
+        ok?: boolean;
+        error?: string;
+        verified?: boolean;
+        publicPath?: string | null;
+        report?: { bytes?: number; meshesSrc?: number; meshesRe?: number; triDeltaPct?: number; bboxDeltaPct?: number; missing?: string[] } | null;
+      };
+      if (res.ok === false && res.error) {
+        setDesignNote(`EXPORT failed: ${res.error}`);
+      } else {
+        const rep = res.report ?? {};
+        setDesignNote(`EXPORT ${format} ${res.verified ? "VERIFIED" : "NOT VERIFIED"} - ${rep.meshesRe ?? "?"}/${rep.meshesSrc ?? "?"} meshes, tri delta ${rep.triDeltaPct ?? "?"}%, bbox delta ${rep.bboxDeltaPct ?? "?"}%${res.publicPath ? " - downloading from /exports/" : ""}`);
+      }
+      await qc.invalidateQueries({ queryKey: ["blender-assets", projectId] });
+    } catch (err) {
+      setDesignNote(`EXPORT failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
   const lib = assetsQ.data;
   const design = designQ.data;
   if (!lib || lib.total === 0) {
@@ -269,6 +294,11 @@ function BlenderAssetLibraryCard() {
                     {a.motionPreset ?? "MOTION"}
                   </span>
                 )}
+                {a.variationPreset && (
+                  <span className="absolute top-1 left-14 rounded px-1 py-0.5 text-[8px] font-bold tracking-wider bg-black/60 text-lime-300" title={`GN variation preset: ${a.variationPreset}`}>
+                    +GN
+                  </span>
+                )}
                 {openForAsset.length > 0 && (
                   <span className="absolute bottom-1 left-1 rounded px-1 py-0.5 text-[8px] font-bold bg-black/60 text-rose-300">
                     {openForAsset.length} issue{openForAsset.length > 1 ? "s" : ""}
@@ -306,11 +336,55 @@ function BlenderAssetLibraryCard() {
                     </Button>
                   </div>
                 )}
+                {canDirect && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => runExport(a.refName, "GLB")}
+                      className="h-5 px-1.5 text-[9px] gap-0.5 flex-1"
+                      title="Export GLB + verify the round trip (re-import + compare)"
+                    >
+                      {busy === `export:${a.refName}:GLB` ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Download className="h-2.5 w-2.5" />}
+                      GLB
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => runExport(a.refName, "FBX")}
+                      className="h-5 px-1.5 text-[9px] gap-0.5 flex-1"
+                      title="Export FBX + verify the round trip (re-import + compare)"
+                    >
+                      {busy === `export:${a.refName}:FBX` ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Download className="h-2.5 w-2.5" />}
+                      FBX
+                    </Button>
+                    {(() => {
+                      const chip = lib.exports?.[a.id];
+                      if (!chip) return null;
+                      return (
+                        <a
+                          href={chip.publicPath ?? "#"}
+                          title={`Last export ${chip.format} - ${chip.verified ? `VERIFIED, drift ${Math.round((chip.drift ?? 0) * 100)}%` : "NOT VERIFIED"}`}
+                          className={`rounded px-1 py-0.5 text-[8px] font-bold tracking-wider ${chip.verified ? "bg-emerald-400/10 border border-emerald-400/30 text-emerald-300" : "bg-rose-400/10 border border-rose-400/30 text-rose-300"}`}
+                        >
+                          {chip.verified ? "VER" : "UNVER"}
+                        </a>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+      {designNote && (
+        <div className="mt-3 text-[10px] text-emerald-200 bg-emerald-400/5 border border-emerald-400/20 rounded px-1.5 py-1">
+          {designNote}
+        </div>
+      )}
       {design && (design.openIssues.length > 0 || design.reviews.length > 0) && (
         <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2">
           <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-muted-foreground">
@@ -322,11 +396,6 @@ function BlenderAssetLibraryCard() {
             {design.bySeverity.MAJOR > 0 && <span className="text-amber-300">{design.bySeverity.MAJOR} MAJOR</span>}
             {design.bySeverity.MINOR > 0 && <span className="text-sky-300">{design.bySeverity.MINOR} MINOR</span>}
           </div>
-          {designNote && (
-            <div className="mt-1.5 text-[10px] text-emerald-200 bg-emerald-400/5 border border-emerald-400/20 rounded px-1.5 py-1">
-              {designNote}
-            </div>
-          )}
           {design.openIssues.length > 0 && (
             <div className="mt-1.5 space-y-0.5">
               {design.openIssues.slice(0, 5).map((i) => (
@@ -906,6 +975,25 @@ export function RenderView({ project }: { project: StudioProject }) {
                     {job.shot?.scene ? `Scene ${job.shot.scene.number} · ` : ""}
                     {job.shot ? `Shot ${String(job.shot.number).padStart(3, "0")}` : "Production master"}
                     <span className="text-[11px] font-normal text-muted-foreground">{job.mode} · attempt {job.attempt}</span>
+                    {(() => {
+                      // DIRECTED MOTION GRAMMAR chips: the shot's beat sequence
+                      const beats = (() => {
+                        try {
+                          const g = job.shot?.grammar ? (JSON.parse(job.shot.grammar) as Array<{ move?: string; from?: number; to?: number }>) : null;
+                          return g && Array.isArray(g) && g.length >= 2 ? g : null;
+                        } catch { return null; }
+                      })();
+                      if (!beats) return null;
+                      return (
+                        <span className="inline-flex items-center gap-1 flex-wrap" title="Directed motion grammar - the worker plays these camera beats in order">
+                          {beats.map((b, i) => (
+                            <span key={i} className="rounded px-1 py-[1px] text-[8px] font-bold tracking-wider bg-violet-400/10 border border-violet-400/30 text-violet-300">
+                              {b.move} {Math.round((b.from ?? 0) * 100)}-{Math.round((b.to ?? 0) * 100)}%
+                            </span>
+                          ))}
+                        </span>
+                      );
+                    })()}
                     <span
                       title={
                         job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"

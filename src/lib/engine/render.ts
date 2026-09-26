@@ -218,6 +218,11 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         movement: shot.movement,
         poseStart: shot.poseStart,
         poseEnd: shot.poseEnd,
+        // DIRECTED MOTION GRAMMAR: the shot's beat sequence rides the
+        // payload when one is set - the worker plays it beat by beat
+        // (a corrupt stored grammar is sent as-is; the worker's
+        // normalize_grammar degrades honestly to the whole-clip move)
+        ...(shot.grammar ? (() => { try { const g = JSON.parse(shot.grammar); return Array.isArray(g) ? { grammar: g } : {}; } catch { return {}; } })() : {}),
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),

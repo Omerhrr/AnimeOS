@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# AnimeOS ASSET BUILDER (v6.0) - the design-time Blender pass
+# AnimeOS ASSET BUILDER (v7.0) - the design-time Blender pass
 #
 # Builds a LIBRARY ASSET (.blend) for one design DNA: the DESIGNED
 # character (v4.0 figure builder, full v3.x rig contract), the
@@ -15,6 +15,7 @@
 #   blender -b -P asset_builder.py -- --kind CHARACTER \
 #     --dna <dna.json> --out <dir> [--name "Lin Yue"] \
 #     [--material <recipe.json>] [--rig <rig.json>] [--motion <spec.json>]
+#     [--variation <spec.json>]
 #
 # --material is a DESIGNED material recipe (design_material): the
 #   builder applies it to the asset's primary materials after the
@@ -28,6 +29,15 @@
 #   performance INTO the file - then renders the animated preview
 #   loop (ASSET_LOOP marker) beside the static still. A performing
 #   asset carries its rig + Action into every appended render.
+# --variation is a DESIGNED variation spec (design_variation,
+#   iteration 53): the builder attaches a REAL Geometry Nodes tree
+#   (variation_nodes.py) - seeded SCATTER across the carrier surface
+#   or an ARRAY along a deterministic spine - so the asset repeats
+#   WITHOUT copying itself (60 rocks, none alike). The instances are
+#   part of the saved file (the modifier travels) and the summary
+#   lands in the VARIATION_SUMMARY marker. Combined with --blend it
+#   is the design_fix path: the variation-only pass attaches the tree
+#   to an existing .blend and saves a NEW versioned file.
 #
 # After the .blend is saved the script stages its own neutral
 # preview rig (3-point light + camera, NOT saved into the asset)
@@ -39,6 +49,8 @@
 #   ASSET_LOOP <path>
 #   ASSET_OBJECTS <n>
 #   ASSET_TRIS <n>
+#   VARIATION_SUMMARY <json>
+#   MOTION_SUMMARY <json>
 #   ASSET_ERROR <msg>
 # ─────────────────────────────────────────────────────────────
 
@@ -76,6 +88,7 @@ def main():
     material_path = str(args.get("material", ""))
     rig_path = str(args.get("rig", ""))
     motion_path = str(args.get("motion", ""))
+    variation_path = str(args.get("variation", ""))
     os.makedirs(out_dir, exist_ok=True)
 
     dna = {}
@@ -103,6 +116,13 @@ def main():
                 motion = json.load(fh)
         except Exception:  # noqa: BLE001
             motion = None
+    variation = None
+    if variation_path:
+        try:
+            with open(variation_path, "r", encoding="utf-8") as fh:
+                variation = json.load(fh)
+        except Exception:  # noqa: BLE001
+            variation = None
     if motion is not None and kind not in ("PROP", "CREATURE"):
         fail("motion presets apply to PROP and CREATURE assets - a character performs through the directed pose system, an environment is static by design")
 
@@ -111,6 +131,7 @@ def main():
     import bpy
     import animeos_bridge as bridge
     import motion_rig
+    import variation_nodes
 
     scn = bpy.context.scene
 
@@ -152,6 +173,15 @@ def main():
             blend_path = os.path.join(out_dir, f"{slug}.blend")
             bpy.ops.wm.save_as_mainfile(filepath=blend_path, compress=True)
             print(f"MOTION_SUMMARY {json.dumps(rep)}", flush=True)
+        if variation is not None:
+            # variation-only pass (the design_fix path): attach the GN
+            # tree to the existing file and save a NEW versioned file
+            summary, verr = variation_nodes.apply_variation(bpy, scn, variation)
+            if summary is None:
+                fail(f"variation pass failed: {verr}")
+            blend_path = os.path.join(out_dir, f"{slug}.blend")
+            bpy.ops.wm.save_as_mainfile(filepath=blend_path, compress=True)
+            print(f"VARIATION_SUMMARY {json.dumps(summary)}", flush=True)
         obj_count = len(scn.objects)
         tris = 0
         for ob in scn.objects:
@@ -242,6 +272,16 @@ def main():
         if rep is None:
             fail("the built part hierarchy offers nothing to perform")
         print(f"MOTION_SUMMARY {json.dumps(rep)}", flush=True)
+
+    # DESIGNED variation spec (design_variation): attach the REAL
+    # Geometry Nodes tree (seeded scatter / array) so the asset
+    # repeats without copying itself - the modifier travels inside
+    # the .blend and every render of it inherits the variation.
+    if variation is not None and not from_blend:
+        summary, verr = variation_nodes.apply_variation(bpy, scn, variation)
+        if summary is None:
+            fail(f"variation pass failed: {verr}")
+        print(f"VARIATION_SUMMARY {json.dumps(summary)}", flush=True)
 
     obj_count = len(scn.objects)
     tris = 0

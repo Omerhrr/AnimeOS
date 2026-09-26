@@ -91,6 +91,7 @@ export interface ShotRow {
   movement: string | null;
   poseStart?: string | null;
   poseEnd?: string | null;
+  grammar?: string | null;
   duration: number;
   lighting: string | null;
   status: string;
@@ -352,11 +353,20 @@ export interface BlenderAssetRow {
   blendPath: string | null;
   motionPreset?: string | null;
   loopPath?: string | null;
+  variationPreset?: string | null;
   identityScore: number | null;
   inspectNote: string | null;
   inspectedAt: string | null;
   qualityScore?: number | null;
   updatedAt: string;
+}
+
+export interface BlenderExportChip {
+  format: string;
+  verified: boolean;
+  drift: number | null;
+  publicPath: string | null;
+  createdAt: string;
 }
 
 export interface DesignIssueRow {
@@ -402,6 +412,7 @@ export interface BlenderAssetLibraryInfo {
   failed: number;
   avgIdentity: number | null;
   assets: BlenderAssetRow[];
+  exports?: Record<string, BlenderExportChip>;
 }
 
 export interface CharacterFull {
@@ -694,6 +705,8 @@ export const api = {
   blenderAssets: (projectId: string) => j<BlenderAssetLibraryInfo>(`/api/blender-assets?projectId=${projectId}`),
   blenderAssetAction: (body: { action: "build" | "inspect" | "preview"; projectId: string; kind?: string; refName?: string; material?: string; lighting?: string }) =>
     j<Record<string, unknown>>("/api/blender-assets", { method: "POST", body: JSON.stringify(body) }),
+  blenderExport: (body: { projectId: string; refName: string; format: "GLB" | "FBX"; verify?: boolean }) =>
+    j<Record<string, unknown>>("/api/blender-assets", { method: "POST", body: JSON.stringify({ action: "export", ...body }) }),
   designReviews: (projectId: string) => j<DesignStatusInfo>(`/api/design-reviews?projectId=${projectId}`),
   designReviewAction: (body: { action: "audit" | "fix" | "retire"; projectId: string; refName?: string; kind?: string; library?: boolean; issueIds?: string[]; note?: string }) =>
     j<Record<string, unknown>>("/api/design-reviews", { method: "POST", body: JSON.stringify(body) }),

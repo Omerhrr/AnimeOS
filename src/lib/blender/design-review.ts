@@ -5,6 +5,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { runBlenderScript, runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
 import { DEFAULT_MOTION_BY_ARCHETYPE } from "@/lib/blender/motion";
+import { DEFAULT_VARIATION_BY_KIND } from "@/lib/blender/variation";
 
 // ─────────────────────────────────────────────────────────────
 // THE SELF-CORRECTING DESIGN LOOP (the studio checks its own work)
@@ -40,6 +41,7 @@ export type DesignCriteria = {
   lighting: number; // judged under a DESIGNED rig or honestly default
   detail: number; // finishing pass present (bevels, smoothing, runes)
   motion: number; // a baked performance (armature + loop) or honest N/A
+  variation: number; // a GN scatter/array (the set breathes) or honest N/A
 };
 
 export interface ReviewVerdict {
@@ -50,18 +52,20 @@ export interface ReviewVerdict {
   issues: Array<{ severity: "CRITICAL" | "MAJOR" | "MINOR"; kind: string; note: string }>;
 }
 
-const CRITERIA_KEYS: Array<keyof DesignCriteria> = ["geometry", "material", "silhouette", "palette", "lighting", "detail", "motion"];
+const CRITERIA_KEYS: Array<keyof DesignCriteria> = ["geometry", "material", "silhouette", "palette", "lighting", "detail", "motion", "variation"];
 
-// The weighted overall: geometry and silhouette still lead, but MOTION
-// carries production weight - a statue is not a donghua asset.
+// The weighted overall: geometry and silhouette still lead, MOTION
+// carries production weight (a statue is not a donghua asset) and
+// VARIATION holds the fourth law (a wallpaper is not a set).
 const CRITERIA_WEIGHTS: Record<keyof DesignCriteria, number> = {
-  geometry: 0.24,
-  material: 0.15,
-  silhouette: 0.2,
-  palette: 0.1,
-  lighting: 0.1,
-  detail: 0.08,
-  motion: 0.13,
+  geometry: 0.22,
+  material: 0.14,
+  silhouette: 0.18,
+  palette: 0.09,
+  lighting: 0.09,
+  detail: 0.07,
+  motion: 0.12,
+  variation: 0.09,
 };
 
 function weightedOverall(c: DesignCriteria): number {
@@ -104,6 +108,7 @@ function localAudit(asset: {
   previewPath: string | null;
   loopPath: string | null;
   motionPreset: string | null;
+  variationPreset: string | null;
   identityScore: number | null;
   meta: string | null;
 }): ReviewVerdict {
@@ -115,6 +120,7 @@ function localAudit(asset: {
     lightingRig?: { name: string } | null;
     materialRecipe?: { name: string } | null;
     motion?: { name?: string; archetype?: string; motion?: string } | null;
+    variation?: { name?: string; kind?: string; instances?: number } | null;
     dna?: { archetype?: string } | null;
   };
   let meta: AssetMeta | null = null;
@@ -165,10 +171,28 @@ function localAudit(asset: {
     motion = asset.kind === "CHARACTER" ? 0.8 : 0.8;
   }
 
-  const criteria: DesignCriteria = { geometry, material, silhouette, palette, lighting, detail, motion };
+  // VARIATION: environments are judged on their layout law (a GN
+  // scatter/array inside the file is the evidence); characters, props
+  // and creatures score as honest N/A - a sword rack IS variation,
+  // but it is the ENVIRONMENT's job to breathe at scale.
+  const gnApplied = Boolean(meta?.variation?.instances && (meta?.variation?.instances as number) > 0) || Boolean(asset.variationPreset);
+  let variation: number;
+  const variationIssues: ReviewVerdict["issues"] = [];
+  if (asset.kind === "ENVIRONMENT") {
+    if (gnApplied) {
+      variation = 0.92;
+    } else {
+      variation = 0.3;
+      variationIssues.push({ severity: "MAJOR", kind: "VARIATION", note: "designed but a wallpaper - a production set breathes: register design_variation (a seeded scatter) and rebuild with variation:<name> (design_fix bakes the default environment scatter)" });
+    }
+  } else {
+    variation = 0.8;
+  }
+
+  const criteria: DesignCriteria = { geometry, material, silhouette, palette, lighting, detail, motion, variation };
   const overall = weightedOverall(criteria);
 
-  const issues: ReviewVerdict["issues"] = [...motionIssues];
+  const issues: ReviewVerdict["issues"] = [...motionIssues, ...variationIssues];
   if (asset.status !== "READY") {
     issues.push({ severity: "CRITICAL", kind: "GEOMETRY", note: `asset is ${asset.status}, not READY - the last build did not produce an accepted .blend` });
   } else {
@@ -196,7 +220,7 @@ function localAudit(asset: {
   }
   const note = asset.status !== "READY"
     ? "the asset is not in an accepted state"
-    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}${asset.motionPreset && loopOnDisk ? ", performing" : asset.motionPreset ? ", motion unbaked" : ", motionless"}`;
+    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}${asset.motionPreset && loopOnDisk ? ", performing" : asset.motionPreset ? ", motion unbaked" : ", motionless"}${gnApplied ? ", varied (GN)" : asset.kind === "ENVIRONMENT" ? ", wallpaper" : ""}`;
   return { criteria, overall, note, provider: "local", issues };
 }
 
@@ -299,6 +323,7 @@ export async function auditAsset(assetId: string, useVision = true): Promise<Aud
         lighting: vc.lighting !== undefined ? clamp01(vc.lighting) : local.criteria.lighting,
         detail: vc.detail !== undefined ? clamp01(vc.detail) : local.criteria.detail,
         motion: local.criteria.motion,
+        variation: local.criteria.variation,
       };
       const overall = weightedOverall(merged);
       verdict = {
@@ -711,7 +736,7 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   }
 
   const kinds = new Set(targets.map((t) => t.kind));
-  type FixAssetMeta = { dna?: { accentColor?: string; archetype?: string }; lightingRig?: { spec: Record<string, unknown> } | null; motion?: { archetype?: string; motion?: string } | null };
+  type FixAssetMeta = { dna?: { accentColor?: string; archetype?: string }; lightingRig?: { spec: Record<string, unknown> } | null; motion?: { archetype?: string; motion?: string } | null; variation?: { name?: string; instances?: number } | null; };
   let meta: FixAssetMeta | null = null;
   try {
     meta = JSON.parse(asset.meta || "null") as FixAssetMeta;
@@ -796,23 +821,88 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     }
   }
 
+  // THE VARIATION FIX: a wallpaper environment gets a REAL seeded GN
+  // scatter through the builder's variation-only pass (the default
+  // environment layout), landing a new .blend whose carrier breathes.
+  let variationBaked: { blendPath: string; previewPath: string | null; ops: string; name: string } | null = null;
+  if (kinds.has("VARIATION")) {
+    if (asset.kind !== "ENVIRONMENT") {
+      // defensive: variation issues only arise for environments
+      for (const t of targets.filter((x) => x.kind === "VARIATION")) {
+        await db.designIssue.update({
+          where: { id: t.id },
+          data: { status: "WONTFIX", fixNote: "environments carry the layout law - characters, props and creatures are instanced by the SET, not by themselves", updatedAt: new Date() },
+        });
+      }
+      tracked = tracked.filter((x) => x.kind !== "VARIATION");
+    } else {
+      const defaultSpec = DEFAULT_VARIATION_BY_KIND.ENVIRONMENT;
+      if (!defaultSpec) {
+        for (const t of targets.filter((x) => x.kind === "VARIATION")) {
+          await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: "no default variation spec for environments - register one with design_variation", updatedAt: new Date() } });
+        }
+        tracked = tracked.filter((x) => x.kind !== "VARIATION");
+      } else {
+      const variationFile = path.join(workDir, "fix-variation.json");
+      fs.writeFileSync(variationFile, JSON.stringify(defaultSpec, null, 2));
+      const dnaFile = path.join(workDir, "fix-dna.json");
+      fs.writeFileSync(dnaFile, JSON.stringify({ name: asset.refName }));
+      const variationRun = await runAssetBuilder({
+        kind: "ENVIRONMENT",
+        dnaPath: dnaFile,
+        outDir: workDir,
+        name: asset.refName,
+        fromBlend: currentBlend ?? asset.blendPath ?? undefined,
+        variationPath: variationFile,
+        timeoutMs: 6 * 60_000,
+      });
+      if (!variationRun.ok || !variationRun.blendPath || !fs.existsSync(variationRun.blendPath)) {
+        const failNote = `variation bake failed: ${variationRun.log.slice(-200)}`;
+        for (const t of targets.filter((x) => x.kind === "VARIATION")) {
+          await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: failNote, updatedAt: new Date() } });
+        }
+        await landEvent(asset.projectId, `Design fix FAILED for ${asset.kind.toLowerCase()} ${asset.refName}: the variation bake errored`, { assetId: asset.id });
+        return {
+          ok: false,
+          error: failNote,
+          assetId: asset.id,
+          refName: asset.refName,
+          versionBefore: asset.version,
+          versionAfter: null,
+          attempted: targets.length,
+          fixed: 0,
+          stillOpen: targets.length,
+          fixLog: variationRun.log.slice(-3000),
+        };
+      }
+      variationBaked = {
+        blendPath: variationRun.blendPath,
+        previewPath: variationRun.previewPath,
+        ops: `baked the default environment scatter (${variationRun.variationSummary?.instances ?? "?"} seeded instances)`,
+        name: defaultSpec.name,
+      };
+      currentBlend = variationRun.blendPath; // the variation pass saved the new version here
+      }
+    }
+  }
+
   // The remaining issue kinds ride the standard bpy refinement pass
-  // (LIGHTING is preview-owned; a pure motion fix skips the pass -
-  // the builder already rendered the preview + loop).
+  // (LIGHTING is preview-owned; a pure motion/variation fix skips the
+  // pass - the builder already rendered the preview).
   const bpyOps = ["GEOMETRY", "DETAIL", "SILHOUETTE", "PROPORTION", "MATERIAL", "PALETTE"];
   const needsBpyPass = bpyOps.some((k) => kinds.has(k));
   let fixLog = "";
   let fixOps: string;
   if (!needsBpyPass) {
-    if (!motionBaked) {
+    if (!motionBaked && !variationBaked) {
       // nothing actionable ran (e.g. only LIGHTING): honest no-op
       for (const t of tracked) {
         await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: "nothing to run for this issue kind - address it by rebuilding under a designed rig", updatedAt: new Date() } });
       }
       return { ok: true, assetId: asset.id, refName: asset.refName, versionBefore: asset.version, versionAfter: asset.version, attempted: targets.length, fixed: 0, stillOpen: targets.length, fixLog: "no runnable fix op for these issue kinds" };
     }
-    fixOps = motionBaked.ops;
-    fixLog = `MOTION_BAKE ${motionBaked.ops}`;
+    fixOps = variationBaked && !motionBaked ? variationBaked.ops : motionBaked ? motionBaked.ops : "no-op";
+    fixLog = variationBaked && !motionBaked ? `VARIATION_BAKE ${variationBaked.ops}` : motionBaked ? `MOTION_BAKE ${motionBaked.ops}` : "";
   } else {
   const script = compileFixScript({
     blendPath: currentBlend ?? asset.blendPath!,
@@ -846,7 +936,7 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     await landEvent(asset.projectId, `Design fix FAILED for ${asset.kind.toLowerCase()} ${asset.refName}: the bpy pass errored`, { assetId: asset.id });
     return { ok: false, error: `the bpy fix pass failed (${diag}): ${run.log.slice(-300)}`, assetId, refName: asset.refName, versionBefore: asset.version, versionAfter: null, attempted: targets.length, fixed: 0, stillOpen: targets.length, fixLog };
   }
-  fixOps = motionBaked ? `${motionBaked.ops} + ${marker("FIX_OPS") ?? "bpy refinement pass"}` : marker("FIX_OPS") ?? "bpy refinement pass";
+  fixOps = motionBaked ? `${motionBaked.ops} + ${marker("FIX_OPS") ?? "bpy refinement pass"}` : variationBaked ? `${variationBaked.ops} + ${marker("FIX_OPS") ?? "bpy refinement pass"}` : marker("FIX_OPS") ?? "bpy refinement pass";
   }
 
   // accepted: promote the new version (blend + preview + loop) into the row
@@ -855,6 +945,8 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     try { fs.copyFileSync(outPreview, previewPublic); } catch { /* preview optional */ }
   } else if (motionBaked?.previewPath && fs.existsSync(motionBaked.previewPath)) {
     try { fs.copyFileSync(motionBaked.previewPath, previewPublic); } catch { /* preview optional */ }
+  } else if (variationBaked?.previewPath && fs.existsSync(variationBaked.previewPath)) {
+    try { fs.copyFileSync(variationBaked.previewPath, previewPublic); } catch { /* preview optional */ }
   }
   let loopPublicPath: string | null = null;
   if (motionBaked?.loopPath && fs.existsSync(motionBaked.loopPath)) {
@@ -874,12 +966,16 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
       loopPath: loopPublicPath ?? asset.loopPath,
       motionPreset: motionBaked ? `${motionBaked.motionName} (archetype default)` : asset.motionPreset,
       motionBakedAt: motionBaked ? new Date() : asset.motionBakedAt,
+      variationPreset: variationBaked ? `${variationBaked.name} (default)` : asset.variationPreset,
       buildLog: (motionBaked ? `${fixLog}\n` : "") + (motionBaked && !needsBpyPass ? "" : fixLog).slice(-4000),
       meta: JSON.stringify({
         ...newMeta,
         motion: motionBaked
           ? { ...(newMeta.motion ?? {}), name: `${motionBaked.motionName} (archetype default)`, bakedBy: "design_fix" }
           : newMeta.motion,
+        variation: variationBaked
+          ? { ...(newMeta.variation ?? {}), name: `${variationBaked.name} (default)`, bakedBy: "design_fix", instances: 48 }
+          : newMeta.variation,
         fixPass: { ops: fixOps, fromVersion: asset.version, at: new Date().toISOString() },
       }).slice(0, 4000),
     },
@@ -939,7 +1035,7 @@ export async function designStatus(projectId: string) {
     }),
     db.blenderAsset.findMany({
       where: { projectId },
-      select: { id: true, kind: true, refName: true, status: true, version: true, qualityScore: true, lastReviewAt: true, motionPreset: true, loopPath: true },
+      select: { id: true, kind: true, refName: true, status: true, version: true, qualityScore: true, lastReviewAt: true, motionPreset: true, loopPath: true, variationPreset: true },
       orderBy: [{ kind: "asc" }, { refName: "asc" }],
     }),
   ]);

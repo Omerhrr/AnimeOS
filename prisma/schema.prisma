@@ -57,6 +57,7 @@ model Project {
   designPresets    DesignPreset[]
   designReviews    DesignReview[]
   designIssues     DesignIssue[]
+  assetExports     AssetExport[]
   comments         Comment[]
   memberships      ProjectMembership[]
   invites          Invite[]
@@ -91,6 +92,8 @@ model BlenderAsset {
   motionPreset  String?  // the MOTION preset (design_motion) baked into the file - the asset performs
   loopPath      String?  // /assets-blender/{id}.mp4 animated preview loop - the proof of performance
   motionBakedAt DateTime? // when the armature performance was last baked
+  variationPreset String? // the VARIATION preset (design_variation) scattered into the file - the asset breathes
+  exports       AssetExport[]
   meta          String?  // JSON {dna, objects, polyCount, buildMs, ...}
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -114,12 +117,29 @@ model BlenderAsset {
 //   works through and the re-audit confirms. This is how the studio
 //   checks back on its own designs, fixes them and proves the fix.
 // ─────────────────────────────────────────────────────────────
+model AssetExport {
+  id          String   @id @default(cuid())
+  assetId     String
+  projectId   String
+  format      String   // GLB | FBX
+  path        String   // assets/exports/... the exported file
+  publicPath  String?  // /exports/{assetId}.{glb|fbx} when served for download
+  verified    Boolean  @default(false) // the round-trip check re-imported and compared
+  drift       Float?   // max fidelity drift of the round-trip (0..1)
+  report      String?  // JSON: {objectsSrc/Re, trisSrc/Re, missing[], bboxDeltaPct, notes[]}
+  createdAt   DateTime @default(now())
+  asset       BlenderAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+}
+
 model DesignPreset {
   id         String   @id @default(cuid())
   projectId  String
-  kind       String   // MATERIAL | LIGHTING | MOTION
+  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR
   name       String
-  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec
+  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats
   usageCount Int      @default(0) // builds that consumed this preset
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -252,6 +272,11 @@ model Shot {
   artworkUrl  String?  // AI-generated panel art (served from /panels/)
   artGeneratedAt DateTime? // when the current artworkUrl was generated - art-aware continuity compares this against state/anchor timestamps
   dialogue    String?  // JSON: Array<{ speaker, text, kind: SPEECH | THOUGHT | SFX }>
+  // DIRECTED MOTION GRAMMAR (iteration 53): a JSON array of camera
+  // beats [{move, from, to, poseStart?, poseEnd?, note?}] the worker
+  // plays frame by frame - a shot is DIRECTED (crane down, then push
+  // in), not a single move held for the whole clip.
+  grammar     String?  // JSON: Array<{ move, from, to, poseStart?, poseEnd?, note? }>
   // Per-shot style LoRA fine-tuning - selects a production LoRA adapter
   // whose trigger tokens are injected into this shot's art prompt.
   loraId      String?

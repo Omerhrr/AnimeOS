@@ -119,7 +119,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A3 the registry grew to 62 tools (design_motion is the 62nd)", toolCount === 62, `count=${toolCount}`);
+  check("A3 the registry stands at 66 tools (design_motion is the 62nd)", toolCount === 66, `count=${toolCount}`);
   check("A4 design_motion registers named performance law", tools.includes('name: "design_motion"') && tools.includes("hover | spin | pulse | hover-spin") && tools.includes("slither | flap | walk | prowl | breathe | idle"));
   check("A5 the build tool takes a motion preset name", tools.includes("motion: \"string (optional - a design_motion preset name"));
   check("A6 the context line reads the performing standing", tools.includes("performing") && tools.includes("MOTIONLESS (props/creatures need design_motion + a rebuild)"));
@@ -128,7 +128,7 @@ async function main() {
   check("A7 the motion spec compiler validates kind + motion + clamps", motion.includes("MOTIONS_BY_KIND") && motion.includes("DEFAULT_MOTION_BY_ARCHETYPE") && motion.includes("compileMotionSpec"));
 
   const builder = readFileSync("bridges/blender/asset_builder.py", "utf8");
-  check("A8 the v6 builder bakes a --motion pass and reports the loop", builder.includes("ASSET BUILDER (v6.0)") && builder.includes("--motion") && builder.includes("ASSET_LOOP") && builder.includes("MOTION_SUMMARY"));
+  check("A8 the v7 builder bakes a --motion pass and reports the loop", builder.includes("ASSET BUILDER (v7.0)") && builder.includes("--motion") && builder.includes("ASSET_LOOP") && builder.includes("MOTION_SUMMARY"));
   check("A9 the motion-only pass (design_fix path) re-rigs and saves a NEW file", builder.includes("motion-only pass") && builder.includes("save_as_mainfile"));
 
   const rig = readFileSync("bridges/blender/motion_rig.py", "utf8");
@@ -146,7 +146,7 @@ async function main() {
   check("A17 motion is judged by watching the loop, never by imagining", prompts.includes("motion is judged by watching, never by imagining"));
 
   const review = readFileSync("src/lib/blender/design-review.ts", "utf8");
-  check("A18 the audit weighs MOTION (0.13) and flags motionless props/creatures", review.includes("motion: 0.13") && review.includes("designed but motionless"));
+  check("A18 the audit weighs MOTION (0.12, beside VARIATION 0.09) and flags motionless props/creatures", review.includes("motion: 0.12") && review.includes("designed but motionless"));
   check("A19 the fix pass bakes a REAL performance for MOTION issues", review.includes("THE MOTION FIX") && review.includes("DEFAULT_MOTION_BY_ARCHETYPE"));
 
   const renderView = readFileSync("src/components/views/render-view.tsx", "utf8");
@@ -199,7 +199,7 @@ async function main() {
   check("D6 the seal row records the preset + the loop", sealRow?.motionPreset === "E2E Seal Drift" && Boolean(sealRow?.loopPath) && Boolean(sealRow?.motionBakedAt), JSON.stringify({ preset: sealRow?.motionPreset, loop: sealRow?.loopPath }));
   check("D7 the animated loop is a REAL mp4 on disk", Boolean(sealRow?.loopPath) && isMp4(`${process.cwd()}/public${sealRow?.loopPath ?? "/x.mp4"}`), sealRow?.loopPath ?? "no loop");
   const sealMeta = sealRow?.meta ? JSON.parse(sealRow.meta) as { motion?: { name?: string; archetype?: string; frames?: number; bound?: number }; builderVersion?: string } : null;
-  check("D8 the build meta carries the motion summary (archetype, frames, bound parts)", sealMeta?.motion?.archetype === "prop" && (sealMeta?.motion?.frames ?? 0) >= 16 && (sealMeta?.motion?.bound ?? 0) >= 4 && sealMeta?.builderVersion === "v6.0", JSON.stringify(sealMeta?.motion));
+  check("D8 the build meta carries the motion summary (archetype, frames, bound parts)", sealMeta?.motion?.archetype === "prop" && (sealMeta?.motion?.frames ?? 0) >= 16 && (sealMeta?.motion?.bound ?? 0) >= 4 && sealMeta?.builderVersion === "v7.0", JSON.stringify(sealMeta?.motion));
   const sealUsage = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId: labId, kind: "MOTION", name: "E2E Seal Drift" } } });
   check("D9 consuming a motion preset bumps its usage count", (sealUsage?.usageCount ?? 0) >= 1, `usage=${sealUsage?.usageCount}`);
   const stageHand = await T("create_character", { name: "E2E Stage Hand", role: "SUPPORTING" });

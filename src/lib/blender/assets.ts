@@ -6,6 +6,7 @@ import { characterDesignDna, environmentDna, propDna, creatureDna } from "@/lib/
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
 import type { MotionSpec } from "@/lib/blender/motion";
+import type { VariationSpec } from "@/lib/blender/variation";
 
 // ─────────────────────────────────────────────────────────────
 // BLENDER ASSET LIBRARY (design once, render many)
@@ -139,7 +140,7 @@ export async function buildBlenderAsset(
   kind: BlenderAssetKind,
   refName: string,
   guidance?: string | null,
-  presets?: { materialName?: string | null; lightingName?: string | null; motionName?: string | null },
+  presets?: { materialName?: string | null; lightingName?: string | null; motionName?: string | null; variationName?: string | null },
 ): Promise<BuildAssetResult> {
   if (!runtimeBlenderBin()) {
     return {
@@ -240,6 +241,32 @@ export async function buildBlenderAsset(
     fs.writeFileSync(motionFile, JSON.stringify({ ...motionPreset.spec, size, archetype }, null, 2));
   }
 
+  // DESIGNED variation preset (design_variation): the layout law is
+  // compiled into the spec file the builder's --variation flag
+  // consumes; the GN tree it produces travels inside the .blend.
+  let variationPreset: { name: string; spec: VariationSpec } | null = null;
+  if (presets?.variationName) {
+    const row = await db.designPreset.findUnique({
+      where: { projectId_kind_name: { projectId, kind: "VARIATION", name: presets.variationName } },
+    });
+    if (row) {
+      let spec: VariationSpec | null = null;
+      try {
+        spec = JSON.parse(row.spec || "null") as VariationSpec | null;
+      } catch {
+        spec = null;
+      }
+      if (spec && typeof spec.variation === "string") {
+        variationPreset = { name: row.name, spec };
+        await db.designPreset.update({ where: { id: row.id }, data: { usageCount: { increment: 1 } } });
+      }
+    }
+  }
+  const variationFile = variationPreset ? path.join(workDir, "variation.json") : null;
+  if (variationPreset && variationFile) {
+    fs.writeFileSync(variationFile, JSON.stringify(variationPreset.spec, null, 2));
+  }
+
   const run = await runAssetBuilder({
     kind,
     dnaPath: dnaFile,
@@ -248,6 +275,7 @@ export async function buildBlenderAsset(
     ...(materialFile ? { materialPath: materialFile } : {}),
     ...(rigFile ? { rigPath: rigFile } : {}),
     ...(motionFile ? { motionPath: motionFile } : {}),
+    ...(variationFile ? { variationPath: variationFile } : {}),
     ...(motionPreset ? { timeoutMs: 6 * 60_000 } : {}),
   });
   const buildMs = Date.now() - started;
@@ -278,13 +306,16 @@ export async function buildBlenderAsset(
   }
 
   const meta = {
-    builderVersion: "v6.0",
+    builderVersion: "v7.0",
     dna: resolved.dna,
     guidance: guidance ?? null,
     materialRecipe: materialPreset ? { name: materialPreset.name, spec: materialPreset.spec } : null,
     lightingRig: lightingPreset ? { name: lightingPreset.name, spec: lightingPreset.spec } : null,
     motion: motionPreset
       ? { name: motionPreset.name, ...run.motionSummary, spec: motionPreset.spec }
+      : null,
+    variation: variationPreset
+      ? { name: variationPreset.name, ...run.variationSummary, spec: variationPreset.spec }
       : null,
     objects: run.objects,
     tris: run.tris,
@@ -301,14 +332,15 @@ export async function buildBlenderAsset(
       motionPreset: motionPreset ? motionPreset.name : null,
       loopPath: loopPublic && fs.existsSync(loopPublic) ? `/assets-blender/${asset.id}.mp4` : null,
       motionBakedAt: motionPreset ? new Date() : asset.motionBakedAt,
+      variationPreset: variationPreset ? variationPreset.name : asset.variationPreset,
       buildLog: run.log.slice(-4000),
       meta: JSON.stringify(meta),
     },
   });
   await landDesignEvent(
     projectId,
-    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""})`,
-    { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null },
+    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""}${variationPreset ? `, varied '${variationPreset.name}'` : ""})`,
+    { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null, variation: variationPreset?.name ?? null },
   );
   return {
     ok: true, assetId: updated.id, version, status: "READY", blendPath: finalBlend,
@@ -421,6 +453,7 @@ export async function blenderAssetLibrary(projectId: string) {
       blendPath: r.blendPath,
       motionPreset: r.motionPreset,
       loopPath: r.loopPath,
+      variationPreset: r.variationPreset,
       identityScore: r.identityScore,
       inspectNote: r.inspectNote,
       inspectedAt: r.inspectedAt ? r.inspectedAt.toISOString() : null,

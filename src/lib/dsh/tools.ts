@@ -32,6 +32,9 @@ import {
 import { runBlenderScript } from "@/lib/blender/runtime";
 import { auditAsset, auditLibrary, fixIssues, designStatus } from "@/lib/blender/design-review";
 import { compileMotionSpec } from "@/lib/blender/motion";
+import { compileVariationSpec } from "@/lib/blender/variation";
+import { runRoundtrip, isExportFormat } from "@/lib/blender/roundtrip";
+import { compileGrammarSpec, serializeGrammar, BUILT_IN_GRAMMARS, GRAMMAR_MOVES, findBuiltInGrammar } from "@/lib/animation/grammar";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -385,6 +388,7 @@ export const TOOL_DEFS: ToolDef[] = [
       material: "string (optional - a design_material recipe name; the recipe is law over DNA defaults)",
       lighting: "string (optional - a design_lighting rig name; drives the preview render)",
       motion: "string (optional - a design_motion preset name; bakes a REAL armature performance into the .blend and renders the animated preview loop)",
+      variation: "string (optional - a design_variation preset name; attaches a REAL Geometry Nodes scatter/array layout to the asset)",
     },
   },
   {
@@ -460,6 +464,49 @@ export const TOOL_DEFS: ToolDef[] = [
       speed: "number 0.2..3 (optional, 1 = one wave cycle per loop)",
       amplitude: "number 0.2..3 (optional, 1 = designed default reach)",
       cycleFrames: "number 16..48 (optional, 24 = one second at 24fps)",
+    },
+  },
+  {
+    name: "design_variation",
+    description: "Design a NAMED VARIATION PRESET (the fourth design law, beside materials, lighting and motion) and register it as the production's layout law: a REAL Blender GEOMETRY NODES tree - SCATTER (seeded instances spread across a carrier surface: rocks over a terrain, reeds in a marsh, debris around an artifact) or ARRAY (instances marching a deterministic spine: sword racks, colonnades, banners). Rebuilds that pass variation:'<name>' attach the tree INSIDE the .blend (the modifier travels to every render), deterministic because the seed is law - the same spec always lands the same variation. An environment without variation is a wallpaper; sixty copies of one rock is not a set.",
+    args: {
+      name: "string - the variation name (e.g. 'Valley Floor Debris')",
+      variation: "string - SCATTER (instances across a carrier surface) | ARRAY (instances along a spine/grid)",
+      count: "number (optional - scatter: instances across the carrier 1..400, default 40; array: steps on the spine 2..64, default 8)",
+      seed: "number (optional 0..65535, default 7 - the same seed always lands the same layout)",
+      scaleJitter: "number 0..1 (optional, default 0.35 - per-instance size spread)",
+      rotJitter: "number 0..1 (optional, default 0.8 - per-instance pose spread; 1 = full circle)",
+      spread: "number 0..1 (optional, default 0.25 - ARRAY positional jitter)",
+      layout: "string (optional - ARRAY: line | grid, default line)",
+      carrier: "string (optional - the object name that receives instances; default auto-detects the floor)",
+      source: "string (optional - the object name to instance; default auto-detects the smallest piece)",
+    },
+  },
+  {
+    name: "blender_export",
+    description: "EXPORT a library asset to GLB or FBX and VERIFY the round trip: the studio's Blender exports the accepted .blend, wipes the scene, re-imports the exported file and compares meshes, triangles, materials and bounding-box dimensions against the source - a report lands (missing meshes, drift %, format notes) and an unverified export is a hope, not a deliverable. GLB drops lights/cameras by design (judged on meshes); FBX re-triangulates ngons (small tri drift is the format). Use it when a deliverable leaves the studio for a game engine, a contractor DCC or a distributor QC lane.",
+    args: {
+      refName: "string - the asset's name",
+      kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP for registered assets)",
+      format: "GLB | FBX (default GLB)",
+      verify: "boolean (optional, default true - false skips the re-import comparison)",
+    },
+  },
+  {
+    name: "design_grammar",
+    description: "Design a NAMED MOTION GRAMMAR and register it as the production's blocking law: 2..6 DIRECTED camera beats over one shot (CRANE down to find the hero, then DOLLY_IN as the sword clears the sheath), each beat one move (ORBIT | PAN | TRACKING | CRANE | DOLLY_IN | DOLLY_OUT | TILT_UP | TILT_DOWN | STATIC) over a 0..1 fraction of the clip, optionally carrying its own pose pair so the SUBJECT moves with the lens. Reusable named grammars are how a show keeps its blocking language consistent; apply one with set_shot_grammar.",
+    args: {
+      name: "string - the grammar name (e.g. 'Cultivation Reveal')",
+      beats: "JSON array string - [{\"move\":\"CRANE\",\"from\":0,\"to\":0.5},{\"move\":\"DOLLY_IN\",\"from\":0.5,\"to\":1}], optional per-beat poseStart/poseEnd and note",
+    },
+  },
+  {
+    name: "set_shot_grammar",
+    description: "DIRECT a shot with a motion grammar: apply a NAMED grammar (a design_grammar preset or a built-in - The Reveal, The Standoff, The Assault, The Ascent, The Withdrawal) or an inline beat array to one shot. The render worker then plays the camera BEAT BY BEAT with eased crossfades between beats, and a beat's own pose pair moves the subject with the lens - a directed sequence, not one move held for the whole clip. Pass grammar as empty string to clear it back to the shot's single movement.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      grammar: "string - a grammar preset name, a built-in name, an inline beats JSON array, or empty string to clear",
     },
   },
   {
@@ -2134,6 +2181,7 @@ export async function executeTool(
           materialName: String(args.material ?? "").trim() || null,
           lightingName: String(args.lighting ?? "").trim() || null,
           motionName: String(args.motion ?? "").trim() || null,
+          variationName: String(args.variation ?? "").trim() || null,
         });
         if (!res.ok) return { status: "ERROR", result: `Asset build failed for ${refName}: ${res.log.slice(-400)}` };
         const inspectHint = kindRaw === "CHARACTER"
@@ -2170,7 +2218,8 @@ export async function executeTool(
         const rows = lib.assets.map((a) => {
           const score = a.identityScore !== null ? `${Math.round(a.identityScore * 100)}%` : "-";
           const motion = a.motionPreset ? `, performing '${a.motionPreset}'${a.loopPath ? " (loop on file)" : ""}` : ", motionless";
-          return `${a.kind.toLowerCase().padEnd(6)} ${a.refName}: ${a.status} v${a.version}, identity ${score}${motion}, ${a.previewPath ?? "no preview"}`;
+          const variation = a.variationPreset ? ", varied" : a.kind === "ENVIRONMENT" ? ", WALLPAPER (no variation)" : "";
+          return `${a.kind.toLowerCase().padEnd(6)} ${a.refName}: ${a.status} v${a.version}, identity ${score}${motion}${variation}, ${a.previewPath ?? "no preview"}`;
         });
         return { status: "OK", result: `Blender asset library: ${lib.total} assets (${lib.ready} ready, ${lib.failed} failed, ${lib.building} building), average accepted identity ${avg}.\n${rows.join("\n")}\nReady assets ride every matching render payload. The professional loop runs on top: design_audit to check back, design_fix to correct, design_status for the standing.` };
       }
@@ -2242,6 +2291,126 @@ export async function executeTool(
         return { status: "OK", result: `MOTION preset '${name}' ${existed ? "updated" : "registered"}: ${compiled.spec.motion} at speed ${compiled.spec.speed}, amplitude ${compiled.spec.amplitude}, ${compiled.spec.cycleFrames} frame loop. Rebuild the asset with motion:'${name}' (blender_asset_build) and the rig bakes it as a real armature performance inside the .blend, with the animated preview loop as proof - riding renders then show it performing live.` };
       }
 
+      case "design_variation": {
+        const compiled = compileVariationSpec({
+          name: String(args.name ?? ""),
+          variation: String(args.variation ?? ""),
+          count: args.count !== undefined ? Number(args.count) : null,
+          seed: args.seed !== undefined ? Number(args.seed) : null,
+          scaleJitter: args.scaleJitter !== undefined ? Number(args.scaleJitter) : null,
+          rotJitter: args.rotJitter !== undefined ? Number(args.rotJitter) : null,
+          spread: args.spread !== undefined ? Number(args.spread) : null,
+          layout: args.layout !== undefined ? String(args.layout) : null,
+          carrier: args.carrier !== undefined ? String(args.carrier) : null,
+          source: args.source !== undefined ? String(args.source) : null,
+        });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const { name } = compiled.spec;
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "VARIATION", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "VARIATION", name } },
+          create: { projectId, kind: "VARIATION", name, spec: JSON.stringify(compiled.spec) },
+          update: { spec: JSON.stringify(compiled.spec) },
+        });
+        await landDesignEvent(projectId, `Variation preset '${name}' ${existed ? "updated" : "designed"} (${compiled.spec.variation} x${compiled.spec.count}, seed ${compiled.spec.seed})`, { presetId: preset.id });
+        return { status: "OK", result: `VARIATION preset '${name}' ${existed ? "updated" : "registered"}: ${compiled.spec.variation} x${compiled.spec.count} at seed ${compiled.spec.seed} (scale jitter ${compiled.spec.scaleJitter}, rot jitter ${compiled.spec.rotJitter}). Rebuild the asset with variation:'${name}' (blender_asset_build) and a REAL Geometry Nodes tree lands inside the .blend - seeded, deterministic, traveling to every render. An environment built without one is a wallpaper.` };
+      }
+
+      case "blender_export": {
+        const refName = String(args.refName ?? "").trim();
+        if (!refName) return { status: "ERROR", result: "refName is required." };
+        const kindRaw = String(args.kind ?? "PROP").toUpperCase();
+        const asset = await db.blenderAsset.findFirst({
+          where: { projectId, refName, ...(isBlenderAssetKind(kindRaw) ? { kind: kindRaw } : {}) },
+          orderBy: { updatedAt: "desc" },
+        }) ?? await db.blenderAsset.findFirst({ where: { projectId, refName }, orderBy: { updatedAt: "desc" } });
+        if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - design one first with blender_asset_build.` };
+        const format = String(args.format ?? "GLB").toUpperCase();
+        if (!isExportFormat(format)) return { status: "ERROR", result: `format must be GLB or FBX (got "${format}").` };
+        const verify = args.verify === undefined ? true : Boolean(args.verify);
+        const res = await runRoundtrip(asset.id, format, verify);
+        if (!res.ok) return { status: "ERROR", result: `EXPORT FAILED for ${refName}: ${res.error}` };
+        const rep = res.report;
+        if (!rep) return { status: "ERROR", result: "the round-trip report went missing - check the runtime log" };
+        const verdict = res.verified
+          ? `VERIFIED - re-import matched (${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%)`
+          : `NOT VERIFIED - the round trip drifted: ${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%${rep.missing.length ? `, missing: ${rep.missing.join(", ")}` : ""}`;
+        return { status: "OK", result: `EXPORT ${format}: ${refName} -> ${res.publicPath ?? rep.path} (${(rep.bytes / 1024).toFixed(0)}KB)\n${verdict}\nFormat notes: ${rep.notes.join(" ")}\n${res.verified ? "The file is deliverable - a game engine, a contractor DCC or a QC lane can eat it." : "Do NOT ship an unverified export - rebuild or refine, then export again."}` };
+      }
+
+      case "design_grammar": {
+        const compiled = compileGrammarSpec({ name: String(args.name ?? ""), beats: args.beats });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const { name } = compiled.spec;
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "GRAMMAR", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "GRAMMAR", name } },
+          create: { projectId, kind: "GRAMMAR", name, spec: JSON.stringify(compiled.spec) },
+          update: { spec: JSON.stringify(compiled.spec) },
+        });
+        const shape = compiled.spec.beats.map((b) => `${b.move} ${Math.round(b.from * 100)}-${Math.round(b.to * 100)}%`).join(" -> ");
+        await landDesignEvent(projectId, `Grammar preset '${name}' ${existed ? "updated" : "designed"} (${shape})`, { presetId: preset.id });
+        return { status: "OK", result: `GRAMMAR preset '${name}' ${existed ? "updated" : "registered"}: ${shape}. Apply it to any shot with set_shot_grammar grammar:'${name}' - the worker plays the camera beat by beat, crossfading between beats, and a beat's own pose pair moves the subject with the lens.` };
+      }
+
+      case "set_shot_grammar": {
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
+        if (args.sceneNumber) {
+          const scenes = await db.scene.findMany({
+            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+            orderBy: { createdAt: "desc" },
+          });
+          scene = scenes[0] ?? null;
+        }
+        if (!scene) scene = await latestScene(projectId);
+        if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        const grammarArg = String(args.grammar ?? "").trim();
+        if (!grammarArg) {
+          await db.shot.update({ where: { id: shot.id }, data: { grammar: null } });
+          await landDesignEvent(projectId, `Grammar cleared on Shot ${String(shot.number).padStart(3, "0")} (back to its single movement)`, { shotId: shot.id });
+          return { status: "OK", result: `GRAMMAR cleared on Shot ${String(shot.number).padStart(3, "0")} - it renders on its single movement (${shot.movement ?? "STATIC"}) again.` };
+        }
+        // resolve: saved GRAMMAR preset -> built-in -> inline beats
+        let beatsRaw: unknown = null;
+        let sourceName = "";
+        const saved = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "GRAMMAR", name: grammarArg } } });
+        if (saved) {
+          try {
+            const parsedSpec = JSON.parse(saved.spec || "null") as { beats?: unknown } | null;
+            beatsRaw = parsedSpec?.beats ?? null;
+          } catch {
+            beatsRaw = null;
+          }
+          sourceName = `preset '${grammarArg}'`;
+        } else {
+          const builtin = findBuiltInGrammar(grammarArg);
+          if (builtin) {
+            beatsRaw = JSON.stringify(builtin.beats);
+            sourceName = `built-in '${builtin.name}'`;
+          } else if (grammarArg.startsWith("[")) {
+            beatsRaw = grammarArg;
+            sourceName = "inline beats";
+          } else {
+            const registry = [
+              ...BUILT_IN_GRAMMARS.map((g) => `'${g.name}' (built-in)`),
+              ...((await db.designPreset.findMany({ where: { projectId, kind: "GRAMMAR" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+            ];
+            return { status: "ERROR", result: `No grammar named '${grammarArg}'. Registry: ${registry.join(", ")} - or pass an inline beats JSON array like [{\"move\":\"CRANE\",\"from\":0,\"to\":0.5},{\"move\":\"DOLLY_IN\",\"from\":0.5,\"to\":1}].` };
+          }
+        }
+        const compiled = compileGrammarSpec({ name: `${shot.id.slice(-6)}-shot-grammar`, beats: beatsRaw });
+        if (!compiled.ok) return { status: "ERROR", result: `the ${sourceName} beats do not compile: ${compiled.error}` };
+        await db.shot.update({ where: { id: shot.id }, data: { grammar: serializeGrammar(compiled.spec) } });
+        const shape = compiled.spec.beats.map((b) => `${b.move} ${Math.round(b.from * 100)}-${Math.round(b.to * 100)}%`).join(" -> ");
+        const poseBeats = compiled.spec.beats.filter((b) => b.poseStart || b.poseEnd).length;
+        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} directed with ${sourceName}: ${shape}`, { shotId: shot.id, grammar: sourceName });
+        return { status: "OK", result: `DIRECTED Shot ${String(shot.number).padStart(3, "0")} with ${sourceName}: ${shape}${poseBeats ? ` (${poseBeats} beat(s) carry their own pose pair - the subject moves with the lens)` : ""}. The next render_shot of this shot plays the grammar beat by beat with eased crossfades; the vocabulary the worker performs: ${GRAMMAR_MOVES.join(", ")}.` };
+      }
+
       case "design_audit": {
         if (args.library) {
           const res = await auditLibrary(projectId, true);
@@ -2294,7 +2463,7 @@ export async function executeTool(
         if (status.assets.length === 0) {
           return { status: "OK", result: "No designs on file yet - the design loop starts with blender_asset_build." };
         }
-        const assetLines = status.assets.map((a) => `  ${a.kind.toLowerCase()} ${a.refName}: ${a.status} v${a.version}${a.qualityScore !== null ? `, quality ${Math.round(a.qualityScore * 100)}%` : ", never audited (design_audit)"}${a.motionPreset ? `, performing '${a.motionPreset}'` : (a.kind === "PROP" || a.kind === "CREATURE") ? ", MOTIONLESS (design_motion + rebuild)" : ""}`);
+        const assetLines = status.assets.map((a) => `  ${a.kind.toLowerCase()} ${a.refName}: ${a.status} v${a.version}${a.qualityScore !== null ? `, quality ${Math.round(a.qualityScore * 100)}%` : ", never audited (design_audit)"}${a.motionPreset ? `, performing '${a.motionPreset}'` : (a.kind === "PROP" || a.kind === "CREATURE") ? ", MOTIONLESS (design_motion + rebuild)" : ""}${a.variationPreset ? ", varied (GN)" : a.kind === "ENVIRONMENT" ? ", WALLPAPER (design_variation + rebuild)" : ""}`);
         const issueLines = status.openIssues.map((i) => `  ${i.severity} ${i.kind} on ${i.refName}: ${i.note}${i.fixNote ? ` (fix note: ${i.fixNote.slice(0, 90)})` : ""}`);
         const reviewLines = status.reviews.slice(0, 5).map((r) => `  ${r.createdAt.slice(0, 16)}Z ${r.targetRef} ${r.state}${r.overall !== null ? ` ${Math.round(r.overall * 100)}%` : ""}`);
         return { status: "OK", result: `DESIGN STATUS: ${Object.entries(sev).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(", ") || "no"} open issue(s) across ${status.assets.length} asset(s).\nAssets:\n${assetLines.join("\n")}\n${issueLines.length ? `Open issues:\n${issueLines.join("\n")}\n` : "No open issues.\n"}Recent audits:\n${reviewLines.join("\n")}` };
@@ -3238,7 +3407,7 @@ export async function executeTool(
  * the director reads before promising any design work. */
 function designContextLine(
   project: {
-    blenderAssets: Array<{ kind: string; refName: string; status: string; version: number; qualityScore: number | null; motionPreset: string | null }>;
+    blenderAssets: Array<{ kind: string; refName: string; status: string; version: number; qualityScore: number | null; motionPreset: string | null; variationPreset: string | null }>;
     designPresets: Array<{ kind: string; name: string; usageCount: number }>;
   },
   openIssues: Array<{ refName: string; severity: string; kind: string; note: string }>,
@@ -3249,10 +3418,11 @@ function designContextLine(
   const presets = project.designPresets;
   const performing = ready.filter((a) => a.motionPreset).length;
   const motionlessPerf = ready.filter((a) => (a.kind === "PROP" || a.kind === "CREATURE") && !a.motionPreset).length;
+  const varied = ready.filter((a) => a.variationPreset).length;
   const parts: string[] = [];
   const libLine = lib.length === 0
     ? "library empty (design the cast, sets, props and creatures with blender_asset_build)"
-    : `library ${lib.length} assets, ${ready.length} ready, ${performing} performing${motionlessPerf ? `, ${motionlessPerf} MOTIONLESS (props/creatures need design_motion + a rebuild)` : ""} (${ready.map((a) => `${a.kind.toLowerCase()} ${a.refName} v${a.version}${a.qualityScore !== null ? ` @${Math.round(a.qualityScore * 100)}%` : ""}${a.motionPreset ? " +loop" : ""}`).join(", ")})`;
+    : `library ${lib.length} assets, ${ready.length} ready, ${performing} performing${motionlessPerf ? `, ${motionlessPerf} MOTIONLESS (props/creatures need design_motion + a rebuild)` : ""}, ${varied} varied${ready.some((a) => a.kind === "ENVIRONMENT" && !a.variationPreset) ? " (environments without design_variation are wallpapers)" : ""} (${ready.map((a) => `${a.kind.toLowerCase()} ${a.refName} v${a.version}${a.qualityScore !== null ? ` @${Math.round(a.qualityScore * 100)}%` : ""}${a.motionPreset ? " +loop" : ""}${a.variationPreset ? " +gn" : ""}`).join(", ")})`;
   parts.push(libLine);
   if (presets.length > 0) {
     parts.push(`presets: ${presets.map((p) => `${p.kind.toLowerCase()} '${p.name}'x${p.usageCount}`).join(", ")}`);
