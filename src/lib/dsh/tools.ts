@@ -29,7 +29,8 @@ import {
   isBlenderAssetKind,
   type BlenderAssetKind,
 } from "@/lib/blender/assets";
-import { runBlenderScript } from "@/lib/blender/runtime";
+import { runBlenderScript, runAssetBuilder } from "@/lib/blender/runtime";
+import { compileSculptSpec, compileRetopoSpec, DEFAULT_RETOPO_BUDGET, writeRetopoSpec } from "@/lib/blender/sculpt";
 import { auditAsset, auditLibrary, fixIssues, designStatus } from "@/lib/blender/design-review";
 import { compileMotionSpec } from "@/lib/blender/motion";
 import { compileVariationSpec } from "@/lib/blender/variation";
@@ -389,6 +390,7 @@ export const TOOL_DEFS: ToolDef[] = [
       lighting: "string (optional - a design_lighting rig name; drives the preview render)",
       motion: "string (optional - a design_motion preset name; bakes a REAL armature performance into the .blend and renders the animated preview loop)",
       variation: "string (optional - a design_variation preset name; attaches a REAL Geometry Nodes scatter/array layout to the asset)",
+      sculpt: "string (optional - a design_sculpt preset name; carves layered seeded surface detail into the asset before the save)",
     },
   },
   {
@@ -483,6 +485,17 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "design_sculpt",
+    description: "Design a NAMED SCULPT RECIPE (the sixth design law, beside materials, lighting, motion and variation) and register it as the production's surface law: layered, seeded VALUE-NOISE DISPLACEMENT carved along the surface normals - swell (broad organic mass: terrain, muscle, drapery billows), fold (ridged creases: cloth folds, hide striations, panel lines) and grain (fine tooth: weathering, skin) over an applied subdivision. Rebuilds that pass sculpt:'<name>' carve the recipe INTO the .blend, deterministic because the seed is law - and the pass MEASURES its own evidence (surface variance before/after). An environment or creature with a clean builder slab is an unfinished design.",
+    args: {
+      name: "string - the sculpt recipe name (e.g. 'Weathered Valley Terrain')",
+      layers: "JSON array string - [{\"kind\":\"swell\",\"intensity\":1,\"scale\":1.2},{\"kind\":\"fold\"},{\"kind\":\"grain\"}] (intensity 0..2, scale = noise frequency; defaults per kind)",
+      subdivision: "number 0..3 (optional, default 1 - the subsurf level applied before carving)",
+      seed: "number 0..65535 (optional, default 7 - the same seed always carves the same surface)",
+      parts: "string (optional - comma-separated object-name filters like 'Robe,Skirt'; default every mesh)",
+    },
+  },
+  {
     name: "blender_export",
     description: "EXPORT a library asset to GLB or FBX and VERIFY the round trip: the studio's Blender exports the accepted .blend, wipes the scene, re-imports the exported file and compares meshes, triangles, materials and bounding-box dimensions against the source - a report lands (missing meshes, drift %, format notes) and an unverified export is a hope, not a deliverable. GLB drops lights/cameras by design (judged on meshes); FBX re-triangulates ngons (small tri drift is the format). Use it when a deliverable leaves the studio for a game engine, a contractor DCC or a distributor QC lane.",
     args: {
@@ -490,6 +503,16 @@ export const TOOL_DEFS: ToolDef[] = [
       kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP for registered assets)",
       format: "GLB | FBX (default GLB)",
       verify: "boolean (optional, default true - false skips the re-import comparison)",
+    },
+  },
+  {
+    name: "blender_retopo",
+    description: "Run the RETOPOLOGY BUDGET pass on a library asset: collapse-decimate its meshes toward the kind's triangle budget (CHARACTER 80k, ENVIRONMENT 120k, PROP 20k, CREATURE 60k) and VERIFY the shape survived - bounding-box drift is measured and a verified verdict lands with the tris before/after. A sculpted asset that grew past its budget comes back to law here; an unverified retopo is a hope, not a deliverable. Saves a NEW versioned .blend and re-renders the preview.",
+    args: {
+      refName: "string - the asset's name",
+      kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP for registered assets)",
+      budget: "number (optional - override the kind's triangle budget; clamped 200..2,000,000)",
+      parts: "string (optional - comma-separated object-name filters; default every mesh)",
     },
   },
   {
@@ -2202,6 +2225,7 @@ export async function executeTool(
           lightingName: String(args.lighting ?? "").trim() || null,
           motionName: String(args.motion ?? "").trim() || null,
           variationName: String(args.variation ?? "").trim() || null,
+          sculptName: String(args.sculpt ?? "").trim() || null,
         });
         if (!res.ok) return { status: "ERROR", result: `Asset build failed for ${refName}: ${res.log.slice(-400)}` };
         const inspectHint = kindRaw === "CHARACTER"
@@ -2239,7 +2263,8 @@ export async function executeTool(
           const score = a.identityScore !== null ? `${Math.round(a.identityScore * 100)}%` : "-";
           const motion = a.motionPreset ? `, performing '${a.motionPreset}'${a.loopPath ? " (loop on file)" : ""}` : ", motionless";
           const variation = a.variationPreset ? ", varied" : a.kind === "ENVIRONMENT" ? ", WALLPAPER (no variation)" : "";
-          return `${a.kind.toLowerCase().padEnd(6)} ${a.refName}: ${a.status} v${a.version}, identity ${score}${motion}${variation}, ${a.previewPath ?? "no preview"}`;
+          const sculpt = a.sculptPreset ? ", sculpted" : a.kind === "ENVIRONMENT" || a.kind === "CREATURE" ? ", UNFINISHED SURFACE (no sculpt)" : "";
+          return `${a.kind.toLowerCase().padEnd(6)} ${a.refName}: ${a.status} v${a.version}, identity ${score}${motion}${variation}${sculpt}, ${a.previewPath ?? "no preview"}`;
         });
         return { status: "OK", result: `Blender asset library: ${lib.total} assets (${lib.ready} ready, ${lib.failed} failed, ${lib.building} building), average accepted identity ${avg}.\n${rows.join("\n")}\nReady assets ride every matching render payload. The professional loop runs on top: design_audit to check back, design_fix to correct, design_status for the standing.` };
       }
@@ -2356,6 +2381,95 @@ export async function executeTool(
           ? `VERIFIED - re-import matched (${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%)`
           : `NOT VERIFIED - the round trip drifted: ${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%${rep.missing.length ? `, missing: ${rep.missing.join(", ")}` : ""}`;
         return { status: "OK", result: `EXPORT ${format}: ${refName} -> ${res.publicPath ?? rep.path} (${(rep.bytes / 1024).toFixed(0)}KB)\n${verdict}\nFormat notes: ${rep.notes.join(" ")}\n${res.verified ? "The file is deliverable - a game engine, a contractor DCC or a QC lane can eat it." : "Do NOT ship an unverified export - rebuild or refine, then export again."}` };
+      }
+
+      case "design_sculpt": {
+        let layersRaw: unknown = null;
+        try {
+          layersRaw = args.layers !== undefined ? JSON.parse(String(args.layers)) : null;
+        } catch {
+          return { status: "ERROR", result: "layers must be a JSON array string, e.g. [{\"kind\":\"swell\"},{\"kind\":\"fold\",\"intensity\":0.8}]" };
+        }
+        const compiled = compileSculptSpec({
+          name: String(args.name ?? ""),
+          layers: layersRaw,
+          subdivision: args.subdivision !== undefined ? Number(args.subdivision) : null,
+          seed: args.seed !== undefined ? Number(args.seed) : null,
+          parts: args.parts !== undefined ? String(args.parts) : null,
+        });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const { name } = compiled.spec;
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "SCULPT", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "SCULPT", name } },
+          create: { projectId, kind: "SCULPT", name, spec: JSON.stringify(compiled.spec) },
+          update: { spec: JSON.stringify(compiled.spec) },
+        });
+        const shape = compiled.spec.layers.map((l) => l.kind).join(" + ");
+        await landDesignEvent(projectId, `Sculpt recipe '${name}' ${existed ? "updated" : "designed"} (${shape}, subdivision ${compiled.spec.subdivision}, seed ${compiled.spec.seed})`, { presetId: preset.id });
+        return { status: "OK", result: `SCULPT preset '${name}' ${existed ? "updated" : "registered"}: ${shape} carved at subdivision ${compiled.spec.subdivision}, seed ${compiled.spec.seed}${compiled.spec.parts.length ? `, parts: ${compiled.spec.parts.join(", ")}` : ", every mesh"}. Rebuild the asset with sculpt:'${name}' (blender_asset_build) and the layered detail is carved INTO the .blend - deterministic, with the variance before/after as the evidence. An environment or creature left on the clean builder slab is an unfinished design.` };
+      }
+
+      case "blender_retopo": {
+        const refName = String(args.refName ?? "").trim();
+        if (!refName) return { status: "ERROR", result: "refName is required." };
+        const kindRaw = String(args.kind ?? "PROP").toUpperCase();
+        const asset = await db.blenderAsset.findFirst({
+          where: { projectId, refName, ...(isBlenderAssetKind(kindRaw) ? { kind: kindRaw } : {}) },
+          orderBy: { updatedAt: "desc" },
+        }) ?? await db.blenderAsset.findFirst({ where: { projectId, refName }, orderBy: { updatedAt: "desc" } });
+        if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - design one first with blender_asset_build.` };
+        if (!asset.blendPath || asset.status !== "READY") {
+          return { status: "ERROR", result: `${refName} has no accepted .blend on disk - rebuild it first (blender_asset_build).` };
+        }
+        const compiled = compileRetopoSpec({
+          budget: args.budget !== undefined ? Number(args.budget) : (DEFAULT_RETOPO_BUDGET[asset.kind] ?? 20_000),
+          parts: args.parts !== undefined ? String(args.parts) : null,
+        });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const project = await db.project.findUnique({ where: { id: asset.projectId }, select: { title: true } });
+        const slugOf = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "asset";
+        const workDir = path.join(process.cwd(), "assets", "blender", slugOf(project?.title ?? "project"), asset.kind.toLowerCase(), `${slugOf(asset.refName)}-retopo-v${asset.version + 1}`);
+        fs.mkdirSync(workDir, { recursive: true });
+        const retopoFile = writeRetopoSpec(compiled.spec, workDir);
+        const dnaFile = path.join(workDir, "retopo-dna.json");
+        fs.writeFileSync(dnaFile, JSON.stringify({ name: asset.refName }));
+        const run = await runAssetBuilder({
+          kind: asset.kind as BlenderAssetKind,
+          dnaPath: dnaFile,
+          outDir: workDir,
+          name: asset.refName,
+          fromBlend: asset.blendPath,
+          retopoPath: retopoFile,
+          timeoutMs: 6 * 60_000,
+        });
+        if (!run.ok || !run.blendPath || !fs.existsSync(run.blendPath)) {
+          await db.blenderAsset.update({ where: { id: asset.id }, data: { buildLog: run.log.slice(-4000) } });
+          return { status: "ERROR", result: `RETOPO FAILED for ${refName}: ${run.log.slice(-300)}` };
+        }
+        const summary = run.retopoSummary ?? {};
+        const newMeta = (() => { try { return JSON.parse(asset.meta || "{}") as Record<string, unknown>; } catch { return {}; } })();
+        await db.blenderAsset.update({
+          where: { id: asset.id },
+          data: {
+            version: asset.version + 1,
+            blendPath: run.blendPath,
+            previewPath: run.previewPath ? `/assets-blender/${asset.id}.png` : asset.previewPath,
+            buildLog: run.log.slice(-4000),
+            meta: JSON.stringify({
+              ...newMeta,
+              tris: run.tris,
+              objects: run.objects,
+              retopo: { ...summary, bakedBy: "blender_retopo", budget: compiled.spec.budget },
+            }).slice(0, 4000),
+          },
+        });
+        await landDesignEvent(
+          asset.projectId,
+          `Retopo pass: ${asset.kind.toLowerCase()} ${asset.refName} v${asset.version} -> v${asset.version + 1} (${summary.trisBefore ?? "?"} -> ${summary.trisAfter ?? "?"} tris toward a ${compiled.spec.budget.toLocaleString()} budget, drift ${summary.driftPct ?? "?"}%, ${summary.verified ? "VERIFIED" : "NOT VERIFIED"})`,
+          { assetId: asset.id, summary },
+        );
+        return { status: "OK", result: `RETOPO ${summary.verified ? "VERIFIED" : "NOT VERIFIED"}: ${refName} v${asset.version} -> v${asset.version + 1} - ${summary.trisBefore ?? "?"} -> ${summary.trisAfter ?? "?"} tris toward the ${compiled.spec.budget.toLocaleString()} budget, bbox drift ${summary.driftPct ?? "?"}%${summary.ratioFloorHit ? " (the ratio floor bit: the budget cannot be honored without butchering the shape - report it honestly)" : ""}. ${summary.verified ? "The shape survived - the asset ships at its budget." : "The drift or the budget failed the verdict - do not ship it; refine and re-run."}` };
       }
 
       case "design_grammar": {
@@ -3573,7 +3687,7 @@ async function resolveGrammarSource(projectId: string, grammarArg: string): Prom
  * the director reads before promising any design work. */
 function designContextLine(
   project: {
-    blenderAssets: Array<{ kind: string; refName: string; status: string; version: number; qualityScore: number | null; motionPreset: string | null; variationPreset: string | null }>;
+    blenderAssets: Array<{ kind: string; refName: string; status: string; version: number; qualityScore: number | null; motionPreset: string | null; variationPreset: string | null; sculptPreset: string | null }>;
     designPresets: Array<{ kind: string; name: string; usageCount: number }>;
   },
   openIssues: Array<{ refName: string; severity: string; kind: string; note: string }>,
@@ -3585,10 +3699,12 @@ function designContextLine(
   const performing = ready.filter((a) => a.motionPreset).length;
   const motionlessPerf = ready.filter((a) => (a.kind === "PROP" || a.kind === "CREATURE") && !a.motionPreset).length;
   const varied = ready.filter((a) => a.variationPreset).length;
+  const sculpted = ready.filter((a) => a.sculptPreset).length;
+  const unfinishedSurf = ready.filter((a) => (a.kind === "ENVIRONMENT" || a.kind === "CREATURE") && !a.sculptPreset).length;
   const parts: string[] = [];
   const libLine = lib.length === 0
     ? "library empty (design the cast, sets, props and creatures with blender_asset_build)"
-    : `library ${lib.length} assets, ${ready.length} ready, ${performing} performing${motionlessPerf ? `, ${motionlessPerf} MOTIONLESS (props/creatures need design_motion + a rebuild)` : ""}, ${varied} varied${ready.some((a) => a.kind === "ENVIRONMENT" && !a.variationPreset) ? " (environments without design_variation are wallpapers)" : ""} (${ready.map((a) => `${a.kind.toLowerCase()} ${a.refName} v${a.version}${a.qualityScore !== null ? ` @${Math.round(a.qualityScore * 100)}%` : ""}${a.motionPreset ? " +loop" : ""}${a.variationPreset ? " +gn" : ""}`).join(", ")})`;
+    : `library ${lib.length} assets, ${ready.length} ready, ${performing} performing${motionlessPerf ? `, ${motionlessPerf} MOTIONLESS (props/creatures need design_motion + a rebuild)` : ""}, ${varied} varied${ready.some((a) => a.kind === "ENVIRONMENT" && !a.variationPreset) ? " (environments without design_variation are wallpapers)" : ""}, ${sculpted} sculpted${unfinishedSurf ? `, ${unfinishedSurf} UNFINISHED SURFACE (environments/creatures need design_sculpt + a rebuild)` : ""} (${ready.map((a) => `${a.kind.toLowerCase()} ${a.refName} v${a.version}${a.qualityScore !== null ? ` @${Math.round(a.qualityScore * 100)}%` : ""}${a.motionPreset ? " +loop" : ""}${a.variationPreset ? " +gn" : ""}${a.sculptPreset ? " +sculpt" : ""}`).join(", ")})`;
   parts.push(libLine);
   if (presets.length > 0) {
     parts.push(`presets: ${presets.map((p) => `${p.kind.toLowerCase()} '${p.name}'x${p.usageCount}`).join(", ")}`);

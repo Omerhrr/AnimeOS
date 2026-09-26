@@ -93,6 +93,7 @@ model BlenderAsset {
   loopPath      String?  // /assets-blender/{id}.mp4 animated preview loop - the proof of performance
   motionBakedAt DateTime? // when the armature performance was last baked
   variationPreset String? // the VARIATION preset (design_variation) scattered into the file - the asset breathes
+  sculptPreset   String? // the SCULPT preset (design_sculpt) carved into the file - the surface is finished
   exports       AssetExport[]
   meta          String?  // JSON {dna, objects, polyCount, buildMs, ...}
   createdAt     DateTime @default(now())
@@ -137,9 +138,9 @@ model AssetExport {
 model DesignPreset {
   id         String   @id @default(cuid())
   projectId  String
-  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE
+  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE | SCULPT
   name       String
-  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats, SEQUENCE = named chain of grammar slots
+  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats, SEQUENCE = named chain of grammar slots, SCULPT = layered seeded surface-carving spec
   usageCount Int      @default(0) // builds that consumed this preset
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

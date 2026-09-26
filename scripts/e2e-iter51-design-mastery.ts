@@ -112,11 +112,11 @@ async function main() {
   check("A4 the five design tools are registered", designTools.every((t) => tools.includes(`name: "${t}"`)));
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry stands at 68 tools (the sequence tools joined in iter 54)", toolCount === 68, `count=${toolCount}`);
+  check("A5 the registry stands at 70 tools (the sculpt tools joined in iter 55)", toolCount === 70, `count=${toolCount}`);
   check("A6 the build tool now takes four kinds + recipe names", tools.includes('kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE",') && tools.includes("material: \"string (optional - a design_material recipe name") && tools.includes("lighting: \"string (optional - a design_lighting rig name"));
 
   const builder = readFileSync("bridges/blender/asset_builder.py", "utf8");
-  check("A7 the v7 builder supports PROP + CREATURE kinds", builder.includes('kind == "PROP"') && builder.includes('kind == "CREATURE"') && builder.includes("ASSET BUILDER (v7.0)"));
+  check("A7 the v8 builder supports PROP + CREATURE kinds", builder.includes('kind == "PROP"') && builder.includes('kind == "CREATURE"') && builder.includes("ASSET BUILDER (v8.0)"));
   check("A8 the builder consumes material recipes and lighting rigs", builder.includes("--material") && builder.includes("--rig") && builder.includes("recipe is law over the DNA defaults"));
 
   const bridge = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
@@ -185,7 +185,7 @@ async function main() {
   const buildRigged = await T("blender_asset_build", { kind: "PROP", refName: "E2E Azure Seal", material: "E2E Spirit Steel", lighting: "E2E Moonlit" });
   const propAsset2 = await db.blenderAsset.findUnique({ where: { projectId_kind_refName: { projectId: labId, kind: "PROP", refName: "E2E Azure Seal" } } });
   const meta2 = propAsset2?.meta ? JSON.parse(propAsset2.meta) as { materialRecipe?: { name: string } | null; lightingRig?: { name: string } | null; builderVersion?: string } : null;
-  check("D6 the rebuild under designed recipes records the pairing (v2, v6 builder)", buildRigged.status === "OK" && propAsset2?.version === 2 && meta2?.materialRecipe?.name === "E2E Spirit Steel" && meta2?.lightingRig?.name === "E2E Moonlit" && meta2?.builderVersion === "v7.0", buildRigged.result.slice(0, 140));
+  check("D6 the rebuild under designed recipes records the pairing (v2, v6 builder)", buildRigged.status === "OK" && propAsset2?.version === 2 && meta2?.materialRecipe?.name === "E2E Spirit Steel" && meta2?.lightingRig?.name === "E2E Moonlit" && meta2?.builderVersion === "v8.0", buildRigged.result.slice(0, 140));
   const steelRow = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId: labId, kind: "MATERIAL", name: "E2E Spirit Steel" } } });
   check("D7 consuming a recipe bumps its usage count", (steelRow?.usageCount ?? 0) >= 1, `usage=${steelRow?.usageCount}`);
   const buildGhost = await T("blender_asset_build", { kind: "PROP", refName: "E2E Azure Seal", material: "E2E No Such Recipe" });

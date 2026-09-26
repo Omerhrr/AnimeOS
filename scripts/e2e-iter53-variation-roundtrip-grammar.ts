@@ -121,7 +121,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry grew to 68 tools (design_sequence 67 and direct_sequence 68 joined in iter 54)", toolCount === 68, `count=${toolCount}`);
+  check("A5 the registry grew to 70 tools (design_sculpt 69 and blender_retopo 70 joined in iter 55)", toolCount === 70, `count=${toolCount}`);
   check("A6 design_variation registers the seeded GN layout law", tools.includes('name: "design_variation"') && tools.includes("SCATTER (instances across a carrier surface) | ARRAY (instances along a spine/grid)"));
   check("A7 blender_export verifies the round trip", tools.includes('name: "blender_export"') && tools.includes("an unverified export is a hope, not a deliverable"));
   check("A8 design_grammar + set_shot_grammar direct the lens", tools.includes('name: "design_grammar"') && tools.includes('name: "set_shot_grammar"') && tools.includes("The Reveal, The Standoff, The Assault, The Ascent, The Withdrawal"));
@@ -132,7 +132,7 @@ async function main() {
   check("A11 the variation spec compiler validates kind + clamps", variation.includes("compileVariationSpec") && variation.includes('VARIATION_KINDS: VariationKind[] = ["scatter", "array"]') && variation.includes("DEFAULT_VARIATION_BY_KIND"));
 
   const builder = readFileSync("bridges/blender/asset_builder.py", "utf8");
-  check("A12 the v7 builder carries a --variation pass and reports the GN summary", builder.includes("ASSET BUILDER (v7.0)") && builder.includes("--variation") && builder.includes("VARIATION_SUMMARY") && builder.includes("variation-only pass"));
+  check("A12 the v8 builder carries a --variation pass and reports the GN summary", builder.includes("ASSET BUILDER (v8.0)") && builder.includes("--variation") && builder.includes("VARIATION_SUMMARY") && builder.includes("variation-only pass"));
 
   const gn = readFileSync("bridges/blender/variation_nodes.py", "utf8");
   check("A13 variation_nodes builds REAL GN trees with the studio's deterministic RNG", gn.includes("GeometryNodeDistributePointsOnFaces") && gn.includes("GeometryNodeInstanceOnPoints") && gn.includes("def _mulberry32") && gn.includes("def build_spine"));
@@ -205,7 +205,7 @@ async function main() {
   const envRow = await db.blenderAsset.findUnique({ where: { projectId_kind_refName: { projectId: labId, kind: "ENVIRONMENT", refName: "E2E Ashfall Valley" } } });
   check("D3 the row records the variation preset", envRow?.status === "READY" && envRow?.variationPreset === "E2E Valley Debris", `preset=${envRow?.variationPreset}`);
   const meta = envRow?.meta ? JSON.parse(envRow.meta) as { variation?: { name?: string; instances?: number; carrier?: string; source?: string; kind?: string }; builderVersion?: string } : null;
-  check("D4 the build meta carries the GN summary (seeded instances)", (meta?.variation?.instances ?? 0) > 0 && meta?.variation?.kind === "scatter" && meta?.builderVersion === "v7.0", JSON.stringify(meta?.variation));
+  check("D4 the build meta carries the GN summary (seeded instances)", (meta?.variation?.instances ?? 0) > 0 && meta?.variation?.kind === "scatter" && meta?.builderVersion === "v8.0", JSON.stringify(meta?.variation));
   const vUsage = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId: labId, kind: "VARIATION", name: "E2E Valley Debris" } } });
   check("D5 consuming a variation preset bumps its usage count", (vUsage?.usageCount ?? 0) >= 1, `usage=${vUsage?.usageCount}`);
 

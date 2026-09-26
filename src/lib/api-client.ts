@@ -354,6 +354,7 @@ export interface BlenderAssetRow {
   motionPreset?: string | null;
   loopPath?: string | null;
   variationPreset?: string | null;
+  sculptPreset?: string | null;
   identityScore: number | null;
   inspectNote: string | null;
   inspectedAt: string | null;

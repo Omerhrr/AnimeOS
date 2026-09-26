@@ -299,6 +299,11 @@ function BlenderAssetLibraryCard() {
                     +GN
                   </span>
                 )}
+                {a.sculptPreset && (
+                  <span className="absolute top-1 left-[4.25rem] rounded px-1 py-0.5 text-[8px] font-bold tracking-wider bg-black/60 text-amber-300" title={`Sculpt preset: ${a.sculptPreset}`}>
+                    +SCULPT
+                  </span>
+                )}
                 {openForAsset.length > 0 && (
                   <span className="absolute bottom-1 left-1 rounded px-1 py-0.5 text-[8px] font-bold bg-black/60 text-rose-300">
                     {openForAsset.length} issue{openForAsset.length > 1 ? "s" : ""}

@@ -128,7 +128,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A13 the registry grew to 68 tools (design_sequence 67, direct_sequence 68)", toolCount === 68, `count=${toolCount}`);
+  check("A13 the registry grew to 70 tools (design_sculpt 69, blender_retopo 70)", toolCount === 70, `count=${toolCount}`);
   check("A14 design_sequence validates every slot's grammar at design time", tools.includes("design-time validation: a typo never reaches a shoot") && tools.includes("a sequence program needs at least 2 slots"));
   check("A15 direct_sequence applies slots in order and reads the flow", tools.includes("SEQUENCE DIRECTED") && tools.includes("Flow read:") && tools.includes("shot(s) beyond the plan left untouched"));
   check("A16 the wind beats flow into the sequence read", tools.includes("wind beat(s) - the robes and hair ride those beats"));

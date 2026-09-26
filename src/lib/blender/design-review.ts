@@ -6,6 +6,7 @@ import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { runBlenderScript, runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
 import { DEFAULT_MOTION_BY_ARCHETYPE } from "@/lib/blender/motion";
 import { DEFAULT_VARIATION_BY_KIND } from "@/lib/blender/variation";
+import { DEFAULT_SCULPT_BY_KIND, DEFAULT_RETOPO_BUDGET, writeSculptSpec, writeRetopoSpec } from "@/lib/blender/sculpt";
 
 // ─────────────────────────────────────────────────────────────
 // THE SELF-CORRECTING DESIGN LOOP (the studio checks its own work)
@@ -42,6 +43,7 @@ export type DesignCriteria = {
   detail: number; // finishing pass present (bevels, smoothing, runes)
   motion: number; // a baked performance (armature + loop) or honest N/A
   variation: number; // a GN scatter/array (the set breathes) or honest N/A
+  sculpt: number; // a carved surface (layered seeded detail) or honest N/A
 };
 
 export interface ReviewVerdict {
@@ -52,20 +54,22 @@ export interface ReviewVerdict {
   issues: Array<{ severity: "CRITICAL" | "MAJOR" | "MINOR"; kind: string; note: string }>;
 }
 
-const CRITERIA_KEYS: Array<keyof DesignCriteria> = ["geometry", "material", "silhouette", "palette", "lighting", "detail", "motion", "variation"];
+const CRITERIA_KEYS: Array<keyof DesignCriteria> = ["geometry", "material", "silhouette", "palette", "lighting", "detail", "motion", "variation", "sculpt"];
 
 // The weighted overall: geometry and silhouette still lead, MOTION
-// carries production weight (a statue is not a donghua asset) and
-// VARIATION holds the fourth law (a wallpaper is not a set).
+// carries production weight (a statue is not a donghua asset),
+// VARIATION holds the fourth law (a wallpaper is not a set) and
+// SCULPT holds the sixth (an unfinished surface is not production art).
 const CRITERIA_WEIGHTS: Record<keyof DesignCriteria, number> = {
-  geometry: 0.22,
-  material: 0.14,
-  silhouette: 0.18,
+  geometry: 0.20,
+  material: 0.12,
+  silhouette: 0.16,
   palette: 0.09,
   lighting: 0.09,
-  detail: 0.07,
+  detail: 0.05,
   motion: 0.12,
   variation: 0.09,
+  sculpt: 0.08,
 };
 
 function weightedOverall(c: DesignCriteria): number {
@@ -109,6 +113,7 @@ function localAudit(asset: {
   loopPath: string | null;
   motionPreset: string | null;
   variationPreset: string | null;
+  sculptPreset: string | null;
   identityScore: number | null;
   meta: string | null;
 }): ReviewVerdict {
@@ -121,6 +126,8 @@ function localAudit(asset: {
     materialRecipe?: { name: string } | null;
     motion?: { name?: string; archetype?: string; motion?: string } | null;
     variation?: { name?: string; kind?: string; instances?: number } | null;
+    sculpt?: { name?: string; meanMove?: number; roughnessRatio?: number; applied?: boolean } | null;
+    retopo?: { budget?: number; verified?: boolean; driftPct?: number } | null;
     dna?: { archetype?: string } | null;
   };
   let meta: AssetMeta | null = null;
@@ -189,15 +196,38 @@ function localAudit(asset: {
     variation = 0.8;
   }
 
-  const criteria: DesignCriteria = { geometry, material, silhouette, palette, lighting, detail, motion, variation };
+  // SCULPT: terrain and hide are judged on their carved surface (the
+  // displacement the pass MEASURED is the evidence - a real carve moves
+  // the surface; characters and props score honest N/A - a robe's folds
+  // live in the cloth pass, a prop's finish is bevels and runes).
+  const sculptApplied = Boolean(asset.sculptPreset) || Boolean(meta?.sculpt?.applied);
+  let sculpt: number;
+  const sculptIssues: ReviewVerdict["issues"] = [];
+  if (asset.kind === "ENVIRONMENT" || asset.kind === "CREATURE") {
+    if (sculptApplied) {
+      const meanMove = Number(meta?.sculpt?.meanMove ?? 0);
+      sculpt = meanMove > 0.0005 ? 0.92 : 0.7; // weak evidence = weak score
+    } else {
+      sculpt = 0.3;
+      sculptIssues.push({ severity: "MAJOR", kind: "SCULPT", note: "designed but unfinished - the surface is a clean builder slab: register design_sculpt (layered seeded carving) and rebuild with sculpt:<name> (design_fix bakes the kind's default)" });
+    }
+  } else {
+    sculpt = sculptApplied ? 0.92 : 0.8;
+  }
+
+  const criteria: DesignCriteria = { geometry, material, silhouette, palette, lighting, detail, motion, variation, sculpt };
   const overall = weightedOverall(criteria);
 
-  const issues: ReviewVerdict["issues"] = [...motionIssues, ...variationIssues];
+  const issues: ReviewVerdict["issues"] = [...motionIssues, ...variationIssues, ...sculptIssues];
   if (asset.status !== "READY") {
     issues.push({ severity: "CRITICAL", kind: "GEOMETRY", note: `asset is ${asset.status}, not READY - the last build did not produce an accepted .blend` });
   } else {
     if (objects < floor.objects || tris < floor.tris) {
       issues.push({ severity: "MAJOR", kind: "GEOMETRY", note: `hierarchy under the ${asset.kind} floor (${objects} objects / ${tris.toLocaleString()} tris vs ${floor.objects} / ${floor.tris.toLocaleString()})` });
+    }
+    const budget = DEFAULT_RETOPO_BUDGET[asset.kind] ?? 20_000;
+    if (tris > budget) {
+      issues.push({ severity: "MAJOR", kind: "TOPOLOGY", note: `over its triangle budget (${tris.toLocaleString()} vs ${budget.toLocaleString()}) - a sculpted asset is decimated back to law: run blender_retopo (design_fix runs the verified retopo pass)` });
     }
     if (bytes < 30_000) {
       issues.push({ severity: "MAJOR", kind: "SILHOUETTE", note: `preview frame looks empty (${bytes} bytes on disk) - re-render the preview` });
@@ -220,7 +250,7 @@ function localAudit(asset: {
   }
   const note = asset.status !== "READY"
     ? "the asset is not in an accepted state"
-    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}${asset.motionPreset && loopOnDisk ? ", performing" : asset.motionPreset ? ", motion unbaked" : ", motionless"}${gnApplied ? ", varied (GN)" : asset.kind === "ENVIRONMENT" ? ", wallpaper" : ""}`;
+    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}${asset.motionPreset && loopOnDisk ? ", performing" : asset.motionPreset ? ", motion unbaked" : ", motionless"}${gnApplied ? ", varied (GN)" : asset.kind === "ENVIRONMENT" ? ", wallpaper" : ""}${sculptApplied ? ", sculpted" : asset.kind === "ENVIRONMENT" || asset.kind === "CREATURE" ? ", unfinished surface" : ""}${meta?.retopo?.verified ? ", retopo verified" : ""}`;
   return { criteria, overall, note, provider: "local", issues };
 }
 
@@ -324,6 +354,7 @@ export async function auditAsset(assetId: string, useVision = true): Promise<Aud
         detail: vc.detail !== undefined ? clamp01(vc.detail) : local.criteria.detail,
         motion: local.criteria.motion,
         variation: local.criteria.variation,
+        sculpt: local.criteria.sculpt,
       };
       const overall = weightedOverall(merged);
       verdict = {
@@ -736,7 +767,7 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   }
 
   const kinds = new Set(targets.map((t) => t.kind));
-  type FixAssetMeta = { dna?: { accentColor?: string; archetype?: string }; lightingRig?: { spec: Record<string, unknown> } | null; motion?: { archetype?: string; motion?: string } | null; variation?: { name?: string; instances?: number } | null; };
+  type FixAssetMeta = { dna?: { accentColor?: string; archetype?: string }; lightingRig?: { spec: Record<string, unknown> } | null; motion?: { archetype?: string; motion?: string } | null; variation?: { name?: string; instances?: number } | null; sculpt?: { name?: string; meanMove?: number; roughnessRatio?: number; applied?: boolean } | null; retopo?: { budget?: number; verified?: boolean; driftPct?: number } | null; tris?: number; objects?: number; };
   let meta: FixAssetMeta | null = null;
   try {
     meta = JSON.parse(asset.meta || "null") as FixAssetMeta;
@@ -886,23 +917,128 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     }
   }
 
+  // THE SCULPT FIX: an unfinished surface gets the kind's default
+  // sculpt recipe carved through the builder's sculpt-only pass,
+  // landing a new .blend whose surface carries measured detail.
+  let sculptBaked: { blendPath: string; previewPath: string | null; ops: string; name: string; summary: Record<string, unknown> | null; tris: number; objects: number } | null = null;
+  if (kinds.has("SCULPT")) {
+    const defaultSpec = DEFAULT_SCULPT_BY_KIND[asset.kind] ?? null;
+    if (!defaultSpec) {
+      for (const t of targets.filter((x) => x.kind === "SCULPT")) {
+        await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: "no default sculpt recipe for this kind - register one with design_sculpt and rebuild with sculpt:<name>", updatedAt: new Date() } });
+      }
+      tracked = tracked.filter((x) => x.kind !== "SCULPT");
+    } else {
+      const sculptFile = writeSculptSpec(defaultSpec, workDir);
+      const dnaFile = path.join(workDir, "fix-dna.json");
+      fs.writeFileSync(dnaFile, JSON.stringify({ name: asset.refName }));
+      const sculptRun = await runAssetBuilder({
+        kind: asset.kind as "CHARACTER" | "ENVIRONMENT" | "PROP" | "CREATURE",
+        dnaPath: dnaFile,
+        outDir: workDir,
+        name: asset.refName,
+        fromBlend: currentBlend ?? asset.blendPath ?? undefined,
+        sculptPath: sculptFile,
+        timeoutMs: 6 * 60_000,
+      });
+      if (!sculptRun.ok || !sculptRun.blendPath || !fs.existsSync(sculptRun.blendPath)) {
+        const failNote = `sculpt bake failed: ${sculptRun.log.slice(-200)}`;
+        for (const t of targets.filter((x) => x.kind === "SCULPT")) {
+          await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: failNote, updatedAt: new Date() } });
+        }
+        await landEvent(asset.projectId, `Design fix FAILED for ${asset.kind.toLowerCase()} ${asset.refName}: the sculpt pass errored`, { assetId: asset.id });
+        return {
+          ok: false,
+          error: failNote,
+          assetId: asset.id,
+          refName: asset.refName,
+          versionBefore: asset.version,
+          versionAfter: null,
+          attempted: targets.length,
+          fixed: 0,
+          stillOpen: targets.length,
+          fixLog: sculptRun.log.slice(-3000),
+        };
+      }
+      sculptBaked = {
+        blendPath: sculptRun.blendPath,
+        previewPath: sculptRun.previewPath,
+        ops: `carved the default ${asset.kind.toLowerCase()} sculpt (moved ${sculptRun.sculptSummary?.meanMove ?? "?"} units mean)`,
+        name: defaultSpec.name,
+        summary: sculptRun.sculptSummary,
+        tris: sculptRun.tris,
+        objects: sculptRun.objects,
+      };
+      currentBlend = sculptRun.blendPath; // the sculpt pass saved the new version here
+    }
+  }
+
+  // THE RETOPO FIX: an asset over its triangle budget is decimated
+  // back to law through the builder's retopo-only pass - drift
+  // verified, so the shape that survived is the shape that ships.
+  let retopoBaked: { blendPath: string; previewPath: string | null; ops: string; summary: Record<string, unknown> | null; tris: number; objects: number } | null = null;
+  if (kinds.has("TOPOLOGY")) {
+    const budget = DEFAULT_RETOPO_BUDGET[asset.kind] ?? 20_000;
+    const retopoFile = writeRetopoSpec({ budget, parts: [] }, workDir);
+    const dnaFile = path.join(workDir, "fix-dna.json");
+    fs.writeFileSync(dnaFile, JSON.stringify({ name: asset.refName }));
+    const retopoRun = await runAssetBuilder({
+      kind: asset.kind as "CHARACTER" | "ENVIRONMENT" | "PROP" | "CREATURE",
+      dnaPath: dnaFile,
+      outDir: workDir,
+      name: asset.refName,
+      fromBlend: currentBlend ?? asset.blendPath ?? undefined,
+      retopoPath: retopoFile,
+      timeoutMs: 6 * 60_000,
+    });
+    if (!retopoRun.ok || !retopoRun.blendPath || !fs.existsSync(retopoRun.blendPath)) {
+      const failNote = `retopo bake failed: ${retopoRun.log.slice(-200)}`;
+      for (const t of targets.filter((x) => x.kind === "TOPOLOGY")) {
+        await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: failNote, updatedAt: new Date() } });
+      }
+      await landEvent(asset.projectId, `Design fix FAILED for ${asset.kind.toLowerCase()} ${asset.refName}: the retopo pass errored`, { assetId: asset.id });
+      return {
+        ok: false,
+        error: failNote,
+        assetId: asset.id,
+        refName: asset.refName,
+        versionBefore: asset.version,
+        versionAfter: null,
+        attempted: targets.length,
+        fixed: 0,
+        stillOpen: targets.length,
+        fixLog: retopoRun.log.slice(-3000),
+      };
+    }
+    retopoBaked = {
+      blendPath: retopoRun.blendPath,
+      previewPath: retopoRun.previewPath,
+      ops: `decimated to the ${asset.kind} budget (${retopoRun.retopoSummary?.trisBefore ?? "?"} -> ${retopoRun.retopoSummary?.trisAfter ?? "?"} tris, drift ${retopoRun.retopoSummary?.driftPct ?? "?"}%)`,
+      summary: retopoRun.retopoSummary,
+      tris: retopoRun.tris,
+      objects: retopoRun.objects,
+    };
+    currentBlend = retopoRun.blendPath; // the retopo pass saved the new version here
+  }
+
   // The remaining issue kinds ride the standard bpy refinement pass
-  // (LIGHTING is preview-owned; a pure motion/variation fix skips the
-  // pass - the builder already rendered the preview).
+  // (LIGHTING is preview-owned; a pure sculpt/retopo/motion/variation
+  // fix skips the pass - the builder already rendered the preview).
   const bpyOps = ["GEOMETRY", "DETAIL", "SILHOUETTE", "PROPORTION", "MATERIAL", "PALETTE"];
   const needsBpyPass = bpyOps.some((k) => kinds.has(k));
   let fixLog = "";
   let fixOps: string;
   if (!needsBpyPass) {
-    if (!motionBaked && !variationBaked) {
+    if (!motionBaked && !variationBaked && !sculptBaked && !retopoBaked) {
       // nothing actionable ran (e.g. only LIGHTING): honest no-op
       for (const t of tracked) {
         await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: "nothing to run for this issue kind - address it by rebuilding under a designed rig", updatedAt: new Date() } });
       }
       return { ok: true, assetId: asset.id, refName: asset.refName, versionBefore: asset.version, versionAfter: asset.version, attempted: targets.length, fixed: 0, stillOpen: targets.length, fixLog: "no runnable fix op for these issue kinds" };
     }
-    fixOps = variationBaked && !motionBaked ? variationBaked.ops : motionBaked ? motionBaked.ops : "no-op";
-    fixLog = variationBaked && !motionBaked ? `VARIATION_BAKE ${variationBaked.ops}` : motionBaked ? `MOTION_BAKE ${motionBaked.ops}` : "";
+    const opsChain = [motionBaked?.ops, variationBaked?.ops, sculptBaked?.ops, retopoBaked?.ops].filter(Boolean).join(" + ") || "no-op";
+    fixOps = opsChain;
+    fixLog = opsChain;
   } else {
   const script = compileFixScript({
     blendPath: currentBlend ?? asset.blendPath!,
@@ -936,10 +1072,12 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     await landEvent(asset.projectId, `Design fix FAILED for ${asset.kind.toLowerCase()} ${asset.refName}: the bpy pass errored`, { assetId: asset.id });
     return { ok: false, error: `the bpy fix pass failed (${diag}): ${run.log.slice(-300)}`, assetId, refName: asset.refName, versionBefore: asset.version, versionAfter: null, attempted: targets.length, fixed: 0, stillOpen: targets.length, fixLog };
   }
-  fixOps = motionBaked ? `${motionBaked.ops} + ${marker("FIX_OPS") ?? "bpy refinement pass"}` : variationBaked ? `${variationBaked.ops} + ${marker("FIX_OPS") ?? "bpy refinement pass"}` : marker("FIX_OPS") ?? "bpy refinement pass";
+  fixOps = [motionBaked?.ops, variationBaked?.ops, sculptBaked?.ops, retopoBaked?.ops].filter(Boolean).join(" + ");
+  fixOps = fixOps ? `${fixOps} + ${marker("FIX_OPS") ?? "bpy refinement pass"}` : marker("FIX_OPS") ?? "bpy refinement pass";
   }
 
   // accepted: promote the new version (blend + preview + loop) into the row
+  const promotedBlend = currentBlend ?? outBlend; // a sculpt/retopo pass saved ITS new version here
   const previewPublic = path.join(process.cwd(), "public", "assets-blender", `${asset.id}.png`);
   if (fs.existsSync(outPreview)) {
     try { fs.copyFileSync(outPreview, previewPublic); } catch { /* preview optional */ }
@@ -947,6 +1085,10 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     try { fs.copyFileSync(motionBaked.previewPath, previewPublic); } catch { /* preview optional */ }
   } else if (variationBaked?.previewPath && fs.existsSync(variationBaked.previewPath)) {
     try { fs.copyFileSync(variationBaked.previewPath, previewPublic); } catch { /* preview optional */ }
+  } else if (sculptBaked?.previewPath && fs.existsSync(sculptBaked.previewPath)) {
+    try { fs.copyFileSync(sculptBaked.previewPath, previewPublic); } catch { /* preview optional */ }
+  } else if (retopoBaked?.previewPath && fs.existsSync(retopoBaked.previewPath)) {
+    try { fs.copyFileSync(retopoBaked.previewPath, previewPublic); } catch { /* preview optional */ }
   }
   let loopPublicPath: string | null = null;
   if (motionBaked?.loopPath && fs.existsSync(motionBaked.loopPath)) {
@@ -957,25 +1099,37 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     } catch { /* loop optional */ }
   }
   const newMeta = meta ?? {};
+  // a sculpt/retopo pass changed the counts: the re-audit reads THEM
+  const finalTris = retopoBaked?.tris ?? sculptBaked?.tris ?? (newMeta.tris as number | undefined);
+  const finalObjects = retopoBaked?.objects ?? sculptBaked?.objects ?? (newMeta.objects as number | undefined);
   await db.blenderAsset.update({
     where: { id: asset.id },
     data: {
       version: newVersion,
-      blendPath: outBlend,
+      blendPath: promotedBlend,
       previewPath: fs.existsSync(previewPublic) ? `/assets-blender/${asset.id}.png` : asset.previewPath,
       loopPath: loopPublicPath ?? asset.loopPath,
       motionPreset: motionBaked ? `${motionBaked.motionName} (archetype default)` : asset.motionPreset,
       motionBakedAt: motionBaked ? new Date() : asset.motionBakedAt,
       variationPreset: variationBaked ? `${variationBaked.name} (default)` : asset.variationPreset,
+      sculptPreset: sculptBaked ? `${sculptBaked.name} (default)` : asset.sculptPreset,
       buildLog: (motionBaked ? `${fixLog}\n` : "") + (motionBaked && !needsBpyPass ? "" : fixLog).slice(-4000),
       meta: JSON.stringify({
         ...newMeta,
+        ...(finalTris !== undefined ? { tris: finalTris } : {}),
+        ...(finalObjects !== undefined ? { objects: finalObjects } : {}),
         motion: motionBaked
           ? { ...(newMeta.motion ?? {}), name: `${motionBaked.motionName} (archetype default)`, bakedBy: "design_fix" }
           : newMeta.motion,
         variation: variationBaked
           ? { ...(newMeta.variation ?? {}), name: `${variationBaked.name} (default)`, bakedBy: "design_fix", instances: 48 }
           : newMeta.variation,
+        sculpt: sculptBaked
+          ? { ...(newMeta.sculpt ?? {}), name: `${sculptBaked.name} (default)`, ...(sculptBaked.summary ?? {}), applied: true, bakedBy: "design_fix" }
+          : newMeta.sculpt,
+        retopo: retopoBaked
+          ? { ...(retopoBaked.summary ?? {}), bakedBy: "design_fix" }
+          : newMeta.retopo,
         fixPass: { ops: fixOps, fromVersion: asset.version, at: new Date().toISOString() },
       }).slice(0, 4000),
     },

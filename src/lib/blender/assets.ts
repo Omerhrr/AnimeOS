@@ -7,6 +7,8 @@ import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
 import type { MotionSpec } from "@/lib/blender/motion";
 import type { VariationSpec } from "@/lib/blender/variation";
+import type { SculptSpec } from "@/lib/blender/sculpt";
+import { writeSculptSpec } from "@/lib/blender/sculpt";
 
 // ─────────────────────────────────────────────────────────────
 // BLENDER ASSET LIBRARY (design once, render many)
@@ -140,7 +142,7 @@ export async function buildBlenderAsset(
   kind: BlenderAssetKind,
   refName: string,
   guidance?: string | null,
-  presets?: { materialName?: string | null; lightingName?: string | null; motionName?: string | null; variationName?: string | null },
+  presets?: { materialName?: string | null; lightingName?: string | null; motionName?: string | null; variationName?: string | null; sculptName?: string | null },
 ): Promise<BuildAssetResult> {
   if (!runtimeBlenderBin()) {
     return {
@@ -267,6 +269,29 @@ export async function buildBlenderAsset(
     fs.writeFileSync(variationFile, JSON.stringify(variationPreset.spec, null, 2));
   }
 
+  // DESIGNED sculpt preset (design_sculpt): the surface law is written
+  // as the spec file the builder's --sculpt flag carves into the mesh
+  // before the save - layered seeded noise, deterministic.
+  let sculptPreset: { name: string; spec: SculptSpec } | null = null;
+  if (presets?.sculptName) {
+    const row = await db.designPreset.findUnique({
+      where: { projectId_kind_name: { projectId, kind: "SCULPT", name: presets.sculptName } },
+    });
+    if (row) {
+      let spec: SculptSpec | null = null;
+      try {
+        spec = JSON.parse(row.spec || "null") as SculptSpec | null;
+      } catch {
+        spec = null;
+      }
+      if (spec && Array.isArray(spec.layers) && spec.layers.length > 0) {
+        sculptPreset = { name: row.name, spec };
+        await db.designPreset.update({ where: { id: row.id }, data: { usageCount: { increment: 1 } } });
+      }
+    }
+  }
+  const sculptFile = sculptPreset ? writeSculptSpec(sculptPreset.spec, workDir) : null;
+
   const run = await runAssetBuilder({
     kind,
     dnaPath: dnaFile,
@@ -276,7 +301,8 @@ export async function buildBlenderAsset(
     ...(rigFile ? { rigPath: rigFile } : {}),
     ...(motionFile ? { motionPath: motionFile } : {}),
     ...(variationFile ? { variationPath: variationFile } : {}),
-    ...(motionPreset ? { timeoutMs: 6 * 60_000 } : {}),
+    ...(sculptFile ? { sculptPath: sculptFile } : {}),
+    ...(motionPreset || sculptPreset ? { timeoutMs: 6 * 60_000 } : {}),
   });
   const buildMs = Date.now() - started;
 
@@ -306,7 +332,7 @@ export async function buildBlenderAsset(
   }
 
   const meta = {
-    builderVersion: "v7.0",
+    builderVersion: "v8.0",
     dna: resolved.dna,
     guidance: guidance ?? null,
     materialRecipe: materialPreset ? { name: materialPreset.name, spec: materialPreset.spec } : null,
@@ -316,6 +342,9 @@ export async function buildBlenderAsset(
       : null,
     variation: variationPreset
       ? { name: variationPreset.name, ...run.variationSummary, spec: variationPreset.spec }
+      : null,
+    sculpt: sculptPreset
+      ? { name: sculptPreset.name, ...run.sculptSummary, applied: true }
       : null,
     objects: run.objects,
     tris: run.tris,
@@ -333,14 +362,18 @@ export async function buildBlenderAsset(
       loopPath: loopPublic && fs.existsSync(loopPublic) ? `/assets-blender/${asset.id}.mp4` : null,
       motionBakedAt: motionPreset ? new Date() : asset.motionBakedAt,
       variationPreset: variationPreset ? variationPreset.name : asset.variationPreset,
+      // a plain rebuild produces a FRESH uncarved .blend - an old sculpt
+      // claim would be a lie the audit believed, so it resets (motion
+      // semantics: the column always names what is actually in the file)
+      sculptPreset: sculptPreset ? sculptPreset.name : null,
       buildLog: run.log.slice(-4000),
       meta: JSON.stringify(meta),
     },
   });
   await landDesignEvent(
     projectId,
-    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""}${variationPreset ? `, varied '${variationPreset.name}'` : ""})`,
-    { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null, variation: variationPreset?.name ?? null },
+    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""}${variationPreset ? `, varied '${variationPreset.name}'` : ""}${sculptPreset ? `, sculpted '${sculptPreset.name}'` : ""})`,
+    { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null, variation: variationPreset?.name ?? null, sculpt: sculptPreset?.name ?? null },
   );
   return {
     ok: true, assetId: updated.id, version, status: "READY", blendPath: finalBlend,
@@ -454,6 +487,7 @@ export async function blenderAssetLibrary(projectId: string) {
       motionPreset: r.motionPreset,
       loopPath: r.loopPath,
       variationPreset: r.variationPreset,
+      sculptPreset: r.sculptPreset,
       identityScore: r.identityScore,
       inspectNote: r.inspectNote,
       inspectedAt: r.inspectedAt ? r.inspectedAt.toISOString() : null,

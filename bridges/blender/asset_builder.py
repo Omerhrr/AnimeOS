@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# AnimeOS ASSET BUILDER (v7.0) - the design-time Blender pass
+# AnimeOS ASSET BUILDER (v8.0) - the design-time Blender pass
 #
 # Builds a LIBRARY ASSET (.blend) for one design DNA: the DESIGNED
 # character (v4.0 figure builder, full v3.x rig contract), the
@@ -38,6 +38,20 @@
 #   lands in the VARIATION_SUMMARY marker. Combined with --blend it
 #   is the design_fix path: the variation-only pass attaches the tree
 #   to an existing .blend and saves a NEW versioned file.
+# --sculpt is a DESIGNED sculpt recipe (design_sculpt, iteration 55):
+#   layered, seeded value-noise displacement carved along the surface
+#   normals (sculpt_pass.py) - swell/fold/grain layers over an applied
+#   subdivision, deterministic because the seed is law. The evidence is
+#   measured (surface variance before/after) and lands in the
+#   SCULPT_SUMMARY marker. Combined with --blend it is the design_fix
+#   path: the sculpt-only pass carves the existing file and saves a NEW
+#   versioned one.
+# --retopo is the TOPOLOGY BUDGET pass (blender_retopo, iteration 55):
+#   collapse-decimate the matched meshes toward the kind's triangle
+#   budget, then VERIFY the shape survived (bbox drift <= 5%). The
+#   RETOPO_SUMMARY marker carries tris before/after, drift and the
+#   verified verdict. Sculpt before retopo when both are passed: detail
+#   first, then the budget.
 #
 # After the .blend is saved the script stages its own neutral
 # preview rig (3-point light + camera, NOT saved into the asset)
@@ -51,6 +65,8 @@
 #   ASSET_TRIS <n>
 #   VARIATION_SUMMARY <json>
 #   MOTION_SUMMARY <json>
+#   SCULPT_SUMMARY <json>
+#   RETOPO_SUMMARY <json>
 #   ASSET_ERROR <msg>
 # ─────────────────────────────────────────────────────────────
 
@@ -89,6 +105,8 @@ def main():
     rig_path = str(args.get("rig", ""))
     motion_path = str(args.get("motion", ""))
     variation_path = str(args.get("variation", ""))
+    sculpt_path = str(args.get("sculpt", ""))
+    retopo_path = str(args.get("retopo", ""))
     os.makedirs(out_dir, exist_ok=True)
 
     dna = {}
@@ -123,6 +141,20 @@ def main():
                 variation = json.load(fh)
         except Exception:  # noqa: BLE001
             variation = None
+    sculpt = None
+    if sculpt_path:
+        try:
+            with open(sculpt_path, "r", encoding="utf-8") as fh:
+                sculpt = json.load(fh)
+        except Exception:  # noqa: BLE001
+            sculpt = None
+    retopo = None
+    if retopo_path:
+        try:
+            with open(retopo_path, "r", encoding="utf-8") as fh:
+                retopo = json.load(fh)
+        except Exception:  # noqa: BLE001
+            retopo = None
     if motion is not None and kind not in ("PROP", "CREATURE"):
         fail("motion presets apply to PROP and CREATURE assets - a character performs through the directed pose system, an environment is static by design")
 
@@ -132,6 +164,7 @@ def main():
     import animeos_bridge as bridge
     import motion_rig
     import variation_nodes
+    import sculpt_pass
 
     scn = bpy.context.scene
 
@@ -182,6 +215,24 @@ def main():
             blend_path = os.path.join(out_dir, f"{slug}.blend")
             bpy.ops.wm.save_as_mainfile(filepath=blend_path, compress=True)
             print(f"VARIATION_SUMMARY {json.dumps(summary)}", flush=True)
+        if sculpt is not None:
+            # sculpt-only pass (the design_fix path): carve the layered
+            # detail into the existing file, save a NEW versioned file
+            ssum, serr = sculpt_pass.apply_sculpt(bpy, scn, sculpt)
+            if ssum is None:
+                fail(f"sculpt pass failed: {serr}")
+            blend_path = os.path.join(out_dir, f"{slug}.blend")
+            bpy.ops.wm.save_as_mainfile(filepath=blend_path, compress=True)
+            print(f"SCULPT_SUMMARY {json.dumps(ssum)}", flush=True)
+        if retopo is not None:
+            # retopo-only pass (blender_retopo / the design_fix path):
+            # decimate to the budget, verify the drift, save NEW
+            rsum, rerr = sculpt_pass.apply_retopo(bpy, scn, retopo)
+            if rsum is None:
+                fail(f"retopo pass failed: {rerr}")
+            blend_path = os.path.join(out_dir, f"{slug}.blend")
+            bpy.ops.wm.save_as_mainfile(filepath=blend_path, compress=True)
+            print(f"RETOPO_SUMMARY {json.dumps(rsum)}", flush=True)
         obj_count = len(scn.objects)
         tris = 0
         for ob in scn.objects:
@@ -282,6 +333,20 @@ def main():
         if summary is None:
             fail(f"variation pass failed: {verr}")
         print(f"VARIATION_SUMMARY {json.dumps(summary)}", flush=True)
+
+    # DESIGNED sculpt recipe (design_sculpt): carve the layered detail
+    # BEFORE the save so the carved surface travels inside the .blend,
+    # then the topology budget pass (when asked) pulls it back to law.
+    if sculpt is not None and not from_blend:
+        ssum, serr = sculpt_pass.apply_sculpt(bpy, scn, sculpt)
+        if ssum is None:
+            fail(f"sculpt pass failed: {serr}")
+        print(f"SCULPT_SUMMARY {json.dumps(ssum)}", flush=True)
+    if retopo is not None and not from_blend:
+        rsum, rerr = sculpt_pass.apply_retopo(bpy, scn, retopo)
+        if rsum is None:
+            fail(f"retopo pass failed: {rerr}")
+        print(f"RETOPO_SUMMARY {json.dumps(rsum)}", flush=True)
 
     obj_count = len(scn.objects)
     tris = 0
