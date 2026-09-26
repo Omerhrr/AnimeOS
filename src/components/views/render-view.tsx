@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   MonitorPlay, CheckCheck, RotateCcw, ThumbsUp, ShieldCheck, ShieldX, Loader2, Cable, Boxes,
   Layers, ListFilter, Play, Clapperboard, Timer, Send, MessagesSquare, ShieldAlert, XCircle,
+  ClipboardCheck, Wrench,
 } from "lucide-react";
 import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
@@ -136,17 +137,70 @@ function EngineDriverCard() {
 }
 
 // Blender ASSET LIBRARY (design once, render many): the DESIGNED
-// characters and environments the studio's own Blender runtime built,
-// with version, preview and the honest identity score vs the sheets.
+// characters, environments, props and creatures the studio's own
+// Blender runtime built, with version, preview, quality grade and the
+// self-correcting DESIGN LOOP (audit + fix) wired to the same API DSH
+// drives.
+function kindLabel(kind: string): string {
+  if (kind === "CHARACTER") return "CHAR";
+  if (kind === "ENVIRONMENT") return "ENV";
+  if (kind === "PROP") return "PROP";
+  return "CREATURE";
+}
+
 function BlenderAssetLibraryCard() {
   const { projectId } = useStudio();
+  const { data: session } = useSession();
+  const qc = useQueryClient();
+  const canDirect = session?.user?.role === "OWNER" || session?.user?.role === "EDITOR";
+  const [busy, setBusy] = useState<string | null>(null);
+  const [designNote, setDesignNote] = useState<string | null>(null);
   const assetsQ = useQuery({
     queryKey: ["blender-assets", projectId],
     queryFn: () => api.blenderAssets(projectId ?? ""),
     enabled: Boolean(projectId),
     refetchInterval: 10000,
   });
+  const designQ = useQuery({
+    queryKey: ["design-reviews", projectId],
+    queryFn: () => api.designReviews(projectId ?? ""),
+    enabled: Boolean(projectId),
+    refetchInterval: 10000,
+  });
+  const runDesign = async (action: "audit" | "fix", refName: string, kind: string) => {
+    if (!projectId) return;
+    setBusy(`${action}:${refName}`);
+    setDesignNote(null);
+    try {
+      const res = (await api.designReviewAction({ action, projectId, refName, kind })) as {
+        ok?: boolean;
+        error?: string;
+        state?: string;
+        overall?: number;
+        issues?: Array<{ severity: string; kind: string; note: string }>;
+        versionAfter?: number | null;
+        fixed?: number;
+        attempted?: number;
+        reAudit?: { state: string; overall: number };
+      };
+      if (res.ok === false && res.error) {
+        setDesignNote(`${action.toUpperCase()} failed: ${res.error}`);
+      } else if (action === "audit") {
+        const issueCount = res.issues?.length ?? 0;
+        setDesignNote(`Audit ${res.state ?? "?"} at ${Math.round((res.overall ?? 0) * 100)}% - ${issueCount} issue(s) found${issueCount ? `: ${res.issues!.slice(0, 3).map((i) => `${i.severity} ${i.kind}`).join(", ")}` : ""}`);
+      } else {
+        setDesignNote(`Fix landed v${res.versionAfter ?? "?"}: ${res.fixed ?? 0}/${res.attempted ?? 0} issue(s) cleared by the re-audit${res.reAudit ? `, re-audit ${res.reAudit.state} at ${Math.round(res.reAudit.overall * 100)}%` : ""}`);
+      }
+      await qc.invalidateQueries({ queryKey: ["design-reviews", projectId] });
+      await qc.invalidateQueries({ queryKey: ["blender-assets", projectId] });
+    } catch (err) {
+      setDesignNote(`${action.toUpperCase()} failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
   const lib = assetsQ.data;
+  const design = designQ.data;
   if (!lib || lib.total === 0) {
     return (
       <div className="studio-panel p-4 mb-5">
@@ -155,7 +209,7 @@ function BlenderAssetLibraryCard() {
           Blender asset library
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
-          No DESIGNED assets yet. DSH designs them with blender_asset_build: each character and environment becomes a versioned .blend in the library, and every render job of that cast/environment loads the asset instead of rebuilding procedural stand-ins.
+          No DESIGNED assets yet. DSH designs them with blender_asset_build: each character, environment, prop and creature becomes a versioned .blend in the library - and every render job of that cast/environment (or shot text naming a prop) loads the asset instead of rebuilding procedural stand-ins. The design loop (audit, fix, re-audit) keeps the quality bar honest.
         </p>
       </div>
     );
@@ -175,34 +229,113 @@ function BlenderAssetLibraryCard() {
         )}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mt-3">
-        {lib.assets.map((a) => (
-          <div key={a.id} className="rounded-lg border border-white/10 bg-white/[0.03] overflow-hidden">
-            <div className="aspect-square bg-black/40 relative">
-              {a.previewPath ? (
-                <img src={a.previewPath} alt={a.refName} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground/60">no preview</div>
-              )}
-              <span className="absolute top-1 left-1 rounded px-1 py-0.5 text-[8px] font-bold tracking-widest bg-black/60 text-white/80">
-                {a.kind === "CHARACTER" ? "CHAR" : "ENV"}
-              </span>
-              {a.identityScore !== null && (
-                <span className="absolute bottom-1 right-1 rounded px-1 py-0.5 text-[8px] font-bold tabular-nums bg-black/60 text-emerald-300">
-                  {Math.round(a.identityScore * 100)}%
+        {lib.assets.map((a) => {
+          const openForAsset = design?.openIssues.filter((i) => i.refName === a.refName) ?? [];
+          return (
+            <div key={a.id} className="rounded-lg border border-white/10 bg-white/[0.03] overflow-hidden">
+              <div className="aspect-square bg-black/40 relative">
+                {a.previewPath ? (
+                  <img src={a.previewPath} alt={a.refName} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground/60">no preview</div>
+                )}
+                <span className="absolute top-1 left-1 rounded px-1 py-0.5 text-[8px] font-bold tracking-widest bg-black/60 text-white/80">
+                  {kindLabel(a.kind)}
                 </span>
-              )}
-            </div>
-            <div className="p-1.5">
-              <div className="text-[11px] font-medium truncate" title={a.refName}>{a.refName}</div>
-              <div className="text-[9px] text-muted-foreground font-mono">
-                v{a.version} · {a.status}
+                {a.qualityScore != null && (
+                  <span className="absolute top-1 right-1 rounded px-1 py-0.5 text-[8px] font-bold tabular-nums bg-black/60 text-amber-300">
+                    Q {Math.round(a.qualityScore * 100)}%
+                  </span>
+                )}
+                {a.identityScore !== null && (
+                  <span className="absolute bottom-1 right-1 rounded px-1 py-0.5 text-[8px] font-bold tabular-nums bg-black/60 text-emerald-300">
+                    {Math.round(a.identityScore * 100)}%
+                  </span>
+                )}
+                {openForAsset.length > 0 && (
+                  <span className="absolute bottom-1 left-1 rounded px-1 py-0.5 text-[8px] font-bold bg-black/60 text-rose-300">
+                    {openForAsset.length} issue{openForAsset.length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+              <div className="p-1.5">
+                <div className="text-[11px] font-medium truncate" title={a.refName}>{a.refName}</div>
+                <div className="text-[9px] text-muted-foreground font-mono">
+                  v{a.version} · {a.status}
+                </div>
+                {canDirect && (
+                  <div className="flex gap-1 mt-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => runDesign("audit", a.refName, a.kind)}
+                      className="h-5 px-1.5 text-[9px] gap-0.5 flex-1"
+                      title="Design audit: per-criterion scores + issue registry"
+                    >
+                      {busy === `audit:${a.refName}` ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <ClipboardCheck className="h-2.5 w-2.5" />}
+                      Audit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null || openForAsset.length === 0}
+                      onClick={() => runDesign("fix", a.refName, a.kind)}
+                      className="h-5 px-1.5 text-[9px] gap-0.5 flex-1"
+                      title="Design fix: real bpy refinement pass, version bump, re-audit"
+                    >
+                      {busy === `fix:${a.refName}` ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Wrench className="h-2.5 w-2.5" />}
+                      Fix{openForAsset.length > 0 ? ` (${openForAsset.length})` : ""}
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+      {design && (design.openIssues.length > 0 || design.reviews.length > 0) && (
+        <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2">
+          <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-muted-foreground">
+            <ClipboardCheck className="h-3 w-3" /> DESIGN LOOP
+            <span className="rounded bg-white/5 border border-white/12 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-muted-foreground">
+              BAR {design.reviews[0]?.bar ? Math.round(design.reviews[0].bar * 100) : 72}%
+            </span>
+            {design.bySeverity.CRITICAL > 0 && <span className="text-rose-300">{design.bySeverity.CRITICAL} CRITICAL</span>}
+            {design.bySeverity.MAJOR > 0 && <span className="text-amber-300">{design.bySeverity.MAJOR} MAJOR</span>}
+            {design.bySeverity.MINOR > 0 && <span className="text-sky-300">{design.bySeverity.MINOR} MINOR</span>}
+          </div>
+          {designNote && (
+            <div className="mt-1.5 text-[10px] text-emerald-200 bg-emerald-400/5 border border-emerald-400/20 rounded px-1.5 py-1">
+              {designNote}
+            </div>
+          )}
+          {design.openIssues.length > 0 && (
+            <div className="mt-1.5 space-y-0.5">
+              {design.openIssues.slice(0, 5).map((i) => (
+                <div key={i.id} className="text-[10px] leading-snug flex gap-1.5">
+                  <span className={cn(
+                    "font-bold shrink-0",
+                    i.severity === "CRITICAL" ? "text-rose-300" : i.severity === "MAJOR" ? "text-amber-300" : "text-sky-300",
+                  )}>
+                    {i.severity}
+                  </span>
+                  <span className="text-muted-foreground shrink-0">{i.kind} on {i.refName}:</span>
+                  <span className="text-foreground/70 truncate" title={i.note}>{i.note}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {design.reviews.length > 0 && design.openIssues.length === 0 && (
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              Latest audit: {design.reviews[0].targetRef} {design.reviews[0].state}
+              {design.reviews[0].overall !== null ? ` at ${Math.round((design.reviews[0].overall ?? 0) * 100)}%` : ""} - the library stands.
+            </div>
+          )}
+        </div>
+      )}
       <p className="text-[10px] text-muted-foreground/70 mt-2">
-        READY assets ride every matching render payload - the worker loads the designed .blend instead of rebuilding procedural stand-ins. Identity is vision-scored against the canonical sheets (environments are judged on the render pass).
+        READY assets ride every matching render payload - the worker loads the designed .blend instead of rebuilding procedural stand-ins, and named props/creatures ride shots whose text mentions them. Identity is vision-scored against the canonical sheets; the quality grade comes from the design loop DSH runs with design_audit / design_fix.
       </p>
     </div>
   );

@@ -325,3 +325,136 @@ export function environmentDna(input: EnvironmentDesignInput): EnvironmentDesign
     source: text.slice(0, 400),
   };
 }
+
+// ─── prop DNA (design anything: weapons, artifacts, vessels) ──
+
+export type PropType = "sword" | "saber" | "spear" | "artifact" | "vessel" | "relic" | "generic";
+
+export interface PropDesignDna {
+  name: string;
+  propType: PropType;
+  bodyColor: string; // hex primary material
+  accentColor: string; // hex trim, hilt, housing
+  glowColor: string; // hex emissive (runes, spirit energy)
+  glowStrength: number; // emission strength
+  metallic: number; // 0..1 principled metallic
+  roughness: number; // 0..1 principled roughness
+  size: number; // overall length in meters (scale anchor)
+  runes: number; // rune marker count (0 for a plain tool)
+  ornate: boolean; // gold trim + finials
+  source: string;
+}
+
+export interface PropDesignInput {
+  name: string;
+  description?: string | null;
+  category?: string | null; // the Asset row's category (PROP | EFFECT | VEHICLE | ...)
+}
+
+const PROP_GLOW: Array<[RegExp, string]> = [
+  [/\bazure\b|\bblue\b/, "#6db8ff"],
+  [/crimson|\bscarlet\b|\bred\b/, "#ff5e6d"],
+  [/\bjade\b|\bgreen\b|jade/, "#4ade80"],
+  [/violet|purple/, "#b28aff"],
+  [/gold(en)?/, "#ffd166"],
+  [/moonlit|moonlight|silver|spirit[- ]?water/, "#9fd8e8"],
+  [/\bwhite\b|ivory|bone/, "#e8ecf4"],
+];
+
+function propTypeOf(text: string): PropType {
+  if (/spear|lance|halberd|polearm|staff\b|glaive/.test(text)) return "spear";
+  if (/saber|sabre|katana|scimitar/.test(text)) return "saber";
+  if (/sword|blade|jian/.test(text)) return "sword";
+  if (/vessel|boat|ship|barque|skiff|furnace|cauldron/.test(text)) return "vessel";
+  if (/artifact|relic|seal\b|talisman|amulet|orb\b|mirror/.test(text)) return "artifact";
+  if (/statue|pillar|stele|monolith|tablet|bell\b/.test(text)) return "relic";
+  return "generic";
+}
+
+function sizeOf(text: string, base: number): number {
+  if (/colossal|titanic|monumental/.test(text)) return base * 2.1;
+  if (/great\b|massive|giant|huge|grand/.test(text)) return base * 1.55;
+  if (/long\b|tall\b|towering/.test(text)) return base * 1.3;
+  if (/short\b|small\b|dainty|compact|miniature/.test(text)) return base * 0.72;
+  return base;
+}
+
+function countOf(text: string, re: RegExp, base: number): number {
+  const m = text.match(re);
+  if (!m) return base;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(12, n)) : base;
+}
+
+/** Compile a prop's design text into renderable DNA (pure, deterministic). */
+export function propDna(input: PropDesignInput): PropDesignDna {
+  const text = [input.name ?? "", input.description ?? ""].filter(Boolean).join(" . ");
+  const category = (input.category ?? "PROP").toUpperCase();
+  const propType = category === "VEHICLE" && propTypeOf(text) === "generic" ? "vessel" : propTypeOf(text);
+  const energy = /glow|energy|spirit|sentient|awakened|cursed|blessed|rune|engraved|inscription/.test(text);
+  return {
+    name: input.name,
+    propType,
+    bodyColor: firstMatch(text, ROBE_COLORS, category === "EFFECT" ? "#3b4a6b" : "#4a4f58"),
+    accentColor: firstMatch(text, ACCENT_COLORS, "#a8842c"),
+    glowColor: firstMatch(text, PROP_GLOW, "#5eead4"),
+    glowStrength: energy ? 3.2 : /dull|plain|mundane|common/.test(text) ? 0 : 1.1,
+    metallic: /stone|jade\b|marble|granite|clay/.test(text) ? 0.0 : /gold(en)?|silver|bronze|steel|iron|metal/.test(text) ? 0.9 : 0.55,
+    roughness: /polished|mirror|gleam/.test(text) ? 0.18 : /stone|weathered|ancient|rusted|worn/.test(text) ? 0.78 : 0.38,
+    size: sizeOf(text, propType === "vessel" ? 3.4 : propType === "relic" ? 2.2 : 1.15),
+    runes: countOf(text, /(\w+)?\s*rune|inscription|engraving|seal script/, energy ? 5 : 2),
+    ornate: /ornate|gilded|royal|imperial|ceremonial|regal/.test(text) || /gold(en)?/.test(text),
+    source: text.slice(0, 400),
+  };
+}
+
+// ─── creature DNA (beasts, spirit beasts, companions) ─────────
+
+export type CreatureArchetype = "quadruped" | "serpent" | "bird" | "generic";
+
+export interface CreatureDesignDna {
+  name: string;
+  archetype: CreatureArchetype;
+  hideColor: string; // hex primary hide/fur/scale
+  bellyColor: string; // hex underside
+  accentColor: string; // hex horns, spines, crest
+  glowColor: string; // hex eyes + energy markings
+  glowStrength: number; // emission strength (spirit beasts glow)
+  size: number; // overall length in meters
+  horns: boolean;
+  spines: boolean;
+  wings: boolean;
+  source: string;
+}
+
+export interface CreatureDesignInput {
+  name: string;
+  description?: string | null;
+}
+
+function archetypeOf(text: string): CreatureArchetype {
+  if (/serpent|snake|wyrm|dragon|python|viper|leviathan/.test(text)) return "serpent";
+  if (/bird|phoenix|roc|eagle|crane|hawk|falcon|crow|raven|owl|winged/.test(text)) return "bird";
+  if (/tiger|wolf|lion|beast|hound|panther|bear|deer|stag|horse|qilin|bull|ox|fox|ape|ape-?like|quadrupe?d|feline|canine/.test(text)) return "quadruped";
+  return "generic";
+}
+
+/** Compile a creature's design text into renderable DNA (pure, deterministic). */
+export function creatureDna(input: CreatureDesignInput): CreatureDesignDna {
+  const text = [input.name ?? "", input.description ?? ""].filter(Boolean).join(" . ");
+  const spirit = /spirit|demon|divine|celestial|immortal|cursed|abyss|heavenly|sacred/.test(text);
+  return {
+    name: input.name,
+    archetype: archetypeOf(text),
+    hideColor: firstMatch(text, ROBE_COLORS, "#3d4a44"),
+    bellyColor: shade(firstMatch(text, ROBE_COLORS, "#3d4a44"), 1.55),
+    accentColor: firstMatch(text, ACCENT_COLORS, "#8a7448"),
+    glowColor: firstMatch(text, PROP_GLOW, "#ff5e6d"),
+    glowStrength: spirit ? 2.6 : /glow|ember|energy/.test(text) ? 1.4 : 0.35,
+    size: sizeOf(text, 2.6),
+    horns: /horn|antler|qilin|dragon|demon|ox|bull/.test(text),
+    spines: /spine|spike|mane|thorn|scaled|dragon|wyrm/.test(text),
+    wings: /wing|phoenix|roc|flying|winged|feathered/.test(text),
+    source: text.slice(0, 400),
+  };
+}

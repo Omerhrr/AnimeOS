@@ -25,10 +25,12 @@ import { buildEpisodeDialogueCues, normalizeLangTag, translateSubtitleCues } fro
 import { trainCharacterVoice } from "@/lib/ai/voice-clone";
 import { createRenderJob } from "@/lib/engine/render";
 import {
-  blenderAssetLibrary, buildBlenderAsset, inspectBlenderAsset, refreshAssetPreview,
+  blenderAssetLibrary, buildBlenderAsset, inspectBlenderAsset, refreshAssetPreview, landDesignEvent,
+  isBlenderAssetKind,
   type BlenderAssetKind,
 } from "@/lib/blender/assets";
 import { runBlenderScript } from "@/lib/blender/runtime";
+import { auditAsset, auditLibrary, fixIssues, designStatus } from "@/lib/blender/design-review";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -374,11 +376,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "blender_asset_build",
-    description: "DESIGN a library asset for a character or environment: compiles the production's design text (model-sheet anchor, appearance, active wardrobe/weapon, environment brief) into DNA and runs the deterministic v4.1 builder in the studio's Blender runtime - one versioned .blend + a lit preview PNG lands in the library (design once, render many). From then on every render job of this exact cast/environment loads the ASSET instead of rebuilding procedural stand-ins. Rebuild freely to iterate: each build bumps the version. An optional guidance line is stored with the asset's audit.",
+    description: "DESIGN a library asset for a character, environment, PROP or CREATURE: compiles the production's design text (model-sheet anchor, appearance, active wardrobe/weapon, environment brief, the registered asset's description) into DNA and runs the deterministic v5 builder in the studio's Blender runtime - one versioned .blend + a lit preview PNG lands in the library (design once, render many). PROPS and CREATURES resolve from the production's registered assets (create_asset rows), so a registered spirit sword or beast becomes a real, named .blend hierarchy; READY props and creatures also ride every render whose shot text names them. Pass material/lighting recipe NAMES (design_material / design_lighting) to build under the production's designed recipes. Rebuild freely to iterate: each build bumps the version. An optional guidance line is stored with the asset's audit.",
     args: {
-      kind: "CHARACTER | ENVIRONMENT",
-      refName: "string - the character's or environment's exact name",
+      kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE",
+      refName: "string - the exact name (characters/environments from their tables, props/creatures from the registered assets)",
       guidance: "string (optional - a design note stored on the asset's audit)",
+      material: "string (optional - a design_material recipe name; the recipe is law over DNA defaults)",
+      lighting: "string (optional - a design_lighting rig name; drives the preview render)",
     },
   },
   {
@@ -390,7 +394,58 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "blender_asset_library",
-    description: "Read the whole Blender ASSET LIBRARY: every asset with kind, status, version, identity score and preview path, plus library stats (ready/failed counts, average accepted identity). Call it before designing (what already exists?) and after (what cleared the bar?).",
+    description: "Read the whole Blender ASSET LIBRARY: every asset with kind (character, environment, prop, creature), status, version, quality score, identity score and preview path, plus library stats. Call it before designing (what already exists?) and after (what cleared the bar?).",
+    args: {},
+  },
+  {
+    name: "design_material",
+    description: "Design a NAMED MATERIAL RECIPE (a Principled BSDF parameter set) and register it as the production's material law: base color, roughness, metallic, IOR, emission color + strength. Rebuilds that pass --material to the builder, which applies the recipe OVER the DNA defaults (a recipe is law), and every build that names it records the pairing on the asset's audit. Design recipes for recurring surfaces (spirit-forged steel, weathered jade, celestial silk) instead of restating hex codes per build; the registry line in your context shows usage counts.",
+    args: {
+      name: "string - the recipe name (e.g. 'Spirit-Forged Steel')",
+      baseColor: "string hex (optional) - primary base color",
+      roughness: "number 0..1 (optional)",
+      metallic: "number 0..1 (optional)",
+      ior: "number 0..2 (optional)",
+      emissionColor: "string hex (optional) - recolors the asset's emissive parts",
+      emissionStrength: "number (optional)",
+    },
+  },
+  {
+    name: "design_lighting",
+    description: "Design a NAMED LIGHTING RIG (the studio's preview 3-point setup: key/fill/rim energy + colors, background strength, camera lens) and register it. Rebuilds that pass --rig render the asset preview under YOUR rig instead of the neutral default - the professional way to judge a design is under the light it will ship in. The saved asset still carries no lights: the render worker owns shot lighting.",
+    args: {
+      name: "string - the rig name (e.g. 'Moonlit Abyss')",
+      keyEnergy: "number (optional, watts)",
+      keyColor: "string hex (optional)",
+      fillEnergy: "number (optional)",
+      fillColor: "string hex (optional)",
+      rimEnergy: "number (optional)",
+      rimColor: "string hex (optional)",
+      bgStrength: "number (optional, world background strength)",
+      camLens: "number (optional, mm - 55 default, 85 creatures, 32 sets)",
+    },
+  },
+  {
+    name: "design_audit",
+    description: "THE SELF-REVIEW: audit one library asset (or library:true for a sweep of every READY asset) against the quality bar. A deterministic local audit ALWAYS runs (hierarchy floors, preview content, designed material/rig presence, identity recency, version churn); a VISION critique of the preview joins it when the provider answers (silhouette, material, palette, lighting, detail, proportion). Lands a persisted DesignReview with per-criterion scores and one DesignIssue row per concrete finding (severity CRITICAL | MAJOR | MINOR). This is how you check back on your own designs - never call a design done without one.",
+    args: {
+      refName: "string - the asset's name (omit when library:true)",
+      kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP for registered assets)",
+      library: "boolean (optional) - sweep every READY asset and land a LIBRARY rollup",
+    },
+  },
+  {
+    name: "design_fix",
+    description: "THE FIX PASS: run a REAL bpy refinement against an asset's accepted .blend, driven by its OPEN design issues. The pass applies the professional operation each issue kind calls for (bevel+subsurf finishing, normal + origin hygiene, roughness/metallic normalization, palette pull toward the accent), saves a NEW VERSION, re-renders the preview under the designed rig, RE-AUDITS, and marks an issue FIXED only when the re-audit stops raising it - a fix that did not survive the re-audit stays OPEN with the fix note. Report version bump, what cleared and what did not, and the new score.",
+    args: {
+      refName: "string - the asset's name",
+      kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP for registered assets)",
+      issueIds: "JSON array of issue ids (optional - defaults to ALL open issues of the asset)",
+    },
+  },
+  {
+    name: "design_status",
+    description: "Check back on the studio's designs: open design issues by severity, the latest reviews with their scores, and every asset's quality grade. Call it when the creator asks how the designs are doing, before promising a quality bar, and after a fix pass to see what still stands.",
     args: {},
   },
   {
@@ -2039,38 +2094,49 @@ export async function executeTool(
 
       case "blender_viewport_shot": {
         const refName = String(args.refName ?? "").trim();
-        const kind = (String(args.kind ?? "CHARACTER").toUpperCase() === "ENVIRONMENT" ? "ENVIRONMENT" : "CHARACTER") as BlenderAssetKind;
+        const kindRaw = String(args.kind ?? "CHARACTER").toUpperCase();
+        if (!isBlenderAssetKind(kindRaw)) {
+          return { status: "ERROR", result: "kind must be CHARACTER, ENVIRONMENT, PROP or CREATURE." };
+        }
         if (!refName) return { status: "ERROR", result: "refName is required." };
         const asset = await db.blenderAsset.findUnique({
-          where: { projectId_kind_refName: { projectId, kind, refName } },
+          where: { projectId_kind_refName: { projectId, kind: kindRaw, refName } },
         });
-        if (!asset) return { status: "ERROR", result: `No ${kind.toLowerCase()} asset for "${refName}" - design one first with blender_asset_build.` };
+        if (!asset) return { status: "ERROR", result: `No ${kindRaw.toLowerCase()} asset for "${refName}" - design one first with blender_asset_build.` };
         const res = await refreshAssetPreview(asset.id);
         if (!res.ok) return { status: "ERROR", result: `Preview refresh failed: ${res.log.slice(-300)}` };
-        return { status: "OK", result: `Preview re-rendered for ${kind.toLowerCase()} ${refName} (v${asset.version}) from its accepted .blend - ${res.previewPath ?? "no preview path"}. The preview is a lit 512px Cycles frame of the asset alone; the render worker still owns shot lighting.` };
+        return { status: "OK", result: `Preview re-rendered for ${kindRaw.toLowerCase()} ${refName} (v${asset.version}) from its accepted .blend - ${res.previewPath ?? "no preview path"}. The preview is a lit 512px Cycles frame of the asset alone under its designed rig; the render worker still owns shot lighting.` };
       }
 
       case "blender_asset_build": {
         const kindRaw = String(args.kind ?? "").toUpperCase();
-        if (kindRaw !== "CHARACTER" && kindRaw !== "ENVIRONMENT") {
-          return { status: "ERROR", result: "kind must be CHARACTER or ENVIRONMENT." };
+        if (!isBlenderAssetKind(kindRaw)) {
+          return { status: "ERROR", result: "kind must be CHARACTER, ENVIRONMENT, PROP or CREATURE." };
         }
         const refName = String(args.refName ?? "").trim();
-        if (!refName) return { status: "ERROR", result: "refName is required - the character's or environment's exact name." };
+        if (!refName) return { status: "ERROR", result: "refName is required - the exact name of the thing being designed." };
         const guidance = String(args.guidance ?? "").trim() || null;
-        const res = await buildBlenderAsset(projectId, kindRaw, refName, guidance);
+        const res = await buildBlenderAsset(projectId, kindRaw, refName, guidance, {
+          materialName: String(args.material ?? "").trim() || null,
+          lightingName: String(args.lighting ?? "").trim() || null,
+        });
         if (!res.ok) return { status: "ERROR", result: `Asset build failed for ${refName}: ${res.log.slice(-400)}` };
         const inspectHint = kindRaw === "CHARACTER"
           ? " Run blender_asset_inspect on it to see where identity stands against the sheet."
           : "";
-        return { status: "OK", result: `DESIGNED ${kindRaw.toLowerCase()} asset built and accepted into the library: ${refName} v${res.version} - ${res.objects} objects, ${res.tris.toLocaleString()} tris, ${(res.buildMs / 1000).toFixed(1)}s in the Blender runtime${guidance ? ` (guidance recorded: "${guidance}")` : ""}. Every render job of this exact ${kindRaw === "CHARACTER" ? "cast" : "environment"} now loads this asset instead of rebuilding procedural stand-ins.${inspectHint}` };
+        const rideHint = kindRaw === "PROP" || kindRaw === "CREATURE"
+          ? " Every render whose shot text names it now loads this asset."
+          : kindRaw === "CHARACTER"
+            ? " Every render job of this exact cast now loads this asset instead of rebuilding procedural stand-ins."
+            : " Every render job of this exact environment now loads this asset.";
+        return { status: "OK", result: `DESIGNED ${kindRaw.toLowerCase()} asset built and accepted into the library: ${refName} v${res.version} - ${res.objects} objects, ${res.tris.toLocaleString()} tris, ${(res.buildMs / 1000).toFixed(1)}s in the Blender runtime${guidance ? ` (guidance recorded: "${guidance}")` : ""}.${rideHint} Next professional step: design_audit on it, then design_fix for whatever it finds.${inspectHint}` };
       }
 
       case "blender_asset_inspect": {
         const refName = String(args.refName ?? "").trim();
         if (!refName) return { status: "ERROR", result: "refName is required." };
         const asset = await db.blenderAsset.findFirst({
-          where: { projectId, refName, kind: { in: ["CHARACTER", "ENVIRONMENT"] } },
+          where: { projectId, refName, kind: { in: ["CHARACTER", "ENVIRONMENT", "PROP", "CREATURE"] } },
         });
         if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - design one first with blender_asset_build.` };
         const res = await inspectBlenderAsset(asset.id);
@@ -2083,14 +2149,118 @@ export async function executeTool(
       case "blender_asset_library": {
         const lib = await blenderAssetLibrary(projectId);
         if (lib.total === 0) {
-          return { status: "OK", result: "The Blender asset library is empty - no DESIGNED .blend assets yet. Design the cast and environments with blender_asset_build (design once, render many: ready assets are loaded by every render job of that cast/environment)." };
+          return { status: "OK", result: "The Blender asset library is empty - no DESIGNED .blend assets yet. Design the cast, environments, props and creatures with blender_asset_build (design once, render many: ready assets are loaded by every render job of that cast/environment, and props/creatures ride renders whose shot text names them)." };
         }
         const avg = lib.avgIdentity !== null ? `${Math.round(lib.avgIdentity * 100)}%` : "not yet scored";
         const rows = lib.assets.map((a) => {
           const score = a.identityScore !== null ? `${Math.round(a.identityScore * 100)}%` : "-";
-          return `${a.kind === "CHARACTER" ? "char" : "env "} ${a.refName}: ${a.status} v${a.version}, identity ${score}, ${a.previewPath ?? "no preview"}`;
+          return `${a.kind.toLowerCase().padEnd(6)} ${a.refName}: ${a.status} v${a.version}, identity ${score}, ${a.previewPath ?? "no preview"}`;
         });
-        return { status: "OK", result: `Blender asset library: ${lib.total} assets (${lib.ready} ready, ${lib.failed} failed, ${lib.building} building), average accepted identity ${avg}.\n${rows.join("\n")}\nReady character/environment assets ride every matching render payload - the worker loads them instead of procedural stand-ins.` };
+        return { status: "OK", result: `Blender asset library: ${lib.total} assets (${lib.ready} ready, ${lib.failed} failed, ${lib.building} building), average accepted identity ${avg}.\n${rows.join("\n")}\nReady assets ride every matching render payload. The professional loop runs on top: design_audit to check back, design_fix to correct, design_status for the standing.` };
+      }
+
+      case "design_material": {
+        const name = String(args.name ?? "").trim();
+        if (!name) return { status: "ERROR", result: "name is required - the recipe's name." };
+        const spec: Record<string, unknown> = {};
+        if (args.baseColor) spec.baseColor = String(args.baseColor);
+        if (args.roughness !== undefined) spec.roughness = Math.max(0, Math.min(1, Number(args.roughness)));
+        if (args.metallic !== undefined) spec.metallic = Math.max(0, Math.min(1, Number(args.metallic)));
+        if (args.ior !== undefined) spec.ior = Math.max(0, Math.min(2, Number(args.ior)));
+        if (args.emissionColor) spec.emissionColor = String(args.emissionColor);
+        if (args.emissionStrength !== undefined) spec.emissionStrength = Math.max(0, Number(args.emissionStrength));
+        if (Object.keys(spec).length === 0) {
+          return { status: "ERROR", result: "give the recipe at least one parameter (baseColor, roughness, metallic, ior, emissionColor, emissionStrength)." };
+        }
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "MATERIAL", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "MATERIAL", name } },
+          create: { projectId, kind: "MATERIAL", name, spec: JSON.stringify(spec) },
+          update: { spec: JSON.stringify(spec) },
+        });
+        await landDesignEvent(projectId, `Material recipe '${name}' ${existed ? "updated" : "designed"} (${Object.keys(spec).join(", ")})`, { presetId: preset.id });
+        return { status: "OK", result: `MATERIAL recipe '${name}' ${existed ? "updated" : "registered"}: ${JSON.stringify(spec)}. Builds that pass material:'${name}' get this recipe as LAW over the DNA defaults - e.g. blender_asset_build with kind, refName and material:'${name}'. The design_material registry grows once per recurring surface; prefer it over restating hex codes.` };
+      }
+
+      case "design_lighting": {
+        const name = String(args.name ?? "").trim();
+        if (!name) return { status: "ERROR", result: "name is required - the rig's name." };
+        const spec: Record<string, unknown> = {};
+        for (const key of ["keyEnergy", "fillEnergy", "rimEnergy", "bgStrength", "camLens"] as const) {
+          if (args[key] !== undefined) spec[key] = Number(args[key]);
+        }
+        for (const key of ["keyColor", "fillColor", "rimColor"] as const) {
+          if (args[key]) spec[key] = String(args[key]);
+        }
+        if (Object.keys(spec).length === 0) {
+          return { status: "ERROR", result: "give the rig at least one parameter (keyEnergy, keyColor, fillEnergy, fillColor, rimEnergy, rimColor, bgStrength, camLens)." };
+        }
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "LIGHTING", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "LIGHTING", name } },
+          create: { projectId, kind: "LIGHTING", name, spec: JSON.stringify(spec) },
+          update: { spec: JSON.stringify(spec) },
+        });
+        await landDesignEvent(projectId, `Lighting rig '${name}' ${existed ? "updated" : "designed"} (${Object.keys(spec).join(", ")})`, { presetId: preset.id });
+        return { status: "OK", result: `LIGHTING rig '${name}' ${existed ? "updated" : "registered"}: ${JSON.stringify(spec)}. Asset previews built with lighting:'${name}' are judged under YOUR rig instead of the neutral default; the render worker still owns shot lighting.` };
+      }
+
+      case "design_audit": {
+        if (args.library) {
+          const res = await auditLibrary(projectId, true);
+          if (!res.ok) return { status: "ERROR", result: "library audit failed" };
+          return { status: "OK", result: `LIBRARY audit: ${res.audited} asset(s) audited - ${res.passed} cleared the bar, ${res.needsWork} need work, ${res.skipped} skipped (not READY). ${res.rollup.note}\nRun design_status for the full standing, design_fix on the assets that need work.` };
+        }
+        const refName = String(args.refName ?? "").trim();
+        if (!refName) return { status: "ERROR", result: "refName is required (or pass library:true to sweep the whole library)." };
+        const kindRaw = String(args.kind ?? "PROP").toUpperCase();
+        const asset = await db.blenderAsset.findFirst({
+          where: { projectId, refName, ...(isBlenderAssetKind(kindRaw) ? { kind: kindRaw } : {}) },
+          orderBy: { updatedAt: "desc" },
+        }) ?? await db.blenderAsset.findFirst({ where: { projectId, refName }, orderBy: { updatedAt: "desc" } });
+        if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - design one first with blender_asset_build.` };
+        const res = await auditAsset(asset.id, true);
+        if (!res.ok) return { status: "ERROR", result: res.error ?? "audit failed" };
+        const pct = `${Math.round(res.overall * 100)}%`;
+        const issueLines = res.issues.map((i) => `  ${i.severity} ${i.kind}: ${i.note}`).join("\n");
+        return { status: "OK", result: `DESIGN AUDIT ${res.state}: ${asset.kind.toLowerCase()} ${asset.refName} scored ${pct} against the ${(res.bar * 100).toFixed(0)}% bar (${res.provider} verdict).\n${res.issues.length ? `Issues (${res.issues.length}):\n${issueLines}` : "No issues found - the design cleared the bar."}\n${res.issues.length ? "Next: design_fix on this asset works through the open issues with a real bpy pass and re-audits." : ""}\n${res.note}` };
+      }
+
+      case "design_fix": {
+        const refName = String(args.refName ?? "").trim();
+        if (!refName) return { status: "ERROR", result: "refName is required." };
+        const kindRaw = String(args.kind ?? "PROP").toUpperCase();
+        const asset = await db.blenderAsset.findFirst({
+          where: { projectId, refName, ...(isBlenderAssetKind(kindRaw) ? { kind: kindRaw } : {}) },
+          orderBy: { updatedAt: "desc" },
+        }) ?? await db.blenderAsset.findFirst({ where: { projectId, refName }, orderBy: { updatedAt: "desc" } });
+        if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - design one first with blender_asset_build.` };
+        let issueIds: string[] | undefined;
+        if (args.issueIds !== undefined) {
+          try {
+            const parsed = JSON.parse(String(args.issueIds));
+            if (Array.isArray(parsed)) issueIds = parsed.map(String);
+          } catch {
+            return { status: "ERROR", result: "issueIds must be a JSON array of issue ids." };
+          }
+        }
+        const res = await fixIssues(asset.id, issueIds);
+        if (!res.ok) return { status: "ERROR", result: res.error ?? "the fix pass failed" };
+        if (res.attempted === 0) return { status: "OK", result: `${res.refName} has no open issues to fix - run design_audit for the current standing.` };
+        const re = res.reAudit ? `Re-audit: ${res.reAudit.state} at ${Math.round(res.reAudit.overall * 100)}%.` : "";
+        return { status: "OK", result: `DESIGN FIX landed: ${res.refName} v${res.versionBefore} -> v${res.versionAfter}. ${res.fixed}/${res.attempted} issue(s) cleared by the re-audit${res.stillOpen ? `, ${res.stillOpen} still flagged (the re-audit is the judge - see design_status)` : ""}. ${re}\n${res.fixLog.slice(-600)}` };
+      }
+
+      case "design_status": {
+        const status = await designStatus(projectId);
+        const sev = status.bySeverity;
+        if (status.assets.length === 0) {
+          return { status: "OK", result: "No designs on file yet - the design loop starts with blender_asset_build." };
+        }
+        const assetLines = status.assets.map((a) => `  ${a.kind.toLowerCase()} ${a.refName}: ${a.status} v${a.version}${a.qualityScore !== null ? `, quality ${Math.round(a.qualityScore * 100)}%` : ", never audited (design_audit)"}`);
+        const issueLines = status.openIssues.map((i) => `  ${i.severity} ${i.kind} on ${i.refName}: ${i.note}${i.fixNote ? ` (fix note: ${i.fixNote.slice(0, 90)})` : ""}`);
+        const reviewLines = status.reviews.slice(0, 5).map((r) => `  ${r.createdAt.slice(0, 16)}Z ${r.targetRef} ${r.state}${r.overall !== null ? ` ${Math.round(r.overall * 100)}%` : ""}`);
+        return { status: "OK", result: `DESIGN STATUS: ${Object.entries(sev).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(", ") || "no"} open issue(s) across ${status.assets.length} asset(s).\nAssets:\n${assetLines.join("\n")}\n${issueLines.length ? `Open issues:\n${issueLines.join("\n")}\n` : "No open issues.\n"}Recent audits:\n${reviewLines.join("\n")}` };
       }
 
       case "render_shot": {
@@ -3027,8 +3197,38 @@ export async function executeTool(
   }
 }
 
+/** The DESIGN context line (Iteration 51): the self-review standing
+ * the director reads before promising any design work. */
+function designContextLine(
+  project: {
+    blenderAssets: Array<{ kind: string; refName: string; status: string; version: number; qualityScore: number | null }>;
+    designPresets: Array<{ kind: string; name: string; usageCount: number }>;
+  },
+  openIssues: Array<{ refName: string; severity: string; kind: string; note: string }>,
+  latestReview: { state: string; overall: number | null; targetRef: string } | null,
+): string | null {
+  const lib = project.blenderAssets;
+  const ready = lib.filter((a) => a.status === "READY");
+  const presets = project.designPresets;
+  const parts: string[] = [];
+  const libLine = lib.length === 0
+    ? "library empty (design the cast, sets, props and creatures with blender_asset_build)"
+    : `library ${lib.length} assets, ${ready.length} ready (${ready.map((a) => `${a.kind.toLowerCase()} ${a.refName} v${a.version}${a.qualityScore !== null ? ` @${Math.round(a.qualityScore * 100)}%` : ""}`).join(", ")})`;
+  parts.push(libLine);
+  if (presets.length > 0) {
+    parts.push(`presets: ${presets.map((p) => `${p.kind.toLowerCase()} '${p.name}'x${p.usageCount}`).join(", ")}`);
+  }
+  if (latestReview) {
+    parts.push(`latest audit: ${latestReview.targetRef} ${latestReview.state}${latestReview.overall !== null ? ` ${(latestReview.overall * 100).toFixed(0)}%` : ""}`);
+  }
+  if (openIssues.length > 0) {
+    parts.push(`${openIssues.length} OPEN issue(s): ${openIssues.map((i) => `${i.severity} ${i.kind} on ${i.refName} (${i.note.slice(0, 60)})`).join("; ")}`);
+  }
+  return parts.join(" - ");
+}
+
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -3067,6 +3267,8 @@ export async function buildCompactContext(projectId: string) {
       panelEmbeddings: { orderBy: { worst: "asc" as const }, take: 5, include: { shot: { include: { scene: { include: { episode: { include: { season: true } } } } } } } },
       loras: { include: { _count: { select: { shots: true } } } },
       artists: { include: { _count: { select: { shots: true } } } },
+      blenderAssets: { orderBy: [{ kind: "asc" as const }, { refName: "asc" as const }] },
+      designPresets: { orderBy: { updatedAt: "desc" as const }, take: 12 },
     },
   }),
     canonHealthData(projectId).catch(() => null),
@@ -3080,6 +3282,9 @@ export async function buildCompactContext(projectId: string) {
     db.renderJob.count({ where: { projectId, status: "REVIEW", evaluation: { isNot: null } } }).catch(() => 0),
     db.comment.count({ where: { projectId, resolved: false } }).catch(() => 0),
     db.comment.findMany({ where: { projectId, resolved: false }, orderBy: { createdAt: "desc" as const }, take: 3 }).catch(() => []),
+    // The design loop (Iteration 51): the self-review standing.
+    db.designIssue.findMany({ where: { projectId, status: { in: ["OPEN", "FIXING"] } }, orderBy: { severity: "asc" as const }, take: 8 }).catch(() => []),
+    db.designReview.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
   ]);
   if (!project) return null;
 
@@ -3190,5 +3395,6 @@ export async function buildCompactContext(projectId: string) {
       project.approvalGate || openCommentCount > 0
         ? `human gate ${project.approvalGate ? "ARMED (an APPROVED inspection parks the render; only a creator's approve releases it)" : "off"} - ${gateHeldCount} render(s) awaiting creator approval - ${openCommentCount} unresolved thread(s) the crew is having${openComments.length ? `: ${openComments.map((c) => `${c.authorName} on ${c.anchorType} "${c.body.slice(0, 70)}"`).join(" | ")}` : ""}`
         : null,
+    design: designContextLine(project, openDesignIssues, latestDesignReview),
   };
 }

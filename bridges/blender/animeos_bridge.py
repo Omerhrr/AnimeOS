@@ -1257,6 +1257,329 @@ def build_designed_set(bpy, scn, env, mats, job_id):
     return report
 
 
+# ── v5.0 DESIGN ANYTHING: props and creatures ────────────────
+# The asset library used to cover only the cast and the sets; a
+# production-grade show is also carried by its PROPS (the spirit
+# sword, the flying vessel, the sect seal) and its CREATURES (the
+# spirit beast, the serpent elder). These deterministic builders
+# follow the same contract as the figure/set builders: design DNA
+# in, real geometry + materials out, zero per-job randomness (the
+# only seed is the DNA itself, so the same design rebuilds true).
+
+def _rune_markers(bpy, scn, count, path_pts, mat, size=0.05):
+    """Small emissive quads placed along a path (blade fuller, staff
+    shaft, artifact ring). Path points are (x, y, z) tuples."""
+    n = max(0, int(count))
+    made = 0
+    if n == 0 or len(path_pts) < 2:
+        return made
+    for i in range(n):
+        t = i / max(1, n - 1) if n > 1 else 0.5
+        # walk the polyline segment containing t
+        seg = min(int(t * (len(path_pts) - 1)), len(path_pts) - 2)
+        lt = t * (len(path_pts) - 1) - seg
+        p0, p1 = path_pts[seg], path_pts[seg + 1]
+        x = p0[0] + (p1[0] - p0[0]) * lt
+        y = p0[1] + (p1[1] - p0[1]) * lt
+        z = p0[2] + (p1[2] - p0[2]) * lt
+        rune = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(x, y, z), )
+        rune.scale = (size * 1.6, size, size)
+        rune.rotation_euler = (0.0, 0.0, 0.0)
+        rune.name = f"Rune{made + 1}"
+        rune.data.materials.append(mat)
+        made += 1
+    return made
+
+
+def build_designed_prop(bpy, scn, dna, job_id="prop-build"):
+    """The DESIGNED prop (v5.0): a real, named object hierarchy for
+    the prop DNA - blade + guard + grip + pommel for weapons, body +
+    bands + base for artifacts and relics, hull + deck + mast for
+    vessels, with emissive rune markers where the design text claims
+    energy. Returns a report dict (the builder asserts on it)."""
+    ptype = str(dna.get("propType") or "generic")
+    size = float(dna.get("size") or 1.0)
+    glow = dna.get("glowStrength", 1.0)
+    glow_s = float(glow) if glow is not None else 1.0
+
+    body_hex = dna.get("bodyColor", "#4a4f58")
+    accent_hex = dna.get("accentColor", "#a8842c")
+    glow_hex = dna.get("glowColor", "#5eead4")
+    metal = float(dna.get("metallic", 0.55) or 0.0)
+    rough = float(dna.get("roughness", 0.38) or 0.8)
+
+    body = principled_mat(bpy, "PropBodyMat", body_hex, rough, metal)
+    accent = principled_mat(bpy, "PropAccentMat", accent_hex, max(0.2, rough * 0.7), min(1.0, metal + 0.2))
+    glow_mat = emission_mat(bpy, "PropGlowMat", glow_hex, max(0.4, glow_s)) if glow_s > 0 else body
+    dark = principled_mat(bpy, "PropDarkMat", shade_hex(body_hex, 0.45), 0.6, 0.2)
+
+    report = {"propType": ptype, "parts": 0, "runes": 0}
+    parts = 0
+
+    def part(ob, name, mat=None):
+        nonlocal parts
+        ob.name = name
+        ob.data.materials.append(mat if mat is not None else body)
+        try:
+            bpy.ops.object.shade_smooth()
+        except Exception:  # noqa: BLE001
+            pass
+        parts += 1
+        return ob
+
+    if ptype in ("sword", "saber"):
+        # blade: a tapered prism along +Z, fuller line as a thin inset
+        blade = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, size * 0.52), )
+        blade.scale = (0.035 * size, 0.012 * size, size * 0.46)
+        part(blade, "Blade", body)
+        tip = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=4, radius1=0.05 * size, radius2=0.0, depth=0.12 * size, location=(0, 0, size * 0.98), )
+        tip.rotation_euler = (0.0, 0.0, math.radians(45))
+        tip.scale = (0.9, 0.28, 1.0)
+        part(tip, "BladeTip", body)
+        if ptype == "saber":
+            # single-edge curve: a slightly bowed spine bead-run
+            for k in range(4):
+                t = k / 3.0
+                spine = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=2, radius=0.014 * size, location=(0.02 * size * math.sin(t * math.pi), 0, size * (0.28 + t * 0.6)), )
+                part(spine, f"Spine{k + 1}", accent)
+        guard = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=16, radius=0.075 * size, depth=0.028 * size, location=(0, 0, size * 0.045), )
+        part(guard, "Guard", accent)
+        grip = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.022 * size, depth=0.2 * size, location=(0, 0, -size * 0.065), )
+        part(grip, "Grip", dark)
+        pommel = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=12, ring_count=8, radius=0.03 * size, location=(0, 0, -size * 0.17), )
+        part(pommel, "Pommel", accent)
+        path = [(0, 0, size * 0.12), (0, 0, size * 0.85)]
+        report["runes"] = _rune_markers(bpy, scn, int(dna.get("runes", 0) or 0), path, glow_mat, size=0.018 * size)
+        report["anchor"] = (0, 0, size * 0.3)  # grip point a hand would hold
+
+    elif ptype == "spear":
+        shaft = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.016 * size, depth=size * 0.92, location=(0, 0, 0), )
+        part(shaft, "Shaft", dark)
+        head = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=8, radius1=0.05 * size, radius2=0.0, depth=0.22 * size, location=(0, 0, size * 0.56), )
+        part(head, "Spearhead", body)
+        collar = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.03 * size, depth=0.05 * size, location=(0, 0, size * 0.44), )
+        part(collar, "Collar", accent)
+        tassel_r = 0.035 * size
+        for k in range(6):
+            a = k * (2 * math.pi / 6)
+            tassel = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(math.cos(a) * tassel_r, math.sin(a) * tassel_r, size * 0.4), )
+            tassel.scale = (0.006 * size, 0.006 * size, 0.07 * size)
+            tassel.rotation_euler = (0.0, 0.0, a)
+            part(tassel, f"Tassel{k + 1}", accent)
+        endcap = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=10, ring_count=6, radius=0.02 * size, location=(0, 0, -size * 0.47), )
+        part(endcap, "EndCap", accent)
+        path = [(0, 0, size * 0.06), (0, 0, size * 0.4)]
+        report["runes"] = _rune_markers(bpy, scn, int(dna.get("runes", 0) or 0), path, glow_mat, size=0.015 * size)
+        report["anchor"] = (0, 0, -size * 0.2)
+
+    elif ptype == "vessel":
+        hull = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, size * 0.06), )
+        hull.scale = (size * 0.16, size * 0.42, size * 0.045)
+        part(hull, "Hull", body)
+        prow = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=6, radius1=0.1 * size, radius2=0.0, depth=0.3 * size, location=(0, size * 0.5, size * 0.06), )
+        prow.rotation_euler = (math.radians(90), 0, 0)
+        prow.scale = (1.0, 0.5, 0.42)
+        part(prow, "Prow", accent)
+        deck = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, size * 0.105), )
+        deck.scale = (size * 0.13, size * 0.36, size * 0.008)
+        part(deck, "Deck", accent)
+        mast = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=10, radius=0.012 * size, depth=size * 0.34, location=(0, 0, size * 0.26), )
+        part(mast, "Mast", dark)
+        banner = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, -0.02 * size, size * 0.36), )
+        banner.scale = (0.1 * size, 0.004 * size, 0.12 * size)
+        part(banner, "Banner", accent)
+        for k in range(3):
+            lantern = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=2, radius=0.02 * size, location=((k - 1) * size * 0.09, -size * 0.3, size * 0.13), )
+            part(lantern, f"Lantern{k + 1}", glow_mat if glow_s > 0 else accent)
+        path = [(0, size * 0.42, size * 0.06), (0, size * 0.48, size * 0.075)]
+        report["runes"] = _rune_markers(bpy, scn, int(dna.get("runes", 0) or 0), path, glow_mat, size=0.02 * size)
+        report["anchor"] = (0, 0, size * 0.11)
+
+    elif ptype in ("artifact", "relic"):
+        core_r = 0.1 * size
+        core = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=16, ring_count=12, radius=core_r, location=(0, 0, size * 0.55), )
+        part(core, "Core", glow_mat if glow_s > 0 else body)
+        rings = 2 if ptype == "artifact" else 1
+        for r_i in range(rings):
+            ring = prim(scn, bpy.ops.mesh.primitive_torus_add, major_radius=(0.16 + r_i * 0.05) * size, minor_radius=0.012 * size, location=(0, 0, size * 0.55), )
+            ring.rotation_euler = (math.radians(90 + r_i * 32), 0, math.radians(r_i * 48))
+            part(ring, f"Ring{r_i + 1}", accent)
+        if ptype == "relic":
+            base = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=16, radius=0.16 * size, depth=0.09 * size, location=(0, 0, size * 0.045), )
+            part(base, "Base", dark)
+            stele = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, size * 0.3), )
+            stele.scale = (0.11 * size, 0.035 * size, 0.19 * size)
+            part(stele, "Stele", body)
+            path = [(0, -0.038 * size, size * 0.22), (0, -0.038 * size, size * 0.42)]
+        else:
+            stand = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=12, radius1=0.09 * size, radius2=0.03 * size, depth=0.16 * size, location=(0, 0, size * 0.36), )
+            part(stand, "Stand", dark)
+            path = [(0, 0, size * 0.42), (0, 0, size * 0.52)]
+        report["runes"] = _rune_markers(bpy, scn, int(dna.get("runes", 0) or 0), path, glow_mat, size=0.02 * size)
+        report["anchor"] = (0, 0, size * 0.55)
+
+    else:  # generic: a designed crate/bundle composition, still real parts
+        box = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, size * 0.18), )
+        box.scale = (size * 0.2, size * 0.14, size * 0.16)
+        part(box, "Body", body)
+        lid = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, size * 0.36), )
+        lid.scale = (size * 0.21, size * 0.15, size * 0.02)
+        part(lid, "Lid", accent)
+        strap = prim(scn, bpy.ops.mesh.primitive_torus_add, major_radius=size * 0.145, minor_radius=0.008 * size, location=(0, 0, size * 0.18), )
+        strap.rotation_euler = (0.0, math.radians(90), 0.0)
+        part(strap, "Strap", dark)
+        report["anchor"] = (0, 0, size * 0.2)
+
+    if dna.get("ornate"):
+        # finial beads at the report anchor height, deterministic ring
+        for k in range(6):
+            a = k * (2 * math.pi / 6)
+            bead = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=10, ring_count=6, radius=0.016 * size, location=(report["anchor"][0] + math.cos(a) * 0.05 * size, report["anchor"][1] + math.sin(a) * 0.05 * size, report["anchor"][2] - 0.08 * size), )
+            part(bead, f"Finial{k + 1}", accent)
+
+    report["parts"] = parts
+    return report
+
+
+def build_designed_creature(bpy, scn, dna, job_id="creature-build"):
+    """The DESIGNED creature (v5.0): archetype quadruped / serpent /
+    bird from the creature DNA - segmented bodies, necks, tails, legs,
+    wings, horns and spines as named parts a rigger can grab, with
+    emissive eyes where the spirit energy asks for them. Returns a
+    report dict (the builder asserts on it)."""
+    archetype = str(dna.get("archetype") or "quadruped")
+    size = float(dna.get("size") or 2.0)
+    glow_s = float(dna.get("glowStrength", 0.35) or 0.35)
+
+    hide_hex = dna.get("hideColor", "#3d4a44")
+    belly_hex = dna.get("bellyColor", "#5a6a5e")
+    accent_hex = dna.get("accentColor", "#8a7448")
+    glow_hex = dna.get("glowColor", "#ff5e6d")
+
+    hide = principled_mat(bpy, "HideMat", hide_hex, 0.72)
+    belly = principled_mat(bpy, "BellyMat", belly_hex, 0.8)
+    accent = principled_mat(bpy, "CreatureAccentMat", accent_hex, 0.5, 0.1)
+    glow_mat = emission_mat(bpy, "CreatureGlowMat", glow_hex, max(0.8, glow_s * 2.0)) if glow_s > 0.5 else principled_mat(bpy, "CreatureGlowMat", glow_hex, 0.3)
+
+    report = {"archetype": archetype, "parts": 0}
+    parts = 0
+
+    def part(ob, name, mat=None):
+        nonlocal parts
+        ob.name = name
+        ob.data.materials.append(mat if mat is not None else hide)
+        try:
+            bpy.ops.object.shade_smooth()
+        except Exception:  # noqa: BLE001
+            pass
+        parts += 1
+        return ob
+
+    def eye(name, loc):
+        e = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=10, ring_count=8, radius=0.035 * size, location=loc, )
+        return part(e, name, glow_mat)
+
+    if archetype == "serpent":
+        seg_n = 7
+        coil_r = 0.32 * size
+        for k in range(seg_n):
+            t = k / (seg_n - 1)
+            a = t * math.pi * 1.5
+            seg = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=14, ring_count=10, radius=0.11 * size * (0.7 + 0.5 * math.sin(t * math.pi)), location=(math.cos(a) * coil_r, math.sin(a) * coil_r * 0.6, 0.09 * size + 0.02 * size * math.sin(t * math.pi * 2)), )
+            part(seg, f"Coil{k + 1}", hide if k % 2 == 0 else belly)
+        neck = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=10, radius=0.05 * size, depth=0.34 * size, location=(coil_r + 0.1 * size, 0, 0.26 * size), )
+        neck.rotation_euler = (0.0, math.radians(-24), 0.0)
+        part(neck, "Neck", hide)
+        head = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=14, ring_count=10, radius=0.085 * size, location=(coil_r + 0.22 * size, 0, 0.4 * size), )
+        part(head, "Head", hide)
+        jaw = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=6, radius1=0.045 * size, radius2=0.0, depth=0.14 * size, location=(coil_r + 0.34 * size, 0, 0.39 * size), )
+        jaw.rotation_euler = (0.0, math.radians(90), 0.0)
+        part(jaw, "Snout", belly)
+        eye("EyeL", (coil_r + 0.24 * size, 0.05 * size, 0.44 * size))
+        eye("EyeR", (coil_r + 0.24 * size, -0.05 * size, 0.44 * size))
+        if dna.get("spines"):
+            for k in range(5):
+                spine = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=5, radius1=0.02 * size, radius2=0.0, depth=0.07 * size, location=(coil_r * math.cos(k / 4.0 * math.pi * 1.5), coil_r * 0.6 * math.sin(k / 4.0 * math.pi * 1.5), 0.19 * size), )
+                part(spine, f"Spine{k + 1}", accent)
+        if dna.get("horns"):
+            for s_i, sgn in ((1, 1.0), (2, -1.0)):
+                horn = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=6, radius1=0.02 * size, radius2=0.0, depth=0.12 * size, location=(coil_r + 0.18 * size, sgn * 0.05 * size, 0.5 * size), )
+                horn.rotation_euler = (math.radians(-18), 0, sgn * math.radians(14))
+                part(horn, f"Horn{s_i}", accent)
+
+    elif archetype == "bird":
+        body = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=16, ring_count=12, radius=0.16 * size, location=(0, 0, 0.42 * size), )
+        body.scale = (1.0, 1.5, 1.0)
+        part(body, "Body", hide)
+        chest = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=12, ring_count=9, radius=0.11 * size, location=(0, 0.08 * size, 0.38 * size), )
+        part(chest, "Chest", belly)
+        neck = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=10, radius=0.045 * size, depth=0.3 * size, location=(0, 0.12 * size, 0.62 * size), )
+        part(neck, "Neck", hide)
+        head = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=14, ring_count=10, radius=0.075 * size, location=(0, 0.14 * size, 0.78 * size), )
+        part(head, "Head", hide)
+        beak = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=8, radius1=0.03 * size, radius2=0.0, depth=0.11 * size, location=(0, 0.24 * size, 0.78 * size), )
+        beak.rotation_euler = (math.radians(90), 0, 0)
+        part(beak, "Beak", accent)
+        eye("EyeL", (0.05 * size, 0.18 * size, 0.81 * size))
+        eye("EyeR", (-0.05 * size, 0.18 * size, 0.81 * size))
+        wing_span = 0.55 * size
+        for s_i, sgn in ((1, 1.0), (2, -1.0)):
+            wing = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(sgn * wing_span * 0.55, 0.02 * size, 0.46 * size), )
+            wing.scale = (wing_span * 0.5, 0.2 * size, 0.02 * size)
+            wing.rotation_euler = (0.0, sgn * math.radians(-14), 0.0)
+            part(wing, f"Wing{s_i}", accent)
+        tail = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=6, radius1=0.09 * size, radius2=0.0, depth=0.3 * size, location=(0, -0.3 * size, 0.4 * size), )
+        tail.rotation_euler = (math.radians(-90), 0, 0)
+        tail.scale = (1.0, 0.4, 1.0)
+        part(tail, "Tail", accent)
+        for leg_i in (1, 2):
+            leg = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=8, radius=0.014 * size, depth=0.2 * size, location=((leg_i - 1.5) * 0.06 * size, 0.05 * size, 0.18 * size), )
+            part(leg, f"Leg{leg_i}", accent)
+            claw = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=8, ring_count=6, radius=0.025 * size, location=((leg_i - 1.5) * 0.06 * size, 0.05 * size, 0.08 * size), )
+            part(claw, f"Claw{leg_i}", accent)
+
+    else:  # quadruped (and the honest generic fallback)
+        body = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=16, ring_count=12, radius=0.2 * size, location=(0, 0, 0.5 * size), )
+        body.scale = (1.0, 1.9, 0.9)
+        part(body, "Body", hide)
+        belly = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=12, ring_count=9, radius=0.16 * size, location=(0, 0, 0.42 * size), )
+        belly.scale = (0.9, 1.7, 0.6)
+        part(belly, "Underbelly", belly)
+        neck = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=10, radius=0.08 * size, depth=0.26 * size, location=(0, 0.3 * size, 0.66 * size), )
+        neck.rotation_euler = (math.radians(-32), 0, 0)
+        part(neck, "Neck", hide)
+        head = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=14, ring_count=10, radius=0.11 * size, location=(0, 0.4 * size, 0.76 * size), )
+        head.scale = (0.9, 1.25, 0.85)
+        part(head, "Head", hide)
+        snout = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=8, radius1=0.055 * size, radius2=0.0, depth=0.12 * size, location=(0, 0.52 * size, 0.72 * size), )
+        snout.rotation_euler = (math.radians(90), 0, 0)
+        part(snout, "Snout", belly)
+        eye("EyeL", (0.055 * size, 0.44 * size, 0.8 * size))
+        eye("EyeR", (-0.055 * size, 0.44 * size, 0.8 * size))
+        tail = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=8, radius=0.03 * size, depth=0.4 * size, location=(0, -0.4 * size, 0.56 * size), )
+        tail.rotation_euler = (math.radians(64), 0, 0)
+        part(tail, "Tail", hide)
+        for leg_i, (lx, ly) in enumerate(((0.1, 0.22), (-0.1, 0.22), (0.1, -0.24), (-0.1, -0.24))):
+            upper = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=8, radius=0.032 * size, depth=0.3 * size, location=(lx * size, ly * size, 0.28 * size), )
+            part(upper, f"Leg{leg_i + 1}", hide)
+            paw = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=10, ring_count=6, radius=0.045 * size, location=(lx * size, ly * size, 0.05 * size), )
+            paw.scale = (1.0, 1.3, 0.6)
+            part(paw, f"Paw{leg_i + 1}", accent)
+        if dna.get("spines"):
+            for k in range(6):
+                t = -0.28 + k * 0.11
+                spine = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=5, radius1=0.025 * size, radius2=0.0, depth=(0.09 - abs(t) * 0.1) * size, location=(0, t * size, 0.68 * size), )
+                part(spine, f"Spine{k + 1}", accent)
+        if dna.get("horns"):
+            for s_i, sgn in ((1, 1.0), (2, -1.0)):
+                horn = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=6, radius1=0.028 * size, radius2=0.0, depth=0.18 * size, location=(sgn * 0.06 * size, 0.38 * size, 0.92 * size), )
+                horn.rotation_euler = (math.radians(-14), 0, sgn * math.radians(24))
+                part(horn, f"Horn{s_i}", accent)
+
+    report["parts"] = parts
+    return report
+
+
 # ── v4.1 ASSET LIBRARY: load DESIGNED .blend assets built at design
 #    time (bridges/blender/asset_builder.py + the DSH designer loop)
 #    instead of rebuilding procedurally per job. Missing files fall
@@ -1478,6 +1801,39 @@ def worker_run(job_file):
                     rock = bpy.context.active_object
                     rock.scale = (1.0, 0.8 + rng() * 0.4, 0.6 + rng() * 0.5)
                     rock.data.materials.append(mat)
+
+        # ── v5.0: DESIGNED props and creatures named by the shot text
+        #    ride the payload and load as real library assets at a
+        #    deterministic foreground line (never stacked, never boxes) ──
+        asset_props = assets_p.get("props") if isinstance(assets_p.get("props"), list) else []
+        props_loaded = []
+        for k, entry in enumerate(asset_props):
+            if not isinstance(entry, dict):
+                continue
+            p = entry.get("path")
+            if not isinstance(p, str) or not p or not os.path.isfile(p):
+                state.setdefault("assetNotes", []).append(f"{entry.get('name', 'prop')}: file missing - skipped honestly")
+                continue
+            try:
+                before = set(scn.objects)
+                load_blend_objects(bpy, scn, p)
+                fresh = [o for o in scn.objects if o not in before and o.type == "MESH"]
+                if not fresh:
+                    continue
+                # one empty anchors the prop group so placement is
+                # deterministic and the pieces move as one
+                parent = bpy.data.objects.new(f"PropAnchor{k + 1}", None)
+                scn.collection.objects.link(parent)
+                for ob in fresh:
+                    ob.parent = parent
+                ang = (k - (len(asset_props) - 1) / 2) * 0.7
+                parent.location = (math.sin(ang) * 2.6, -1.9 - (k % 2) * 0.9, 0.0)
+                parent.rotation_euler = (0.0, 0.0, math.radians(-12 + k * 14))
+                props_loaded.append(str(entry.get("name", f"prop{k + 1}")))
+            except Exception as exc:  # noqa: BLE001
+                state.setdefault("assetNotes", []).append(f"{entry.get('name', 'prop')}: load failed: {exc}")
+        if props_loaded:
+            state["propsLoaded"] = props_loaded
 
         # ── subject: the DESIGNED hero when cast DNA arrived (posed or
         #    standing), the legacy stand-in on pose shots without DNA,

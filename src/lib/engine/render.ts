@@ -197,11 +197,15 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     // ASSET LIBRARY: READY .blend assets for this exact cast and
     // environment ride every payload - the worker loads the DESIGNED
     // asset instead of rebuilding procedurally (missing names are
-    // honestly absent and the worker falls back to the DNA builders)
+    // honestly absent and the worker falls back to the DNA builders).
+    // DESIGNED props and creatures ride too when the shot text names
+    // them: a shot that says "the Azure Seal cracks" gets the Azure
+    // Seal asset.
     const assetRefs = await assetsForRender(
       projectId,
       cast.map((c) => c.name),
       shot.scene.environment?.name ?? null,
+      `${shot.description ?? ""} ${shot.scene.title ?? ""}`,
     );
 
     const payload = {
@@ -229,7 +233,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         rimLightIntensity: shot.scene.rimLightIntensity,
         ...(env ? { environment: env } : {}),
       },
-      ...((assetRefs.cast.length > 0 || assetRefs.environment) ? { assets: assetRefs } : {}),
+      ...((assetRefs.cast.length > 0 || assetRefs.environment || assetRefs.props.length > 0) ? { assets: assetRefs } : {}),
       project: {
         title: project?.title ?? "AnimeOS",
         visualStyle: project?.visualStyle ?? "DONGHUA",

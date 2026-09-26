@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { db } from "@/lib/db";
 import ZAI from "z-ai-web-dev-sdk";
-import { characterDesignDna, environmentDna } from "@/lib/animation/design";
+import { characterDesignDna, environmentDna, propDna, creatureDna } from "@/lib/animation/design";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
 
@@ -26,7 +26,12 @@ import { runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
 const LIBRARY_ROOT = path.join(process.cwd(), "assets", "blender");
 const PREVIEW_PUBLIC_DIR = path.join(process.cwd(), "public", "assets-blender");
 
-export type BlenderAssetKind = "CHARACTER" | "ENVIRONMENT";
+export type BlenderAssetKind = "CHARACTER" | "ENVIRONMENT" | "PROP" | "CREATURE";
+export const BLENDER_ASSET_KINDS: BlenderAssetKind[] = ["CHARACTER", "ENVIRONMENT", "PROP", "CREATURE"];
+
+export function isBlenderAssetKind(v: string): v is BlenderAssetKind {
+  return (BLENDER_ASSET_KINDS as string[]).includes(v);
+}
 
 export interface BuildAssetResult {
   ok: boolean;
@@ -45,7 +50,7 @@ function slugOf(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "asset";
 }
 
-async function landDesignEvent(projectId: string, summary: string, payload: unknown): Promise<void> {
+export async function landDesignEvent(projectId: string, summary: string, payload: unknown): Promise<void> {
   await db.productionEvent.create({
     data: {
       projectId,
@@ -57,7 +62,10 @@ async function landDesignEvent(projectId: string, summary: string, payload: unkn
   }).catch(() => {});
 }
 
-/** Resolve the design DNA for a character or environment from the DB rows. */
+/** Resolve the design DNA for any of the four kinds from the DB rows.
+ * CHARACTER/ENVIRONMENT resolve from their dedicated tables; PROP and
+ * CREATURE resolve from the production's Asset registry (create_asset
+ * rows: PROP/EFFECT/VEHICLE categories for props, CREATURE for beasts). */
 async function designDnaFor(projectId: string, kind: BlenderAssetKind, refName: string) {
   if (kind === "CHARACTER") {
     const character = await db.character.findFirst({
@@ -77,29 +85,60 @@ async function designDnaFor(projectId: string, kind: BlenderAssetKind, refName: 
     });
     return { ok: true as const, dna, modelSheetUrl: character.modelSheetUrl };
   }
-  const environment = await db.environment.findFirst({ where: { projectId, name: refName } });
-  if (!environment) return { ok: false as const, error: `No environment named "${refName}" in this production.` };
-  const dna = environmentDna({
-    name: environment.name,
-    description: environment.description,
-    atmosphere: environment.atmosphere,
-    timeOfDay: environment.timeOfDay,
-    weather: environment.weather,
+  if (kind === "ENVIRONMENT") {
+    const environment = await db.environment.findFirst({ where: { projectId, name: refName } });
+    if (!environment) return { ok: false as const, error: `No environment named "${refName}" in this production.` };
+    const dna = environmentDna({
+      name: environment.name,
+      description: environment.description,
+      atmosphere: environment.atmosphere,
+      timeOfDay: environment.timeOfDay,
+      weather: environment.weather,
+    });
+    return { ok: true as const, dna, modelSheetUrl: null };
+  }
+  // PROP + CREATURE resolve from the Asset registry
+  const candidates = await db.asset.findMany({
+    where: { projectId, name: { equals: refName } },
   });
+  if (candidates.length === 0) {
+    const known = await db.asset.findMany({
+      where: { projectId },
+      select: { name: true, category: true },
+      orderBy: { name: "asc" },
+      take: 12,
+    });
+    const list = known.map((a) => `${a.name} (${a.category})`).join(", ");
+    return {
+      ok: false as const,
+      error: `No registered asset named "${refName}" in this production.${list ? ` Registered assets: ${list}.` : " Register one with create_asset first."}`,
+    };
+  }
+  const row = kind === "CREATURE"
+    ? (candidates.find((c) => c.category === "CREATURE") ?? candidates[0])
+    : (candidates.find((c) => ["PROP", "EFFECT", "VEHICLE"].includes(c.category)) ?? candidates[0]);
+  if (kind === "CREATURE") {
+    const dna = creatureDna({ name: row.name, description: row.description });
+    return { ok: true as const, dna, modelSheetUrl: null };
+  }
+  const dna = propDna({ name: row.name, description: row.description, category: row.category });
   return { ok: true as const, dna, modelSheetUrl: null };
 }
 
 /**
- * Build (or rebuild) the library asset for one character/environment:
- * compiles the design DNA, runs the deterministic v4.1 builder in the
- * studio's Blender runtime, versions the .blend + preview into the
- * library, and upserts the BlenderAsset row with the full audit.
+ * Build (or rebuild) the library asset for one of the FOUR kinds
+ * (character, environment, prop, creature): compiles the design DNA,
+ * runs the deterministic v5 builder in the studio's Blender runtime,
+ * versions the .blend + preview into the library, and upserts the
+ * BlenderAsset row with the full audit. Named material recipes and
+ * lighting rigs (DesignPreset rows) are consumed and counted.
  */
 export async function buildBlenderAsset(
   projectId: string,
   kind: BlenderAssetKind,
   refName: string,
   guidance?: string | null,
+  presets?: { materialName?: string | null; lightingName?: string | null },
 ): Promise<BuildAssetResult> {
   if (!runtimeBlenderBin()) {
     return {
@@ -132,7 +171,42 @@ export async function buildBlenderAsset(
   fs.mkdirSync(workDir, { recursive: true });
   fs.writeFileSync(dnaFile, JSON.stringify(resolved.dna, null, 2));
 
-  const run = await runAssetBuilder({ kind, dnaPath: dnaFile, outDir: workDir, name: refName });
+  // DESIGNED presets: a named material recipe and/or lighting rig the
+  // designer registered with design_material / design_lighting. The
+  // recipe is law over the DNA defaults; the rig drives the preview.
+  let materialPreset: { name: string; spec: Record<string, unknown> } | null = null;
+  let lightingPreset: { name: string; spec: Record<string, unknown> } | null = null;
+  if (presets?.materialName) {
+    const row = await db.designPreset.findUnique({
+      where: { projectId_kind_name: { projectId, kind: "MATERIAL", name: presets.materialName } },
+    });
+    if (row) {
+      materialPreset = { name: row.name, spec: JSON.parse(row.spec || "{}") as Record<string, unknown> };
+      await db.designPreset.update({ where: { id: row.id }, data: { usageCount: { increment: 1 } } });
+    }
+  }
+  if (presets?.lightingName) {
+    const row = await db.designPreset.findUnique({
+      where: { projectId_kind_name: { projectId, kind: "LIGHTING", name: presets.lightingName } },
+    });
+    if (row) {
+      lightingPreset = { name: row.name, spec: JSON.parse(row.spec || "{}") as Record<string, unknown> };
+      await db.designPreset.update({ where: { id: row.id }, data: { usageCount: { increment: 1 } } });
+    }
+  }
+  const materialFile = materialPreset ? path.join(workDir, "material.json") : null;
+  if (materialPreset && materialFile) fs.writeFileSync(materialFile, JSON.stringify(materialPreset.spec, null, 2));
+  const rigFile = lightingPreset ? path.join(workDir, "rig.json") : null;
+  if (lightingPreset && rigFile) fs.writeFileSync(rigFile, JSON.stringify(lightingPreset.spec, null, 2));
+
+  const run = await runAssetBuilder({
+    kind,
+    dnaPath: dnaFile,
+    outDir: workDir,
+    name: refName,
+    ...(materialFile ? { materialPath: materialFile } : {}),
+    ...(rigFile ? { rigPath: rigFile } : {}),
+  });
   const buildMs = Date.now() - started;
 
   if (!run.ok || !run.blendPath) {
@@ -156,9 +230,11 @@ export async function buildBlenderAsset(
   }
 
   const meta = {
-    builderVersion: "v4.1",
+    builderVersion: "v5.0",
     dna: resolved.dna,
     guidance: guidance ?? null,
+    materialRecipe: materialPreset ? { name: materialPreset.name, spec: materialPreset.spec } : null,
+    lightingRig: lightingPreset ? { name: lightingPreset.name, spec: lightingPreset.spec } : null,
     objects: run.objects,
     tris: run.tris,
     buildMs,
@@ -297,15 +373,21 @@ export async function blenderAssetLibrary(projectId: string) {
   };
 }
 
-/**
- * READY library assets for one shot's detected cast + environment -
- * attached to every Blender payload (missing names honestly absent).
- */
+/** READY library assets for one shot's detected cast + environment +
+ * described props - attached to every Blender payload (missing names
+ * honestly absent). Props and creatures match when their NAME appears
+ * in the shot description or scene title (case-insensitive): a shot
+ * that says "the Azure Seal cracks" gets the Azure Seal asset. */
 export async function assetsForRender(
   projectId: string,
   castNames: string[],
   environmentName: string | null,
-): Promise<{ cast: Array<{ name: string; path: string }>; environment: { name: string; path: string } | null }> {
+  propsText?: string | null,
+): Promise<{
+  cast: Array<{ name: string; path: string }>;
+  environment: { name: string; path: string } | null;
+  props: Array<{ name: string; path: string }>;
+}> {
   const rows = await db.blenderAsset.findMany({
     where: { projectId, status: "READY" },
   });
@@ -324,10 +406,24 @@ export async function assetsForRender(
       environment = { name: environmentName, path: row.blendPath };
     }
   }
-  return { cast, environment };
+  const props: Array<{ name: string; path: string }> = [];
+  const text = (propsText ?? "").toLowerCase();
+  if (text) {
+    for (const row of rows) {
+      if (row.kind !== "PROP" && row.kind !== "CREATURE") continue;
+      const name = row.refName.toLowerCase();
+      if (name.length < 3) continue; // too generic to match honestly
+      if (text.includes(name) && row.blendPath && fs.existsSync(row.blendPath)) {
+        props.push({ name: row.refName, path: row.blendPath });
+      }
+    }
+  }
+  return { cast, environment, props };
 }
 
-/** Refresh an asset's preview from its accepted .blend (no rebuild). */
+/** Refresh an asset's preview from its accepted .blend (no rebuild).
+ * The asset's stored material recipe + lighting ride along so the
+ * preview shows the DESIGNED materials under the DESIGNED rig. */
 export async function refreshAssetPreview(assetId: string): Promise<{ ok: boolean; log: string; previewPath: string | null }> {
   const asset = await db.blenderAsset.findUnique({ where: { id: assetId } });
   if (!asset) return { ok: false, log: "asset not found", previewPath: null };
@@ -339,12 +435,27 @@ export async function refreshAssetPreview(assetId: string): Promise<{ ok: boolea
   fs.mkdirSync(outDir, { recursive: true });
   const dnaFile = path.join(outDir, "dna.json");
   fs.writeFileSync(dnaFile, JSON.stringify({ name: asset.refName }));
+  type PreviewMeta = { materialRecipe?: { spec: Record<string, unknown> } | null; lightingRig?: { spec: Record<string, unknown> } | null };
+  let meta: PreviewMeta | null = null;
+  try {
+    meta = JSON.parse(asset.meta || "null") as PreviewMeta;
+  } catch {
+    meta = null;
+  }
+  const materialSpec = meta?.materialRecipe?.spec ?? null;
+  const materialFile = materialSpec ? path.join(outDir, "material.json") : null;
+  if (materialFile && materialSpec) fs.writeFileSync(materialFile, JSON.stringify(materialSpec, null, 2));
+  const rigSpec = meta?.lightingRig?.spec ?? null;
+  const rigFile = rigSpec ? path.join(outDir, "rig.json") : null;
+  if (rigFile && rigSpec) fs.writeFileSync(rigFile, JSON.stringify(rigSpec, null, 2));
   const run = await runAssetBuilder({
     kind: asset.kind as BlenderAssetKind,
     dnaPath: dnaFile,
     outDir,
     name: asset.refName,
     fromBlend: asset.blendPath,
+    ...(materialFile ? { materialPath: materialFile } : {}),
+    ...(rigFile ? { rigPath: rigFile } : {}),
   });
   if (!run.ok || !run.previewPath) {
     await db.blenderAsset.update({ where: { id: assetId }, data: { buildLog: run.log.slice(-4000) } });

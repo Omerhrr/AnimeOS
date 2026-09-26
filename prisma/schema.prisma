@@ -54,6 +54,9 @@ model Project {
   panelEmbeddings  PanelEmbedding[]
   planTemplates    PlanTemplate[]
   blenderAssets    BlenderAsset[]
+  designPresets    DesignPreset[]
+  designReviews    DesignReview[]
+  designIssues     DesignIssue[]
   comments         Comment[]
   memberships      ProjectMembership[]
   invites          Invite[]
@@ -72,7 +75,7 @@ model Project {
 model BlenderAsset {
   id            String   @id @default(cuid())
   projectId     String
-  kind          String   // CHARACTER | ENVIRONMENT
+  kind          String   // CHARACTER | ENVIRONMENT | PROP | CREATURE
   refName       String   // the character's or environment's exact name
   status        String   @default("DRAFT") // DRAFT | BUILDING | READY | FAILED
   version       Int      @default(0) // bumped on every accepted build
@@ -83,12 +86,83 @@ model BlenderAsset {
   identityScore Float?   // latest vision score of the preview vs the model sheet (0..1)
   inspectNote   String?  // the vision model's note on the asset preview
   inspectedAt   DateTime?
+  qualityScore  Float?   // latest DESIGN AUDIT overall (0..1) - the self-review loop's standing grade
+  lastReviewAt  DateTime? // when the design loop last audited this asset
   meta          String?  // JSON {dna, objects, polyCount, buildMs, ...}
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviews       DesignReview[]
 
   @@unique([projectId, kind, refName])
+}
+
+// ─────────────────────────────────────────────────────────────
+// DESIGN MASTERY LAYER (the self-correcting design loop)
+//
+// DesignPreset: the studio's named MATERIAL recipes (Principled BSDF
+//   parameter sets) and LIGHTING rigs (key/fill/rim energy + color)
+//   the designer designs once and reuses across every build.
+// DesignReview: one audit of one library asset (or the whole
+//   library) against the quality bar - per-criterion scores plus a
+//   verdict, landed by design_audit.
+// DesignIssue: one concrete finding (severity + kind + note) with a
+//   lifecycle (OPEN -> FIXING -> FIXED/WONTFIX) the design_fix pass
+//   works through and the re-audit confirms. This is how the studio
+//   checks back on its own designs, fixes them and proves the fix.
+// ─────────────────────────────────────────────────────────────
+model DesignPreset {
+  id         String   @id @default(cuid())
+  projectId  String
+  kind       String   // MATERIAL | LIGHTING
+  name       String
+  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params
+  usageCount Int      @default(0) // builds that consumed this preset
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, name])
+}
+
+model DesignReview {
+  id          String   @id @default(cuid())
+  projectId   String
+  assetId     String?  // null = library-wide audit
+  targetRef   String   // the asset's refName, or LIBRARY for a sweep
+  kind        String   // CHARACTER | ENVIRONMENT | PROP | CREATURE | LIBRARY
+  state       String   @default("RUNNING") // RUNNING | PASSED | NEEDS_WORK
+  bar         Float    @default(0.72) // the quality bar this audit judged against
+  overall     Float?   // 0..1 weighted overall from the criteria
+  verdict     String?  // JSON {criteria, issues[], note, provider}
+  issuesFound Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  asset       BlenderAsset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  issues      DesignIssue[]
+
+  @@index([projectId, createdAt])
+}
+
+model DesignIssue {
+  id        String    @id @default(cuid())
+  projectId String
+  reviewId  String
+  assetId   String?
+  refName   String
+  severity  String    // CRITICAL | MAJOR | MINOR
+  kind      String    // GEOMETRY | MATERIAL | SILHOUETTE | PROPORTION | PALETTE | LIGHTING | DETAIL | IDENTITY
+  note      String
+  status    String    @default("OPEN") // OPEN | FIXING | FIXED | WONTFIX
+  fixNote   String?   // what the fix pass did (or why WONTFIX)
+  fixedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  review    DesignReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, status])
 }
 
 model Season {

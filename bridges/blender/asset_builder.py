@@ -1,9 +1,11 @@
 # ─────────────────────────────────────────────────────────────
-# AnimeOS ASSET BUILDER (v4.1) - the design-time Blender pass
+# AnimeOS ASSET BUILDER (v5.0) - the design-time Blender pass
 #
 # Builds a LIBRARY ASSET (.blend) for one design DNA: the DESIGNED
-# character (v4.0 figure builder, full v3.x rig contract) or the
-# DESIGNED environment set, saved as a persistent, versionable
+# character (v4.0 figure builder, full v3.x rig contract), the
+# DESIGNED environment set, the DESIGNED prop (v5.0 weapons,
+# artifacts, vessels, relics) or the DESIGNED creature (v5.0
+# quadruped / serpent / bird) - saved as a persistent, versionable
 # asset the render worker can load instead of rebuilding
 # procedurally. Geometry and materials ONLY go into the file - the
 # worker keeps ownership of lighting, weather, sky and camera, so
@@ -11,7 +13,15 @@
 #
 # Run headless:
 #   blender -b -P asset_builder.py -- --kind CHARACTER \
-#     --dna <dna.json> --out <dir> [--name "Lin Yue"]
+#     --dna <dna.json> --out <dir> [--name "Lin Yue"] \
+#     [--material <recipe.json>] [--rig <rig.json>]
+#
+# --material is a DESIGNED material recipe (design_material): the
+#   builder applies it to the asset's primary materials after the
+#   build (a recipe is law over the DNA defaults).
+# --rig is a DESIGNED lighting rig (design_lighting): it drives the
+#   PREVIEW rig only (key/fill/rim energy + color + camera) - the
+#   saved asset still carries no lights.
 #
 # After the .blend is saved the script stages its own neutral
 # preview rig (3-point light + camera, NOT saved into the asset)
@@ -55,12 +65,28 @@ def main():
     dna_path = str(args.get("dna", ""))
     out_dir = str(args.get("out", os.getcwd()))
     from_blend = str(args.get("blend", ""))
+    material_path = str(args.get("material", ""))
+    rig_path = str(args.get("rig", ""))
     os.makedirs(out_dir, exist_ok=True)
 
     dna = {}
     if dna_path:
         with open(dna_path, "r", encoding="utf-8") as fh:
             dna = json.load(fh)
+    recipe = None
+    if material_path:
+        try:
+            with open(material_path, "r", encoding="utf-8") as fh:
+                recipe = json.load(fh)
+        except Exception:  # noqa: BLE001
+            recipe = None
+    rig = None
+    if rig_path:
+        try:
+            with open(rig_path, "r", encoding="utf-8") as fh:
+                rig = json.load(fh)
+        except Exception:  # noqa: BLE001
+            rig = None
 
     # the v4.0/v4.1 builders live next to this script
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -127,8 +153,49 @@ def main():
         report = bridge.build_designed_set(bpy, scn, dna, {}, "asset-build")
         if not isinstance(report, dict) or not report.get("terrain"):
             fail("set builder returned no report")
+    elif kind == "PROP":
+        report = bridge.build_designed_prop(bpy, scn, dna)
+        if not isinstance(report, dict) or not report.get("parts"):
+            fail("prop builder returned no parts")
+    elif kind == "CREATURE":
+        report = bridge.build_designed_creature(bpy, scn, dna)
+        if not isinstance(report, dict) or not report.get("parts"):
+            fail("creature builder returned no parts")
     elif not from_blend:
         fail(f"unsupported kind {kind}")
+
+    # DESIGNED material recipe is law over the DNA defaults: apply it
+    # to the asset's primary materials AFTER the build (the builder
+    # names its primary 'PropBodyMat' / 'HideMat' / 'RobeMat').
+    if isinstance(recipe, dict):
+        targets = recipe.get("targets") or {
+            "CHARACTER": ["RobeMat"],
+            "PROP": ["PropBodyMat"],
+            "CREATURE": ["HideMat"],
+        }.get(kind, [])
+        for mat_name in targets:
+            mat = bpy.data.materials.get(mat_name)
+            if not mat or not mat.use_nodes:
+                continue
+            b = mat.node_tree.nodes.get("Principled BSDF")
+            if not b:
+                continue
+            if recipe.get("baseColor"):
+                b.inputs["Base Color"].default_value = (*bridge.hex_to_rgb(recipe["baseColor"]), 1.0)
+            if recipe.get("roughness") is not None:
+                b.inputs["Roughness"].default_value = max(0.0, min(1.0, float(recipe["roughness"])))
+            if recipe.get("metallic") is not None:
+                b.inputs["Metallic"].default_value = max(0.0, min(1.0, float(recipe["metallic"])))
+            if recipe.get("ior") is not None and "IOR" in b.inputs:
+                b.inputs["IOR"].default_value = max(0.0, min(2.0, float(recipe["ior"])))
+            if recipe.get("emissionColor"):
+                glow = bpy.data.materials.get("PropGlowMat") or bpy.data.materials.get("CreatureGlowMat")
+                if glow and glow.use_nodes:
+                    em = glow.node_tree.nodes.get("Emission")
+                    if em:
+                        em.inputs[0].default_value = (*bridge.hex_to_rgb(recipe["emissionColor"]), 1.0)
+                    if recipe.get("emissionStrength") is not None and em:
+                        em.inputs[1].default_value = max(0.0, float(recipe["emissionStrength"]))
 
     obj_count = len(scn.objects)
     tris = 0
@@ -164,31 +231,84 @@ def main():
         scn.collection.objects.link(ob)
         return ob
 
-    key = add_light("PreviewKey", (2.2, -2.6, 3.0), 420)
+    # DESIGNED lighting rig (design_lighting) drives the preview rig:
+    # key/fill/rim energy + color + background strength + camera lens.
+    # Defaults stay the neutral studio 3-point setup.
+    rig_params = rig if isinstance(rig, dict) else {}
+
+    def _rig_color(key, fallback):
+        v = rig_params.get(key)
+        if isinstance(v, str) and len(v) >= 7:
+            try:
+                return bridge.hex_to_rgb(v)
+            except Exception:  # noqa: BLE001
+                return fallback
+        return fallback
+
+    key = add_light("PreviewKey", (2.2, -2.6, 3.0), float(rig_params.get("keyEnergy", 420)), color=_rig_color("keyColor", (1.0, 0.96, 0.9)))
     key.rotation_euler = (math.radians(52), 0, math.radians(38))
-    fill = add_light("PreviewFill", (-2.8, -1.4, 1.6), 140, color=(0.75, 0.82, 0.95))
+    fill = add_light("PreviewFill", (-2.8, -1.4, 1.6), float(rig_params.get("fillEnergy", 140)), color=_rig_color("fillColor", (0.75, 0.82, 0.95)))
     fill.rotation_euler = (math.radians(78), 0, math.radians(-64))
-    rim = add_light("PreviewRim", (0.4, 2.8, 2.4), 220, color=(0.92, 0.86, 1.0))
+    rim = add_light("PreviewRim", (0.4, 2.8, 2.4), float(rig_params.get("rimEnergy", 220)), color=_rig_color("rimColor", (0.92, 0.86, 1.0)))
     rim.rotation_euler = (math.radians(-40), 0, math.radians(180))
+    if bg and isinstance(rig_params.get("bgStrength"), (int, float)):
+        bg.inputs[1].default_value = float(rig_params["bgStrength"])
 
     cam_data = bpy.data.cameras.new("PreviewCam")
-    cam_data.lens = 55 if kind == "CHARACTER" else 32
+    default_lens = 55 if kind in ("CHARACTER", "PROP") else (85 if kind == "CREATURE" else 32)
+    cam_data.lens = float(rig_params.get("camLens", default_lens))
     cam = bpy.data.objects.new("PreviewCam", cam_data)
     scn.collection.objects.link(cam)
     scn.camera = cam
     # track-to framing: aim at the asset's visual center (a character's
     # chest, the set's midline) - manual euler tables kept cropping
     target = bpy.data.objects.new("PreviewTarget", None)
-    target.location = (0.0, 0.0, 0.52) if kind == "CHARACTER" else (0.0, 0.0, 0.8)
+    if kind == "CHARACTER":
+        target.location = (0.0, 0.0, 0.52)
+    elif kind == "PROP":
+        target.location = (0.0, 0.0, 0.35)
+    elif kind == "CREATURE":
+        target.location = (0.0, 0.0, 0.45)
+    else:
+        target.location = (0.0, 0.0, 0.8)
     scn.collection.objects.link(target)
     con = cam.constraints.new("TRACK_TO")
     con.target = target
     con.track_axis = "TRACK_NEGATIVE_Z"
     con.up_axis = "UP_Y"
-    if kind == "CHARACTER":
-        cam.location = (1.5, -1.9, 1.05)
+
+    # FRAME THE ACTUAL BUILD: compute the asset's world bounding box
+    # and back the camera off along a 3/4 view far enough to hold the
+    # whole asset (magic per-kind camera tables cropped big swords and
+    # put the camera inside large serpents). Distance from the real
+    # dimensions + the lens' vertical FOV - professional framing that
+    # adapts to any size the design asks for.
+    import mathutils
+
+    mins = [1e9, 1e9, 1e9]
+    maxs = [-1e9, -1e9, -1e9]
+    for ob in scn.objects:
+        if ob.type == "MESH":
+            for corner in ob.bound_box:
+                wc = ob.matrix_world @ mathutils.Vector(corner)
+                for i in range(3):
+                    mins[i] = min(mins[i], wc[i])
+                    maxs[i] = max(maxs[i], wc[i])
+    if mins[0] < 1e8:
+        center = mathutils.Vector(
+            ((mins[0] + maxs[0]) / 2, (mins[1] + maxs[1]) / 2, (mins[2] + maxs[2]) / 2)
+        )
+        dims = (maxs[0] - mins[0], maxs[1] - mins[1], maxs[2] - mins[2])
+        radius = 0.5 * math.sqrt(dims[0] ** 2 + dims[1] ** 2 + dims[2] ** 2) or 0.8
     else:
-        cam.location = (6.8, -7.2, 3.6)
+        center = mathutils.Vector((0, 0, 0.5))
+        radius = 0.8
+    target.location = (center.x, center.y, center.z)
+    lens = cam_data.lens
+    half_fov = math.atan(12.0 / lens)  # 24mm sensor, half height 12mm
+    dist = (radius * 1.18) / math.tan(half_fov)
+    direction = mathutils.Vector((0.55, -1.0, 0.38)).normalized()  # 3/4 above
+    cam.location = center + direction * dist
 
     scn.render.engine = "CYCLES"
     scn.cycles.device = "CPU"

@@ -344,7 +344,7 @@ export interface BlenderRuntimeStatus {
 
 export interface BlenderAssetRow {
   id: string;
-  kind: "CHARACTER" | "ENVIRONMENT";
+  kind: "CHARACTER" | "ENVIRONMENT" | "PROP" | "CREATURE";
   refName: string;
   status: string;
   version: number;
@@ -353,7 +353,44 @@ export interface BlenderAssetRow {
   identityScore: number | null;
   inspectNote: string | null;
   inspectedAt: string | null;
+  qualityScore?: number | null;
   updatedAt: string;
+}
+
+export interface DesignIssueRow {
+  id: string;
+  refName: string;
+  severity: string;
+  kind: string;
+  note: string;
+  status: string;
+  fixNote: string | null;
+  createdAt: string;
+}
+
+export interface DesignStatusInfo {
+  openIssues: DesignIssueRow[];
+  bySeverity: { CRITICAL: number; MAJOR: number; MINOR: number };
+  reviews: Array<{
+    id: string;
+    targetRef: string;
+    kind: string;
+    state: string;
+    overall: number | null;
+    bar: number;
+    issuesFound: number;
+    verdict: string | null;
+    createdAt: string;
+  }>;
+  assets: Array<{
+    id: string;
+    kind: string;
+    refName: string;
+    status: string;
+    version: number;
+    qualityScore: number | null;
+    lastReviewAt: string | null;
+  }>;
 }
 
 export interface BlenderAssetLibraryInfo {
@@ -653,8 +690,11 @@ export const api = {
   bridgeStatus: () => j<BridgeStatusInfo>("/api/bridge"),
   blenderRuntime: () => j<BlenderRuntimeStatus>("/api/blender-runtime"),
   blenderAssets: (projectId: string) => j<BlenderAssetLibraryInfo>(`/api/blender-assets?projectId=${projectId}`),
-  blenderAssetAction: (body: { action: "build" | "inspect" | "preview"; projectId: string; kind?: string; refName?: string }) =>
+  blenderAssetAction: (body: { action: "build" | "inspect" | "preview"; projectId: string; kind?: string; refName?: string; material?: string; lighting?: string }) =>
     j<Record<string, unknown>>("/api/blender-assets", { method: "POST", body: JSON.stringify(body) }),
+  designReviews: (projectId: string) => j<DesignStatusInfo>(`/api/design-reviews?projectId=${projectId}`),
+  designReviewAction: (body: { action: "audit" | "fix" | "retire"; projectId: string; refName?: string; kind?: string; library?: boolean; issueIds?: string[]; note?: string }) =>
+    j<Record<string, unknown>>("/api/design-reviews", { method: "POST", body: JSON.stringify(body) }),
 
   // commands
   createProject: (body: Record<string, unknown>) => j<{ id: string }>("/api/projects", { method: "POST", body: JSON.stringify(body) }),

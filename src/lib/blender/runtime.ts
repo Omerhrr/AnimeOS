@@ -486,11 +486,13 @@ function parseBuilderMarker(log: string, marker: string): string | null {
  * production runs both go through here.
  */
 export async function runAssetBuilder(opts: {
-  kind: "CHARACTER" | "ENVIRONMENT";
+  kind: "CHARACTER" | "ENVIRONMENT" | "PROP" | "CREATURE";
   dnaPath: string;
   outDir: string;
   name?: string;
   fromBlend?: string; // preview an existing asset instead of rebuilding
+  materialPath?: string; // a DESIGNED material recipe (design_material)
+  rigPath?: string; // a DESIGNED lighting rig (design_lighting)
   timeoutMs?: number;
 }): Promise<BuilderRunResult> {
   const bin = runtimeBlenderBin();
@@ -505,6 +507,8 @@ export async function runAssetBuilder(opts: {
   const argv = ["-b", "-P", builder, "--", "--kind", opts.kind, "--dna", opts.dnaPath, "--out", opts.outDir];
   if (opts.name) argv.push("--name", opts.name);
   if (opts.fromBlend) argv.push("--blend", opts.fromBlend);
+  if (opts.materialPath) argv.push("--material", opts.materialPath);
+  if (opts.rigPath) argv.push("--rig", opts.rigPath);
 
   const run = await new Promise<{ code: number | null; out: string; timedOut: boolean }>((resolve) => {
     const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } });

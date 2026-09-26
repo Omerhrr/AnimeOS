@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireProjectAccess } from "@/lib/access";
 import {
   blenderAssetLibrary, buildBlenderAsset, inspectBlenderAsset, refreshAssetPreview,
+  isBlenderAssetKind,
   type BlenderAssetKind,
 } from "@/lib/blender/assets";
 
@@ -11,6 +12,7 @@ import {
 //
 // GET  /api/blender-assets?projectId=...            - the library
 // POST {action: build|inspect|preview, kind, refName} - design loop
+//      build also accepts material/lighting recipe names
 // ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -23,7 +25,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let body: { action?: string; projectId?: string; kind?: string; refName?: string } = {};
+  let body: { action?: string; projectId?: string; kind?: string; refName?: string; material?: string; lighting?: string } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -37,12 +39,15 @@ export async function POST(request: Request) {
 
   if (action === "build") {
     const kind = String(body.kind ?? "").toUpperCase();
-    if (kind !== "CHARACTER" && kind !== "ENVIRONMENT") {
-      return NextResponse.json({ error: "kind must be CHARACTER or ENVIRONMENT" }, { status: 400 });
+    if (!isBlenderAssetKind(kind)) {
+      return NextResponse.json({ error: "kind must be CHARACTER, ENVIRONMENT, PROP or CREATURE" }, { status: 400 });
     }
     const refName = String(body.refName ?? "").trim();
     if (!refName) return NextResponse.json({ error: "refName is required" }, { status: 400 });
-    const res = await buildBlenderAsset(projectId, kind as BlenderAssetKind, refName);
+    const res = await buildBlenderAsset(projectId, kind as BlenderAssetKind, refName, null, {
+      materialName: String(body.material ?? "").trim() || null,
+      lightingName: String(body.lighting ?? "").trim() || null,
+    });
     return NextResponse.json(res, { status: res.ok ? 200 : 500 });
   }
   if (action === "inspect") {
