@@ -138,7 +138,7 @@ model AssetExport {
 model DesignPreset {
   id         String   @id @default(cuid())
   projectId  String
-  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE | SCULPT
+  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE | SCULPT | FX
   name       String
   spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats, SEQUENCE = named chain of grammar slots, SCULPT = layered seeded surface-carving spec
   usageCount Int      @default(0) // builds that consumed this preset
@@ -278,6 +278,12 @@ model Shot {
   // plays frame by frame - a shot is DIRECTED (crane down, then push
   // in), not a single move held for the whole clip.
   grammar     String?  // JSON: Array<{ move, from, to, poseStart?, poseEnd?, note? }>
+  // DIRECTED FX (iteration 56): a JSON array of named effect programs
+  // [{kind: TRAIL|BURST|AURA|MOTES, color?, intensity?, beats?, note?}]
+  // the worker compiles into real emissive geometry that answers the
+  // grammar beats - the trail rides the blade, the burst lands at the
+  // cut, the aura breathes with the wind call, the motes drift.
+  fx          String?  // JSON: Array<{ kind, color?, intensity?, beats?, note? }>
   // Per-shot style LoRA fine-tuning - selects a production LoRA adapter
   // whose trigger tokens are injected into this shot's art prompt.
   loraId      String?

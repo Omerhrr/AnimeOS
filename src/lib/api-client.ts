@@ -92,6 +92,7 @@ export interface ShotRow {
   poseStart?: string | null;
   poseEnd?: string | null;
   grammar?: string | null;
+  fx?: string | null;
   duration: number;
   lighting: string | null;
   status: string;

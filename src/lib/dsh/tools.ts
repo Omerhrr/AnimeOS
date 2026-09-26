@@ -36,6 +36,7 @@ import { compileMotionSpec } from "@/lib/blender/motion";
 import { compileVariationSpec } from "@/lib/blender/variation";
 import { runRoundtrip, isExportFormat } from "@/lib/blender/roundtrip";
 import { compileGrammarSpec, serializeGrammar, BUILT_IN_GRAMMARS, GRAMMAR_MOVES, findBuiltInGrammar } from "@/lib/animation/grammar";
+import { compileFxSpec, serializeFx, BUILT_IN_FX, FX_KINDS, findBuiltInFx } from "@/lib/animation/fx";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -729,6 +730,23 @@ export const TOOL_DEFS: ToolDef[] = [
       targetLang: "string - BCP-47 language tag like en-US, ja-JP, ko-KR, zh-TW",
       episodeNumber: "number (optional - translate this episode's dialogue; defaults to the latest episode)",
       srt: "string (optional - a raw SRT document to translate instead of the episode's dialogue)",
+    },
+  },
+  {
+    name: "design_fx",
+    description: "Design a NAMED FX PROGRAM and register it as the production's spectacle law: 1..6 directed effects the world performs ON the grammar beats - TRAIL (the blade's energy ribbon, flaring with the pose velocity), BURST (a shockwave ring + shards igniting when the playhead enters a bound beat, the spectacle landing where the cut lands), AURA (a qi shell at the figure's waist breathing with the beat's wind call, the same driver the cloth hangs from) and MOTES (a seeded drift of spirit dust through the volume). Each program carries an optional hex color (default: the hero's energy color), an intensity 0..1 and a beat binding (ALL or 0-based grammar beat indices). Named fx programs are how a show keeps its spectacle consistent; apply one with set_shot_fx.",
+    args: {
+      name: "string - the fx program name (e.g. 'Crimson Slash')",
+      programs: "JSON array string, e.g. [{\"kind\":\"TRAIL\",\"intensity\":0.9},{\"kind\":\"BURST\",\"color\":\"#f97316\",\"beats\":[1]}] - kinds: TRAIL | BURST | AURA | MOTES",
+    },
+  },
+  {
+    name: "set_shot_fx",
+    description: "CALL THE WORLD ONTO A SHOT'S BEATS: apply a NAMED FX program (a design_fx preset or a built-in - The Slash, Cultivator's Aura, The Aftermath, Storm Break) or an inline program array to one shot. The render worker compiles them into real emissive geometry driven by the same beat clock as the camera and the cloth: the trail rides the blade, the burst lands at the cut, the aura breathes with the wind, the motes drift through the holds. Pass fx as empty string to clear the shot back to a clean stage.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      fx: "string - a design_fx preset name, a built-in name (The Slash | Cultivator's Aura | The Aftermath | Storm Break), or an inline JSON array of programs; empty string clears",
     },
   },
 ];
@@ -2668,6 +2686,79 @@ export async function executeTool(
         if (untouched > 0) reads.push(`${untouched} shot(s) beyond the plan left untouched`);
         if (unused > 0) reads.push(`${unused} slot(s) had no shot to direct`);
         return { status: "OK", result: `SEQUENCE DIRECTED (${sourceName}) across ${directed} shot(s) of Scene ${scene.number}:\n${flow.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each shot's beats with the cloth riding them.` : ` Queue renders with render_shot per shot, or re-run with render:true.`}` };
+      }
+
+      case "design_fx": {
+        const compiled = compileFxSpec({ name: String(args.name ?? ""), programs: args.programs });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const { name } = compiled.spec;
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "FX", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "FX", name } },
+          create: { projectId, kind: "FX", name, spec: JSON.stringify(compiled.spec) },
+          update: { spec: JSON.stringify(compiled.spec) },
+        });
+        const shape = compiled.spec.programs.map((p) => `${p.kind}${p.beats !== "ALL" && Array.isArray(p.beats) ? `@${p.beats.join(".")}` : ""}${p.color ? ` ${p.color}` : ""}`).join(" + ");
+        await landDesignEvent(projectId, `FX program '${name}' ${existed ? "updated" : "designed"} (${shape})`, { presetId: preset.id });
+        return { status: "OK", result: `FX preset '${name}' ${existed ? "updated" : "registered"}: ${shape}. Apply it to any shot with set_shot_fx fx:'${name}' - the worker compiles it into real emissive geometry that answers the grammar beats (the trail rides the blade, the burst lands at the cut, the aura breathes with the wind).` };
+      }
+
+      case "set_shot_fx": {
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
+        if (args.sceneNumber) {
+          const scenes = await db.scene.findMany({
+            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+            orderBy: { createdAt: "desc" },
+          });
+          scene = scenes[0] ?? null;
+        }
+        if (!scene) scene = await latestScene(projectId);
+        if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        const fxArg = String(args.fx ?? "").trim();
+        if (!fxArg) {
+          await db.shot.update({ where: { id: shot.id }, data: { fx: null } });
+          await landDesignEvent(projectId, `FX cleared on Shot ${String(shot.number).padStart(3, "0")} (back to a clean stage)`, { shotId: shot.id });
+          return { status: "OK", result: `FX cleared on Shot ${String(shot.number).padStart(3, "0")} - the stage renders clean again.` };
+        }
+        // resolve: saved FX preset -> built-in -> inline programs
+        const saved = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "FX", name: fxArg } } });
+        let programsRaw: string;
+        let sourceName: string;
+        if (saved) {
+          try {
+            const parsedSpec = JSON.parse(saved.spec || "null") as { programs?: unknown } | null;
+            if (!parsedSpec?.programs) throw new Error("corrupt");
+            programsRaw = JSON.stringify(parsedSpec.programs);
+            sourceName = `preset '${fxArg}'`;
+          } catch {
+            return { status: "ERROR", result: `FX preset '${fxArg}' is corrupt - redesign it with design_fx.` };
+          }
+        } else {
+          const builtin = findBuiltInFx(fxArg);
+          if (builtin) {
+            programsRaw = JSON.stringify(builtin.programs);
+            sourceName = `built-in '${builtin.name}'`;
+          } else if (fxArg.startsWith("[")) {
+            programsRaw = fxArg;
+            sourceName = "inline programs";
+          } else {
+            const registry = [
+              ...BUILT_IN_FX.map((f) => `'${f.name}' (built-in)`),
+              ...((await db.designPreset.findMany({ where: { projectId, kind: "FX" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+            ];
+            return { status: "ERROR", result: `No fx program named '${fxArg}'. Registry: ${registry.join(", ")} - or pass an inline programs JSON array like [{"kind":"TRAIL","intensity":0.9}]. The worker performs: ${FX_KINDS.join(", ")}.` };
+          }
+        }
+        const compiled = compileFxSpec({ name: `${shot.id.slice(-6)}-shot-fx`, programs: programsRaw });
+        if (!compiled.ok) return { status: "ERROR", result: `the ${sourceName} programs do not compile: ${compiled.error}` };
+        await db.shot.update({ where: { id: shot.id }, data: { fx: serializeFx(compiled.spec) } });
+        const shape = compiled.spec.programs.map((p) => `${p.kind}${p.beats !== "ALL" && Array.isArray(p.beats) ? `@beat ${p.beats.join(",")}` : ""}${p.color ? ` in ${p.color}` : ""}`).join(" + ");
+        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} ignites with ${sourceName}: ${shape}`, { shotId: shot.id, fx: sourceName });
+        return { status: "OK", result: `THE BEATS IGNITE on Shot ${String(shot.number).padStart(3, "0")} with ${sourceName}: ${shape}. The next render_shot of this shot compiles the programs into real emissive geometry riding the same beat clock as the camera and the cloth - direct the lens first (set_shot_grammar) so the beats have something to answer.` };
       }
 
       case "design_audit": {

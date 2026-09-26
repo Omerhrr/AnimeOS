@@ -2327,6 +2327,30 @@ def worker_run(job_file):
                 "hair": sum(1 for c in sec_chains if c["kind"] == "HAIR"),
             }
 
+        # ── v8.0 DIRECTED FX: THE BEATS IGNITE - the world answers the
+        #    grammar with the same clock. Programs normalize honestly
+        #    (a bad note is skipped with a note, never a crash), the
+        #    rig compiles into real emissive objects, and the frame
+        #    loop below drives them per frame. ──
+        fx_rig = None
+        fx_programs = []
+        fx_raw = shot.get("fx")
+        if isinstance(fx_raw, list) and fx_raw:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import fx_pass
+            fx_programs, fx_notes = fx_pass.normalize_fx(fx_raw, len(grammar) if grammar else 1)
+            if fx_programs:
+                fx_rig = fx_pass.build_fx_rig(bpy, scn, fx_programs, figure,
+                                              (hero or {}).get("bladeColor") or "#5eead4", job_id)
+                state["fx"] = {
+                    "programs": len(fx_programs),
+                    "kinds": fx_rig["kinds"],
+                    "boundBeats": sorted(fx_rig["all_bound"]),
+                }
+                all_notes = fx_notes + fx_rig["notes"]
+                if all_notes:
+                    state["fx"]["notes"] = all_notes
+
         # ── AnimeOS scene params: designed sky when the environment
         #    DNA carries one, legacy fog world otherwise ──
         fog = float(scene_p.get("fogDensity", 0.45))
@@ -2443,6 +2467,24 @@ def worker_run(job_file):
                 # wind call and pose changes drive the spring chains
                 apply_secondary_motion(figure, sec_chains, grammar, shot,
                                        t, t_sec, 1.0 / fps, pose_s, pose_e, pose_t)
+            # v8.0: THE WORLD ANSWERS THE BEATS - the burst lands where
+            # the cut lands, the trail flares with the pose velocity,
+            # the aura breathes with the beat's wind call, the motes
+            # drift. The pose velocity mirrors the springs' own drag
+            # measure (the eased pose row's rate of change).
+            if fx_rig:
+                if grammar:
+                    fbi, fbeat = _beat_at(grammar, t)
+                    fwind = float(fbeat.get("wind") or 0.0)
+                else:
+                    fbi, fwind = -1, 0.0
+                fx_vel = 0.0
+                if pose_s or pose_e:
+                    fx_row = lerp_pose(pose_s or "STANCE", pose_e or "STANCE", pose_t)
+                    if fx_rig["prev_row"] is not None and fps > 0:
+                        fx_vel = sum(abs(fx_row[i] - fx_rig["prev_row"][i]) for i in range(12)) * fps
+                    fx_rig["prev_row"] = fx_row
+                fx_pass.apply_fx(fx_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel)
             boost = 0.0
             for (start, dur, alpha) in windows:
                 if start <= t_sec <= start + dur:
@@ -2465,6 +2507,16 @@ def worker_run(job_file):
             rep = state.setdefault("secondary", {"chains": len(sec_chains)})
             rep["windBeats"] = sorted(st["wind_beats"])
             rep["maxDeflection"] = round(st["maxd"], 1)
+
+        # fx report: what the world actually did for the beats - the
+        # bursts that fired, the trail's peak glow, the widest ring
+        # (honest evidence: a burst that never fired reports 0)
+        if fx_rig:
+            frep = state.setdefault("fx", {"programs": len(fx_programs), "kinds": fx_rig["kinds"]})
+            frep["burstsFired"] = fx_rig["fired"]
+            frep["trailPeak"] = round(fx_rig["trail_peak"], 1)
+            frep["maxRing"] = round(fx_rig["max_ring"], 2)
+            frep["boundBeats"] = sorted(fx_rig["all_bound"])
 
         # ── encode ──
         state["stage"] = "Blender: encoding clip"

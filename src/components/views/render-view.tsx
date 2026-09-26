@@ -1004,6 +1004,25 @@ export function RenderView({ project }: { project: StudioProject }) {
                         </span>
                       );
                     })()}
+                    {(() => {
+                      // DIRECTED FX chips: the effect programs answering the beats
+                      const fx = (() => {
+                        try {
+                          const f = job.shot?.fx ? (JSON.parse(job.shot.fx) as Array<{ kind?: string }>) : null;
+                          return f && Array.isArray(f) && f.length > 0 ? f : null;
+                        } catch { return null; }
+                      })();
+                      if (!fx) return null;
+                      return (
+                        <span className="inline-flex items-center gap-1 flex-wrap" title="Directed FX - the world answers the grammar beats on the same clock (trail rides the blade, burst lands at the cut, aura breathes with the wind, motes drift through the holds)">
+                          {fx.map((p, i) => (
+                            <span key={i} className="rounded px-1 py-[1px] text-[8px] font-bold tracking-wider border bg-amber-400/10 border-amber-400/40 text-amber-300">
+                              {p.kind ?? "FX"}
+                            </span>
+                          ))}
+                        </span>
+                      );
+                    })()}
                     <span
                       title={
                         job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"

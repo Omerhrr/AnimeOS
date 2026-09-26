@@ -112,7 +112,7 @@ async function main() {
   check("A4 the five design tools are registered", designTools.every((t) => tools.includes(`name: "${t}"`)));
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry stands at 70 tools (the sculpt tools joined in iter 55)", toolCount === 70, `count=${toolCount}`);
+  check("A5 the registry stands at 72 tools (the fx tools joined in iter 56)", toolCount === 72, `count=${toolCount}`);
   check("A6 the build tool now takes four kinds + recipe names", tools.includes('kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE",') && tools.includes("material: \"string (optional - a design_material recipe name") && tools.includes("lighting: \"string (optional - a design_lighting rig name"));
 
   const builder = readFileSync("bridges/blender/asset_builder.py", "utf8");

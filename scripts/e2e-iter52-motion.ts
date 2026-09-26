@@ -119,7 +119,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A3 the registry stands at 70 tools (the sculpt tools joined in iter 55)", toolCount === 70, `count=${toolCount}`);
+  check("A3 the registry stands at 72 tools (the fx tools joined in iter 56)", toolCount === 72, `count=${toolCount}`);
   check("A4 design_motion registers named performance law", tools.includes('name: "design_motion"') && tools.includes("hover | spin | pulse | hover-spin") && tools.includes("slither | flap | walk | prowl | breathe | idle"));
   check("A5 the build tool takes a motion preset name", tools.includes("motion: \"string (optional - a design_motion preset name"));
   check("A6 the context line reads the performing standing", tools.includes("performing") && tools.includes("MOTIONLESS (props/creatures need design_motion + a rebuild)"));

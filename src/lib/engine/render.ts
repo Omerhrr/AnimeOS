@@ -223,6 +223,10 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // (a corrupt stored grammar is sent as-is; the worker's
         // normalize_grammar degrades honestly to the whole-clip move)
         ...(shot.grammar ? (() => { try { const g = JSON.parse(shot.grammar); return Array.isArray(g) ? { grammar: g } : {}; } catch { return {}; } })() : {}),
+        // DIRECTED FX: the shot's effect programs ride the payload -
+        // the worker compiles them into real emissive geometry that
+        // answers the grammar beats (a corrupt column degrades to no fx)
+        ...(shot.fx ? (() => { try { const fx = JSON.parse(shot.fx); return Array.isArray(fx) && fx.length > 0 ? { fx } : {}; } catch { return {}; } })() : {}),
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),

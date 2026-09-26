@@ -124,7 +124,7 @@ async function main() {
   check("A12 the TOPOLOGY budget issue names the numbers", review.includes("DEFAULT_RETOPO_BUDGET") && review.includes("over its triangle budget"));
   check("A13 the fix loop carves the default sculpt + decimates back to law", review.includes("DEFAULT_SCULPT_BY_KIND") && review.includes("carved the default") && review.includes("decimated to the"));
 
-  check("A14 the registry holds 70 tools incl. design_sculpt + blender_retopo", TOOL_DEFS.length === 70 && TOOL_DEFS.some((t) => t.name === "design_sculpt") && TOOL_DEFS.some((t) => t.name === "blender_retopo"), `registry ${TOOL_DEFS.length}`);
+  check("A14 the registry holds 72 tools incl. design_fx + set_shot_fx", TOOL_DEFS.length === 72 && TOOL_DEFS.some((t) => t.name === "design_sculpt") && TOOL_DEFS.some((t) => t.name === "blender_retopo"), `registry ${TOOL_DEFS.length}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A15 the curriculum grew SCULPT IS FINISHING", prompts.includes("- SCULPT IS FINISHING") && prompts.includes("a sculpt you cannot measure is a sculpt you cannot trust"));
