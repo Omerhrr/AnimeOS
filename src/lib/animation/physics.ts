@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// DIRECTED PHYSICS (iteration 57) - THE WORLD OBEYS ITS OWN LAW
+// DIRECTED PHYSICS (iterations 57-58) - THE WORLD OBEYS ITS OWN LAW
 //
 // The camera performs the beats (the motion grammar), the cloth and
 // hair RIDE the beats (the secondary motion rig), the fx answers
@@ -24,6 +24,17 @@
 //   SWAY    - the hanging lantern: a damped pendulum driven by the
 //             beat's WIND call - the same driver the cloth hangs
 //             from - kicked at every beat boundary.
+//   REACTION- THE BODY ANSWERS THE WORLD (iteration 58, probed):
+//             the FIGURE itself answers the beat's violence - an
+//             impulse drives a damped spring on the hero's root:
+//             the body staggers AWAY from the beat's violence
+//             (Newton's third law when a strike lands on the same
+//             beat), dips, buckles (spine folds, head lags) and the
+//             spring returns it to its mark - settling to REST, and
+//             publishing the stagger velocity so the CLOTH whips
+//             with the body the same frame. Multiple REACTION
+//             programs merge into one body law (the figure has one
+//             body); the wind has no force on this law.
 //
 // Programs ride the grammar by INDEX (the beat numbers they answer)
 // or ALL; a strike lands when the playhead ENTERS a bound beat, so
@@ -37,7 +48,7 @@
 // anything the worker cannot perform.
 // ─────────────────────────────────────────────────────────────
 
-export const PHYSICS_KINDS = ["KNOCK", "DEBRIS", "SWAY"] as const;
+export const PHYSICS_KINDS = ["KNOCK", "DEBRIS", "SWAY", "REACTION"] as const;
 
 export type PhysicsKind = (typeof PHYSICS_KINDS)[number];
 
@@ -121,7 +132,7 @@ export function compilePhysicsSpec(input: {
     let target: string | null = null;
     if (p?.target !== undefined && p?.target !== null && p?.target !== "") {
       if (kind !== "KNOCK") {
-        return { ok: false, error: `program ${i + 1} (${kind}): only KNOCK takes a target - DEBRIS scatters itself and SWAY hangs its own lantern` };
+        return { ok: false, error: `program ${i + 1} (${kind}): only KNOCK takes a target - DEBRIS scatters itself, SWAY hangs its own lantern, the body staggers on its own law` };
       }
       target = String(p.target).trim().slice(0, 80);
     }
@@ -145,6 +156,7 @@ export const BUILT_IN_PHYSICS: PhysicsSpec[] = [
     programs: [
       { kind: "KNOCK", intensity: 0.8, note: "the impact sends a prop flying off the clash" },
       { kind: "DEBRIS", intensity: 0.7, note: "the floor's rubble scatters from the shockwave" },
+      { kind: "REACTION", intensity: 0.6, note: "the shockwave drives the figure back a step - the body answers the violence" },
     ],
   },
   {
@@ -164,6 +176,12 @@ export const BUILT_IN_PHYSICS: PhysicsSpec[] = [
     name: "The Shove",
     programs: [
       { kind: "KNOCK", intensity: 0.65, note: "a shove sends the nearest body tumbling" },
+    ],
+  },
+  {
+    name: "The Recoil",
+    programs: [
+      { kind: "REACTION", intensity: 0.75, note: "the blast drives the figure back - a stagger, a buckle, and the spring returns the body to its mark" },
     ],
   },
 ];

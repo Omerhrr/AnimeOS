@@ -113,11 +113,11 @@ async function main() {
 
   // ───────────────────── A. source-level checks ─────────────────────
   const physics = readFileSync("src/lib/animation/physics.ts", "utf8");
-  check("A1 the physics vocabulary is exactly the three body laws the worker performs", physics.includes('PHYSICS_KINDS = ["KNOCK", "DEBRIS", "SWAY"]'));
+  check("A1 the physics vocabulary grew to the four body laws the worker performs (iter58: REACTION joins)", physics.includes('PHYSICS_KINDS = ["KNOCK", "DEBRIS", "SWAY", "REACTION"]'));
   check("A2 the compiler clamps intensity and refuses non-numbers", physics.includes("intensity = clamp01(v);") && physics.includes("intensity must be a number 0..1"));
   check("A3 only KNOCK takes a target (a typo never reaches a shoot)", physics.includes("only KNOCK takes a target"));
   check("A4 beat bindings are ALL or bounded indices", physics.includes('beats must be "ALL" or an array of 0-based grammar beat indices') && physics.includes("n > 11"));
-  check("A5 the built-in wreckage language ships four named programs", physics.includes('name: "The Clash"') && physics.includes('name: "The Ruin"') && physics.includes('name: "The Windchime"') && physics.includes('name: "The Shove"'));
+  check("A5 the built-in wreckage language ships five named programs (iter58: The Recoil joins)", physics.includes('name: "The Clash"') && physics.includes('name: "The Ruin"') && physics.includes('name: "The Windchime"') && physics.includes('name: "The Shove"') && physics.includes('name: "The Recoil"'));
   check("A6 the column round-trips (serialize + honest parse)", physics.includes("export function serializePhysics") && physics.includes("export function parseStoredPhysics"));
 
   const bridge = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
@@ -128,7 +128,7 @@ async function main() {
   check("A11 riding props are registered by name for the knock to find", bridge.includes("prop_anchors.append") && bridge.includes('prop_anchors = []'));
 
   const physPass = readFileSync("bridges/blender/physics_pass.py", "utf8");
-  check("A12 the pass performs exactly the three body laws", physPass.includes('PHYSICS_KINDS = ("KNOCK", "DEBRIS", "SWAY")'));
+  check("A12 the pass performs exactly the four body laws (iter58: REACTION joins)", physPass.includes('PHYSICS_KINDS = ("KNOCK", "DEBRIS", "SWAY", "REACTION")'));
   check("A13 the probed law is law (gravity, restitution, friction, settle constants)", physPass.includes("GRAVITY = -9.8") && physPass.includes("RESTITUTION = 0.32") && physPass.includes("IMPACT_FRICTION = 0.72") && physPass.includes("SETTLE_SPEED = 0.08"));
   check("A14 a shallow impact grounds the body (no micro-vibration forever - the probe's lesson)", physPass.includes("too flat to bounce again: roll, friction eats it") && physPass.includes('body["grounded"] = True'));
   check("A15 the knock resolves its target honestly (named prop, auto, or a declared vessel)", physPass.includes("takes the hit") && physPass.includes("a stone vessel stands in (declared)"));
@@ -182,7 +182,7 @@ async function main() {
   check("C2 the stored programs carry kind, target and the beat binding", clashSpec?.programs?.length === 3 && clashSpec.programs[0].target === "E2E Storm Vessel" && JSON.stringify(clashSpec.programs[0].beats) === "[1]", JSON.stringify(clashSpec?.programs));
 
   const ghostKind = await T("design_physics", { name: "E2E Explosion", programs: JSON.stringify([{ kind: "EXPLOSION" }]) });
-  check("C3 an unknown kind refuses with the vocabulary", ghostKind.status === "ERROR" && ghostKind.result.includes('unknown kind "EXPLOSION"') && ghostKind.result.includes("KNOCK, DEBRIS, SWAY"), ghostKind.result.slice(0, 160));
+  check("C3 an unknown kind refuses with the vocabulary (iter58: the four-kind law)", ghostKind.status === "ERROR" && ghostKind.result.includes('unknown kind "EXPLOSION"') && ghostKind.result.includes("KNOCK, DEBRIS, SWAY, REACTION"), ghostKind.result.slice(0, 160));
   const badTarget = await T("design_physics", { name: "E2E Targeted Sway", programs: JSON.stringify([{ kind: "SWAY", target: "lantern" }]) });
   check("C4 a target on a non-KNOCK kind refuses at design time", badTarget.status === "ERROR" && badTarget.result.includes("only KNOCK takes a target"), badTarget.result.slice(0, 160));
   const badInt = await T("design_physics", { name: "E2E Bad Intensity", programs: JSON.stringify([{ kind: "DEBRIS", intensity: "heavy" }]) });

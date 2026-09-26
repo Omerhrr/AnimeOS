@@ -761,6 +761,21 @@ def apply_secondary_motion(figure, chains, grammar, shot, t, t_sec, dt, pose_s, 
         stride = math.sin(t_sec * 2.2 * math.pi * 2.0)
     tx_base = clamp(-fwd * 0.5, -10.0, 10.0) + stride * 3.0
     ty_base = clamp(lat * 26.0, -8.0, 8.0)
+    # v9.1: THE CLOTH ANSWERS THE BODY - a directed REACTION's stagger
+    # velocity (published on the figure by the physics pass the SAME
+    # frame) whips the chains with the body's jerk, so a recoil lands
+    # as robes and hair snapping after the torso - one body, one cloth
+    stg = figure.get("_stagger")
+    if stg:
+        svx = float(stg.get("vx") or 0.0)
+        svy = float(stg.get("vy") or 0.0)
+        if abs(svx) > 1e-4 or abs(svy) > 1e-4:
+            tx_base = clamp(tx_base + svy * 7.5, -12.0, 12.0)
+            ty_base = clamp(ty_base + svx * 7.5, -9.0, 9.0)
+            jerk_kick = min(1.0, float(stg.get("jerk") or 0.0) / 1.4)
+            for ch in chains:
+                ch["vel"][0] += jerk_kick * ch["gain"] * 16.0 * (0.7 + 0.3 * math.sin(ch["phase"]))
+                ch["vel"][1] += jerk_kick * ch["gain"] * 9.0 * math.sin(ch["phase"] * 1.3)
     for ch in chains:
         stiff, damp, gain, maxd = ch["stiff"], ch["damp"], ch["gain"], ch["max"]
         # the directed gust + blocking agitation, phased per chain so
@@ -2493,10 +2508,6 @@ def worker_run(job_file):
             if figure:
                 apply_pose(figure, pose_s, pose_e, pose_t, t_sec,
                            speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None)
-                # v7.2: cloth and hair RIDE THE BEATS - the active beat's
-                # wind call and pose changes drive the spring chains
-                apply_secondary_motion(figure, sec_chains, grammar, shot,
-                                       t, t_sec, 1.0 / fps, pose_s, pose_e, pose_t)
             # v8.0: THE WORLD ANSWERS THE BEATS - the burst lands where
             # the cut lands, the trail flares with the pose velocity,
             # the aura breathes with the beat's wind call, the motes
@@ -2514,15 +2525,24 @@ def worker_run(job_file):
                     fx_vel = sum(abs(fx_row[i] - fx_rig["prev_row"][i]) for i in range(12)) * fps
                 if fx_rig:
                     fx_rig["prev_row"] = fx_row
-            if fx_rig:
-                fx_pass.apply_fx(fx_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel)
-            # v9.0: THE WORLD OBEYS ITS OWN LAW - the same beat clock
+            # v9.1: THE WORLD OBEYS ITS OWN LAW - the same beat clock
             # and the same wind the camera, the springs and the fx
             # answer: a bound beat's entry strikes the knock, kicks
             # the debris and kicks the lantern; the lantern rides the
-            # wind call the cloth hangs from.
+            # wind call the cloth hangs from. The REACTION law runs
+            # BEFORE the cloth so the body's stagger is published
+            # (figure["_stagger"]) the SAME frame the robes read it -
+            # the body moves and the cloth answers, never a frame late.
             if phys_rig:
                 physics_pass.apply_physics(phys_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel, f)
+            if figure:
+                # v7.2: cloth and hair RIDE THE BEATS - the active beat's
+                # wind call and pose changes drive the spring chains,
+                # and a directed REACTION's stagger whips them with the body
+                apply_secondary_motion(figure, sec_chains, grammar, shot,
+                                       t, t_sec, 1.0 / fps, pose_s, pose_e, pose_t)
+            if fx_rig:
+                fx_pass.apply_fx(fx_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel)
             boost = 0.0
             for (start, dur, alpha) in windows:
                 if start <= t_sec <= start + dur:
@@ -2568,6 +2588,19 @@ def worker_run(job_file):
             prep["settleFrame"] = phys_rig["settle_frame"]
             prep["maxSwing"] = round(phys_rig["max_swing"], 1)
             prep["boundBeats"] = sorted(phys_rig["all_bound"])
+            # v9.1: the body's answer - the staggers that fired, how far
+            # the body actually left its mark, how far it buckled and
+            # the frame it came back to rest (honest evidence: a
+            # reaction that never fired reports 0)
+            r = phys_rig.get("reaction")
+            if r is not None:
+                prep["reaction"] = {
+                    "reactions": phys_rig.get("reactions", 0),
+                    "maxOffset": round(phys_rig.get("max_offset", 0.0), 3),
+                    "maxLean": round(phys_rig.get("max_lean", 0.0), 1),
+                    "recoverFrame": r["recover_frame"],
+                    "boundBeats": sorted(r["bound"]),
+                }
 
         # ── encode ──
         state["stage"] = "Blender: encoding clip"

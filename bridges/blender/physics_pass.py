@@ -24,6 +24,25 @@
 #             beat's WIND call - the same driver the cloth hangs
 #             from - kicked at every beat boundary, swinging until
 #             the air stills.
+#   REACTION- THE BODY ANSWERS THE WORLD (v9.1, probed): the FIGURE
+#             itself answers the beat's violence - when a bound beat
+#             is entered, an impulse drives a damped spring on the
+#             hero's root: the body staggers AWAY from the beat's
+#             violence (when a KNOCK strike or a DEBRIS kick lands on
+#             the same beat, the recoil points away from the struck
+#             body - Newton's third law; otherwise a seeded direction),
+#             the root dips, the body leans into the stagger (pitch
+#             with the backward lurch, roll with the lateral), the
+#             spine folds and the head lags opposite - and the spring
+#             returns the body to its mark, settling to REST (the
+#             frame stamped honestly; a re-stagger forgets the earlier
+#             rest). The per-frame stagger velocity is published on
+#             the figure as _stagger so the CLOTH answers the same
+#             jerk the same frame - the body moves and the robes
+#             follow. Multiple REACTION programs merge into ONE body
+#             law (the figure has one body); the wind has NO force on
+#             this law - the cloth answers the air, the body answers
+#             the violence.
 #
 # The integration law was PROBED before it shipped (the studio probes
 # first): a shallow impact must not micro-vibrate forever - the body
@@ -43,7 +62,14 @@
 import json
 import math
 
-PHYSICS_KINDS = ("KNOCK", "DEBRIS", "SWAY")
+PHYSICS_KINDS = ("KNOCK", "DEBRIS", "SWAY", "REACTION")
+
+REACTION_STIFFNESS = 46.0   # spring pulling the body back to its mark
+REACTION_DAMPING = 8.5      # underdamped on purpose: a stagger wobbles, then settles
+REACTION_SETTLE_V = 0.05    # linear stagger speed below which the body rests
+REACTION_SETTLE_X = 0.006   # offset below which the body is back on its mark
+REACTION_LEAN_GAIN = 4.2    # deg of root lean per (m/s) of stagger velocity
+REACTION_LEAN_MAX = 6.5     # deg - the body buckles, it does not capsize
 
 GRAVITY = -9.8
 RESTITUTION = 0.32      # vertical bounce retention
@@ -155,6 +181,13 @@ def normalize_physics(raw, beat_count):
             target = None
         programs.append({"kind": kind, "intensity": intensity, "beats": bound, "target": target, "index": i})
     return programs, notes
+
+
+def _unit_xy(x, y):
+    n = math.sqrt(x * x + y * y)
+    if n < 1e-9:
+        return 0.0, 0.0
+    return x / n, y / n
 
 
 def _spawn_vessel(bpy, scn, name, mat):
@@ -345,6 +378,11 @@ def build_physics_rig(bpy, scn, programs, figure, prop_anchors, job_id):
             })
             rig["kinds"].append("DEBRIS")
 
+        elif kind == "REACTION":
+            # collected - the figure has ONE body, so every REACTION
+            # program merges into a single law built after the loop
+            rig.setdefault("reaction_progs", []).append(prog)
+
         elif kind == "SWAY":
             pivot = bpy.data.objects.new(f"PhysSway{pi + 1}_Pivot", None)
             scn.collection.objects.link(pivot)
@@ -374,6 +412,34 @@ def build_physics_rig(bpy, scn, programs, figure, prop_anchors, job_id):
                 "seed_phase": rng() * 6.28, "sign": 1.0 if rng() > 0.5 else -1.0,
             })
             rig["kinds"].append("SWAY")
+
+    # ── REACTION: one body, one law - merge every program ──
+    rprogs = rig.pop("reaction_progs", [])
+    if rprogs:
+        root = figure.get("root") if isinstance(figure, dict) else None
+        if root is None:
+            notes.append("REACTION: no figure stands on the stage - skipped honestly")
+        else:
+            rbound = set()
+            inten = 0.0
+            for rp in rprogs:
+                rbound |= set(rp["beats"])
+                inten = max(inten, rp["intensity"])
+            if len(rprogs) > 1:
+                notes.append(f"{len(rprogs)} REACTION programs merged into one body law - the figure has one body")
+            rng_r = mulberry32(fnv1a(str(job_id)) ^ (0xE41 + rprogs[0]["index"]))
+            bang = rng_r() * math.pi * 2.0
+            rig["reaction"] = {
+                "root": root, "spine": figure.get("spine"), "head": figure.get("head"),
+                "figure": figure,
+                "home_rot": (root.rotation_euler.x, root.rotation_euler.y, root.rotation_euler.z),
+                "home_pos": (float(root.location.x), float(root.location.y)),
+                "off": [0.0, 0.0], "v": [0.0, 0.0],
+                "bound": rbound, "intensity": inten,
+                "dir": [math.cos(bang), math.sin(bang)],
+                "settled": True, "recover_frame": None,
+            }
+            rig["kinds"].append("REACTION")
 
     return rig
 
@@ -407,6 +473,8 @@ def apply_physics(rig, t, t_sec, dt, beat_idx, wind, vel, frame):
             _strike(body, (d[0] + (rng() - 0.5) * 0.35, d[1] + (rng() - 0.5) * 0.35), speed, up, spin, rng)
             rig["strikes"] += 1
             k["hit"] = True
+            # the body answers THIS violence: record where the hit came from
+            rig.setdefault("_beat_strikes", []).append({"pos": (body["p"][0], body["p"][1]), "speed": speed})
         for ds in rig["debris_sets"]:
             if beat_idx not in ds["bound"]:
                 continue
@@ -419,9 +487,32 @@ def apply_physics(rig, t, t_sec, dt, beat_idx, wind, vel, frame):
                 _strike(ch, (d[0] / n + jitter, d[1] / n + jitter), speed, 0.9 + 1.5 * ds["intensity"] * rng(), 6.0 + 7.0 * rng(), rng)
             ds["kicked"] = True
             rig["strikes"] += 1
+            rig.setdefault("_beat_strikes", []).append({"pos": (ds["root_pos"][0], ds["root_pos"][1]),
+                                                        "speed": 1.6 + 2.6 * ds["intensity"]})
         for sw in rig["sways"]:
             if beat_idx in sw["bound"]:
                 sw["omega"] += sw["sign"] * (1.9 + 2.4 * sw["intensity"]) * (1.0 + wind * 0.8)
+
+        # ── REACTION: the body answers the beat's violence ──
+        r = rig.get("reaction")
+        if r is not None and beat_idx in r["bound"]:
+            dx, dy = r["dir"]
+            strikes_here = rig.get("_beat_strikes") or []
+            if strikes_here:
+                # Newton's third law: recoil AWAY from where the hit came
+                # from, blended with the seeded dodge direction
+                ax_ = sum(r["home_pos"][0] - s["pos"][0] for s in strikes_here)
+                ay_ = sum(r["home_pos"][1] - s["pos"][1] for s in strikes_here)
+                ux, uy = _unit_xy(ax_, ay_)
+                if ux or uy:
+                    dx, dy = _unit_xy(ux * 0.65 + dx * 0.35, uy * 0.65 + dy * 0.35)
+            mag = 0.5 + 1.1 * r["intensity"]
+            r["v"][0] = dx * mag
+            r["v"][1] = dy * mag
+            r["settled"] = False
+            r["recover_frame"] = None  # a re-stagger forgets the earlier rest
+            rig["reactions"] = rig.get("reactions", 0) + 1
+        rig["_beat_strikes"] = []
 
     # ── KNOCK + DEBRIS: integrate every body under the probed law ──
     for k in rig["knocks"]:
@@ -449,3 +540,43 @@ def apply_physics(rig, t, t_sec, dt, beat_idx, wind, vel, frame):
         sw["theta"] += sw["omega"] * dt
         sw["pivot"].rotation_euler.y = sw["theta"]
         rig["max_swing"] = max(rig["max_swing"], abs(math.degrees(sw["theta"])))
+
+    # ── REACTION: the stagger spring - impulse, lurch, recover, REST ──
+    # (the wind has NO force here: the cloth answers the air, the body
+    # answers the violence)
+    r = rig.get("reaction")
+    if r is not None:
+        if not r["settled"]:
+            ax = -REACTION_STIFFNESS * r["off"][0] - REACTION_DAMPING * r["v"][0]
+            ay = -REACTION_STIFFNESS * r["off"][1] - REACTION_DAMPING * r["v"][1]
+            r["v"][0] += ax * dt
+            r["v"][1] += ay * dt
+            r["off"][0] += r["v"][0] * dt
+            r["off"][1] += r["v"][1] * dt
+            sp = math.sqrt(r["v"][0] * r["v"][0] + r["v"][1] * r["v"][1])
+            m = math.sqrt(r["off"][0] * r["off"][0] + r["off"][1] * r["off"][1])
+            if sp < REACTION_SETTLE_V and m < REACTION_SETTLE_X:
+                r["off"][0] = 0.0
+                r["off"][1] = 0.0
+                r["v"][0] = 0.0
+                r["v"][1] = 0.0
+                r["settled"] = True
+                r["recover_frame"] = frame  # the LAST rest is the honest one
+        off, v = r["off"], r["v"]
+        root = r["root"]
+        mag_off = math.sqrt(off[0] * off[0] + off[1] * off[1])
+        dip = -min(0.045, mag_off * 0.24)  # the body sinks into the stagger
+        root.location = (root.location.x + off[0], root.location.y + off[1], root.location.z + dip)
+        pitch = math.radians(clamp(-v[1] * REACTION_LEAN_GAIN, -REACTION_LEAN_MAX, REACTION_LEAN_MAX))
+        roll = math.radians(clamp(v[0] * REACTION_LEAN_GAIN, -REACTION_LEAN_MAX, REACTION_LEAN_MAX))
+        hr = r["home_rot"]
+        root.rotation_euler = (hr[0] + pitch, hr[1] + roll, hr[2])
+        if r["spine"] is not None:
+            r["spine"].rotation_euler.x += math.radians(clamp(-v[1] * 2.6, -5.0, 5.0))
+        if r["head"] is not None:
+            r["head"].rotation_euler.x += math.radians(clamp(v[1] * 2.0, -4.0, 4.0))  # the head lags opposite
+        jerk = math.sqrt(v[0] * v[0] + v[1] * v[1])
+        r["figure"]["_stagger"] = {"vx": v[0], "vy": v[1], "jerk": jerk}
+        rig["max_offset"] = max(rig.get("max_offset", 0.0), mag_off)
+        rig["max_lean"] = max(rig.get("max_lean", 0.0),
+                              math.degrees(math.sqrt(pitch * pitch + roll * roll)))
