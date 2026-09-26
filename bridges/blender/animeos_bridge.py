@@ -92,6 +92,18 @@
 # a time-of-day sky and key light. The same DNA drives the browser
 # preview, so both layers agree on the production's look. Without DNA
 # the v3.3 stand-in paths still run (nothing breaks for old callers).
+#
+# v7.2 is the SECONDARY MOTION pass: cloth and hair RIDE THE GRAMMAR
+# BEATS. Every designed figure's cloth parts (sash tail, skirt panels,
+# sleeves, cuffs) and hair parts (back mass, style piece, beard) are
+# wrapped in pivot empties at their hang points and driven by damped
+# springs: they drag behind the body's pose velocity, WHIP at the beat
+# boundaries (a pose jump across a cut stirs the air), billow on a
+# beat's directed WIND (grammar beats may carry wind: 0..1 - the
+# director's call for what the air is doing), sway with the blocking's
+# implied motion (a TRACKING beat means running wind, a STATIC hold is
+# near-still) and breathe on a deterministic idle breeze. Fixed dt,
+# fixed phases - the same grammar always lands the same cloth.
 
 import argparse
 import base64
@@ -516,6 +528,7 @@ def normalize_grammar(raw):
             "to": to,
             "poseStart": b.get("poseStart"),
             "poseEnd": b.get("poseEnd"),
+            "wind": max(0.0, min(1.0, float(b["wind"]))) if isinstance(b.get("wind"), (int, float)) else None,
         })
     if len(beats) < 2:
         return None
@@ -585,6 +598,189 @@ def grammar_pose_state(grammar, shot_payload, t):
     if ps or pe:
         return ps or pe, pe or ps, lt
     return shot_payload.get("poseStart"), shot_payload.get("poseEnd"), None
+
+
+# ── v7.2 PER-BEAT SECONDARY MOTION: cloth and hair ride the beats.
+#    The figure's cloth (sash tail, skirt panels, sleeves, cuffs) and
+#    hair (back mass, style piece, beard) hang from PIVOT EMPTIES at
+#    their anchors; per frame each pivot is driven by a damped spring
+#    whose target comes from the DIRECTED beat under the playhead -
+#    the beat's own WIND call, the blocking's implied motion, the
+#    body's pose velocity (cloth drags opposite), the stride when the
+#    pose walks, and an impulse at every beat boundary (a pose jump or
+#    a move change across a cut stirs the air). Fixed dt and per-chain
+#    phases keep it deterministic. ──
+
+MOVE_ENERGY = {
+    # what the AIR is doing while each move plays - a tracking shot
+    # implies running wind, a lock-off implies stillness
+    "TRACKING": 1.0, "ORBIT": 0.85, "CRANE": 0.6, "DOLLY_IN": 0.55,
+    "DOLLY_OUT": 0.5, "PAN": 0.35, "TILT_UP": 0.3, "TILT_DOWN": 0.3,
+    "STATIC": 0.08,
+}
+
+# (stiffness, damping, drive gain, max deflection deg) per chain kind:
+# cloth hangs heavy and follows through late, hair is light and snaps
+# back fast, skirt panels stay modest so they never read as legs
+SEC_KINDS = {
+    "CLOTH": (26.0, 7.5, 0.85, 16.0),
+    "SKIRT": (30.0, 8.5, 0.5, 9.0),
+    "HAIR": (42.0, 9.5, 0.62, 13.0),
+}
+
+# the shared figure vocabulary: the designed figure, the stand-in and
+# the loaded cast assets all build these part names
+SEC_PARTS = (
+    ("SashTail", "CLOTH"), ("RSleeve", "CLOTH"), ("LSleeve", "CLOTH"),
+    ("RCuff", "CLOTH"), ("LCuff", "CLOTH"),
+    ("HairBack", "HAIR"), ("HairKnot", "HAIR"), ("HairLong", "HAIR"),
+    ("HairFringe", "HAIR"),
+    ("BeardChin", "HAIR"), ("BeardJawL", "HAIR"), ("BeardJawR", "HAIR"), ("BeardLip", "HAIR"),
+)
+SEC_PREFIXES = (("SkirtPanel", "SKIRT"), ("HairTail", "HAIR"), ("HairBraid", "HAIR"))
+
+
+def _sec_kind(name):
+    for nm, kind in SEC_PARTS:
+        if name == nm:
+            return kind
+    for pre, kind in SEC_PREFIXES:
+        if name.startswith(pre):
+            return kind
+    return None
+
+
+def _subtree(root):
+    """Every descendant of root (the figure's whole hierarchy)."""
+    out = []
+    stack = [root]
+    while stack:
+        for ch in stack.pop().children:
+            out.append(ch)
+            stack.append(ch)
+    return out
+
+
+def build_secondary_rig(bpy, scn, figure):
+    """Wrap every cloth/hair part in a pivot empty at its hang point:
+    the pivot takes the part's place in the hierarchy (same parent),
+    sits at the part's TOP edge, and the part re-hangs from it - so a
+    small pivot rotation reads as cloth swinging from its anchor, not
+    as the mesh orbiting its own middle. The scan is scoped to THIS
+    figure's subtree (a second figure's robes answer their own body,
+    not the hero's). Returns the chain list (empty when the figure
+    carries no known cloth/hair parts - honest)."""
+    root = figure.get("root")
+    candidates = _subtree(root) if root is not None else list(scn.objects)
+    parts = []
+    for ob in candidates:
+        if ob.type != "MESH" or ob.parent is None:
+            continue
+        kind = _sec_kind(ob.name)
+        if kind:
+            parts.append((ob, kind))
+    if not parts:
+        return []
+    try:
+        bpy.context.view_layer.update()
+    except Exception:  # noqa: BLE001
+        pass
+    chains = []
+    for i, (ob, kind) in enumerate(parts):
+        dz = clamp(ob.dimensions.z * 0.45, 0.004, 0.16)
+        loc = (ob.location.x, ob.location.y, ob.location.z)
+        piv = bpy.data.objects.new(f"SecPiv_{ob.name}", None)
+        scn.collection.objects.link(piv)
+        piv.empty_display_size = 0.02
+        piv.parent = ob.parent
+        piv.location = (loc[0], loc[1], loc[2] + dz)
+        ob.parent = piv
+        ob.location = (loc[0], loc[1], loc[2] - dz)
+        stiff, damp, gain, maxd = SEC_KINDS[kind]
+        chains.append({
+            "piv": piv, "kind": kind, "stiff": stiff, "damp": damp,
+            "gain": gain, "max": maxd, "phase": i * 1.7,
+            "vel": [0.0, 0.0], "off": [0.0, 0.0],
+        })
+    return chains
+
+
+def apply_secondary_motion(figure, chains, grammar, shot, t, t_sec, dt, pose_s, pose_e, pose_t):
+    """Drive the cloth/hair chains for this frame: the ACTIVE grammar
+    beat decides the air (its wind call + the move's implied motion),
+    a beat boundary kicks the springs (a pose jump across the cut
+    whips the cloth - the follow-through the grammar forgot), the
+    body's pose velocity drags the chains opposite, a WALK pose adds
+    the stride sway, and a per-chain phased breeze keeps holds alive.
+    Semi-implicit damped spring at fixed dt - deterministic."""
+    if not chains:
+        return None
+    st = figure.get("_sec")
+    if st is None:
+        st = {"prev_row": None, "prev_beat": -1, "maxd": 0.0, "wind_beats": set()}
+        figure["_sec"] = st
+    # the beat under the playhead decides what the air is doing
+    if grammar:
+        bi, beat = _beat_at(grammar, t)
+        wind = float(beat.get("wind") or 0.0)
+        agit = MOVE_ENERGY.get(beat["move"], 0.3)
+        if wind > 0.0:
+            st["wind_beats"].add(bi)
+    else:
+        bi, beat = -1, None
+        wind = 0.0
+        agit = MOVE_ENERGY.get(str(shot.get("movement") or "STATIC").upper(), 0.25)
+    drive = wind * 1.45 + agit * 0.45 + 0.12  # + ambient life: holds are never frozen
+    # beat boundary: a cut stirs the air - the harder the change, the
+    # harder the whip (pose jump across the boundary + move change)
+    kick = 0.0
+    if bi != st["prev_beat"]:
+        if st["prev_beat"] >= 0:
+            kick = 0.3
+            if grammar:
+                prev = grammar[st["prev_beat"]]
+                kick += 0.7 * abs(agit - MOVE_ENERGY.get(prev["move"], 0.3))
+                a = POSE_JOINTS.get(normalize_pose(prev.get("poseEnd")) or normalize_pose(prev.get("poseStart")))
+                b = POSE_JOINTS.get(normalize_pose(beat.get("poseStart")))
+                if a and b:
+                    kick += sum(abs(b[i] - a[i]) for i in range(2, 12)) / 190.0
+        st["prev_beat"] = bi
+    kick = clamp(kick, 0.0, 1.6)
+    # body velocity: cloth drags BEHIND the body - opposite and
+    # proportional, then the spring pulls it back (follow-through)
+    row = lerp_pose(pose_s or "STANCE", pose_e or "STANCE", pose_t)
+    fwd = 0.0
+    lat = 0.0
+    if st["prev_row"] is not None and dt > 0:
+        d = [row[i] - st["prev_row"][i] for i in range(12)]
+        fwd = (d[2] + 0.55 * d[3] + 0.3 * (d[4] + d[6])) / dt
+        lat = 0.5 * d[0] / dt
+    st["prev_row"] = row
+    stride = 0.0
+    if "WALK" in (normalize_pose(pose_s) or "", normalize_pose(pose_e) or ""):
+        stride = math.sin(t_sec * 2.2 * math.pi * 2.0)
+    tx_base = clamp(-fwd * 0.5, -10.0, 10.0) + stride * 3.0
+    ty_base = clamp(lat * 26.0, -8.0, 8.0)
+    for ch in chains:
+        stiff, damp, gain, maxd = ch["stiff"], ch["damp"], ch["gain"], ch["max"]
+        # the directed gust + blocking agitation, phased per chain so
+        # the eight skirt panels never flap in lockstep
+        gust = drive * gain * (6.5 + 2.2 * math.sin(t_sec * 2.4 + ch["phase"]))
+        tx = clamp(tx_base * gain + gust, -maxd, maxd)
+        ty = clamp(ty_base * gain + gust * 0.35 * math.sin(ch["phase"] + t_sec * 1.7), -maxd, maxd)
+        if kick > 0.0:
+            ch["vel"][0] += kick * gain * 55.0 * (0.7 + 0.3 * math.sin(ch["phase"]))
+            ch["vel"][1] += kick * gain * 26.0 * math.sin(ch["phase"] * 1.3)
+        # semi-implicit damped spring, fixed dt
+        ch["vel"][0] += (stiff * (tx - ch["off"][0]) - damp * ch["vel"][0]) * dt
+        ch["vel"][1] += (stiff * (ty - ch["off"][1]) - damp * ch["vel"][1]) * dt
+        ch["off"][0] = clamp(ch["off"][0] + ch["vel"][0] * dt, -maxd, maxd)
+        ch["off"][1] = clamp(ch["off"][1] + ch["vel"][1] * dt, -maxd, maxd)
+        ch["piv"].rotation_euler = (math.radians(ch["off"][0]), math.radians(ch["off"][1]), 0.0)
+        sweep = abs(ch["off"][0]) + abs(ch["off"][1])
+        if sweep > st["maxd"]:
+            st["maxd"] = sweep
+    return st
 
 
 # ═══ WORKER MODE (runs inside a fresh headless Blender) ═══════
@@ -838,13 +1034,16 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None):
 
     # ── blade follow-through: proportional to the eased swing rate of
     # the right shoulder, clamped so fast slashes lag believably but
-    # never break the read of the pose
+    # never break the read of the pose. A figure with no weapon in
+    # hand carries blade: None - the follow-through simply has
+    # nothing to lag (a weaponless cultivator is a valid design).
     a_row = POSE_JOINTS[normalize_pose(pose_start) or "STANCE"]
     b_row = POSE_JOINTS[normalize_pose(pose_end) or "STANCE"]
     x = clamp(t, 0.0, 1.0)
     k_deriv = 12.0 * x * x if x < 0.5 else 12.0 * (1.0 - x) * (1.0 - x)
     lag = clamp((b_row[4] - a_row[4]) * k_deriv * 0.03, -12.0, 12.0)
-    figure["blade"].rotation_euler.x = math.radians(-72.0 + lag)
+    if figure.get("blade") is not None:
+        figure["blade"].rotation_euler.x = math.radians(-72.0 + lag)
 
 
 # ─── design DNA (v4.0): the DESIGNED render pass ─────────────────
@@ -2016,6 +2215,7 @@ def worker_run(job_file):
                 "beats": len(grammar),
                 "moves": [b["move"] for b in grammar],
                 "beatPoses": sum(1 for b in grammar if normalize_pose(b.get("poseStart")) or normalize_pose(b.get("poseEnd"))),
+                "windBeats": sum(1 for b in grammar if b.get("wind")),
             }
         figure = None
         speech_visemes = parse_speech(shot)
@@ -2115,6 +2315,17 @@ def worker_run(job_file):
             blade.data.materials.append(emission_mat(
                 bpy, "BladeMat", (hero or {}).get("bladeColor", "#40f2d2") if hero else "#40f2d2",
                 2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0))
+
+        # ── v7.2 SECONDARY MOTION RIG: the hero's cloth and hair hang
+        #    from pivots and will ride the grammar beats (or the shot's
+        #    single move) through the frame loop below ──
+        sec_chains = build_secondary_rig(bpy, scn, figure) if figure else []
+        if sec_chains:
+            state["secondary"] = {
+                "chains": len(sec_chains),
+                "cloth": sum(1 for c in sec_chains if c["kind"] in ("CLOTH", "SKIRT")),
+                "hair": sum(1 for c in sec_chains if c["kind"] == "HAIR"),
+            }
 
         # ── AnimeOS scene params: designed sky when the environment
         #    DNA carries one, legacy fog world otherwise ──
@@ -2228,6 +2439,10 @@ def worker_run(job_file):
             if figure:
                 apply_pose(figure, pose_s, pose_e, pose_t, t_sec,
                            speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None)
+                # v7.2: cloth and hair RIDE THE BEATS - the active beat's
+                # wind call and pose changes drive the spring chains
+                apply_secondary_motion(figure, sec_chains, grammar, shot,
+                                       t, t_sec, 1.0 / fps, pose_s, pose_e, pose_t)
             boost = 0.0
             for (start, dur, alpha) in windows:
                 if start <= t_sec <= start + dur:
@@ -2241,6 +2456,15 @@ def worker_run(job_file):
             state["progress"] = 0.05 + 0.8 * (f / frames_total)
             state["stage"] = f"Blender: rendering frame {f}/{frames_total}"
             flush()
+
+        # secondary motion report: the chains that rode the beats and
+        # how far they actually swung (a flat 0.0 means something is
+        # wrong with the rig - report it, never hide it)
+        if sec_chains and figure.get("_sec"):
+            st = figure["_sec"]
+            rep = state.setdefault("secondary", {"chains": len(sec_chains)})
+            rep["windBeats"] = sorted(st["wind_beats"])
+            rep["maxDeflection"] = round(st["maxd"], 1)
 
         # ── encode ──
         state["stage"] = "Blender: encoding clip"

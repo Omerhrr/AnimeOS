@@ -121,7 +121,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry grew to 66 tools (design_variation 63, blender_export 64, design_grammar 65, set_shot_grammar 66)", toolCount === 66, `count=${toolCount}`);
+  check("A5 the registry grew to 68 tools (design_sequence 67 and direct_sequence 68 joined in iter 54)", toolCount === 68, `count=${toolCount}`);
   check("A6 design_variation registers the seeded GN layout law", tools.includes('name: "design_variation"') && tools.includes("SCATTER (instances across a carrier surface) | ARRAY (instances along a spine/grid)"));
   check("A7 blender_export verifies the round trip", tools.includes('name: "blender_export"') && tools.includes("an unverified export is a hope, not a deliverable"));
   check("A8 design_grammar + set_shot_grammar direct the lens", tools.includes('name: "design_grammar"') && tools.includes('name: "set_shot_grammar"') && tools.includes("The Reveal, The Standoff, The Assault, The Ascent, The Withdrawal"));

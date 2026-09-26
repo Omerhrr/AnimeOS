@@ -17,6 +17,13 @@ import path from "path";
 // name - built-in or saved - or inline), and the render worker
 // plays it frame by frame with eased crossfades between beats.
 //
+// A beat may also carry WIND (0..1): the director's call for what
+// the AIR is doing while the beat plays - the secondary motion rig
+// (cloth and hair chains on the figure) rides the beats, dragging
+// behind the pose changes, whipping at the beat boundaries and
+// billowing on a directed gust. Robes are instruments of the
+// grammar, not decoration.
+//
 // The move vocabulary mirrors the worker's camera grammar
 // (bridges/blender/animeos_bridge.py) exactly - the compiler
 // refuses anything the worker cannot perform.
@@ -35,6 +42,7 @@ export interface GrammarBeat {
   to: number; // 0..1 end of the beat (exclusive to the next)
   poseStart?: string | null;
   poseEnd?: string | null;
+  wind?: number | null; // 0..1 directed gust - the cloth/hair rig rides this beat harder
   note?: string | null;
 }
 
@@ -89,12 +97,21 @@ export function compileGrammarSpec(input: {
     if (!Number.isFinite(from) || !Number.isFinite(to)) {
       return { ok: false, error: `beat ${i + 1} (${move}): from and to are required numbers 0..1` };
     }
+    let wind: number | null = null;
+    if (b?.wind !== undefined && b?.wind !== null && b?.wind !== "") {
+      const w = Number(b.wind);
+      if (!Number.isFinite(w)) {
+        return { ok: false, error: `beat ${i + 1} (${move}): wind must be a number 0..1 (the gust the cloth and hair ride)` };
+      }
+      wind = clamp01(w);
+    }
     parsed.push({
       move,
       from: clamp01(from),
       to: clamp01(to),
       poseStart: b?.poseStart ? String(b.poseStart) : null,
       poseEnd: b?.poseEnd ? String(b.poseEnd) : null,
+      wind,
       note: b?.note ? String(b.note).slice(0, 140) : null,
     });
   }
@@ -166,7 +183,7 @@ export function findBuiltInGrammar(name: string): GrammarSpec | null {
 /** Serialize a spec for the Shot.grammar column / worker payload. */
 export function serializeGrammar(spec: GrammarSpec): string {
   return JSON.stringify(
-    spec.beats.map((b) => ({ move: b.move, from: b.from, to: b.to, ...(b.poseStart ? { poseStart: b.poseStart } : {}), ...(b.poseEnd ? { poseEnd: b.poseEnd } : {}), ...(b.note ? { note: b.note } : {}) })),
+    spec.beats.map((b) => ({ move: b.move, from: b.from, to: b.to, ...(b.poseStart ? { poseStart: b.poseStart } : {}), ...(b.poseEnd ? { poseEnd: b.poseEnd } : {}), ...(b.wind !== null && b.wind !== undefined ? { wind: b.wind } : {}), ...(b.note ? { note: b.note } : {}) })),
   );
 }
 
@@ -183,12 +200,14 @@ export function parseStoredGrammar(raw: string | null | undefined): GrammarBeat[
       const from = Number((b as Record<string, unknown>)?.from);
       const to = Number((b as Record<string, unknown>)?.to);
       if (!(GRAMMAR_MOVES as readonly string[]).includes(move) || !Number.isFinite(from) || !Number.isFinite(to)) return null;
+      const rawWind = (b as Record<string, unknown>)?.wind;
       beats.push({
         move,
         from: clamp01(from),
         to: clamp01(to),
         poseStart: (b as Record<string, unknown>)?.poseStart ? String((b as Record<string, unknown>).poseStart) : null,
         poseEnd: (b as Record<string, unknown>)?.poseEnd ? String((b as Record<string, unknown>).poseEnd) : null,
+        wind: rawWind !== undefined && rawWind !== null && Number.isFinite(Number(rawWind)) ? clamp01(Number(rawWind)) : null,
         note: (b as Record<string, unknown>)?.note ? String((b as Record<string, unknown>).note) : null,
       });
     }

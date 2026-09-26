@@ -510,6 +510,26 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "design_sequence",
+    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar is validated at design time - a typo never reaches a shoot. Apply one across a scene with direct_sequence.",
+    args: {
+      name: "string - the sequence program name (e.g. 'Raid on the Fortress')",
+      description: "string (optional) - what this program is for",
+      slots: "JSON array string - [{\"grammar\":\"The Reveal\",\"note\":\"find the temple\"},{\"grammar\":\"The Standoff\"},{\"grammar\":\"The Assault\",\"poseStart\":\"DRAW\",\"poseEnd\":\"SLASH\"}]",
+    },
+  },
+  {
+    name: "direct_sequence",
+    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar) and optional per-slot poses set the shot's global pair. The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      program: "string - a design_sequence preset name (or omit and pass slots inline)",
+      slots: "JSON array string (optional) - inline slots when no program is named",
+      render: "boolean (optional, default false) - queue a render job for every directed shot",
+      mode: "PREVIEW | FINAL (default PREVIEW, only with render)",
+    },
+  },
+  {
     name: "render_shot",
     description: "Queue a render job for a shot. mode PREVIEW for inspection loop, FINAL once approved. DSH will inspect the preview when it completes.",
     args: { sceneNumber: "number", shotNumber: "number", mode: "PREVIEW | FINAL (default PREVIEW)" },
@@ -2375,33 +2395,15 @@ export async function executeTool(
           return { status: "OK", result: `GRAMMAR cleared on Shot ${String(shot.number).padStart(3, "0")} - it renders on its single movement (${shot.movement ?? "STATIC"}) again.` };
         }
         // resolve: saved GRAMMAR preset -> built-in -> inline beats
-        let beatsRaw: unknown = null;
-        let sourceName = "";
-        const saved = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "GRAMMAR", name: grammarArg } } });
-        if (saved) {
-          try {
-            const parsedSpec = JSON.parse(saved.spec || "null") as { beats?: unknown } | null;
-            beatsRaw = parsedSpec?.beats ?? null;
-          } catch {
-            beatsRaw = null;
-          }
-          sourceName = `preset '${grammarArg}'`;
-        } else {
-          const builtin = findBuiltInGrammar(grammarArg);
-          if (builtin) {
-            beatsRaw = JSON.stringify(builtin.beats);
-            sourceName = `built-in '${builtin.name}'`;
-          } else if (grammarArg.startsWith("[")) {
-            beatsRaw = grammarArg;
-            sourceName = "inline beats";
-          } else {
-            const registry = [
-              ...BUILT_IN_GRAMMARS.map((g) => `'${g.name}' (built-in)`),
-              ...((await db.designPreset.findMany({ where: { projectId, kind: "GRAMMAR" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
-            ];
-            return { status: "ERROR", result: `No grammar named '${grammarArg}'. Registry: ${registry.join(", ")} - or pass an inline beats JSON array like [{\"move\":\"CRANE\",\"from\":0,\"to\":0.5},{\"move\":\"DOLLY_IN\",\"from\":0.5,\"to\":1}].` };
-          }
+        const resolved = await resolveGrammarSource(projectId, grammarArg);
+        if (!resolved) {
+          const registry = [
+            ...BUILT_IN_GRAMMARS.map((g) => `'${g.name}' (built-in)`),
+            ...((await db.designPreset.findMany({ where: { projectId, kind: "GRAMMAR" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+          ];
+          return { status: "ERROR", result: `No grammar named '${grammarArg}'. Registry: ${registry.join(", ")} - or pass an inline beats JSON array like [{\"move\":\"CRANE\",\"from\":0,\"to\":0.5},{\"move\":\"DOLLY_IN\",\"from\":0.5,\"to\":1}].` };
         }
+        const { beatsRaw, sourceName } = resolved;
         const compiled = compileGrammarSpec({ name: `${shot.id.slice(-6)}-shot-grammar`, beats: beatsRaw });
         if (!compiled.ok) return { status: "ERROR", result: `the ${sourceName} beats do not compile: ${compiled.error}` };
         await db.shot.update({ where: { id: shot.id }, data: { grammar: serializeGrammar(compiled.spec) } });
@@ -2409,6 +2411,149 @@ export async function executeTool(
         const poseBeats = compiled.spec.beats.filter((b) => b.poseStart || b.poseEnd).length;
         await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} directed with ${sourceName}: ${shape}`, { shotId: shot.id, grammar: sourceName });
         return { status: "OK", result: `DIRECTED Shot ${String(shot.number).padStart(3, "0")} with ${sourceName}: ${shape}${poseBeats ? ` (${poseBeats} beat(s) carry their own pose pair - the subject moves with the lens)` : ""}. The next render_shot of this shot plays the grammar beat by beat with eased crossfades; the vocabulary the worker performs: ${GRAMMAR_MOVES.join(", ")}.` };
+      }
+
+      case "design_sequence": {
+        const name = String(args.name ?? "").trim();
+        if (!name) return { status: "ERROR", result: "name is required" };
+        let rawSlots: unknown[] = [];
+        try {
+          const parsed = typeof args.slots === "string" ? (JSON.parse(args.slots) as unknown) : args.slots;
+          if (!Array.isArray(parsed)) throw new Error("not an array");
+          rawSlots = parsed;
+        } catch {
+          return { status: "ERROR", result: "slots must be a JSON array of {grammar, poseStart?, poseEnd?, note?}" };
+        }
+        if (rawSlots.length < 2) return { status: "ERROR", result: "a sequence program needs at least 2 slots - a single directed shot belongs in set_shot_grammar" };
+        if (rawSlots.length > 12) return { status: "ERROR", result: "a sequence program carries at most 12 slots - longer than that is an episode, not a program" };
+        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; note: string | null }> = [];
+        for (let i = 0; i < rawSlots.length; i++) {
+          const s = rawSlots[i] as Record<string, unknown>;
+          const grammar = String(s?.grammar ?? "").trim();
+          if (!grammar) return { status: "ERROR", result: `slot ${i + 1}: grammar is required - every slot directs with a named grammar` };
+          // design-time validation: a typo never reaches a shoot
+          const resolved = await resolveGrammarSource(projectId, grammar);
+          if (!resolved) {
+            const registry = [
+              ...BUILT_IN_GRAMMARS.map((g) => `'${g.name}' (built-in)`),
+              ...((await db.designPreset.findMany({ where: { projectId, kind: "GRAMMAR" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+            ];
+            return { status: "ERROR", result: `slot ${i + 1}: no grammar named '${grammar}'. Registry: ${registry.join(", ")} - or an inline beats JSON array.` };
+          }
+          const compiled = compileGrammarSpec({ name: `${name}-slot${i + 1}`, beats: resolved.beatsRaw });
+          if (!compiled.ok) return { status: "ERROR", result: `slot ${i + 1} (${grammar}): ${compiled.error}` };
+          slots.push({
+            grammar,
+            poseStart: s?.poseStart ? String(s.poseStart) : null,
+            poseEnd: s?.poseEnd ? String(s.poseEnd) : null,
+            note: s?.note ? String(s.note).slice(0, 140) : null,
+          });
+        }
+        const description = String(args.description ?? "").trim() || null;
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name } },
+          create: { projectId, kind: "SEQUENCE", name, spec: JSON.stringify({ description, slots }) },
+          update: { spec: JSON.stringify({ description, slots }) },
+        });
+        await landDesignEvent(projectId, `Sequence program '${name}' ${existed ? "updated" : "designed"} (${slots.length} slots: ${slots.map((s) => s.grammar).join(" -> ")})`, { presetId: preset.id });
+        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slots.map((s, i) => `${i + 1}. ${s.grammar}`).join(", ")}. Apply it across a scene with direct_sequence program:'${name}' - shot i receives slot i's grammar, and the whole flow reads back cut by cut.` };
+      }
+
+      case "direct_sequence": {
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
+        if (args.sceneNumber) {
+          const scenes = await db.scene.findMany({
+            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+            orderBy: { createdAt: "desc" },
+          });
+          scene = scenes[0] ?? null;
+        }
+        if (!scene) scene = await latestScene(projectId);
+        if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+        const shots = await db.shot.findMany({ where: { sceneId: scene.id }, orderBy: { number: "asc" } });
+        if (shots.length === 0) return { status: "ERROR", result: `Scene ${scene.number} has no shots to direct - break the scene down first (create_shot).` };
+        // the slot list: a named SEQUENCE program first, inline slots otherwise
+        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; note?: unknown }> = [];
+        let sourceName = "";
+        const programName = String(args.program ?? "").trim();
+        if (programName) {
+          const preset = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name: programName } } });
+          if (!preset) {
+            const registry = (await db.designPreset.findMany({ where: { projectId, kind: "SEQUENCE" }, select: { name: true } })).map((r) => `'${r.name}'`);
+            return { status: "ERROR", result: `No sequence program named '${programName}'. Registry: ${registry.join(", ") || "(empty)"} - design one with design_sequence, or pass slots inline.` };
+          }
+          try {
+            const parsedSpec = JSON.parse(preset.spec || "null") as { slots?: unknown } | null;
+            slotList = Array.isArray(parsedSpec?.slots) ? (parsedSpec.slots as typeof slotList) : [];
+          } catch {
+            slotList = [];
+          }
+          if (slotList.length < 2) return { status: "ERROR", result: `Sequence program '${programName}' is corrupt (needs 2+ valid slots) - redesign it with design_sequence.` };
+          sourceName = `program '${programName}'`;
+          await db.designPreset.update({ where: { id: preset.id }, data: { usageCount: { increment: 1 } } });
+        } else {
+          try {
+            const parsed = typeof args.slots === "string" ? (JSON.parse(args.slots) as unknown) : args.slots;
+            if (!Array.isArray(parsed)) throw new Error("not an array");
+            slotList = parsed as typeof slotList;
+          } catch {
+            return { status: "ERROR", result: "pass program:'<name>' or a slots JSON array of {grammar, poseStart?, poseEnd?}" };
+          }
+          if (slotList.length < 2) return { status: "ERROR", result: "a sequence carries at least 2 slots - a single directed shot belongs in set_shot_grammar" };
+          sourceName = "inline slots";
+        }
+        // apply slot i -> shot i, compiling every grammar exactly like set_shot_grammar
+        const directed = Math.min(slotList.length, shots.length);
+        const flow: string[] = [];
+        let windBeats = 0;
+        let poseCuts = 0;
+        let moveClashes = 0;
+        let lastEndPose: string | null = null;
+        let lastLastMove: string | null = null;
+        for (let i = 0; i < directed; i++) {
+          const slot = slotList[i];
+          const grammarName = String(slot?.grammar ?? "").trim();
+          if (!grammarName) return { status: "ERROR", result: `slot ${i + 1}: grammar is required - every slot directs with a named grammar` };
+          const resolved = await resolveGrammarSource(projectId, grammarName);
+          if (!resolved) return { status: "ERROR", result: `slot ${i + 1}: no grammar named '${grammarName}' - register it with design_grammar first.` };
+          const compiled = compileGrammarSpec({ name: `${shots[i].id.slice(-6)}-shot-grammar`, beats: resolved.beatsRaw });
+          if (!compiled.ok) return { status: "ERROR", result: `slot ${i + 1} (${grammarName}): ${compiled.error}` };
+          const poseStart = slot?.poseStart ? String(slot.poseStart) : null;
+          const poseEnd = slot?.poseEnd ? String(slot.poseEnd) : null;
+          await db.shot.update({
+            where: { id: shots[i].id },
+            data: { grammar: serializeGrammar(compiled.spec), ...(poseStart ? { poseStart } : {}), ...(poseEnd ? { poseEnd } : {}) },
+          });
+          windBeats += compiled.spec.beats.filter((b) => (b.wind ?? 0) > 0).length;
+          const firstMove = compiled.spec.beats[0].move;
+          const lastMove = compiled.spec.beats[compiled.spec.beats.length - 1].move;
+          if (lastLastMove && lastLastMove === firstMove) moveClashes += 1;
+          const startPose = normalizePose(poseStart ?? compiled.spec.beats[0].poseStart ?? "");
+          if (lastEndPose && startPose && startPose !== lastEndPose) poseCuts += 1;
+          lastEndPose = normalizePose(poseEnd ?? compiled.spec.beats[compiled.spec.beats.length - 1].poseEnd ?? "") || lastEndPose;
+          lastLastMove = lastMove;
+          flow.push(`Shot ${String(shots[i].number).padStart(3, "0")} <- ${grammarName} (${compiled.spec.beats.map((b) => b.move).join(">")})`);
+        }
+        const jobIds: string[] = [];
+        let mode: "PREVIEW" | "FINAL" = "PREVIEW";
+        if (args.render) {
+          mode = String(args.mode ?? "PREVIEW") === "FINAL" ? "FINAL" : "PREVIEW";
+          for (let i = 0; i < directed; i++) {
+            const job = await createRenderJob(projectId, shots[i].id, mode);
+            jobIds.push(job.id.slice(-6));
+          }
+        }
+        await landDesignEvent(projectId, `Scene ${scene.number} directed with ${sourceName}: ${directed} shot(s), ${windBeats} wind beat(s)${jobIds.length ? `, ${jobIds.length} ${mode} render(s) queued` : ""}`, { sceneId: scene.id, directed, renders: jobIds.length });
+        const untouched = shots.length - directed;
+        const unused = slotList.length - directed;
+        const reads: string[] = [];
+        if (moveClashes > 0) reads.push(`${moveClashes} cut(s) land on the same move both sides - consider alternating the blocking`);
+        if (poseCuts > 0) reads.push(`${poseCuts} pose change(s) across cuts (the cloth whips on each one)`);
+        if (windBeats > 0) reads.push(`${windBeats} wind beat(s) - the robes and hair ride those beats`);
+        if (untouched > 0) reads.push(`${untouched} shot(s) beyond the plan left untouched`);
+        if (unused > 0) reads.push(`${unused} slot(s) had no shot to direct`);
+        return { status: "OK", result: `SEQUENCE DIRECTED (${sourceName}) across ${directed} shot(s) of Scene ${scene.number}:\n${flow.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each shot's beats with the cloth riding them.` : ` Queue renders with render_shot per shot, or re-run with render:true.`}` };
       }
 
       case "design_audit": {
@@ -3401,6 +3546,27 @@ export async function executeTool(
   } catch (err) {
     return { status: "ERROR", result: `Tool ${name} failed: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+/** Resolve a grammar argument to raw beats: saved GRAMMAR preset ->
+ * built-in -> inline beats JSON. Null when nothing carries the name
+ * (the caller lists the registry in its refusal). Shared by
+ * set_shot_grammar, design_sequence and direct_sequence. */
+async function resolveGrammarSource(projectId: string, grammarArg: string): Promise<{ beatsRaw: string; sourceName: string } | null> {
+  const saved = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "GRAMMAR", name: grammarArg } } });
+  if (saved) {
+    try {
+      const parsedSpec = JSON.parse(saved.spec || "null") as { beats?: unknown } | null;
+      if (parsedSpec?.beats) return { beatsRaw: JSON.stringify(parsedSpec.beats), sourceName: `preset '${grammarArg}'` };
+    } catch {
+      /* a corrupt preset resolves to nothing - the registry refusal tells the director */
+    }
+    return null;
+  }
+  const builtin = findBuiltInGrammar(grammarArg);
+  if (builtin) return { beatsRaw: JSON.stringify(builtin.beats), sourceName: `built-in '${builtin.name}'` };
+  if (grammarArg.startsWith("[")) return { beatsRaw: grammarArg, sourceName: "inline beats" };
+  return null;
 }
 
 /** The DESIGN context line (Iteration 51): the self-review standing

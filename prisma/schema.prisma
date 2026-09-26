@@ -137,9 +137,9 @@ model AssetExport {
 model DesignPreset {
   id         String   @id @default(cuid())
   projectId  String
-  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR
+  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE
   name       String
-  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats
+  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats, SEQUENCE = named chain of grammar slots
   usageCount Int      @default(0) // builds that consumed this preset
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

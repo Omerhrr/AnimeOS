@@ -979,16 +979,21 @@ export function RenderView({ project }: { project: StudioProject }) {
                       // DIRECTED MOTION GRAMMAR chips: the shot's beat sequence
                       const beats = (() => {
                         try {
-                          const g = job.shot?.grammar ? (JSON.parse(job.shot.grammar) as Array<{ move?: string; from?: number; to?: number }>) : null;
+                          const g = job.shot?.grammar ? (JSON.parse(job.shot.grammar) as Array<{ move?: string; from?: number; to?: number; wind?: number }>) : null;
                           return g && Array.isArray(g) && g.length >= 2 ? g : null;
                         } catch { return null; }
                       })();
                       if (!beats) return null;
                       return (
-                        <span className="inline-flex items-center gap-1 flex-wrap" title="Directed motion grammar - the worker plays these camera beats in order">
+                        <span className="inline-flex items-center gap-1 flex-wrap" title="Directed motion grammar - the worker plays these camera beats in order; cloth and hair ride each beat (a W flag marks a directed wind call)">
                           {beats.map((b, i) => (
-                            <span key={i} className="rounded px-1 py-[1px] text-[8px] font-bold tracking-wider bg-violet-400/10 border border-violet-400/30 text-violet-300">
-                              {b.move} {Math.round((b.from ?? 0) * 100)}-{Math.round((b.to ?? 0) * 100)}%
+                            <span key={i} className={cn(
+                              "rounded px-1 py-[1px] text-[8px] font-bold tracking-wider border",
+                              (b.wind ?? 0) > 0
+                                ? "bg-sky-400/10 border-sky-400/40 text-sky-300"
+                                : "bg-violet-400/10 border-violet-400/30 text-violet-300",
+                            )}>
+                              {b.move} {Math.round((b.from ?? 0) * 100)}-{Math.round((b.to ?? 0) * 100)}%{(b.wind ?? 0) > 0 ? ` W${b.wind!.toFixed(1)}` : ""}
                             </span>
                           ))}
                         </span>
