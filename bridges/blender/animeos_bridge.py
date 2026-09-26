@@ -2160,6 +2160,9 @@ def worker_run(job_file):
         asset_props = assets_p.get("props") if isinstance(assets_p.get("props"), list) else []
         props_loaded = []
         props_animated = []
+        # v9.0: name -> anchor empty, so the physics pass can KNOCK a
+        # riding prop by its designed name (real prop interaction)
+        prop_anchors = []
         for k, entry in enumerate(asset_props):
             if not isinstance(entry, dict):
                 continue
@@ -2189,6 +2192,7 @@ def worker_run(job_file):
                 parent.location = (math.sin(ang) * 2.6, -1.9 - (k % 2) * 0.9, 0.0)
                 parent.rotation_euler = (0.0, 0.0, math.radians(-12 + k * 14))
                 props_loaded.append(str(entry.get("name", f"prop{k + 1}")))
+                prop_anchors.append({"name": str(entry.get("name", f"prop{k + 1}")), "empty": parent})
                 if has_perf:
                     props_animated.append(str(entry.get("name", f"prop{k + 1}")))
             except Exception as exc:  # noqa: BLE001
@@ -2351,6 +2355,32 @@ def worker_run(job_file):
                 if all_notes:
                     state["fx"]["notes"] = all_notes
 
+        # ── v9.0 DIRECTED PHYSICS: THE WORLD OBEYS ITS OWN LAW - the
+        #    solid world answers the beats through real ballistics.
+        #    Programs normalize honestly (a bad note is skipped with a
+        #    note, never a crash), the rig compiles into real rigid
+        #    bodies (a KNOCK strikes a riding prop by name when one
+        #    rides), and the frame loop below integrates them under
+        #    the probed law. ──
+        phys_rig = None
+        phys_programs = []
+        phys_raw = shot.get("physics")
+        if isinstance(phys_raw, list) and phys_raw:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import physics_pass
+            phys_programs, phys_notes = physics_pass.normalize_physics(phys_raw, len(grammar) if grammar else 1)
+            if phys_programs:
+                phys_rig = physics_pass.build_physics_rig(bpy, scn, phys_programs, figure,
+                                                          prop_anchors, job_id)
+                state["physics"] = {
+                    "programs": len(phys_programs),
+                    "kinds": phys_rig["kinds"],
+                    "boundBeats": sorted(phys_rig["all_bound"]),
+                }
+                phys_all = phys_notes + phys_rig["notes"]
+                if phys_all:
+                    state["physics"]["notes"] = phys_all
+
         # ── AnimeOS scene params: designed sky when the environment
         #    DNA carries one, legacy fog world otherwise ──
         fog = float(scene_p.get("fogDensity", 0.45))
@@ -2472,19 +2502,27 @@ def worker_run(job_file):
             # the aura breathes with the beat's wind call, the motes
             # drift. The pose velocity mirrors the springs' own drag
             # measure (the eased pose row's rate of change).
-            if fx_rig:
-                if grammar:
-                    fbi, fbeat = _beat_at(grammar, t)
-                    fwind = float(fbeat.get("wind") or 0.0)
-                else:
-                    fbi, fwind = -1, 0.0
-                fx_vel = 0.0
-                if pose_s or pose_e:
-                    fx_row = lerp_pose(pose_s or "STANCE", pose_e or "STANCE", pose_t)
-                    if fx_rig["prev_row"] is not None and fps > 0:
-                        fx_vel = sum(abs(fx_row[i] - fx_rig["prev_row"][i]) for i in range(12)) * fps
+            # v9.0: the beat context is computed ONCE per frame - the
+            # fx AND the physics answer the same clock.
+            fbi, fwind, fx_vel = -1, 0.0, 0.0
+            if grammar:
+                fbi, fbeat = _beat_at(grammar, t)
+                fwind = float(fbeat.get("wind") or 0.0)
+            if (fx_rig or phys_rig) and (pose_s or pose_e):
+                fx_row = lerp_pose(pose_s or "STANCE", pose_e or "STANCE", pose_t)
+                if fx_rig and fx_rig["prev_row"] is not None and fps > 0:
+                    fx_vel = sum(abs(fx_row[i] - fx_rig["prev_row"][i]) for i in range(12)) * fps
+                if fx_rig:
                     fx_rig["prev_row"] = fx_row
+            if fx_rig:
                 fx_pass.apply_fx(fx_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel)
+            # v9.0: THE WORLD OBEYS ITS OWN LAW - the same beat clock
+            # and the same wind the camera, the springs and the fx
+            # answer: a bound beat's entry strikes the knock, kicks
+            # the debris and kicks the lantern; the lantern rides the
+            # wind call the cloth hangs from.
+            if phys_rig:
+                physics_pass.apply_physics(phys_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel, f)
             boost = 0.0
             for (start, dur, alpha) in windows:
                 if start <= t_sec <= start + dur:
@@ -2517,6 +2555,19 @@ def worker_run(job_file):
             frep["trailPeak"] = round(fx_rig["trail_peak"], 1)
             frep["maxRing"] = round(fx_rig["max_ring"], 2)
             frep["boundBeats"] = sorted(fx_rig["all_bound"])
+
+        # physics report: what the solid world actually did - the
+        # strikes that landed, the bounces, the fastest a body moved
+        # and the frame the wreckage settled (honest evidence: a
+        # knock that never struck reports 0 strikes)
+        if phys_rig:
+            prep = state.setdefault("physics", {"programs": len(phys_programs), "kinds": phys_rig["kinds"]})
+            prep["strikes"] = phys_rig["strikes"]
+            prep["bounces"] = phys_rig["bounces"]
+            prep["maxSpeed"] = round(phys_rig["max_speed"], 2)
+            prep["settleFrame"] = phys_rig["settle_frame"]
+            prep["maxSwing"] = round(phys_rig["max_swing"], 1)
+            prep["boundBeats"] = sorted(phys_rig["all_bound"])
 
         # ── encode ──
         state["stage"] = "Blender: encoding clip"

@@ -227,6 +227,11 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // the worker compiles them into real emissive geometry that
         // answers the grammar beats (a corrupt column degrades to no fx)
         ...(shot.fx ? (() => { try { const fx = JSON.parse(shot.fx); return Array.isArray(fx) && fx.length > 0 ? { fx } : {}; } catch { return {}; } })() : {}),
+        // DIRECTED PHYSICS: the shot's body laws ride the payload -
+        // the worker compiles them into real rigid bodies integrated
+        // per frame under the probed law (a corrupt column degrades
+        // to no physics - an honest clean stage)
+        ...(shot.physics ? (() => { try { const ph = JSON.parse(shot.physics); return Array.isArray(ph) && ph.length > 0 ? { physics: ph } : {}; } catch { return {}; } })() : {}),
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),

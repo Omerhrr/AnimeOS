@@ -37,6 +37,7 @@ import { compileVariationSpec } from "@/lib/blender/variation";
 import { runRoundtrip, isExportFormat } from "@/lib/blender/roundtrip";
 import { compileGrammarSpec, serializeGrammar, BUILT_IN_GRAMMARS, GRAMMAR_MOVES, findBuiltInGrammar } from "@/lib/animation/grammar";
 import { compileFxSpec, serializeFx, BUILT_IN_FX, FX_KINDS, findBuiltInFx } from "@/lib/animation/fx";
+import { compilePhysicsSpec, serializePhysics, BUILT_IN_PHYSICS, PHYSICS_KINDS, findBuiltInPhysics } from "@/lib/animation/physics";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -747,6 +748,23 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       fx: "string - a design_fx preset name, a built-in name (The Slash | Cultivator's Aura | The Aftermath | Storm Break), or an inline JSON array of programs; empty string clears",
+    },
+  },
+  {
+    name: "design_physics",
+    description: "Design a NAMED PHYSICS PROGRAM and register it as the production's body law: 1..6 directed laws the SOLID world performs ON the grammar beats - KNOCK (a prop takes the hit when the playhead enters a bound beat: impulse velocity away from the figure, a seeded tumble, real gravity, bounce with restitution, friction, settle to REST; a target names a riding designed prop - omit it to knock the first riding prop, or a stone vessel stands in when none rides), DEBRIS (ten seeded rubble chunks resting in a ring that get kicked radially and LIE where they settle - debris never fades) and SWAY (a hanging lantern: a damped pendulum riding the beat's WIND call, the same driver the cloth hangs from, kicked at every beat boundary). Each program carries an intensity 0..1 and a beat binding (ALL or 0-based grammar beat indices); only KNOCK takes a target. The integration law is probed bit-exact determinism. Named physics programs are how a show keeps its wreckage consistent; apply one with set_shot_physics.",
+    args: {
+      name: "string - the program's name (unique per production among PHYSICS presets)",
+      programs: "JSON array - 1..6 of {kind: KNOCK|DEBRIS|SWAY, intensity?, beats?, target? (KNOCK only), note?}",
+    },
+  },
+  {
+    name: "set_shot_physics",
+    description: "LET THE SOLID WORLD OBEY A SHOT'S BEATS: apply a NAMED physics program (a design_physics preset or a built-in - The Clash, The Ruin, The Windchime, The Shove) or an inline program array to one shot. The render worker compiles them into real rigid bodies integrated per frame under the probed law by the same beat clock as the camera, the cloth and the fx: the knock strikes where the cut lands, the debris lies where it settles, the lantern swings with the wind. Direct the lens first (set_shot_grammar) so the beats have something to answer, and name the designed prop in the shot text when a KNOCK should strike it. Pass physics as empty string to clear the shot back to a clean stage.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      physics: "string - a design_physics preset name, a built-in name (The Clash | The Ruin | The Windchime | The Shove), or an inline JSON array of programs; empty string clears",
     },
   },
 ];
@@ -2759,6 +2777,79 @@ export async function executeTool(
         const shape = compiled.spec.programs.map((p) => `${p.kind}${p.beats !== "ALL" && Array.isArray(p.beats) ? `@beat ${p.beats.join(",")}` : ""}${p.color ? ` in ${p.color}` : ""}`).join(" + ");
         await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} ignites with ${sourceName}: ${shape}`, { shotId: shot.id, fx: sourceName });
         return { status: "OK", result: `THE BEATS IGNITE on Shot ${String(shot.number).padStart(3, "0")} with ${sourceName}: ${shape}. The next render_shot of this shot compiles the programs into real emissive geometry riding the same beat clock as the camera and the cloth - direct the lens first (set_shot_grammar) so the beats have something to answer.` };
+      }
+
+      case "design_physics": {
+        const compiled = compilePhysicsSpec({ name: String(args.name ?? ""), programs: args.programs });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const { name } = compiled.spec;
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "PHYSICS", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "PHYSICS", name } },
+          create: { projectId, kind: "PHYSICS", name, spec: JSON.stringify(compiled.spec) },
+          update: { spec: JSON.stringify(compiled.spec) },
+        });
+        const shape = compiled.spec.programs.map((p) => `${p.kind}${p.target ? `>${p.target}` : ""}${p.beats !== "ALL" && Array.isArray(p.beats) ? `@${p.beats.join(".")}` : ""}`).join(" + ");
+        await landDesignEvent(projectId, `Physics program '${name}' ${existed ? "updated" : "designed"} (${shape})`, { presetId: preset.id });
+        return { status: "OK", result: `Physics preset '${name}' ${existed ? "updated" : "registered"}: ${shape}. Apply it to any shot with set_shot_physics physics:'${name}' - the worker compiles it into real rigid bodies integrated under the probed law (gravity, bounce, friction, settle) answering the grammar beats. Name the designed prop in the shot text when a KNOCK should strike it.` };
+      }
+
+      case "set_shot_physics": {
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
+        if (args.sceneNumber) {
+          const scenes = await db.scene.findMany({
+            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+            orderBy: { createdAt: "desc" },
+          });
+          scene = scenes[0] ?? null;
+        }
+        if (!scene) scene = await latestScene(projectId);
+        if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        const physArg = String(args.physics ?? "").trim();
+        if (!physArg) {
+          await db.shot.update({ where: { id: shot.id }, data: { physics: null } });
+          await landDesignEvent(projectId, `Physics cleared on Shot ${String(shot.number).padStart(3, "0")} (back to a clean stage)`, { shotId: shot.id });
+          return { status: "OK", result: `Physics cleared on Shot ${String(shot.number).padStart(3, "0")} - the stage renders clean again.` };
+        }
+        // resolve: saved physics preset -> built-in -> inline programs
+        const savedPhys = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "PHYSICS", name: physArg } } });
+        let physRaw: string;
+        let physSource: string;
+        if (savedPhys) {
+          try {
+            const parsedSpec = JSON.parse(savedPhys.spec || "null") as { programs?: unknown } | null;
+            if (!parsedSpec?.programs) throw new Error("corrupt");
+            physRaw = JSON.stringify(parsedSpec.programs);
+            physSource = `preset '${physArg}'`;
+          } catch {
+            return { status: "ERROR", result: `Physics preset '${physArg}' is corrupt - redesign it with design_physics.` };
+          }
+        } else {
+          const builtin = findBuiltInPhysics(physArg);
+          if (builtin) {
+            physRaw = JSON.stringify(builtin.programs);
+            physSource = `built-in '${builtin.name}'`;
+          } else if (physArg.startsWith("[")) {
+            physRaw = physArg;
+            physSource = "inline programs";
+          } else {
+            const registry = [
+              ...BUILT_IN_PHYSICS.map((f) => `'${f.name}' (built-in)`),
+              ...((await db.designPreset.findMany({ where: { projectId, kind: "PHYSICS" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+            ];
+            return { status: "ERROR", result: `No physics program named '${physArg}'. Registry: ${registry.join(", ")} - or pass an inline programs JSON array like [{"kind":"KNOCK","intensity":0.8}]. The worker performs: ${PHYSICS_KINDS.join(", ")}.` };
+          }
+        }
+        const compiledPhys = compilePhysicsSpec({ name: `${shot.id.slice(-6)}-shot-physics`, programs: physRaw });
+        if (!compiledPhys.ok) return { status: "ERROR", result: `the ${physSource} programs do not compile: ${compiledPhys.error}` };
+        await db.shot.update({ where: { id: shot.id }, data: { physics: serializePhysics(compiledPhys.spec) } });
+        const physShape = compiledPhys.spec.programs.map((p) => `${p.kind}${p.target ? `>${p.target}` : ""}${p.beats !== "ALL" && Array.isArray(p.beats) ? `@beat ${p.beats.join(",")}` : ""}`).join(" + ");
+        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} obeys its body law from ${physSource}: ${physShape}`, { shotId: shot.id, physics: physSource });
+        return { status: "OK", result: `THE WORLD OBEYS on Shot ${String(shot.number).padStart(3, "0")} with ${physSource}: ${physShape}. The next render_shot of this shot compiles the programs into real rigid bodies (gravity, bounce, friction, settle) riding the same beat clock as the camera, the cloth and the fx - direct the lens first (set_shot_grammar) so the beats have something to answer${physShape.includes("KNOCK") ? ", and name the designed prop in the shot text when a KNOCK should strike it" : ""}.` };
       }
 
       case "design_audit": {

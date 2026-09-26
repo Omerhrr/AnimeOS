@@ -1023,6 +1023,25 @@ export function RenderView({ project }: { project: StudioProject }) {
                         </span>
                       );
                     })()}
+                    {(() => {
+                      // DIRECTED PHYSICS chips: the body laws answering the beats
+                      const ph = (() => {
+                        try {
+                          const p = job.shot?.physics ? (JSON.parse(job.shot.physics) as Array<{ kind?: string; target?: string }>) : null;
+                          return p && Array.isArray(p) && p.length > 0 ? p : null;
+                        } catch { return null; }
+                      })();
+                      if (!ph) return null;
+                      return (
+                        <span className="inline-flex items-center gap-1 flex-wrap" title="Directed Physics - the solid world obeys the beats on the same clock (knock sends a prop flying where the cut lands, debris lies where it settles, the lantern swings with the wind call)">
+                          {ph.map((p, i) => (
+                            <span key={i} className="rounded px-1 py-[1px] text-[8px] font-bold tracking-wider border bg-emerald-400/10 border-emerald-400/40 text-emerald-300">
+                              {p.kind ?? "PHYSICS"}{p.target ? `>${p.target}` : ""}
+                            </span>
+                          ))}
+                        </span>
+                      );
+                    })()}
                     <span
                       title={
                         job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"

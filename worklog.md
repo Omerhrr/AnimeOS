@@ -1314,3 +1314,41 @@ Stage Summary:
 - The studio's surfaces are FINISHED and its topology is LAW: design_sculpt carves layered seeded detail into every .blend (deterministic to the bit), the audit judges terrain and hide by measured evidence, and blender_retopo decimates over-budget assets back to law with verified drift - 70 tools, 33 doctrine rules, 34 Prisma models
 - Key files: bridges/blender/sculpt_pass.py (new), bridges/blender/asset_builder.py (v8.0), src/lib/blender/sculpt.ts (new), src/lib/blender/{runtime,assets,design-review}.ts, src/lib/dsh/{tools,prompts}.ts, prisma/schema.prisma, src/components/views/render-view.tsx, scripts/e2e-iter55-sculpt-retopo.ts (new), README.md, worklog.md
 - Named frontier: learned/ML assist layers on the deterministic passes (vision-guided sculpt planning, learned retopo flows); physics-accurate prop interaction inside the secondary-motion spring rig
+
+---
+Task ID: 56
+Agent: Super Z (main agent)
+Task: Iteration 56 - THE BEATS IGNITE: named FX programs (design_fx / set_shot_fx) answering the grammar beats (retroactive entry - the work was committed as c6854b9 but this log entry was never appended; recorded during the next session's housekeeping)
+
+Work Log:
+- Session continued from a summary hand-off; the fx batch (design_fx registry + worker fx pass + shot column + payload + tools 71-72 + doctrine rule 34) was implemented, verified with scripts/e2e-iter56-fx.ts (67 checks ALL GREEN twice over the real runtime) and browser E2E, and committed/pushed as c6854b9 (remote main verified)
+- Only the worklog entry was missing; this section documents it retroactively (no code changes in this entry)
+
+Stage Summary:
+- The world answers the grammar: TRAIL/BURST/AURA/MOTES programs ride the same beat clock as the camera and the springs - 72 tools, 34 doctrine rules
+- Key files: bridges/blender/fx_pass.py (new), src/lib/animation/fx.ts (new), src/lib/dsh/{tools,prompts}.ts, src/lib/engine/render.ts, src/components/views/render-view.tsx, prisma/schema.prisma, scripts/e2e-iter56-fx.ts (new), scripts/browser-fixture-iter56.ts (new)
+
+---
+Task ID: 57
+Agent: Super Z (main agent)
+Task: Iteration 57 - PHYSICS IS THE WORLD'S LAW: per-beat prop physics (design_physics / set_shot_physics; KNOCK a riding designed prop by name, DEBRIS that lies where it settles, SWAY the wind-riding lantern); build, real E2E, push to github.com/Omerhrr/AnimeOS
+
+Work Log:
+- Session resumed in a RESET environment (workspace empty): re-cloned the repo (remote main c6854b9 = Iteration 56, confirming Iters 51-56 all pushed), reinstalled deps, re-provisioned Blender 4.3.2, db push, dev server up, re-registered the studio accounts (first-account OWNER rule)
+- Audited the iter56 state: fx_pass architecture (self-contained module + bridge wiring + state evidence), the frame loop's beat context, riding prop anchors (PropAnchor empties + props_loaded names), the TS compiler pattern, tool/preset/schema/doctrine/UI integration points; named frontier confirmed: physics-accurate prop interaction inside the spring rig (README items 9 + 11)
+- PROBED FIRST (tmp/physics_probe.py through real Blender): caught a real integration bug - a shallow floor impact micro-vibrated forever (275 bounces, no settle); rewrote the law with a GROUNDED state (real impacts bounce with restitution 0.32 + friction 0.72, shallow impacts ground the body, rolling friction 0.86/frame, settle when speed < 0.08 and spin < 0.3); re-probe: bit-exact across two runs (identical trajectory hash), 2 bounces settling at frame 48, nothing below floor, pendulum swings 9.7 deg under sustained wind and decays
+- Built bridges/blender/physics_pass.py (self-contained, math+json): normalize_physics (honest validation, beat bindings, KNOCK-only target), build_physics_rig (KNOCK resolves target among the riding props' anchor empties by name - auto-picks the first or spawns a declared stone vessel; DEBRIS seeds 10 rubble chunks in a ring; SWAY hangs a cord + emissive lantern from an invisible pivot), apply_physics (semi-implicit Euler at fixed dt, beat-entry strikes/kicks, the damped pendulum driven by the beat's wind call - the cloth's own driver), _strike relaunches settled bodies and forgets their earlier rest, _integrate stamps settle_frame ONCE on the rest transition
+- Bridge wiring: riding props register {name, empty} anchors; physics normalize + build after the fx block; the frame loop computes the beat context (fbi/fwind/fx_vel) ONCE per frame shared by fx AND physics (fixed a latent scoping bug where physics-only shots would NameError); state reports programs/kinds/boundBeats/strikes/bounces/maxSpeed/settleFrame/maxSwing/notes
+- Schema: Shot.physics column + DesignPreset kind PHYSICS; payload rides it like fx (corrupt column degrades to a clean stage)
+- DSH: design_physics (73) registers the EIGHTH design law, set_shot_physics (74) applies saved -> built-in (The Clash / The Ruin / The Windchime / The Shove) -> inline, replaces, empty clears (registry 72 -> 74); the context design line lists PHYSICS presets automatically
+- Doctrine: curriculum law PHYSICS IS THE WORLD'S LAW + rule 35 (LET THE WORLD OBEY ITS OWN LAW - read the strikes/bounces/settle back; promise wreckage only when the state reports it)
+- UI: emerald physics chips (KNOCK>Target / DEBRIS / SWAY) on the render view's job card beside the amber fx chips; api-client Shot type grew physics
+- E2E scripts/e2e-iter57-physics.ts: 72 checks ALL GREEN THREE times over the real runtime (source checks, registry law, honest refusals incl. target-on-SWAY, apply/clear matrix, a DESIGNED prop built + named in the shot + KNOCKED by name with the state reporting strikes 3 / bounces 2 / maxSpeed 5.15 / settleFrame honest / maxSwing, the cloth riding the same wind beats, a control render whose stage stays clean, the context line, the HTTP role matrix with the OWNER unblocked, exact cleanup); fixed two E2E-side bugs the first run exposed (missing SWAY in the fixture preset; missing cast - no figure, no chains) and one honest-evidence bug in the pass (settleFrame now the LAST rest, not an intermediate)
+- Regression suites iter49-56 ALL GREEN (51-56 updated to registry 74 per the established practice)
+- Sweeps clean: src tsc, eslint, em-dash, production build; hit and documented the dev-server staleness trap AGAIN (server started before the schema change served an API without the physics column - restart fixed it), browser E2E: the directed physics job card shows CRANE 0-50% W0.9 + DOLLY_IN 50-100% + TRAIL/AURA + DEBRIS/SWAY chips with a clean console
+- README: roadmap item 12 written; items 9 and 11's physics frontiers closed
+
+Stage Summary:
+- The solid world now answers the directed beats: a designed prop named in the shot takes the hit where the cut lands, flies with real gravity and tumble, bounces, rolls, and settles to rest - bit-exact every run - 74 tools, 35 doctrine rules, 39 Prisma models
+- Key files: bridges/blender/physics_pass.py (new), bridges/blender/animeos_bridge.py, src/lib/animation/physics.ts (new), src/lib/dsh/{tools,prompts}.ts, src/lib/engine/render.ts, src/lib/api-client.ts, src/components/views/render-view.tsx, prisma/schema.prisma, scripts/e2e-iter57-physics.ts (new), scripts/browser-fixture-iter57.ts (new), README.md, worklog.md
+- Named frontier: learned/ML assist layers on the deterministic passes (vision-guided sculpt planning, learned retopo flows); ragdoll character interaction with the wreckage
