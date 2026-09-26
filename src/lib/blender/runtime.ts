@@ -403,6 +403,7 @@ export function residentHost(): string | null {
 export interface ExecResult {
   ok: boolean;
   log: string;
+  fullLog: string; // normalized (\r -> \n), uncapped: marker parsing needs every line
   scriptPath: string;
   outDir: string;
   artifacts: string[];
@@ -417,10 +418,10 @@ export interface ExecResult {
 export async function runBlenderScript(script: string, label: string, timeoutMs = EXEC_TIMEOUT_MS): Promise<ExecResult> {
   const bin = runtimeBlenderBin();
   if (!bin) {
-    return { ok: false, log: "no Blender binary - provision the runtime first", scriptPath: "", outDir: "", artifacts: [] };
+    return { ok: false, log: "no Blender binary - provision the runtime first", fullLog: "", scriptPath: "", outDir: "", artifacts: [] };
   }
   if (Buffer.byteLength(script, "utf-8") > EXEC_MAX_SCRIPT_BYTES) {
-    return { ok: false, log: `script too large (${Buffer.byteLength(script, "utf-8")} bytes, cap ${EXEC_MAX_SCRIPT_BYTES})`, scriptPath: "", outDir: "", artifacts: [] };
+    return { ok: false, log: `script too large (${Buffer.byteLength(script, "utf-8")} bytes, cap ${EXEC_MAX_SCRIPT_BYTES})`, fullLog: "", scriptPath: "", outDir: "", artifacts: [] };
   }
   ensureRuntimeDir();
   const stamp = `${Date.now().toString(36)}-${label.replace(/[^a-z0-9_-]+/gi, "_").slice(0, 40) || "exec"}`;
@@ -453,11 +454,16 @@ export async function runBlenderScript(script: string, label: string, timeoutMs 
   try {
     for (const f of fs.readdirSync(outDir)) artifacts.push(path.join(outDir, f));
   } catch { /* no out dir */ }
-  const tail = run.out.slice(-6000);
+  // normalize Blender's \r carriage-return progress writes into real
+  // line breaks: our stdout markers must start at a line boundary to
+  // be parsed (a marker glued to a Cycles progress fragment is lost)
+  const normalized = run.out.replace(/\r/g, "\n");
+  const tail = normalized.slice(-6000);
   const ok = run.code === 0 && !run.timedOut;
   return {
     ok,
     log: ok ? tail : `${run.timedOut ? "TIMED OUT\n" : ""}${tail}`,
+    fullLog: normalized.slice(-400_000),
     scriptPath,
     outDir,
     artifacts,
@@ -469,6 +475,8 @@ export interface BuilderRunResult {
   log: string;
   blendPath: string | null;
   previewPath: string | null;
+  loopPath: string | null;
+  motionSummary: Record<string, unknown> | null;
   objects: number;
   tris: number;
   outDir: string;
@@ -493,22 +501,24 @@ export async function runAssetBuilder(opts: {
   fromBlend?: string; // preview an existing asset instead of rebuilding
   materialPath?: string; // a DESIGNED material recipe (design_material)
   rigPath?: string; // a DESIGNED lighting rig (design_lighting)
+  motionPath?: string; // a DESIGNED motion preset (design_motion)
   timeoutMs?: number;
 }): Promise<BuilderRunResult> {
   const bin = runtimeBlenderBin();
   if (!bin) {
-    return { ok: false, log: "no Blender binary - provision the runtime first", blendPath: null, previewPath: null, objects: 0, tris: 0, outDir: "" };
+    return { ok: false, log: "no Blender binary - provision the runtime first", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, objects: 0, tris: 0, outDir: "" };
   }
   fs.mkdirSync(opts.outDir, { recursive: true });
   const builder = path.join(process.cwd(), "bridges", "blender", "asset_builder.py");
   if (!fs.existsSync(builder)) {
-    return { ok: false, log: "asset_builder.py missing from bridges/blender", blendPath: null, previewPath: null, objects: 0, tris: 0, outDir: "" };
+    return { ok: false, log: "asset_builder.py missing from bridges/blender", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, objects: 0, tris: 0, outDir: "" };
   }
   const argv = ["-b", "-P", builder, "--", "--kind", opts.kind, "--dna", opts.dnaPath, "--out", opts.outDir];
   if (opts.name) argv.push("--name", opts.name);
   if (opts.fromBlend) argv.push("--blend", opts.fromBlend);
   if (opts.materialPath) argv.push("--material", opts.materialPath);
   if (opts.rigPath) argv.push("--rig", opts.rigPath);
+  if (opts.motionPath) argv.push("--motion", opts.motionPath);
 
   const run = await new Promise<{ code: number | null; out: string; timedOut: boolean }>((resolve) => {
     const child = spawn(bin, argv, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env } });
@@ -527,8 +537,18 @@ export async function runAssetBuilder(opts: {
     });
   });
 
-  const blendPath = parseBuilderMarker(run.out, "ASSET_BLEND");
-  const previewPath = parseBuilderMarker(run.out, "ASSET_PREVIEW");
+  const blendPath = parseBuilderMarker(run.out.replace(/\r/g, "\n"), "ASSET_BLEND");
+  const previewPath = parseBuilderMarker(run.out.replace(/\r/g, "\n"), "ASSET_PREVIEW");
+  const loopPath = parseBuilderMarker(run.out.replace(/\r/g, "\n"), "ASSET_LOOP");
+  const motionRaw = parseBuilderMarker(run.out.replace(/\r/g, "\n"), "MOTION_SUMMARY");
+  let motionSummary: Record<string, unknown> | null = null;
+  if (motionRaw) {
+    try {
+      motionSummary = JSON.parse(motionRaw) as Record<string, unknown>;
+    } catch {
+      motionSummary = null;
+    }
+  }
   const objects = parseInt(parseBuilderMarker(run.out, "ASSET_OBJECTS") ?? "0", 10) || 0;
   const tris = parseInt(parseBuilderMarker(run.out, "ASSET_TRIS") ?? "0", 10) || 0;
   const err = parseBuilderMarker(run.out, "ASSET_ERROR");
@@ -539,6 +559,8 @@ export async function runAssetBuilder(opts: {
     log: ok ? tail : `${run.timedOut ? "TIMED OUT\n" : ""}${err ? `ASSET_ERROR ${err}\n` : ""}${tail}`,
     blendPath,
     previewPath,
+    loopPath,
+    motionSummary,
     objects,
     tris,
     outDir: opts.outDir,

@@ -3,7 +3,8 @@ import path from "path";
 import { db } from "@/lib/db";
 import ZAI from "z-ai-web-dev-sdk";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
-import { runBlenderScript, runtimeBlenderBin } from "@/lib/blender/runtime";
+import { runBlenderScript, runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
+import { DEFAULT_MOTION_BY_ARCHETYPE } from "@/lib/blender/motion";
 
 // ─────────────────────────────────────────────────────────────
 // THE SELF-CORRECTING DESIGN LOOP (the studio checks its own work)
@@ -38,6 +39,7 @@ export type DesignCriteria = {
   palette: number; // coherent, purposeful colors
   lighting: number; // judged under a DESIGNED rig or honestly default
   detail: number; // finishing pass present (bevels, smoothing, runes)
+  motion: number; // a baked performance (armature + loop) or honest N/A
 };
 
 export interface ReviewVerdict {
@@ -48,7 +50,23 @@ export interface ReviewVerdict {
   issues: Array<{ severity: "CRITICAL" | "MAJOR" | "MINOR"; kind: string; note: string }>;
 }
 
-const CRITERIA_KEYS: Array<keyof DesignCriteria> = ["geometry", "material", "silhouette", "palette", "lighting", "detail"];
+const CRITERIA_KEYS: Array<keyof DesignCriteria> = ["geometry", "material", "silhouette", "palette", "lighting", "detail", "motion"];
+
+// The weighted overall: geometry and silhouette still lead, but MOTION
+// carries production weight - a statue is not a donghua asset.
+const CRITERIA_WEIGHTS: Record<keyof DesignCriteria, number> = {
+  geometry: 0.24,
+  material: 0.15,
+  silhouette: 0.2,
+  palette: 0.1,
+  lighting: 0.1,
+  detail: 0.08,
+  motion: 0.13,
+};
+
+function weightedOverall(c: DesignCriteria): number {
+  return clamp01(CRITERIA_KEYS.reduce((acc, k) => acc + c[k] * CRITERIA_WEIGHTS[k], 0));
+}
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
@@ -84,6 +102,8 @@ function localAudit(asset: {
   status: string;
   version: number;
   previewPath: string | null;
+  loopPath: string | null;
+  motionPreset: string | null;
   identityScore: number | null;
   meta: string | null;
 }): ReviewVerdict {
@@ -94,6 +114,8 @@ function localAudit(asset: {
     tris?: number;
     lightingRig?: { name: string } | null;
     materialRecipe?: { name: string } | null;
+    motion?: { name?: string; archetype?: string; motion?: string } | null;
+    dna?: { archetype?: string } | null;
   };
   let meta: AssetMeta | null = null;
   try {
@@ -122,12 +144,31 @@ function localAudit(asset: {
   const palette = meta?.materialRecipe ? 0.8 : 0.6;
   const lighting = meta?.lightingRig ? 0.85 : 0.55; // honest: default studio rig
 
-  const criteria: DesignCriteria = { geometry, material, silhouette, palette, lighting, detail };
-  const overall = clamp01(
-    geometry * 0.26 + material * 0.18 + silhouette * 0.22 + palette * 0.12 + lighting * 0.12 + detail * 0.1,
-  );
+  // MOTION: props and creatures are judged on their performance
+  // (a baked armature + the rendered loop on disk are the evidence);
+  // characters perform through the directed pose system and sets are
+  // static by design - both score as honest N/A.
+  const loopOnDisk = asset.loopPath ? loopBytes(asset.loopPath) > 1_000 : false;
+  let motion: number;
+  const motionIssues: ReviewVerdict["issues"] = [];
+  if (asset.kind === "PROP" || asset.kind === "CREATURE") {
+    if (asset.motionPreset && loopOnDisk) {
+      motion = 0.92;
+    } else if (asset.motionPreset) {
+      motion = 0.5;
+      motionIssues.push({ severity: "MAJOR", kind: "MOTION", note: "a motion preset is recorded but the preview loop is missing on disk - rebuild with motion to re-bake the performance" });
+    } else {
+      motion = 0.3;
+      motionIssues.push({ severity: "MAJOR", kind: "MOTION", note: "designed but motionless - a production-grade asset performs: register design_motion and rebuild with motion:<name> (design_fix bakes the archetype default)" });
+    }
+  } else {
+    motion = asset.kind === "CHARACTER" ? 0.8 : 0.8;
+  }
 
-  const issues: ReviewVerdict["issues"] = [];
+  const criteria: DesignCriteria = { geometry, material, silhouette, palette, lighting, detail, motion };
+  const overall = weightedOverall(criteria);
+
+  const issues: ReviewVerdict["issues"] = [...motionIssues];
   if (asset.status !== "READY") {
     issues.push({ severity: "CRITICAL", kind: "GEOMETRY", note: `asset is ${asset.status}, not READY - the last build did not produce an accepted .blend` });
   } else {
@@ -155,8 +196,18 @@ function localAudit(asset: {
   }
   const note = asset.status !== "READY"
     ? "the asset is not in an accepted state"
-    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}`;
+    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}${asset.motionPreset && loopOnDisk ? ", performing" : asset.motionPreset ? ", motion unbaked" : ", motionless"}`;
   return { criteria, overall, note, provider: "local", issues };
+}
+
+function loopBytes(loopPath: string | null): number {
+  if (!loopPath) return 0;
+  const rel = loopPath.replace(/^\/assets-blender\//, "");
+  try {
+    return fs.statSync(path.join(process.cwd(), "public", "assets-blender", rel)).size;
+  } catch {
+    return 0;
+  }
 }
 
 /** The vision critique - a design-expert read of the preview. */
@@ -237,7 +288,8 @@ export async function auditAsset(assetId: string, useVision = true): Promise<Aud
     const vis = await visionCritique({ previewPath: asset.previewPath, kind: asset.kind, refName: asset.refName });
     if (vis.ok && vis.criteria) {
       // vision scores carry the perceptual criteria; local carries the
-      // structural ones (geometry). Merge honestly, name the provider.
+      // structural ones (geometry) - motion stays local (the loop on
+      // disk is the evidence, not a vibe). Merge honestly, name the provider.
       const vc = vis.criteria;
       const merged: DesignCriteria = {
         geometry: local.criteria.geometry,
@@ -246,10 +298,9 @@ export async function auditAsset(assetId: string, useVision = true): Promise<Aud
         palette: vc.palette !== undefined ? clamp01(vc.palette) : local.criteria.palette,
         lighting: vc.lighting !== undefined ? clamp01(vc.lighting) : local.criteria.lighting,
         detail: vc.detail !== undefined ? clamp01(vc.detail) : local.criteria.detail,
+        motion: local.criteria.motion,
       };
-      const overall = clamp01(
-        merged.geometry * 0.26 + merged.material * 0.18 + merged.silhouette * 0.22 + merged.palette * 0.12 + merged.lighting * 0.12 + merged.detail * 0.1,
-      );
+      const overall = weightedOverall(merged);
       verdict = {
         criteria: merged,
         overall,
@@ -384,6 +435,7 @@ function compileFixScript(opts: {
   kinds: Set<string>;
   accentHex: string;
   lightRig: Record<string, unknown> | null;
+  hasPerf?: boolean; // a baked armature: origin recentering would fight the rig
 }): string {
   const ops: string[] = [];
   const kinds = opts.kinds;
@@ -419,6 +471,21 @@ fixed.append("bevel+subsurf finishing on %d meshes" % len(meshes()))
   }
 
   if (kinds.has("SILHOUETTE") || kinds.has("GEOMETRY") || kinds.has("PROPORTION")) {
+    if (opts.hasPerf) {
+      ops.push(`
+# performing asset: shade_smooth only - origin recentering would fight
+# the bone bindings the baked performance depends on
+for ob in meshes():
+    try:
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.select_all(action="DESELECT")
+        ob.select_set(True)
+        bpy.ops.object.shade_smooth()
+    except Exception:
+        pass
+fixed.append("shade_smooth on %d meshes (origins kept: rig-bound)" % len(meshes()))
+`);
+    } else {
     ops.push(`
 # normal + origin hygiene: shading artifacts and off-center origins
 # are the two most common silhouette killers on procedural builds
@@ -439,6 +506,7 @@ for ob in meshes():
         pass
 fixed.append("shade_smooth + origin recentered on %d meshes" % len(meshes()))
 `);
+    }
   }
 
   if (kinds.has("MATERIAL")) {
@@ -643,7 +711,7 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   }
 
   const kinds = new Set(targets.map((t) => t.kind));
-  type FixAssetMeta = { dna?: { accentColor?: string }; lightingRig?: { spec: Record<string, unknown> } | null };
+  type FixAssetMeta = { dna?: { accentColor?: string; archetype?: string }; lightingRig?: { spec: Record<string, unknown> } | null; motion?: { archetype?: string; motion?: string } | null };
   let meta: FixAssetMeta | null = null;
   try {
     meta = JSON.parse(asset.meta || "null") as FixAssetMeta;
@@ -660,25 +728,115 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   const outBlend = path.join(workDir, `${slugOf(asset.refName)}.blend`);
   const outPreview = path.join(workDir, `${slugOf(asset.refName)}.png`);
 
+  // THE MOTION FIX: a motionless prop or creature gets a REAL baked
+  // performance through the builder's motion-only pass (archetype
+  // default motion), landing a new .blend with the armature + Action
+  // and the animated preview loop beside it.
+  let motionBaked: { blendPath: string; loopPath: string | null; previewPath: string | null; ops: string; motionName: string } | null = null;
+  let currentBlend = asset.blendPath;
+  let hasPerf = Boolean(asset.motionPreset);
+  let tracked = targets;
+  if (kinds.has("MOTION")) {
+    if (asset.kind !== "PROP" && asset.kind !== "CREATURE") {
+      // defensive: motion issues only arise for props/creatures
+      for (const t of targets.filter((x) => x.kind === "MOTION")) {
+        await db.designIssue.update({
+          where: { id: t.id },
+          data: { status: "WONTFIX", fixNote: "characters perform through the directed pose system, environments are static by design - no motion bake applies", updatedAt: new Date() },
+        });
+      }
+      tracked = tracked.filter((x) => x.kind !== "MOTION");
+    } else {
+      const archetypeRaw = String(meta?.motion?.archetype ?? meta?.dna?.archetype ?? "");
+      const archetype = asset.kind === "PROP"
+        ? "prop"
+        : (["serpent", "bird", "quadruped"].includes(archetypeRaw) ? archetypeRaw : "quadruped");
+      const motionName = DEFAULT_MOTION_BY_ARCHETYPE[archetype] ?? "breathe";
+      const motionFile = path.join(workDir, "fix-motion.json");
+      fs.writeFileSync(motionFile, JSON.stringify({ motion: motionName, speed: 1, amplitude: 1, cycleFrames: 24, size: 1.0, archetype }, null, 2));
+      const dnaFile = path.join(workDir, "fix-dna.json");
+      fs.writeFileSync(dnaFile, JSON.stringify({ name: asset.refName }));
+      const motionRun = await runAssetBuilder({
+        kind: asset.kind as "PROP" | "CREATURE",
+        dnaPath: dnaFile,
+        outDir: workDir,
+        name: asset.refName,
+        fromBlend: asset.blendPath ?? undefined,
+        motionPath: motionFile,
+        timeoutMs: 6 * 60_000,
+      });
+      if (!motionRun.ok || !motionRun.blendPath || !fs.existsSync(motionRun.blendPath)) {
+        const failNote = `motion bake failed: ${motionRun.log.slice(-200)}`;
+        for (const t of targets.filter((x) => x.kind === "MOTION")) {
+          await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: failNote, updatedAt: new Date() } });
+        }
+        await landEvent(asset.projectId, `Design fix FAILED for ${asset.kind.toLowerCase()} ${asset.refName}: the motion bake errored`, { assetId: asset.id });
+        return {
+          ok: false,
+          error: failNote,
+          assetId: asset.id,
+          refName: asset.refName,
+          versionBefore: asset.version,
+          versionAfter: null,
+          attempted: targets.length,
+          fixed: 0,
+          stillOpen: targets.length,
+          fixLog: motionRun.log.slice(-3000),
+        };
+      }
+      motionBaked = {
+        blendPath: motionRun.blendPath,
+        loopPath: motionRun.loopPath,
+        previewPath: motionRun.previewPath,
+        ops: `baked ${motionName} performance (armature + looping action)`,
+        motionName,
+      };
+      currentBlend = motionRun.blendPath; // the motion pass saved the new version here
+      hasPerf = true;
+    }
+  }
+
+  // The remaining issue kinds ride the standard bpy refinement pass
+  // (LIGHTING is preview-owned; a pure motion fix skips the pass -
+  // the builder already rendered the preview + loop).
+  const bpyOps = ["GEOMETRY", "DETAIL", "SILHOUETTE", "PROPORTION", "MATERIAL", "PALETTE"];
+  const needsBpyPass = bpyOps.some((k) => kinds.has(k));
+  let fixLog = "";
+  let fixOps: string;
+  if (!needsBpyPass) {
+    if (!motionBaked) {
+      // nothing actionable ran (e.g. only LIGHTING): honest no-op
+      for (const t of tracked) {
+        await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: "nothing to run for this issue kind - address it by rebuilding under a designed rig", updatedAt: new Date() } });
+      }
+      return { ok: true, assetId: asset.id, refName: asset.refName, versionBefore: asset.version, versionAfter: asset.version, attempted: targets.length, fixed: 0, stillOpen: targets.length, fixLog: "no runnable fix op for these issue kinds" };
+    }
+    fixOps = motionBaked.ops;
+    fixLog = `MOTION_BAKE ${motionBaked.ops}`;
+  } else {
   const script = compileFixScript({
-    blendPath: asset.blendPath,
+    blendPath: currentBlend ?? asset.blendPath!,
     outBlendPath: outBlend,
     outPreviewPath: outPreview,
     kinds,
     accentHex,
     lightRig: meta?.lightingRig?.spec ?? null,
+    hasPerf,
   });
   const run = await runBlenderScript(script, `design-fix-${slugOf(asset.refName).slice(0, 20)}`, 5 * 60_000);
 
-  const fixLog = run.log.slice(-3000);
+  fixLog = run.log.slice(-3000);
   const marker = (m: string) => {
-    const match = run.log.match(new RegExp(`^${m} (.+)$`, "m"));
+    // parse from the FULL normalized log: the 6KB display tail may not
+    // reach back to the markers printed before the preview render
+    const match = run.fullLog.match(new RegExp(`^${m} (.+)$`, "m"));
     return match ? match[1].trim() : null;
   };
   const okRun = run.ok && marker("FIX_BLEND") && fs.existsSync(outBlend);
 
   if (!okRun) {
     // the fix pass itself failed: reopen the issues with the log
+    const diag = `ok:${run.ok} marker:${Boolean(marker("FIX_BLEND"))} exists:${fs.existsSync(outBlend)}`;
     for (const t of targets) {
       await db.designIssue.update({
         where: { id: t.id },
@@ -686,15 +844,26 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
       });
     }
     await landEvent(asset.projectId, `Design fix FAILED for ${asset.kind.toLowerCase()} ${asset.refName}: the bpy pass errored`, { assetId: asset.id });
-    return { ok: false, error: `the bpy fix pass failed: ${run.log.slice(-300)}`, assetId, refName: asset.refName, versionBefore: asset.version, versionAfter: null, attempted: targets.length, fixed: 0, stillOpen: targets.length, fixLog };
+    return { ok: false, error: `the bpy fix pass failed (${diag}): ${run.log.slice(-300)}`, assetId, refName: asset.refName, versionBefore: asset.version, versionAfter: null, attempted: targets.length, fixed: 0, stillOpen: targets.length, fixLog };
+  }
+  fixOps = motionBaked ? `${motionBaked.ops} + ${marker("FIX_OPS") ?? "bpy refinement pass"}` : marker("FIX_OPS") ?? "bpy refinement pass";
   }
 
-  // accepted: promote the new version (blend + preview) into the row
+  // accepted: promote the new version (blend + preview + loop) into the row
   const previewPublic = path.join(process.cwd(), "public", "assets-blender", `${asset.id}.png`);
   if (fs.existsSync(outPreview)) {
     try { fs.copyFileSync(outPreview, previewPublic); } catch { /* preview optional */ }
+  } else if (motionBaked?.previewPath && fs.existsSync(motionBaked.previewPath)) {
+    try { fs.copyFileSync(motionBaked.previewPath, previewPublic); } catch { /* preview optional */ }
   }
-  const fixOps = marker("FIX_OPS") ?? "bpy refinement pass";
+  let loopPublicPath: string | null = null;
+  if (motionBaked?.loopPath && fs.existsSync(motionBaked.loopPath)) {
+    const loopPublic = path.join(process.cwd(), "public", "assets-blender", `${asset.id}.mp4`);
+    try {
+      fs.copyFileSync(motionBaked.loopPath, loopPublic);
+      loopPublicPath = `/assets-blender/${asset.id}.mp4`;
+    } catch { /* loop optional */ }
+  }
   const newMeta = meta ?? {};
   await db.blenderAsset.update({
     where: { id: asset.id },
@@ -702,8 +871,17 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
       version: newVersion,
       blendPath: outBlend,
       previewPath: fs.existsSync(previewPublic) ? `/assets-blender/${asset.id}.png` : asset.previewPath,
-      buildLog: fixLog.slice(-4000),
-      meta: JSON.stringify({ ...newMeta, fixPass: { ops: fixOps, fromVersion: asset.version, at: new Date().toISOString() } }).slice(0, 4000),
+      loopPath: loopPublicPath ?? asset.loopPath,
+      motionPreset: motionBaked ? `${motionBaked.motionName} (archetype default)` : asset.motionPreset,
+      motionBakedAt: motionBaked ? new Date() : asset.motionBakedAt,
+      buildLog: (motionBaked ? `${fixLog}\n` : "") + (motionBaked && !needsBpyPass ? "" : fixLog).slice(-4000),
+      meta: JSON.stringify({
+        ...newMeta,
+        motion: motionBaked
+          ? { ...(newMeta.motion ?? {}), name: `${motionBaked.motionName} (archetype default)`, bakedBy: "design_fix" }
+          : newMeta.motion,
+        fixPass: { ops: fixOps, fromVersion: asset.version, at: new Date().toISOString() },
+      }).slice(0, 4000),
     },
   });
 
@@ -712,7 +890,7 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   const reRaised = new Set(reAudit.issues.filter((i) => i.status === "OPEN").map((i) => i.kind));
   let fixed = 0;
   let stillOpen = 0;
-  for (const t of targets) {
+  for (const t of tracked) {
     if (reRaised.has(t.kind)) {
       stillOpen += 1;
       await db.designIssue.update({
@@ -761,7 +939,7 @@ export async function designStatus(projectId: string) {
     }),
     db.blenderAsset.findMany({
       where: { projectId },
-      select: { id: true, kind: true, refName: true, status: true, version: true, qualityScore: true, lastReviewAt: true },
+      select: { id: true, kind: true, refName: true, status: true, version: true, qualityScore: true, lastReviewAt: true, motionPreset: true, loopPath: true },
       orderBy: [{ kind: "asc" }, { refName: "asc" }],
     }),
   ]);

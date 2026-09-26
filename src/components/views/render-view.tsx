@@ -209,7 +209,7 @@ function BlenderAssetLibraryCard() {
           Blender asset library
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
-          No DESIGNED assets yet. DSH designs them with blender_asset_build: each character, environment, prop and creature becomes a versioned .blend in the library - and every render job of that cast/environment (or shot text naming a prop) loads the asset instead of rebuilding procedural stand-ins. The design loop (audit, fix, re-audit) keeps the quality bar honest.
+          No DESIGNED assets yet. DSH designs them with blender_asset_build: each character, environment, prop and creature becomes a versioned .blend in the library - and every render job of that cast/environment (or shot text naming a prop) loads the asset instead of rebuilding procedural stand-ins. Props and creatures then get a motion preset (design_motion + rebuild): the card plays the baked performance loop. The design loop (audit, fix, re-audit) keeps the quality bar honest.
         </p>
       </div>
     );
@@ -234,7 +234,19 @@ function BlenderAssetLibraryCard() {
           return (
             <div key={a.id} className="rounded-lg border border-white/10 bg-white/[0.03] overflow-hidden">
               <div className="aspect-square bg-black/40 relative">
-                {a.previewPath ? (
+                {a.loopPath ? (
+                  <video
+                    src={a.loopPath}
+                    poster={a.previewPath ?? undefined}
+                    muted
+                    loop
+                    autoPlay
+                    playsInline
+                    controls
+                    className="w-full h-full object-cover"
+                    title={`Performing '${a.motionPreset}' - the baked armature loop`}
+                  />
+                ) : a.previewPath ? (
                   <img src={a.previewPath} alt={a.refName} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground/60">no preview</div>
@@ -250,6 +262,11 @@ function BlenderAssetLibraryCard() {
                 {a.identityScore !== null && (
                   <span className="absolute bottom-1 right-1 rounded px-1 py-0.5 text-[8px] font-bold tabular-nums bg-black/60 text-emerald-300">
                     {Math.round(a.identityScore * 100)}%
+                  </span>
+                )}
+                {a.loopPath && (
+                  <span className="absolute bottom-1 left-8 rounded px-1 py-0.5 text-[8px] font-bold tracking-wider bg-black/60 text-cyan-300" title={`Baked motion preset: ${a.motionPreset}`}>
+                    {a.motionPreset ?? "MOTION"}
                   </span>
                 )}
                 {openForAsset.length > 0 && (
@@ -335,7 +352,7 @@ function BlenderAssetLibraryCard() {
         </div>
       )}
       <p className="text-[10px] text-muted-foreground/70 mt-2">
-        READY assets ride every matching render payload - the worker loads the designed .blend instead of rebuilding procedural stand-ins, and named props/creatures ride shots whose text mentions them. Identity is vision-scored against the canonical sheets; the quality grade comes from the design loop DSH runs with design_audit / design_fix.
+        READY assets ride every matching render payload - the worker loads the designed .blend instead of rebuilding procedural stand-ins, and named props/creatures ride shots whose text mentions them (a performing asset's baked armature loop plays live in the render). Identity is vision-scored against the canonical sheets; the quality grade comes from the design loop DSH runs with design_audit / design_fix, and its MOTION criterion keeps props and creatures performing instead of standing still.
       </p>
     </div>
   );

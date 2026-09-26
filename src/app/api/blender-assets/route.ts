@@ -12,7 +12,8 @@ import {
 //
 // GET  /api/blender-assets?projectId=...            - the library
 // POST {action: build|inspect|preview, kind, refName} - design loop
-//      build also accepts material/lighting recipe names
+//      build also accepts material/lighting recipe names and a
+//      motion preset name (the baked performance)
 // ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let body: { action?: string; projectId?: string; kind?: string; refName?: string; material?: string; lighting?: string } = {};
+  let body: { action?: string; projectId?: string; kind?: string; refName?: string; material?: string; lighting?: string; motion?: string } = {};
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
     const res = await buildBlenderAsset(projectId, kind as BlenderAssetKind, refName, null, {
       materialName: String(body.material ?? "").trim() || null,
       lightingName: String(body.lighting ?? "").trim() || null,
+      motionName: String(body.motion ?? "").trim() || null,
     });
     return NextResponse.json(res, { status: res.ok ? 200 : 500 });
   }

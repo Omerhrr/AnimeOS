@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# AnimeOS ASSET BUILDER (v5.0) - the design-time Blender pass
+# AnimeOS ASSET BUILDER (v6.0) - the design-time Blender pass
 #
 # Builds a LIBRARY ASSET (.blend) for one design DNA: the DESIGNED
 # character (v4.0 figure builder, full v3.x rig contract), the
@@ -14,7 +14,7 @@
 # Run headless:
 #   blender -b -P asset_builder.py -- --kind CHARACTER \
 #     --dna <dna.json> --out <dir> [--name "Lin Yue"] \
-#     [--material <recipe.json>] [--rig <rig.json>]
+#     [--material <recipe.json>] [--rig <rig.json>] [--motion <spec.json>]
 #
 # --material is a DESIGNED material recipe (design_material): the
 #   builder applies it to the asset's primary materials after the
@@ -22,6 +22,12 @@
 # --rig is a DESIGNED lighting rig (design_lighting): it drives the
 #   PREVIEW rig only (key/fill/rim energy + color + camera) - the
 #   saved asset still carries no lights.
+# --motion is a DESIGNED motion preset (design_motion): the builder
+#   gives the asset a REAL armature (motion_rig.py), rigid-binds its
+#   named part hierarchy to the bones, and bakes a seamless looping
+#   performance INTO the file - then renders the animated preview
+#   loop (ASSET_LOOP marker) beside the static still. A performing
+#   asset carries its rig + Action into every appended render.
 #
 # After the .blend is saved the script stages its own neutral
 # preview rig (3-point light + camera, NOT saved into the asset)
@@ -30,6 +36,7 @@
 # stdout markers the caller parses:
 #   ASSET_BLEND <path>
 #   ASSET_PREVIEW <path>
+#   ASSET_LOOP <path>
 #   ASSET_OBJECTS <n>
 #   ASSET_TRIS <n>
 #   ASSET_ERROR <msg>
@@ -38,6 +45,7 @@
 import json
 import math
 import os
+import subprocess
 import sys
 
 
@@ -67,6 +75,7 @@ def main():
     from_blend = str(args.get("blend", ""))
     material_path = str(args.get("material", ""))
     rig_path = str(args.get("rig", ""))
+    motion_path = str(args.get("motion", ""))
     os.makedirs(out_dir, exist_ok=True)
 
     dna = {}
@@ -87,11 +96,21 @@ def main():
                 rig = json.load(fh)
         except Exception:  # noqa: BLE001
             rig = None
+    motion = None
+    if motion_path:
+        try:
+            with open(motion_path, "r", encoding="utf-8") as fh:
+                motion = json.load(fh)
+        except Exception:  # noqa: BLE001
+            motion = None
+    if motion is not None and kind not in ("PROP", "CREATURE"):
+        fail("motion presets apply to PROP and CREATURE assets - a character performs through the directed pose system, an environment is static by design")
 
     # the v4.0/v4.1 builders live next to this script
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import bpy
     import animeos_bridge as bridge
+    import motion_rig
 
     scn = bpy.context.scene
 
@@ -122,6 +141,17 @@ def main():
         bpy.ops.wm.open_mainfile(filepath=from_blend)
         scn = bpy.context.scene
         blend_path = from_blend
+        if motion is not None:
+            # motion-only pass (the design_fix path): (re)rig + (re)bake
+            # and save a NEW versioned file - the input stays untouched
+            spec = dict(motion)
+            spec.setdefault("size", 1.0)
+            rep = motion_rig.ensure_performance(bpy, scn, spec)
+            if rep is None:
+                fail("this asset has no performing part hierarchy (characters perform through the directed pose system, environments are static)")
+            blend_path = os.path.join(out_dir, f"{slug}.blend")
+            bpy.ops.wm.save_as_mainfile(filepath=blend_path, compress=True)
+            print(f"MOTION_SUMMARY {json.dumps(rep)}", flush=True)
         obj_count = len(scn.objects)
         tris = 0
         for ob in scn.objects:
@@ -196,6 +226,22 @@ def main():
                         em.inputs[0].default_value = (*bridge.hex_to_rgb(recipe["emissionColor"]), 1.0)
                     if recipe.get("emissionStrength") is not None and em:
                         em.inputs[1].default_value = max(0.0, float(recipe["emissionStrength"]))
+
+    # DESIGNED motion preset (design_motion): give the asset a REAL
+    # armature + a baked looping performance BEFORE the save, so the
+    # rig and its Action travel inside the .blend to every render.
+    if motion is not None and not from_blend:
+        spec = dict(motion)
+        if kind == "PROP":
+            spec["archetype"] = "prop"
+        else:
+            arch = str(dna.get("archetype") or "quadruped")
+            spec["archetype"] = arch if arch in ("serpent", "bird", "quadruped") else "quadruped"
+        spec.setdefault("size", float(dna.get("size") or 1.0))
+        rep = motion_rig.ensure_performance(bpy, scn, spec)
+        if rep is None:
+            fail("the built part hierarchy offers nothing to perform")
+        print(f"MOTION_SUMMARY {json.dumps(rep)}", flush=True)
 
     obj_count = len(scn.objects)
     tris = 0
@@ -322,6 +368,18 @@ def main():
     if not os.path.exists(preview_path):
         fail("preview render produced no file")
     print(f"ASSET_PREVIEW {preview_path}", flush=True)
+
+    # DESIGNED performance: render the ANIMATED PREVIEW LOOP beside the
+    # still - the proof the asset performs (only when a motion preset
+    # baked a rig into this build).
+    if motion is not None and scn.frame_end > scn.frame_start:
+        loop_path = os.path.join(out_dir, f"{slug}.mp4")
+        frames_dir = os.path.join(out_dir, "loop-frames")
+        produced = motion_rig.render_loop(bpy, scn, loop_path, subprocess, frames_dir)
+        if produced and os.path.exists(produced) and os.path.getsize(produced) > 0:
+            print(f"ASSET_LOOP {produced}", flush=True)
+        scn.render.image_settings.file_format = "PNG"
+        scn.frame_set(1)
     print("ASSET_OK", flush=True)
 
 

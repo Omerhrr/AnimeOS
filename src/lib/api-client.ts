@@ -350,6 +350,8 @@ export interface BlenderAssetRow {
   version: number;
   previewPath: string | null;
   blendPath: string | null;
+  motionPreset?: string | null;
+  loopPath?: string | null;
   identityScore: number | null;
   inspectNote: string | null;
   inspectedAt: string | null;

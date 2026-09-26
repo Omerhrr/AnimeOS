@@ -1542,9 +1542,9 @@ def build_designed_creature(bpy, scn, dna, job_id="creature-build"):
         body = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=16, ring_count=12, radius=0.2 * size, location=(0, 0, 0.5 * size), )
         body.scale = (1.0, 1.9, 0.9)
         part(body, "Body", hide)
-        belly = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=12, ring_count=9, radius=0.16 * size, location=(0, 0, 0.42 * size), )
-        belly.scale = (0.9, 1.7, 0.6)
-        part(belly, "Underbelly", belly)
+        belly_mesh = prim(scn, bpy.ops.mesh.primitive_uv_sphere_add, segments=12, ring_count=9, radius=0.16 * size, location=(0, 0, 0.42 * size), )
+        belly_mesh.scale = (0.9, 1.7, 0.6)
+        part(belly_mesh, "Underbelly", belly)
         neck = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=10, radius=0.08 * size, depth=0.26 * size, location=(0, 0.3 * size, 0.66 * size), )
         neck.rotation_euler = (math.radians(-32), 0, 0)
         part(neck, "Neck", hide)
@@ -1802,11 +1802,16 @@ def worker_run(job_file):
                     rock.scale = (1.0, 0.8 + rng() * 0.4, 0.6 + rng() * 0.5)
                     rock.data.materials.append(mat)
 
-        # ── v5.0: DESIGNED props and creatures named by the shot text
-        #    ride the payload and load as real library assets at a
-        #    deterministic foreground line (never stacked, never boxes) ──
+        # ── v5.0/v6.0: DESIGNED props and creatures named by the shot
+        #    text ride the payload and load as real library assets at a
+        #    deterministic foreground line (never stacked, never boxes).
+        #    A performing asset arrives with its own armature + baked
+        #    Action: the ROOT objects (the rig, not the bone-bound
+        #    meshes) anchor to the prop line so the bone bindings
+        #    survive, and the shot plays the designed performance. ──
         asset_props = assets_p.get("props") if isinstance(assets_p.get("props"), list) else []
         props_loaded = []
+        props_animated = []
         for k, entry in enumerate(asset_props):
             if not isinstance(entry, dict):
                 continue
@@ -1817,23 +1822,33 @@ def worker_run(job_file):
             try:
                 before = set(scn.objects)
                 load_blend_objects(bpy, scn, p)
-                fresh = [o for o in scn.objects if o not in before and o.type == "MESH"]
+                fresh = [o for o in scn.objects if o not in before and o.type in ("MESH", "ARMATURE")]
                 if not fresh:
                     continue
-                # one empty anchors the prop group so placement is
+                fresh_set = set(fresh)
+                # only ROOT objects get anchored: reparenting a
+                # bone-bound mesh would sever its rig binding
+                roots = [o for o in fresh if o.parent is None or o.parent not in fresh_set]
+                has_perf = any(o.type == "ARMATURE" and o.animation_data and o.animation_data.action
+                               for o in fresh)
+                # one empty anchors the asset group so placement is
                 # deterministic and the pieces move as one
                 parent = bpy.data.objects.new(f"PropAnchor{k + 1}", None)
                 scn.collection.objects.link(parent)
-                for ob in fresh:
-                    ob.parent = parent
+                for r in roots:
+                    r.parent = parent
                 ang = (k - (len(asset_props) - 1) / 2) * 0.7
                 parent.location = (math.sin(ang) * 2.6, -1.9 - (k % 2) * 0.9, 0.0)
                 parent.rotation_euler = (0.0, 0.0, math.radians(-12 + k * 14))
                 props_loaded.append(str(entry.get("name", f"prop{k + 1}")))
+                if has_perf:
+                    props_animated.append(str(entry.get("name", f"prop{k + 1}")))
             except Exception as exc:  # noqa: BLE001
                 state.setdefault("assetNotes", []).append(f"{entry.get('name', 'prop')}: load failed: {exc}")
         if props_loaded:
             state["propsLoaded"] = props_loaded
+        if props_animated:
+            state["propsAnimated"] = props_animated
 
         # ── subject: the DESIGNED hero when cast DNA arrived (posed or
         #    standing), the legacy stand-in on pose shots without DNA,

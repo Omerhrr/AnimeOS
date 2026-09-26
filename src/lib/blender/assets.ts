@@ -5,6 +5,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { characterDesignDna, environmentDna, propDna, creatureDna } from "@/lib/animation/design";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
+import type { MotionSpec } from "@/lib/blender/motion";
 
 // ─────────────────────────────────────────────────────────────
 // BLENDER ASSET LIBRARY (design once, render many)
@@ -138,7 +139,7 @@ export async function buildBlenderAsset(
   kind: BlenderAssetKind,
   refName: string,
   guidance?: string | null,
-  presets?: { materialName?: string | null; lightingName?: string | null },
+  presets?: { materialName?: string | null; lightingName?: string | null; motionName?: string | null },
 ): Promise<BuildAssetResult> {
   if (!runtimeBlenderBin()) {
     return {
@@ -199,6 +200,46 @@ export async function buildBlenderAsset(
   const rigFile = lightingPreset ? path.join(workDir, "rig.json") : null;
   if (lightingPreset && rigFile) fs.writeFileSync(rigFile, JSON.stringify(lightingPreset.spec, null, 2));
 
+  // DESIGNED motion preset (design_motion): the performance is baked
+  // into the .blend as a REAL armature + looping Action, and the
+  // animated preview loop proves it. Props and creatures only.
+  let motionPreset: { name: string; spec: MotionSpec } | null = null;
+  if (presets?.motionName) {
+    if (kind === "CHARACTER" || kind === "ENVIRONMENT") {
+      return {
+        ok: false, assetId: "", version: 0, status: "FAILED", blendPath: null, previewPath: null,
+        objects: 0, tris: 0, buildMs: 0,
+        log: `motion presets apply to PROP and CREATURE assets - a ${kind.toLowerCase()} ${kind === "CHARACTER" ? "performs through the directed pose system" : "is static by design"}`,
+      };
+    }
+    const row = await db.designPreset.findUnique({
+      where: { projectId_kind_name: { projectId, kind: "MOTION", name: presets.motionName } },
+    });
+    if (row) {
+      let spec: MotionSpec | null = null;
+      try {
+        spec = JSON.parse(row.spec || "null") as MotionSpec | null;
+      } catch {
+        spec = null;
+      }
+      if (spec && typeof spec.motion === "string") {
+        motionPreset = { name: row.name, spec };
+        await db.designPreset.update({ where: { id: row.id }, data: { usageCount: { increment: 1 } } });
+      }
+    }
+  }
+  const motionFile = motionPreset ? path.join(workDir, "motion.json") : null;
+  if (motionPreset && motionFile) {
+    const dnaRecord = resolved.dna as unknown as Record<string, unknown>;
+    const archetype = kind === "PROP"
+      ? "prop"
+      : ["serpent", "bird", "quadruped"].includes(String(dnaRecord.archetype ?? ""))
+        ? String(dnaRecord.archetype)
+        : "quadruped";
+    const size = Math.max(0.3, Math.min(12, Number(dnaRecord.size ?? 1) || 1));
+    fs.writeFileSync(motionFile, JSON.stringify({ ...motionPreset.spec, size, archetype }, null, 2));
+  }
+
   const run = await runAssetBuilder({
     kind,
     dnaPath: dnaFile,
@@ -206,6 +247,8 @@ export async function buildBlenderAsset(
     name: refName,
     ...(materialFile ? { materialPath: materialFile } : {}),
     ...(rigFile ? { rigPath: rigFile } : {}),
+    ...(motionFile ? { motionPath: motionFile } : {}),
+    ...(motionPreset ? { timeoutMs: 6 * 60_000 } : {}),
   });
   const buildMs = Date.now() - started;
 
@@ -228,13 +271,21 @@ export async function buildBlenderAsset(
   if (run.previewPath && previewPublic) {
     try { fs.copyFileSync(run.previewPath, previewPublic); } catch { /* preview optional */ }
   }
+  // the animated preview loop lands beside the still (the performance proof)
+  const loopPublic = run.loopPath && motionPreset ? path.join(PREVIEW_PUBLIC_DIR, `${asset.id}.mp4`) : null;
+  if (run.loopPath && loopPublic) {
+    try { fs.copyFileSync(run.loopPath, loopPublic); } catch { /* loop optional */ }
+  }
 
   const meta = {
-    builderVersion: "v5.0",
+    builderVersion: "v6.0",
     dna: resolved.dna,
     guidance: guidance ?? null,
     materialRecipe: materialPreset ? { name: materialPreset.name, spec: materialPreset.spec } : null,
     lightingRig: lightingPreset ? { name: lightingPreset.name, spec: lightingPreset.spec } : null,
+    motion: motionPreset
+      ? { name: motionPreset.name, ...run.motionSummary, spec: motionPreset.spec }
+      : null,
     objects: run.objects,
     tris: run.tris,
     buildMs,
@@ -247,14 +298,17 @@ export async function buildBlenderAsset(
       version,
       blendPath: finalBlend,
       previewPath: previewPublic ? `/assets-blender/${asset.id}.png` : null,
+      motionPreset: motionPreset ? motionPreset.name : null,
+      loopPath: loopPublic && fs.existsSync(loopPublic) ? `/assets-blender/${asset.id}.mp4` : null,
+      motionBakedAt: motionPreset ? new Date() : asset.motionBakedAt,
       buildLog: run.log.slice(-4000),
       meta: JSON.stringify(meta),
     },
   });
   await landDesignEvent(
     projectId,
-    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s)`,
-    { assetId: updated.id, version, blendPath: finalBlend },
+    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""})`,
+    { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null },
   );
   return {
     ok: true, assetId: updated.id, version, status: "READY", blendPath: finalBlend,
@@ -365,6 +419,8 @@ export async function blenderAssetLibrary(projectId: string) {
       version: r.version,
       previewPath: r.previewPath,
       blendPath: r.blendPath,
+      motionPreset: r.motionPreset,
+      loopPath: r.loopPath,
       identityScore: r.identityScore,
       inspectNote: r.inspectNote,
       inspectedAt: r.inspectedAt ? r.inspectedAt.toISOString() : null,

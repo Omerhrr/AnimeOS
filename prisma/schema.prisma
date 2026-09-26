@@ -88,6 +88,9 @@ model BlenderAsset {
   inspectedAt   DateTime?
   qualityScore  Float?   // latest DESIGN AUDIT overall (0..1) - the self-review loop's standing grade
   lastReviewAt  DateTime? // when the design loop last audited this asset
+  motionPreset  String?  // the MOTION preset (design_motion) baked into the file - the asset performs
+  loopPath      String?  // /assets-blender/{id}.mp4 animated preview loop - the proof of performance
+  motionBakedAt DateTime? // when the armature performance was last baked
   meta          String?  // JSON {dna, objects, polyCount, buildMs, ...}
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -114,9 +117,9 @@ model BlenderAsset {
 model DesignPreset {
   id         String   @id @default(cuid())
   projectId  String
-  kind       String   // MATERIAL | LIGHTING
+  kind       String   // MATERIAL | LIGHTING | MOTION
   name       String
-  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params
+  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec
   usageCount Int      @default(0) // builds that consumed this preset
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

@@ -31,6 +31,7 @@ import {
 } from "@/lib/blender/assets";
 import { runBlenderScript } from "@/lib/blender/runtime";
 import { auditAsset, auditLibrary, fixIssues, designStatus } from "@/lib/blender/design-review";
+import { compileMotionSpec } from "@/lib/blender/motion";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -376,13 +377,14 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "blender_asset_build",
-    description: "DESIGN a library asset for a character, environment, PROP or CREATURE: compiles the production's design text (model-sheet anchor, appearance, active wardrobe/weapon, environment brief, the registered asset's description) into DNA and runs the deterministic v5 builder in the studio's Blender runtime - one versioned .blend + a lit preview PNG lands in the library (design once, render many). PROPS and CREATURES resolve from the production's registered assets (create_asset rows), so a registered spirit sword or beast becomes a real, named .blend hierarchy; READY props and creatures also ride every render whose shot text names them. Pass material/lighting recipe NAMES (design_material / design_lighting) to build under the production's designed recipes. Rebuild freely to iterate: each build bumps the version. An optional guidance line is stored with the asset's audit.",
+    description: "DESIGN a library asset for a character, environment, PROP or CREATURE: compiles the production's design text (model-sheet anchor, appearance, active wardrobe/weapon, environment brief, the registered asset's description) into DNA and runs the deterministic v6 builder in the studio's Blender runtime - one versioned .blend + a lit preview PNG lands in the library (design once, render many). PROPS and CREATURES resolve from the production's registered assets (create_asset rows), so a registered spirit sword or beast becomes a real, named .blend hierarchy; READY props and creatures also ride every render whose shot text names them. Pass material/lighting recipe NAMES (design_material / design_lighting) to build under the production's designed recipes, and a motion preset NAME (design_motion) to bake a REAL armature performance into the file plus the animated preview loop that proves it. Rebuild freely to iterate: each build bumps the version. An optional guidance line is stored with the asset's audit.",
     args: {
       kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE",
       refName: "string - the exact name (characters/environments from their tables, props/creatures from the registered assets)",
       guidance: "string (optional - a design note stored on the asset's audit)",
       material: "string (optional - a design_material recipe name; the recipe is law over DNA defaults)",
       lighting: "string (optional - a design_lighting rig name; drives the preview render)",
+      motion: "string (optional - a design_motion preset name; bakes a REAL armature performance into the .blend and renders the animated preview loop)",
     },
   },
   {
@@ -447,6 +449,18 @@ export const TOOL_DEFS: ToolDef[] = [
     name: "design_status",
     description: "Check back on the studio's designs: open design issues by severity, the latest reviews with their scores, and every asset's quality grade. Call it when the creator asks how the designs are doing, before promising a quality bar, and after a fix pass to see what still stands.",
     args: {},
+  },
+  {
+    name: "design_motion",
+    description: "Design a NAMED MOTION PRESET (the third design law, beside materials and lighting) and register it as the production's performance law: hover/spin/pulse for PROPS (a sword floats, turns, its runes breathe), slither/flap/walk/prowl/breathe for CREATURES, with speed (whole wave cycles per loop, 0.2..3), amplitude (0.2..3) and cycleFrames (16..48). Rebuilds that pass motion:'<name>' give the asset a REAL Blender armature, rigid-bind its named parts to the bones, bake the performance as a seamless looping Action INSIDE the .blend, and render the animated preview loop that proves it - and riding renders show the asset performing live. A motionless prop or creature is an unfinished design.",
+    args: {
+      name: "string - the motion name (e.g. 'Serpent River Dance')",
+      kind: "PROP | CREATURE",
+      motion: "string - PROP: hover | spin | pulse | hover-spin; CREATURE: slither | flap | walk | prowl | breathe | idle",
+      speed: "number 0.2..3 (optional, 1 = one wave cycle per loop)",
+      amplitude: "number 0.2..3 (optional, 1 = designed default reach)",
+      cycleFrames: "number 16..48 (optional, 24 = one second at 24fps)",
+    },
   },
   {
     name: "render_shot",
@@ -2119,6 +2133,7 @@ export async function executeTool(
         const res = await buildBlenderAsset(projectId, kindRaw, refName, guidance, {
           materialName: String(args.material ?? "").trim() || null,
           lightingName: String(args.lighting ?? "").trim() || null,
+          motionName: String(args.motion ?? "").trim() || null,
         });
         if (!res.ok) return { status: "ERROR", result: `Asset build failed for ${refName}: ${res.log.slice(-400)}` };
         const inspectHint = kindRaw === "CHARACTER"
@@ -2154,7 +2169,8 @@ export async function executeTool(
         const avg = lib.avgIdentity !== null ? `${Math.round(lib.avgIdentity * 100)}%` : "not yet scored";
         const rows = lib.assets.map((a) => {
           const score = a.identityScore !== null ? `${Math.round(a.identityScore * 100)}%` : "-";
-          return `${a.kind.toLowerCase().padEnd(6)} ${a.refName}: ${a.status} v${a.version}, identity ${score}, ${a.previewPath ?? "no preview"}`;
+          const motion = a.motionPreset ? `, performing '${a.motionPreset}'${a.loopPath ? " (loop on file)" : ""}` : ", motionless";
+          return `${a.kind.toLowerCase().padEnd(6)} ${a.refName}: ${a.status} v${a.version}, identity ${score}${motion}, ${a.previewPath ?? "no preview"}`;
         });
         return { status: "OK", result: `Blender asset library: ${lib.total} assets (${lib.ready} ready, ${lib.failed} failed, ${lib.building} building), average accepted identity ${avg}.\n${rows.join("\n")}\nReady assets ride every matching render payload. The professional loop runs on top: design_audit to check back, design_fix to correct, design_status for the standing.` };
       }
@@ -2203,6 +2219,27 @@ export async function executeTool(
         });
         await landDesignEvent(projectId, `Lighting rig '${name}' ${existed ? "updated" : "designed"} (${Object.keys(spec).join(", ")})`, { presetId: preset.id });
         return { status: "OK", result: `LIGHTING rig '${name}' ${existed ? "updated" : "registered"}: ${JSON.stringify(spec)}. Asset previews built with lighting:'${name}' are judged under YOUR rig instead of the neutral default; the render worker still owns shot lighting.` };
+      }
+
+      case "design_motion": {
+        const compiled = compileMotionSpec({
+          name: String(args.name ?? ""),
+          kind: String(args.kind ?? ""),
+          motion: String(args.motion ?? ""),
+          speed: args.speed !== undefined ? Number(args.speed) : null,
+          amplitude: args.amplitude !== undefined ? Number(args.amplitude) : null,
+          cycleFrames: args.cycleFrames !== undefined ? Number(args.cycleFrames) : null,
+        });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const { name } = compiled.spec;
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "MOTION", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "MOTION", name } },
+          create: { projectId, kind: "MOTION", name, spec: JSON.stringify(compiled.spec) },
+          update: { spec: JSON.stringify(compiled.spec) },
+        });
+        await landDesignEvent(projectId, `Motion preset '${name}' ${existed ? "updated" : "designed"} (${compiled.spec.motion}, x${compiled.spec.speed} speed, x${compiled.spec.amplitude} reach)`, { presetId: preset.id });
+        return { status: "OK", result: `MOTION preset '${name}' ${existed ? "updated" : "registered"}: ${compiled.spec.motion} at speed ${compiled.spec.speed}, amplitude ${compiled.spec.amplitude}, ${compiled.spec.cycleFrames} frame loop. Rebuild the asset with motion:'${name}' (blender_asset_build) and the rig bakes it as a real armature performance inside the .blend, with the animated preview loop as proof - riding renders then show it performing live.` };
       }
 
       case "design_audit": {
@@ -2257,7 +2294,7 @@ export async function executeTool(
         if (status.assets.length === 0) {
           return { status: "OK", result: "No designs on file yet - the design loop starts with blender_asset_build." };
         }
-        const assetLines = status.assets.map((a) => `  ${a.kind.toLowerCase()} ${a.refName}: ${a.status} v${a.version}${a.qualityScore !== null ? `, quality ${Math.round(a.qualityScore * 100)}%` : ", never audited (design_audit)"}`);
+        const assetLines = status.assets.map((a) => `  ${a.kind.toLowerCase()} ${a.refName}: ${a.status} v${a.version}${a.qualityScore !== null ? `, quality ${Math.round(a.qualityScore * 100)}%` : ", never audited (design_audit)"}${a.motionPreset ? `, performing '${a.motionPreset}'` : (a.kind === "PROP" || a.kind === "CREATURE") ? ", MOTIONLESS (design_motion + rebuild)" : ""}`);
         const issueLines = status.openIssues.map((i) => `  ${i.severity} ${i.kind} on ${i.refName}: ${i.note}${i.fixNote ? ` (fix note: ${i.fixNote.slice(0, 90)})` : ""}`);
         const reviewLines = status.reviews.slice(0, 5).map((r) => `  ${r.createdAt.slice(0, 16)}Z ${r.targetRef} ${r.state}${r.overall !== null ? ` ${Math.round(r.overall * 100)}%` : ""}`);
         return { status: "OK", result: `DESIGN STATUS: ${Object.entries(sev).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(", ") || "no"} open issue(s) across ${status.assets.length} asset(s).\nAssets:\n${assetLines.join("\n")}\n${issueLines.length ? `Open issues:\n${issueLines.join("\n")}\n` : "No open issues.\n"}Recent audits:\n${reviewLines.join("\n")}` };
@@ -3201,7 +3238,7 @@ export async function executeTool(
  * the director reads before promising any design work. */
 function designContextLine(
   project: {
-    blenderAssets: Array<{ kind: string; refName: string; status: string; version: number; qualityScore: number | null }>;
+    blenderAssets: Array<{ kind: string; refName: string; status: string; version: number; qualityScore: number | null; motionPreset: string | null }>;
     designPresets: Array<{ kind: string; name: string; usageCount: number }>;
   },
   openIssues: Array<{ refName: string; severity: string; kind: string; note: string }>,
@@ -3210,10 +3247,12 @@ function designContextLine(
   const lib = project.blenderAssets;
   const ready = lib.filter((a) => a.status === "READY");
   const presets = project.designPresets;
+  const performing = ready.filter((a) => a.motionPreset).length;
+  const motionlessPerf = ready.filter((a) => (a.kind === "PROP" || a.kind === "CREATURE") && !a.motionPreset).length;
   const parts: string[] = [];
   const libLine = lib.length === 0
     ? "library empty (design the cast, sets, props and creatures with blender_asset_build)"
-    : `library ${lib.length} assets, ${ready.length} ready (${ready.map((a) => `${a.kind.toLowerCase()} ${a.refName} v${a.version}${a.qualityScore !== null ? ` @${Math.round(a.qualityScore * 100)}%` : ""}`).join(", ")})`;
+    : `library ${lib.length} assets, ${ready.length} ready, ${performing} performing${motionlessPerf ? `, ${motionlessPerf} MOTIONLESS (props/creatures need design_motion + a rebuild)` : ""} (${ready.map((a) => `${a.kind.toLowerCase()} ${a.refName} v${a.version}${a.qualityScore !== null ? ` @${Math.round(a.qualityScore * 100)}%` : ""}${a.motionPreset ? " +loop" : ""}`).join(", ")})`;
   parts.push(libLine);
   if (presets.length > 0) {
     parts.push(`presets: ${presets.map((p) => `${p.kind.toLowerCase()} '${p.name}'x${p.usageCount}`).join(", ")}`);
