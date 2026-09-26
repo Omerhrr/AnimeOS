@@ -12,6 +12,12 @@ import type { DshTurnResult, TraceAction, TraceStep } from "@/lib/types";
 // The LLM proposes directorial decisions as tool calls; the
 // production tool API executes them; observations feed back until
 // DSH is satisfied or asks the creator a question.
+//
+// MEMORY BOUNDARY (Iteration 50): a turn's memory belongs to the
+// production it started on. The conversation (both messages) is
+// persisted to the START production even when DSH creates and
+// switches to a NEW production mid-turn; the newborn gets its own
+// origin event instead of a borrowed half-conversation.
 // ─────────────────────────────────────────────────────────────
 
 const MAX_EXECUTION_ROUNDS = 4;
@@ -22,8 +28,19 @@ function toolDocs(): string {
   ).join("\n");
 }
 
-export async function runDshTurn(projectId: string, userMessage: string): Promise<DshTurnResult> {
+/** Pull the title out of a create_project result ("Production 'X' created ..."). */
+function projectTitleOf(result: string): string {
+  const m = result.match(/Production '([^']+)' created/);
+  return m ? m[1] : "a new production";
+}
+
+export async function runDshTurn(
+  projectId: string,
+  userMessage: string,
+  user?: { id: string; name: string; role: string } | null
+): Promise<DshTurnResult> {
   const zai = await ZAI.create();
+  const originProjectId = projectId; // the conversation's home
   let activeProjectId = projectId;
   const context = await buildCompactContext(activeProjectId);
   const system = buildSystemPrompt(JSON.stringify(context, null, 1), toolDocs());
@@ -66,11 +83,25 @@ export async function runDshTurn(projectId: string, userMessage: string): Promis
     // Execute this round's tool batch and collect observations
     const executedActions: TraceAction[] = [];
     for (const action of parsed.actions) {
-      const outcome = await executeTool(activeProjectId, action.tool, action.args ?? {});
+      const outcome = await executeTool(activeProjectId, action.tool, action.args ?? {}, user);
       // A create_project call switches the active production mid-turn
       if (action.tool === "create_project" && outcome.status === "OK") {
         const match = outcome.result.match(/New active project id: (\S+)/);
-        if (match) activeProjectId = match[1];
+        if (match && match[1] !== activeProjectId) {
+          const bornFrom = activeProjectId;
+          activeProjectId = match[1];
+          // Origin event on the newborn: its history starts with WHO
+          // and WHERE it came from - not with a borrowed conversation.
+          await db.productionEvent.create({
+            data: {
+              projectId: activeProjectId,
+              actor: "DSH",
+              type: "PROJECT",
+              summary: `Created by DSH directing '${projectTitleOf(outcome.result)}'${user ? ` - ${user.name} leads its crew (DIRECTING)` : ""}; conversation continues from the turn's home production`,
+              payload: JSON.stringify({ bornFrom, by: user?.id ?? null, tool: "create_project" }),
+            },
+          }).catch(() => null);
+        }
       }
       executedActions.push({
         tool: action.tool,
@@ -137,13 +168,21 @@ export async function runDshTurn(projectId: string, userMessage: string): Promis
     void hadErrors;
   }
 
-  // Persist the conversation
-  await db.dshMessage.create({ data: { projectId, role: "user", content: userMessage } });
+  // Persist the conversation - BOTH messages to the production the
+  // turn started on. A mid-turn create_project switches where DSH
+  // WORKS, never where the memory lives: the start production keeps
+  // question AND answer together, and the newborn production starts
+  // its own history from the origin event, not half of this one.
+  await db.dshMessage.create({ data: { projectId: originProjectId, role: "user", content: userMessage } });
   await db.dshMessage.create({
     data: {
-      projectId: activeProjectId,
+      projectId: originProjectId,
       role: "dsh",
-      content: finalReply || "Production step acknowledged.",
+      content:
+        finalReply ||
+        (activeProjectId !== originProjectId
+          ? `Production step acknowledged - work continues on the new production (${activeProjectId}).`
+          : "Production step acknowledged."),
       trace: JSON.stringify(trace),
     },
   });

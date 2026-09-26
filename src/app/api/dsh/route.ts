@@ -39,7 +39,14 @@ export async function POST(req: Request) {
   const access = await requireProjectAccess(req, projectId, { write: true });
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   try {
-    const result = await runDshTurn(projectId, message);
+    // The director's identity rides the turn: DSH-made productions
+    // seat their creator, and the memory boundary knows whose turn
+    // it was. Members keep their craft lens; the OWNER needs none.
+    const result = await runDshTurn(
+      projectId,
+      message,
+      access.user ? { id: access.user.id, name: access.user.name, role: access.user.role } : null
+    );
     return NextResponse.json(result);
   } catch (err) {
     console.error("DSH turn failed:", err);

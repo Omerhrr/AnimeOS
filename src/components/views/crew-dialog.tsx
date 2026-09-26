@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { UsersRound, Loader2, UserPlus, Trash2, Crown } from "lucide-react";
+import { UsersRound, Loader2, UserPlus, Trash2, Crown, KeyRound, Copy, Check } from "lucide-react";
 import { api, type Craft } from "@/lib/api-client";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -38,6 +40,13 @@ export function CrewDialog({ projectId, title }: { projectId: string; title: str
   const [addUserId, setAddUserId] = useState<string>("");
   const [addCraft, setAddCraft] = useState<Craft>("REVIEW");
   const [busy, setBusy] = useState(false);
+  // Invite cutting (Iteration 50): a key for someone NOT in the
+  // studio yet, pre-aimed at THIS production's crew.
+  const [inviteRole, setInviteRole] = useState<string>("VIEWER");
+  const [inviteCraft, setInviteCraft] = useState<Craft>("REVIEW");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   const qc = useQueryClient();
   const crewQ = useQuery({
@@ -58,6 +67,28 @@ export function CrewDialog({ projectId, title }: { projectId: string; title: str
       toast({ title: "Crew change failed", description: err instanceof Error ? err.message : String(err) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function cutInvite() {
+    setInviteBusy(true);
+    setInviteLink(null);
+    setInviteCopied(false);
+    try {
+      const res = await fetch("/api/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: inviteRole, projectId, craft: inviteCraft }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setInviteLink(`${window.location.origin}/signin?invite=${data.code}`);
+        toast({ title: "Invite cut", description: data.note });
+      } else {
+        toast({ title: "Could not cut invite", description: data.error ?? String(res.status) });
+      }
+    } finally {
+      setInviteBusy(false);
     }
   }
 
@@ -134,6 +165,60 @@ export function CrewDialog({ projectId, title }: { projectId: string; title: str
                 >
                   <UserPlus className="h-3.5 w-3.5 mr-1" /> Add
                 </Button>
+              </div>
+            )}
+
+            {isOwner && (
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 space-y-2">
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Not in the studio yet? Cut an invite for this crew</Label>
+                    <div className="flex gap-2">
+                      <Select value={inviteRole} onValueChange={setInviteRole}>
+                        <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10 w-[100px]" aria-label="invite role">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="VIEWER" className="text-xs">VIEWER</SelectItem>
+                          <SelectItem value="EDITOR" className="text-xs">EDITOR</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={inviteCraft} onValueChange={(v) => setInviteCraft(v as Craft)}>
+                        <SelectTrigger className="h-8 text-xs bg-white/5 border-white/10 w-[120px]" aria-label="invite craft lens">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CRAFTS.map((c) => (
+                            <SelectItem key={c.id} value={c.id} className="text-xs">{c.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" variant="outline" className="h-8 text-xs" disabled={inviteBusy} onClick={() => void cutInvite()}>
+                        {inviteBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <KeyRound className="h-3.5 w-3.5 mr-1" />} Cut
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                {inviteLink && (
+                  <div className="rounded-md border border-emerald-400/25 bg-emerald-400/10 px-2 py-1.5 flex items-center gap-1.5">
+                    <Input readOnly value={inviteLink} className="h-6 text-[10px] font-mono bg-black/30 border-white/10" onFocus={(e) => e.target.select()} />
+                    <Button
+                      size="icon" variant="ghost" className="h-6 w-6 shrink-0"
+                      aria-label="Copy invite link"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(inviteLink);
+                          setInviteCopied(true);
+                          setTimeout(() => setInviteCopied(false), 1500);
+                        } catch {
+                          toast({ title: "Copy failed", description: "Select the link and copy it manually." });
+                        }
+                      }}
+                    >
+                      {inviteCopied ? <Check className="h-3 w-3 text-emerald-300" /> : <Copy className="h-3 w-3" />}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 

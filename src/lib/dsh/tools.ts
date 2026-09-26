@@ -1297,7 +1297,16 @@ async function applyEnsembleTemplate(
   };
 }
 
-export async function executeTool(projectId: string, name: string, args: Record<string, unknown>): Promise<ActionResult> {
+export async function executeTool(
+  projectId: string,
+  name: string,
+  args: Record<string, unknown>,
+  // The human whose turn this is (when the call comes from a DSH
+  // turn or a plan run driven by a session). DSH-created rows that
+  // carry membership (create_project) need the identity; system
+  // callers (the scheduler) pass nothing and skip the seat.
+  user?: { id: string; name: string; role: string } | null
+): Promise<ActionResult> {
   try {
     switch (name) {
       case "get_production_context": {
@@ -1426,7 +1435,20 @@ export async function executeTool(projectId: string, name: string, args: Record<
           },
         });
         await db.season.create({ data: { projectId: project.id, number: 1, title: "Season 1" } });
-        return { status: "OK", result: `Production '${project.title}' created (${project.visualStyle}/${project.animationType}/${project.originalLanguage}). Season 1 initialized. New active project id: ${project.id}` };
+        // The silo rule applies to DSH-made productions too: the
+        // creator lands a DIRECTING seat on what they made (the same
+        // parity POST /api/projects grants), so the new production is
+        // on THEIR slate - not lost in a silo only the OWNER can see.
+        if (user) {
+          await db.projectMembership
+            .upsert({
+              where: { projectId_userId: { projectId: project.id, userId: user.id } },
+              create: { projectId: project.id, userId: user.id, craft: "DIRECTING" },
+              update: {},
+            })
+            .catch(() => null);
+        }
+        return { status: "OK", result: `Production '${project.title}' created (${project.visualStyle}/${project.animationType}/${project.originalLanguage}). Season 1 initialized.${user ? ` You lead its crew (DIRECTING).` : ""} New active project id: ${project.id}` };
       }
 
       case "create_character": {

@@ -56,6 +56,7 @@ model Project {
   blenderAssets    BlenderAsset[]
   comments         Comment[]
   memberships      ProjectMembership[]
+  invites          Invite[]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -764,6 +765,38 @@ model User {
   updatedAt    DateTime @updatedAt
   comments     Comment[]
   memberships  ProjectMembership[]
+  invitesCreated Invite[] @relation("InvitesCreated")
+  inviteUsed   Invite?   @relation("InvitesUsed")
+}
+
+// ─────────────────────────────────────────────────────────────
+// INVITE LINKS (Iteration 50: doors that hand out keys)
+//
+// An OWNER cuts an invite: a single-use code that carries the
+// role the newcomer arrives with (EDITOR | VIEWER - ownership is
+// earned in the roster, never invited) and, optionally, a crew
+// seat on one production with a craft lens. Redeeming the code
+// at registration seats the member in one transaction; the code
+// is then spent. Revocation and expiry are honored at redeem
+// time - a revoked key opens nothing.
+// ─────────────────────────────────────────────────────────────
+model Invite {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  role        String    @default("VIEWER") // EDITOR | VIEWER (never OWNER)
+  projectId   String?   // optional crew slot pre-attached to the key
+  craft       String?   // DIRECTING | ART | VOICE | REVIEW (when projectId set)
+  createdById String
+  usedById    String?   @unique // the member who redeemed it
+  usedAt      DateTime?
+  expiresAt   DateTime? // optional soft expiry
+  revokedAt   DateTime? // set when the OWNER revokes an unused key
+  createdAt   DateTime  @default(now())
+  createdBy   User      @relation("InvitesCreated", fields: [createdById], references: [id], onDelete: Cascade)
+  usedBy      User?     @relation("InvitesUsed", fields: [usedById], references: [id])
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
 }
 
 // ─────────────────────────────────────────────────────────────

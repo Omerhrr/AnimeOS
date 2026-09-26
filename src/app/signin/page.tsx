@@ -26,7 +26,13 @@ export default function SignInPage() {
 function SignInForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const [mode, setMode] = useState<"signin" | "register">("signin");
+  // An invite link (Iteration 50): /signin?invite=CODE pre-aims the
+  // form at registration and names what the key carries - the role
+  // (and crew seat, when the key names one) is resolved from the
+  // code server-side at registration time. The code also seeds the
+  // initial mode directly (no effect needed).
+  const inviteCode = (params.get("invite") ?? "").trim();
+  const [mode, setMode] = useState<"signin" | "register">(inviteCode ? "register" : "signin");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -61,7 +67,7 @@ function SignInForm() {
         const res = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, name, password }),
+          body: JSON.stringify({ email, name, password, invite: inviteCode || undefined }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -115,9 +121,16 @@ function SignInForm() {
             </button>
           </div>
 
-          {firstAccount && mode === "register" && (
+          {firstAccount && mode === "register" && !inviteCode && (
             <p className="text-[11px] text-primary/90 border border-primary/25 bg-primary/10 rounded-md px-2.5 py-2">
               The studio has no members yet - the first account becomes <span className="font-semibold">OWNER</span>.
+            </p>
+          )}
+
+          {inviteCode && (
+            <p className="text-[11px] text-emerald-300 border border-emerald-400/25 bg-emerald-400/10 rounded-md px-2.5 py-2">
+              You were invited to the studio - your invite code <span className="font-mono">{inviteCode.slice(0, 4)}…</span> is attached.
+              Register below and the role your OWNER cut for you lands on arrival.
             </p>
           )}
 
@@ -162,7 +175,8 @@ function SignInForm() {
 
           <p className="text-[10px] leading-relaxed text-muted-foreground/70">
             Roles: <span className="text-foreground/80">VIEWER</span> reads the studio, <span className="text-foreground/80">EDITOR</span> directs
-            DSH and edits productions, <span className="text-foreground/80">OWNER</span> manages the roster. New accounts start as VIEWER.
+            DSH and edits productions, <span className="text-foreground/80">OWNER</span> manages the roster. New accounts start as VIEWER
+            {inviteCode ? " - unless an invite says otherwise." : ", or as what an invite link carries."}
           </p>
         </form>
       </div>
