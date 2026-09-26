@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { checkSceneContinuity, checkSceneCapabilities } from "@/lib/continuity";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
 import { detectCast } from "@/lib/ai/art";
@@ -22,6 +23,8 @@ export async function GET(req: Request) {
   if (!scene) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const withEpisode = (await db.scene.findUnique({ where: { id }, include: { episode: { include: { season: true } } } }))!;
   const projectId = withEpisode.episode.season.projectId;
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const [continuity, capabilities] = await Promise.all([
     checkSceneContinuity(projectId, id),
     checkSceneCapabilities(projectId, id),
@@ -65,6 +68,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const body = await req.json();
+  const episodeProject = await projectOfRow("episode", String(body.episodeId ?? ""));
+  const access = await requireProjectAccess(req, episodeProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const maxNum = await db.scene.aggregate({ where: { episodeId: String(body.episodeId) }, _max: { number: true } });
   const scene = await db.scene.create({
     data: {
@@ -83,6 +89,9 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const body = await req.json();
   const { id, ...rest } = body;
+  const sceneProject = await projectOfRow("scene", String(id ?? ""));
+  const access = await requireProjectAccess(req, sceneProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const data: Record<string, unknown> = {};
   for (const key of ["title", "description", "timeOfDay", "weather", "status"]) {
     if (rest[key] !== undefined) data[key] = String(rest[key]);

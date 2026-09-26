@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import {
   diffEpisodeById, diffProjectEpisodes, reRenderStaleTakes, reRenderStaleAcrossProject,
 } from "@/lib/ai/voice-diff";
@@ -25,6 +26,8 @@ export async function GET(req: Request) {
   if (!episodeId && !projectId) {
     return NextResponse.json({ error: "episodeId or projectId required" }, { status: 400 });
   }
+  const access = await requireProjectAccess(req, episodeId ? await projectOfRow("episode", episodeId) : projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   if (episodeId) {
     const diff = await diffEpisodeById(episodeId);
@@ -45,6 +48,8 @@ export async function POST(req: Request) {
   // season-wide batch: re-render stale takes across ALL episodes, capped
   if (body.projectId) {
     const projectId = String(body.projectId);
+    const access = await requireProjectAccess(req, projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const limit = body.limit === undefined ? undefined : Number(body.limit);
     if (limit !== undefined && !Number.isFinite(limit)) {
       return NextResponse.json({ error: "limit must be a number" }, { status: 400 });
@@ -55,6 +60,9 @@ export async function POST(req: Request) {
 
   const episodeId = body.episodeId ? String(body.episodeId) : "";
   if (!episodeId) return NextResponse.json({ error: "episodeId or projectId required" }, { status: 400 });
+  const epProject = await projectOfRow("episode", episodeId);
+  const access = await requireProjectAccess(req, epProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const outcome = await reRenderStaleTakes(episodeId, { actor: "USER" });
   if (!outcome) return NextResponse.json({ error: "Episode not found" }, { status: 404 });

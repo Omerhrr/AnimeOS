@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 
 // ─────────────────────────────────────────────────────────────
 // ARC PLAYBACK FEED (per episode)
@@ -17,8 +18,12 @@ import { db } from "@/lib/db";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: Request, ctx: Ctx) {
+export async function GET(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const episodeRow = await db.episode.findUnique({ where: { id }, select: { season: { select: { projectId: true } } } });
+  if (!episodeRow) return NextResponse.json({ error: "Episode not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, episodeRow.season.projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const episode = await db.episode.findUnique({
     where: { id },
     include: {

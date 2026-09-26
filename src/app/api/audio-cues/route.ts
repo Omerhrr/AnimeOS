@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 
 // Sound-design cues for a shot's motion panel. VOICE cues carry the
 // resolved standing cast (the character's cast artist voice) so the
@@ -13,6 +14,9 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const shotId = searchParams.get("shotId");
   if (!shotId) return NextResponse.json({ error: "shotId required" }, { status: 400 });
+  const shotProject = await projectOfRow("shot", shotId);
+  const access = await requireProjectAccess(req, shotProject);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const cues = await db.audioCue.findMany({
     where: { shotId },
     orderBy: { startMs: "asc" },
@@ -64,6 +68,9 @@ export async function POST(req: Request) {
   if (!shotId) return NextResponse.json({ error: "shotId required" }, { status: 400 });
   const shot = await db.shot.findUnique({ where: { id: shotId } });
   if (!shot) return NextResponse.json({ error: "Shot not found" }, { status: 404 });
+  const shotProject = await projectOfRow("scene", shot.sceneId);
+  const access = await requireProjectAccess(req, shotProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const kind = CUE_KINDS.has(String(body.kind)) ? String(body.kind) : "SFX";
   const label = String(body.label ?? "New cue").trim().slice(0, 120) || "New cue";

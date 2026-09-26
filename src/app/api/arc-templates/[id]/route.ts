@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import { parseArcTemplateSegments } from "@/lib/comic/arc-templates";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -9,6 +10,14 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const body = await req.json();
+  // Scope the patch: PROJECT rows need that production's crew;
+  // STUDIO-library rows stay studio-level (role-gated upstream).
+  const existingRow = await db.arcTemplate.findUnique({ where: { id }, select: { projectId: true } });
+  if (!existingRow) return NextResponse.json({ error: "Arc template not found" }, { status: 404 });
+  if (existingRow.projectId) {
+    const access = await requireProjectAccess(req, existingRow.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+  }
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) {
     const name = String(body.name).trim().slice(0, 60);
@@ -98,8 +107,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 }
 
-export async function DELETE(_req: Request, ctx: Ctx) {
+export async function DELETE(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const existingRow = await db.arcTemplate.findUnique({ where: { id }, select: { projectId: true } });
+  if (!existingRow) return NextResponse.json({ error: "Arc template not found" }, { status: 404 });
+  if (existingRow.projectId) {
+    const access = await requireProjectAccess(req, existingRow.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+  }
   const row = await db.arcTemplate.delete({ where: { id } }).catch(() => null);
   if (!row) return NextResponse.json({ error: "Arc template not found" }, { status: 404 });
   await db.productionEvent.create({

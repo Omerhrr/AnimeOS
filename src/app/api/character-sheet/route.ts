@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { generateCharacterModelSheet } from "@/lib/ai/art";
 
 /**
@@ -19,6 +20,9 @@ export async function POST(req: Request) {
   if (!characterId || typeof characterId !== "string") {
     return NextResponse.json({ error: "characterId required" }, { status: 400 });
   }
+  const characterProject = await projectOfRow("character", characterId);
+  const access = await requireProjectAccess(req, characterProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   try {
     const result = await generateCharacterModelSheet(characterId);

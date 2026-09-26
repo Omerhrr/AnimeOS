@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
 import { normalizePose } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
@@ -23,6 +24,9 @@ export async function PATCH(req: Request) {
 
   const state = await db.characterState.findUnique({ where: { id }, include: { character: true } });
   if (!state) return NextResponse.json({ error: "State not found" }, { status: 404 });
+
+  const access = await requireProjectAccess(req, state.character.projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const clampHint = (v: number, lo: number, hi: number) => Math.round(Math.min(hi, Math.max(lo, v)) * 100) / 100;
   const data: Record<string, unknown> = {};

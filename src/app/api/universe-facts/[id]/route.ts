@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 
 const CATEGORIES = ["WORLD", "CHARACTER", "PROP", "LOCATION", "RULE"];
 
@@ -16,6 +17,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   const existing = await db.universeFact.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Universe fact not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, existing.projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const data: { text?: string; category?: string; active?: boolean; lastRewordedFrom?: string | null } = {};
   if (typeof body.text === "string" && body.text.trim()) {
     const next = body.text.trim().slice(0, 400);
@@ -31,10 +34,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 // ── DELETE : retire a fact
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const existing = await db.universeFact.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Universe fact not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, existing.projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   await db.universeFact.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { buildEpisodeCut } from "@/lib/comic/cut";
 
 // ─────────────────────────────────────────────────────────────
@@ -18,6 +19,10 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const episodeProject = await projectOfRow("episode", id);
+  if (!episodeProject) return NextResponse.json({ error: "Episode not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, episodeProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   let mode: "PREVIEW" | "FINAL" = "PREVIEW";
   try {
     const body = (await req.json()) as { mode?: unknown };

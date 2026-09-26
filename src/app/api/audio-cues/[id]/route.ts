@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { isDeliveryId } from "@/lib/comic/delivery";
 import { auditVoiceTakeAcoustics } from "@/lib/animation/acoustic";
 
@@ -15,6 +16,10 @@ const CUE_KINDS = new Set(["SFX", "VOICE", "BGM", "AMBIENCE"]);
 export async function PATCH(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const body = await req.json();
+  const cueProject = await projectOfRow("audioCue", id);
+  if (!cueProject) return NextResponse.json({ error: "Cue not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, cueProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const cue = await db.audioCue.findUnique({ where: { id }, include: { shot: true } });
   if (!cue) return NextResponse.json({ error: "Cue not found" }, { status: 404 });
 
@@ -60,8 +65,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
 //    take (runs + syllable anchors +, under ANIMEOS_ACOUSTIC=neural,
 //    the ASR's word evidence). The report lands on the cue row and
 //    the sound timeline badges it.
-export async function POST(_req: Request, ctx: Ctx) {
+export async function POST(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const cueProject = await projectOfRow("audioCue", id);
+  if (!cueProject) return NextResponse.json({ error: "Cue not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, cueProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const cue = await db.audioCue.findUnique({
     where: { id },
     include: { shot: { select: { dialogue: true } } },
@@ -87,8 +96,12 @@ export async function POST(_req: Request, ctx: Ctx) {
   return NextResponse.json(result.report);
 }
 
-export async function DELETE(_req: Request, ctx: Ctx) {
+export async function DELETE(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const cueProject = await projectOfRow("audioCue", id);
+  if (!cueProject) return NextResponse.json({ error: "Cue not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, cueProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   await db.audioCue.delete({ where: { id } }).catch(() => null);
   return NextResponse.json({ ok: true });
 }

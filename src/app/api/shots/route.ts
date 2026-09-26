@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { normalizePose, poseChip } from "@/lib/animation/poses";
 import { presetPosesForStateLabel, resolveActiveState } from "@/lib/animation/state-poses";
 
@@ -16,6 +17,9 @@ function poseField(value: unknown): string | null | undefined {
 
 export async function POST(req: Request) {
   const body = await req.json();
+  const sceneProject = await projectOfRow("scene", String(body.sceneId ?? ""));
+  const access = await requireProjectAccess(req, sceneProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   let poseStart: string | null;
   let poseEnd: string | null;
   try {
@@ -127,6 +131,9 @@ export async function PATCH(req: Request) {
       for (const shotId of ids) {
         const shot = await db.shot.findUnique({ where: { id: shotId } });
         if (!shot) continue;
+        const shotProject = await projectOfRow("scene", shot.sceneId);
+        const access = await requireProjectAccess(req, shotProject, { write: true });
+        if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
         const refData = await validatedRefs(shot.sceneId, rest);
         if (Object.keys(refData).length === 0) throw new Error("bulk update needs artistId, loraId and/or loraStrength");
         await db.shot.update({ where: { id: shotId }, data: refData });
@@ -143,6 +150,9 @@ export async function PATCH(req: Request) {
     const data = buildFieldData(rest);
     const existing = await db.shot.findUnique({ where: { id: String(id) } });
     if (!existing) return NextResponse.json({ error: "Shot not found" }, { status: 404 });
+    const shotProject = await projectOfRow("scene", existing.sceneId);
+    const access = await requireProjectAccess(req, shotProject, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const refData = await validatedRefs(existing.sceneId, rest);
     Object.assign(data, refData);
 
@@ -221,6 +231,11 @@ export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const shot = await db.shot.findUnique({ where: { id }, select: { sceneId: true } });
+  if (!shot) return NextResponse.json({ error: "Shot not found" }, { status: 404 });
+  const shotProject = await projectOfRow("scene", shot.sceneId);
+  const access = await requireProjectAccess(req, shotProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   await db.shot.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

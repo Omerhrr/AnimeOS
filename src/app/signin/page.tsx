@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Clapperboard, Loader2, LogIn, UserPlus } from "lucide-react";
@@ -9,6 +9,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function SignInPage() {
+  // useSearchParams forces a CSR bailout during prerender - the Suspense
+  // boundary lets next build render the shell statically while the
+  // search-dependent form hydrates on the client.
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a10] text-neutral-400">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    }>
+      <SignInForm />
+    </Suspense>
+  );
+}
+
+function SignInForm() {
   const router = useRouter();
   const params = useSearchParams();
   const [mode, setMode] = useState<"signin" | "register">("signin");

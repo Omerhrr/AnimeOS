@@ -539,6 +539,8 @@ export interface ProjectSummary {
   episodeCount: number;
   characterCount: number;
   renderCount: number;
+  crewCount?: number;
+  onCrew?: boolean;
 }
 
 export interface EpisodeCutResult {
@@ -587,10 +589,64 @@ export interface SceneAnalysis {
   design?: { cast: CharacterDesignDnaView[]; environment: EnvironmentDesignDnaView | null };
 }
 
+// ── Per-role dashboard emphasis + per-project crew (Iteration 49) ──
+export type Craft = "DIRECTING" | "ART" | "VOICE" | "REVIEW";
+
+export interface StudioEmphasis {
+  self: { id: string; name: string; role: string; craft: Craft | null; viaOwner: boolean };
+  crafts: Craft[];
+  studio: {
+    role: string;
+    projectCount: number;
+    memberCount: number;
+    projects: Array<{ id: string; title: string; status: string; episodeCount: number; renderCount: number; crewCount: number; gate: boolean }>;
+    roster: Array<{ name: string; role: string; lastSeenAt: string | null }>;
+  } | null;
+  project: {
+    id: string;
+    title: string;
+    logline: string | null;
+    status: string;
+    approvalGate: boolean;
+    visualStyle: string;
+    funnel: { episodes: number; scenes: number; shots: number; approvedShots: number; totalDurationSec: number };
+    render: {
+      active: Array<{ id: string; status: string; progress: number; stage: string; attempt: number; mode: string; shotId: string | null }>;
+      awaitingApproval: number;
+      needsRevision: number;
+    };
+    threads: { openCount: number; latest: Array<{ id: string; anchorType: string; anchorId: string; authorName: string; body: string; createdAt: string }> };
+    art: { panels: number; panelsWithArt: number; pending: number };
+    identity: { latest: Array<{ id: string; shotId: string; worst: number; source: string; scoredAt: string }>; avg: number | null };
+    voice: { cast: Array<{ character: string; artist: string; voiceId: string | null }>; takes: number; auditions: number };
+    dsh: Array<{ id: string; role: string; content: string; createdAt: string }>;
+    events: Array<{ id: string; actor: string; type: string; summary: string; createdAt: string }>;
+  } | null;
+}
+
+export interface CrewView {
+  projectId: string;
+  title: string;
+  viaOwner: boolean;
+  selfId: string;
+  selfCraft: Craft | null;
+  members: Array<{ id: string; userId: string; name: string; email: string; role: string; craft: string; lastSeenAt: string | null; joinedAt: string }>;
+  candidates: Array<{ id: string; name: string; email: string; role: string }>;
+}
+
 export const api = {
   // queries
   projects: () => j<ProjectSummary[]>("/api/projects"),
   project: (id: string) => j<StudioProject>(`/api/projects/${id}`),
+  emphasis: (projectId?: string | null) =>
+    j<StudioEmphasis>(`/api/studio/emphasis${projectId ? `?projectId=${projectId}` : ""}`),
+  crew: (projectId: string) => j<CrewView>(`/api/projects/${projectId}/members`),
+  addCrewMember: (projectId: string, body: { userId: string; craft?: string }) =>
+    j<{ note?: string }>(`/api/projects/${projectId}/members`, { method: "POST", body: JSON.stringify(body) }),
+  patchCraft: (projectId: string, body: { userId: string; craft: string }) =>
+    j<{ note?: string }>(`/api/projects/${projectId}/members`, { method: "PATCH", body: JSON.stringify(body) }),
+  removeCrewMember: (projectId: string, userId: string) =>
+    j<{ note?: string }>(`/api/projects/${projectId}/members?userId=${userId}`, { method: "DELETE" }),
   sceneAnalysis: (id: string) => j<SceneAnalysis>(`/api/scenes?id=${id}`),
   renderJobs: (projectId: string) => j<RenderJobRow[]>(`/api/render-jobs?projectId=${projectId}`),
   dshMessages: (projectId: string) => j<DshMessageRow[]>(`/api/dsh?projectId=${projectId}`),

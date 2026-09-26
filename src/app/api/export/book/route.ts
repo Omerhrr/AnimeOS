@@ -4,24 +4,25 @@
 //
 // Streams the built book with a Content-Disposition download name
 // and lands an EXPORT production event so the history feed records
-// what shipped. GET is a read of the production's own art, so any
-// signed-in member (including VIEWERs) may download.
+// what shipped. GET is a read of the production's own art, so crew
+// members of THAT production (VIEWERs included) may download.
 // ─────────────────────────────────────────────────────────────
 
 import { db } from "@/lib/db";
-import { authGuardResponse, requireUser } from "@/lib/auth";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { buildComicBook, type BookDirection, type BookFormat } from "@/lib/comic/export-book";
 
 export async function GET(req: Request) {
-  const guard = await requireUser(req);
-  if (!guard.ok) return authGuardResponse(guard)!;
-
   const url = new URL(req.url);
   const episodeId = url.searchParams.get("episodeId") ?? "";
   const format = (url.searchParams.get("format") ?? "cbz").toUpperCase() as BookFormat;
   const direction = (url.searchParams.get("direction") ?? "ltr").toUpperCase() as BookDirection;
 
   if (!episodeId) return Response.json({ error: "episodeId is required" }, { status: 400 });
+  // Reading a production's own art is a crew read: members (VIEWERs
+  // included) download; non-members and strangers do not. OWNER always.
+  const access = await requireProjectAccess(req, await projectOfRow("episode", episodeId));
+  if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
   if (format !== "CBZ" && format !== "PDF") {
     return Response.json({ error: "format must be cbz or pdf" }, { status: 400 });
   }

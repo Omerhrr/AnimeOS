@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import { deliveryProfile, isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
 import { currentTakeForLine, renderAudition, recordStateAudition, saveAuditionFile } from "@/lib/ai/audition";
@@ -49,6 +50,11 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  // Auditions belong to a production: the caller must sit on ITS crew
+  // (OWNER always passes - full access, never blocked).
+  const access = await requireProjectAccess(req, String(body.projectId ?? ""), { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const deliveryId = isDeliveryId(body.delivery) ? body.delivery : "NEUTRAL";
   const profile = deliveryProfile(deliveryId);

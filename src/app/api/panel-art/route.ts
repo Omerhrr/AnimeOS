@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { generateShotPanelArt } from "@/lib/ai/art";
 
 /** Generate AI panel art for one shot (manhua / manhwa / manga style). */
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
   if (!shotId || typeof shotId !== "string") {
     return NextResponse.json({ error: "shotId required" }, { status: 400 });
   }
+  const shotProject = await projectOfRow("shot", shotId);
+  const access = await requireProjectAccess(req, shotProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   try {
     const result = await generateShotPanelArt(shotId, format);

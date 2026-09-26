@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 
 /** Create an episode (inside season, season auto-created if needed). */
 export async function POST(req: Request) {
@@ -13,8 +14,8 @@ export async function POST(req: Request) {
   }
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
-  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const seasonNumber = Number(body.seasonNumber ?? 1);
   let season = await db.season.findFirst({ where: { projectId, number: seasonNumber } });

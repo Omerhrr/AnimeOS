@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import {
   blenderAssetLibrary, buildBlenderAsset, inspectBlenderAsset, refreshAssetPreview,
   type BlenderAssetKind,
@@ -15,6 +16,8 @@ import {
 export async function GET(request: Request) {
   const projectId = new URL(request.url).searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+  const access = await requireProjectAccess(request, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const lib = await blenderAssetLibrary(projectId);
   return NextResponse.json(lib);
 }
@@ -29,6 +32,8 @@ export async function POST(request: Request) {
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   const action = String(body.action ?? "").toLowerCase();
+  const postAccess = await requireProjectAccess(request, projectId, { write: true });
+  if (!postAccess.ok) return NextResponse.json({ error: postAccess.error }, { status: postAccess.status });
 
   if (action === "build") {
     const kind = String(body.kind ?? "").toUpperCase();

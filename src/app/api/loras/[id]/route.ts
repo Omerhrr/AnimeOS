@@ -2,12 +2,17 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const body = await req.json();
+  const loraProject = await projectOfRow("lora", id);
+  if (!loraProject) return NextResponse.json({ error: "LoRA not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, loraProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) {
     const name = String(body.name).trim().slice(0, 80);
@@ -34,8 +39,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 }
 
-export async function DELETE(_req: Request, ctx: Ctx) {
+export async function DELETE(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const loraProject = await projectOfRow("lora", id);
+  if (!loraProject) return NextResponse.json({ error: "LoRA not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, loraProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   // Detach the adapter from any shots that use it and clear the
   // per-shot strength override (the FK itself is SetNull).
   await db.shot.updateMany({ where: { loraId: id }, data: { loraId: null, loraStrength: null } });

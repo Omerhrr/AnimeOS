@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import {
   startRepaintRun, resumeRepaintRun, setRepaintRunStatus, latestRepaintRun,
 } from "@/lib/universe-repaint";
@@ -15,6 +17,8 @@ import {
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const run = await latestRepaintRun(projectId);
   return NextResponse.json({ run });
 }
@@ -28,6 +32,8 @@ export async function POST(req: Request) {
   }
   const projectId = body.projectId ? String(body.projectId) : "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const maxItems = Number(body.maxItems ?? 3);
   const result = await startRepaintRun(projectId, Number.isFinite(maxItems) ? maxItems : 3);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
@@ -46,6 +52,10 @@ export async function PATCH(req: Request) {
   if (!runId || !["pause", "resume", "abort"].includes(action)) {
     return NextResponse.json({ error: "runId and action (pause | resume | abort) required" }, { status: 400 });
   }
+  const runRow = await db.repaintRun.findUnique({ where: { id: runId }, select: { projectId: true } });
+  if (!runRow) return NextResponse.json({ error: "Run not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, runRow.projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = action === "resume"
     ? await resumeRepaintRun(runId)
     : await setRepaintRunStatus(runId, action === "pause" ? "PAUSED" : "ABORTED");

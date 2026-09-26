@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import {
   createSchedule, listSchedules, fireDueSchedules, fireScheduleNow,
 } from "@/lib/scheduler";
@@ -19,6 +20,8 @@ import { scheduleHealthData } from "@/lib/schedule-health";
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const [schedules, digest] = await Promise.all([listSchedules(projectId), scheduleHealthData(projectId)]);
   return NextResponse.json({ schedules, digest });
 }
@@ -36,6 +39,8 @@ export async function POST(req: Request) {
   }
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await createSchedule(projectId, {
     name: String(body.name ?? ""),
     kind: String(body.kind ?? "PLAN_RUN"),
@@ -71,6 +76,8 @@ export async function PATCH(req: Request) {
     const row = await db.studioSchedule.findUnique({ where: { id: scheduleId } });
     if (!row) return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
     if (row.kind !== "DAILY_DIGEST") return NextResponse.json({ error: "only DAILY_DIGEST schedules carry delivery targets" }, { status: 400 });
+    const access = await requireProjectAccess(req, row.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const data: { webhookUrl?: string | null; digestEmail?: string | null } = {};
     if (body.webhookUrl !== undefined) {
       const hook = String(body.webhookUrl ?? "").trim();
@@ -88,6 +95,8 @@ export async function PATCH(req: Request) {
   if (action === "enable" || action === "disable") {
     const row = await db.studioSchedule.findUnique({ where: { id: scheduleId } });
     if (!row) return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, row.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     await db.studioSchedule.update({
       where: { id: scheduleId },
       data: { enabled: action === "enable" },
@@ -104,6 +113,8 @@ export async function DELETE(req: Request) {
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
   const row = await db.studioSchedule.findUnique({ where: { id } });
   if (!row) return NextResponse.json({ error: "Schedule not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, row.projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   await db.studioSchedule.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

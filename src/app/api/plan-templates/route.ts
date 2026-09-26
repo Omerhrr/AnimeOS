@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import {
   episodeTemplateCatalog, instantiateEpisodePlan, listPlanTemplates,
   savePlanTemplate, deletePlanTemplate, builtInStepsFor,
@@ -17,6 +19,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const templateId = searchParams.get("templateId");
   if (templateId) {
@@ -51,6 +55,8 @@ export async function POST(req: Request) {
   if (!projectId || !episodeId || !templateId) {
     return NextResponse.json({ error: "projectId, episodeId and templateId required" }, { status: 400 });
   }
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await instantiateEpisodePlan(projectId, episodeId, templateId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result, { status: 201 });
@@ -65,6 +71,8 @@ export async function PUT(req: Request) {
   }
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const putAccess = await requireProjectAccess(req, projectId, { write: true });
+  if (!putAccess.ok) return NextResponse.json({ error: putAccess.error }, { status: putAccess.status });
   const result = await savePlanTemplate(projectId, {
     baseId: body.baseId ? String(body.baseId) : "custom",
     name: String(body.name ?? ""),
@@ -80,6 +88,10 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const templateRow = await db.planTemplate.findUnique({ where: { id }, select: { projectId: true } });
+  if (!templateRow) return NextResponse.json({ error: "Template not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, templateRow.projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await deletePlanTemplate(id);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 404 });
   return NextResponse.json({ ok: true });

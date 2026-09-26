@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { isVoiceId } from "@/lib/comic/voice-catalog";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -9,6 +10,10 @@ type Ctx = { params: Promise<{ id: string }> };
 export async function PATCH(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const body = await req.json();
+  const artistProject = await projectOfRow("artist", id);
+  if (!artistProject) return NextResponse.json({ error: "Artist not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, artistProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const data: Record<string, unknown> = {};
   if (body.name !== undefined) {
     const name = String(body.name).trim().slice(0, 80);
@@ -35,8 +40,12 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 }
 
-export async function DELETE(_req: Request, ctx: Ctx) {
+export async function DELETE(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const artistProject = await projectOfRow("artist", id);
+  if (!artistProject) return NextResponse.json({ error: "Artist not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, artistProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   // Shots fall back to unassigned (FK is SetNull).
   await db.artist.delete({ where: { id } }).catch(() => null);
   return NextResponse.json({ ok: true });

@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { trainCharacterVoice } from "@/lib/ai/voice-clone";
 
 // ── Voice-clone slot: train a character's voice from their rendered
@@ -21,6 +22,9 @@ export async function POST(req: Request) {
   }
   const characterId = String(body.characterId ?? "");
   if (!characterId) return NextResponse.json({ error: "characterId is required" }, { status: 400 });
+  const characterProject = await projectOfRow("character", characterId);
+  const access = await requireProjectAccess(req, characterProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await trainCharacterVoice(characterId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result.result);

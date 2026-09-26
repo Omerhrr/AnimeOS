@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { VoiceRenderError, renderVoiceTake } from "@/lib/ai/voice-render";
 
 // Real TTS voice renders for VOICE audio cues. A rendered take is a
@@ -35,6 +36,9 @@ export async function POST(req: Request) {
 
   const cueId = body.cueId ? String(body.cueId) : "";
   if (!cueId) return NextResponse.json({ error: "cueId required" }, { status: 400 });
+  const cueProject = await projectOfRow("audioCue", cueId);
+  const access = await requireProjectAccess(req, cueProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   try {
     const result = await renderVoiceTake(cueId, { voice: body.voice, speed: body.speed, delivery: body.delivery });

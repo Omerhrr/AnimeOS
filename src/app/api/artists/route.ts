@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 
 // Artist roster for a production (multi-artist shot assignment).
 
@@ -9,6 +10,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const artists = await db.artist.findMany({
     where: { projectId },
     orderBy: { createdAt: "asc" },
@@ -23,6 +26,8 @@ export async function POST(req: Request) {
   const name = String(body.name ?? "").trim().slice(0, 80);
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const exists = await db.artist.findFirst({ where: { projectId, name } });
   if (exists) return NextResponse.json({ error: `Artist '${name}' is already on the roster` }, { status: 409 });
   const artist = await db.artist.create({

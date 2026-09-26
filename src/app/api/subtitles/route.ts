@@ -10,6 +10,7 @@
 
 import { db } from "@/lib/db";
 import { authGuardResponse, requireRole } from "@/lib/auth";
+import { requireProjectAccess } from "@/lib/access";
 import { parseSrt, serializeSrt, type SrtCue } from "@/lib/subtitles/srt";
 import {
   buildEpisodeDialogueCues,
@@ -36,6 +37,8 @@ export async function POST(req: Request) {
 
   const projectId = String(body.projectId ?? "");
   if (!projectId) return Response.json({ error: "projectId is required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
 
   const targetLang = normalizeLangTag(String(body.targetLang ?? ""));
   if (!/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/i.test(targetLang)) {

@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { scanArtContinuity, checkShotArtContinuity } from "@/lib/continuity-art";
 
 // ── GET ?projectId= : deterministic art-continuity scan ──
@@ -10,6 +12,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const scan = await scanArtContinuity(projectId);
   return NextResponse.json(scan);
 }
@@ -25,6 +29,9 @@ export async function POST(req: Request) {
   }
   const shotId = body.shotId ? String(body.shotId) : "";
   if (!shotId) return NextResponse.json({ error: "shotId required" }, { status: 400 });
+  const shotProject = await projectOfRow("shot", shotId);
+  const access = await requireProjectAccess(req, shotProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await checkShotArtContinuity(shotId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result);

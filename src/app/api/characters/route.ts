@@ -2,9 +2,12 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 
 export async function POST(req: Request) {
   const body = await req.json();
+  const access = await requireProjectAccess(req, String(body.projectId ?? ""), { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const ch = await db.character.create({
     data: {
       projectId: String(body.projectId),
@@ -40,6 +43,8 @@ export async function PATCH(req: Request) {
     const artistId = rest.voiceArtistId ? String(rest.voiceArtistId) : null;
     const target = await db.character.findUnique({ where: { id: String(id) } });
     if (!target) return NextResponse.json({ error: "Character not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, target.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     if (artistId) {
       const artist = await db.artist.findUnique({ where: { id: artistId } });
       if (!artist) return NextResponse.json({ error: "Artist not found" }, { status: 404 });
@@ -69,6 +74,9 @@ export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const projectId = await projectOfRow("character", id);
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   await db.character.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

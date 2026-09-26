@@ -20,6 +20,7 @@ export const dynamic = "force-dynamic";
 
 import { db } from "@/lib/db";
 import { authGuardResponse, requireUser, ROLE_RANK } from "@/lib/auth";
+import { requireProjectAccess } from "@/lib/access";
 
 type Ctx = { projectId: string; label: string };
 
@@ -71,6 +72,10 @@ export async function GET(req: Request) {
   const projectId = searchParams.get("projectId") ?? "";
 
   if (anchorType && anchorId) {
+    const anchorCtx = await resolveAnchor(anchorType, anchorId);
+    if (!anchorCtx) return Response.json({ error: `Unknown ${anchorType || "anchor"} - the anchor row must exist` }, { status: 404 });
+    const access = await requireProjectAccess(req, anchorCtx.projectId);
+    if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
     const comments = await db.comment.findMany({
       where: { anchorType, anchorId },
       orderBy: { createdAt: "asc" },
@@ -80,6 +85,8 @@ export async function GET(req: Request) {
   }
 
   if (projectId) {
+    const access = await requireProjectAccess(req, projectId);
+    if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
     const comments = await db.comment.findMany({
       where: { projectId },
       orderBy: { createdAt: "desc" },
@@ -111,6 +118,11 @@ export async function POST(req: Request) {
 
   const ctx = await resolveAnchor(anchorType, anchorId);
   if (!ctx) return Response.json({ error: `Unknown ${anchorType || "anchor"} - the anchor row must exist` }, { status: 404 });
+
+  // Speaking is still scoped: a member speaks on THEIR production's
+  // threads (OWNER everywhere, always).
+  const postAccess = await requireProjectAccess(req, ctx.projectId);
+  if (!postAccess.ok) return Response.json({ error: postAccess.error }, { status: postAccess.status });
 
   const comment = await db.comment.create({
     data: {
@@ -150,6 +162,9 @@ export async function PATCH(req: Request) {
 
   const comment = await db.comment.findUnique({ where: { id: String(body.id ?? "") } });
   if (!comment) return Response.json({ error: "Comment not found" }, { status: 404 });
+
+  const access = await requireProjectAccess(req, comment.projectId);
+  if (!access.ok) return Response.json({ error: access.error }, { status: access.status });
 
   const action = String(body.action ?? "");
   if (action !== "resolve" && action !== "unresolve") {

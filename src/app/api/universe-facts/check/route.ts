@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { checkShotUniverseFacts } from "@/lib/universe-facts";
 
 // ── POST { shotId } : VLM universe-facts check on one shot's panel
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
   }
   const shotId = body.shotId ? String(body.shotId) : "";
   if (!shotId) return NextResponse.json({ error: "shotId required" }, { status: 400 });
+  const shotProject = await projectOfRow("shot", shotId);
+  const access = await requireProjectAccess(req, shotProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await checkShotUniverseFacts(shotId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result);

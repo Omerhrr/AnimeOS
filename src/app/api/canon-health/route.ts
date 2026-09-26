@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { canonHealthData } from "@/lib/canon-health";
 import { reauditRewordedFact, driftedRewordedFacts, reauditDriftedFacts } from "@/lib/universe-facts";
 
@@ -20,6 +21,8 @@ import { reauditRewordedFact, driftedRewordedFacts, reauditDriftedFacts } from "
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const [data, rewordDrift] = await Promise.all([
     canonHealthData(projectId),
     driftedRewordedFacts(projectId).catch(() => []),
@@ -37,6 +40,8 @@ export async function POST(req: Request) {
   if (body.action === "reaudit-drifted") {
     const projectId = String(body.projectId ?? "");
     if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+    const access = await requireProjectAccess(req, projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const sweep = await reauditDriftedFacts(projectId);
     if (!sweep.ok) return NextResponse.json({ error: sweep.error }, { status: 400 });
     return NextResponse.json(sweep.result);
@@ -49,6 +54,9 @@ export async function POST(req: Request) {
   if (!factId || !oldText) {
     return NextResponse.json({ error: "factId and oldText are required (panels are found by what they audited)" }, { status: 400 });
   }
+  const factProject = await projectOfRow("universeFact", factId);
+  const access = await requireProjectAccess(req, factProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await reauditRewordedFact(factId, oldText);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result.result);

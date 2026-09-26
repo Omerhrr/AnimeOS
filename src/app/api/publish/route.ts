@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { PLATFORM_PRESETS, stagePublishPackage, listPublishEvents } from "@/lib/comic/publish";
 import { uploadStagedPackage } from "@/lib/comic/upload";
 
@@ -22,6 +24,8 @@ import { uploadStagedPackage } from "@/lib/comic/upload";
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const recent = await listPublishEvents(projectId).catch(() => []);
   return NextResponse.json({
     presets: PLATFORM_PRESETS.map((p) => ({
@@ -52,6 +56,10 @@ export async function POST(req: Request) {
   if (body.action === "upload") {
     const eventId = String(body.eventId ?? "");
     if (!eventId) return NextResponse.json({ error: "eventId is required for the upload action" }, { status: 400 });
+    const eventRow = await db.productionEvent.findUnique({ where: { id: eventId }, select: { projectId: true } });
+    if (!eventRow) return NextResponse.json({ error: "Publish event not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, eventRow.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const result = await uploadStagedPackage(eventId);
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json(result.outcome);
@@ -62,6 +70,9 @@ export async function POST(req: Request) {
   if (!episodeId || !platform) {
     return NextResponse.json({ error: "episodeId and platform are required" }, { status: 400 });
   }
+  const episodeProject = await projectOfRow("episode", episodeId);
+  const access = await requireProjectAccess(req, episodeProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await stagePublishPackage(episodeId, platform);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result.pkg);

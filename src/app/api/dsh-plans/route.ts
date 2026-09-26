@@ -2,6 +2,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // run steps can execute slow production tools (art, renders)
 
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import { createPlan, listPlans, runPlanSteps, setPlanStatus } from "@/lib/dsh/plans";
 
 // ── Cross-turn DSH plans (landed by DSH or the creator, run after
@@ -14,6 +16,8 @@ import { createPlan, listPlans, runPlanSteps, setPlanStatus } from "@/lib/dsh/pl
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const plans = await listPlans(projectId);
   return NextResponse.json({ plans });
 }
@@ -27,6 +31,8 @@ export async function POST(req: Request) {
   }
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const result = await createPlan(projectId, {
     title: String(body.title ?? ""),
     goal: String(body.goal ?? ""),
@@ -49,6 +55,10 @@ export async function PATCH(req: Request) {
   if (!planId || !["approve", "pause", "resume", "abort", "run"].includes(action)) {
     return NextResponse.json({ error: "planId and action (approve | pause | resume | abort | run) required" }, { status: 400 });
   }
+  const plan = await db.dshPlan.findUnique({ where: { id: planId }, select: { projectId: true } });
+  if (!plan) return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, plan.projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   if (action === "run") {
     const maxSteps = Number(body.maxSteps ?? 1);
     const result = await runPlanSteps(planId, Number.isFinite(maxSteps) ? maxSteps : 1);

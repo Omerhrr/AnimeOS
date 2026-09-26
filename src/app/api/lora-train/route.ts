@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import { startLoraTrainRun, tickProjectTrainRuns } from "@/lib/ai/lora-train";
 
 // Simulated LoRA training runs over a production's approved panels.
@@ -16,6 +17,15 @@ export async function GET(req: Request) {
   if (!projectId && !loraId) {
     return NextResponse.json({ error: "projectId or loraId required" }, { status: 400 });
   }
+  // scope through whichever locator the caller used
+  let scopeProjectId = projectId;
+  if (!scopeProjectId && loraId) {
+    const loraRow = await db.styleLora.findUnique({ where: { id: loraId }, select: { projectId: true } });
+    if (!loraRow) return NextResponse.json({ error: "LoRA not found" }, { status: 404 });
+    scopeProjectId = loraRow.projectId;
+  }
+  const access = await requireProjectAccess(req, scopeProjectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   if (projectId) await tickProjectTrainRuns(projectId);
 
@@ -40,6 +50,8 @@ export async function POST(req: Request) {
   if (body.batch) {
     const projectId = body.projectId ? String(body.projectId) : "";
     if (!projectId) return NextResponse.json({ error: "projectId required for batch training" }, { status: 400 });
+    const batchAccess = await requireProjectAccess(req, projectId, { write: true });
+    if (!batchAccess.ok) return NextResponse.json({ error: batchAccess.error }, { status: batchAccess.status });
 
     const project = await db.project.findUnique({
       where: { id: projectId },
@@ -84,6 +96,10 @@ export async function POST(req: Request) {
   // ── single adapter ──
   const loraId = body.loraId ? String(body.loraId) : "";
   if (!loraId) return NextResponse.json({ error: "loraId required" }, { status: 400 });
+  const singleLora = await db.styleLora.findUnique({ where: { id: loraId }, select: { projectId: true } });
+  if (!singleLora) return NextResponse.json({ error: "LoRA not found" }, { status: 404 });
+  const singleAccess = await requireProjectAccess(req, singleLora.projectId, { write: true });
+  if (!singleAccess.ok) return NextResponse.json({ error: singleAccess.error }, { status: singleAccess.status });
 
   try {
     const started = await startLoraTrainRun(loraId);

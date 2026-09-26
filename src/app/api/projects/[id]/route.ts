@@ -3,12 +3,16 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole, authGuardResponse } from "@/lib/auth";
+import { requireProjectAccess } from "@/lib/access";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Full production universe - the persistent animated state (§47). */
-export async function GET(_req: Request, ctx: Ctx) {
+/** Full production universe - the persistent animated state (§47).
+ *  Crew-scoped: members of THIS production (OWNER always). */
+export async function GET(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
+  const access = await requireProjectAccess(req, id);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const project = await db.project.findUnique({
     where: { id },
     include: {

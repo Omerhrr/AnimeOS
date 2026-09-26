@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess } from "@/lib/access";
 import { listDigests, postDailyDigest } from "@/lib/digest";
 
 // ── The studio's daily digest to the creator.
@@ -10,6 +11,8 @@ import { listDigests, postDailyDigest } from "@/lib/digest";
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const digests = await listDigests(projectId);
   return NextResponse.json({ digests });
 }
@@ -23,6 +26,8 @@ export async function POST(req: Request) {
   }
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const hours = Number(body.hours ?? 24);
   const result = await postDailyDigest(projectId, Number.isFinite(hours) ? hours : 24);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });

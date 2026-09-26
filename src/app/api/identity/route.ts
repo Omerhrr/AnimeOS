@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // scoring is real vision work (one call per panel)
 
 import { NextResponse } from "next/server";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import {
   identityPanelData, scoreProjectIdentity, scoreShotIdentity, scoreRenderIdentity,
   scoreShotEmbedding, scoreProjectEmbeddings,
@@ -18,6 +19,8 @@ import { reanchorByName, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
 export async function GET(req: Request) {
   const projectId = new URL(req.url).searchParams.get("projectId") ?? "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const data = await identityPanelData(projectId);
   return NextResponse.json(data);
 }
@@ -34,6 +37,8 @@ export async function POST(req: Request) {
     const characterName = String(body.characterName ?? "");
     if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
     if (!characterName) return NextResponse.json({ error: "characterName required" }, { status: 400 });
+    const access = await requireProjectAccess(req, projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const rawRescore = Number(body.rescore ?? 3);
     const result = await reanchorByName(projectId, characterName, {
       rescore: Number.isFinite(rawRescore) ? rawRescore : 3,
@@ -44,6 +49,9 @@ export async function POST(req: Request) {
   }
   const shotId = String(body.shotId ?? "");
   if (!shotId) return NextResponse.json({ error: "shotId required" }, { status: 400 });
+  const shotProject = await projectOfRow("shot", shotId);
+  const shotAccess = await requireProjectAccess(req, shotProject, { write: true });
+  if (!shotAccess.ok) return NextResponse.json({ error: shotAccess.error }, { status: shotAccess.status });
   if (String(body.mode ?? "") === "affinity") {
     const result = await scoreShotEmbedding(shotId);
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
@@ -65,6 +73,8 @@ export async function PATCH(req: Request) {
   }
   const projectId = String(body.projectId ?? "");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const limit = Number(body.limit ?? 4);
   if (String(body.mode ?? "") === "affinity") {
     const result = await scoreProjectEmbeddings(projectId, Number.isFinite(limit) ? limit : 8);

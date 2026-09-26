@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole, authGuardResponse } from "@/lib/auth";
+import { requireProjectAccess } from "@/lib/access";
 import { createRenderJob, tickProjectJobs, applyEvaluationActions } from "@/lib/engine/render";
 import { runRenderEvaluation } from "@/lib/dsh/evaluator";
 
@@ -11,6 +12,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   await tickProjectJobs(projectId);
 
@@ -75,6 +78,8 @@ export async function POST(req: Request) {
   if (action === "create") {
     const shot = await db.shot.findUnique({ where: { id: String(body.shotId) }, include: { scene: { include: { episode: { include: { season: true } } } } } });
     if (!shot) return NextResponse.json({ error: "Shot not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, shot.scene.episode.season.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const job = await createRenderJob(shot.scene.episode.season.projectId, shot.id, body.mode === "FINAL" ? "FINAL" : "PREVIEW");
     return NextResponse.json({ id: job.id });
   }
@@ -88,6 +93,16 @@ export async function POST(req: Request) {
       include: { season: true, scenes: { include: { shots: { orderBy: { number: "asc" } } } } },
     });
     if (episodes.length === 0) return NextResponse.json({ error: "No matching episodes" }, { status: 404 });
+    // Every episode's production must be on the caller's slate.
+    const checkedProjects = new Set<string>();
+    for (const ep of episodes) {
+      const pid = ep.season.projectId;
+      if (!checkedProjects.has(pid)) {
+        const epAccess = await requireProjectAccess(req, pid, { write: true });
+        if (!epAccess.ok) return NextResponse.json({ error: epAccess.error }, { status: epAccess.status });
+        checkedProjects.add(pid);
+      }
+    }
 
     let created = 0;
     let skipped = 0;
@@ -118,6 +133,8 @@ export async function POST(req: Request) {
   if (action === "apply") {
     const evaluation = await db.evaluation.findUnique({ where: { id: String(body.evaluationId) }, include: { renderJob: true } });
     if (!evaluation) return NextResponse.json({ error: "Evaluation not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, evaluation.renderJob.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     await applyEvaluationActions(evaluation.id);
     const shot = evaluation.renderJob.shotId;
     if (shot) await createRenderJob(evaluation.renderJob.projectId, shot, evaluation.renderJob.mode as "PREVIEW" | "FINAL");
@@ -127,6 +144,8 @@ export async function POST(req: Request) {
   if (action === "retry") {
     const job = await db.renderJob.findUnique({ where: { id: String(body.jobId) } });
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, job.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const next = await createRenderJob(job.projectId, job.shotId, job.mode as "PREVIEW" | "FINAL");
     return NextResponse.json({ id: next.id });
   }
@@ -138,6 +157,8 @@ export async function POST(req: Request) {
     if (!guard.ok) return authGuardResponse(guard)!;
     const job = await db.renderJob.findUnique({ where: { id: String(body.jobId) } });
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, job.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     await db.renderJob.update({ where: { id: job.id }, data: { status: "APPROVED", stage: `Approved by ${guard.user.name}` } });
     if (job.shotId) {
       await db.shot.update({ where: { id: job.shotId }, data: { status: "FINAL" } });
@@ -159,6 +180,8 @@ export async function POST(req: Request) {
     if (!guard.ok) return authGuardResponse(guard)!;
     const job = await db.renderJob.findUnique({ where: { id: String(body.jobId) } });
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    const rejectAccess = await requireProjectAccess(req, job.projectId, { write: true });
+    if (!rejectAccess.ok) return NextResponse.json({ error: rejectAccess.error }, { status: rejectAccess.status });
     const note = String(body.note ?? "").trim();
     if (!note) return NextResponse.json({ error: "A rejection note is required - say what to fix" }, { status: 400 });
     await db.renderJob.update({

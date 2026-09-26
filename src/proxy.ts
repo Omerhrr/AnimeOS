@@ -19,11 +19,15 @@ const AUTH_SECRET = process.env.NEXTAUTH_SECRET ?? "animeos-studio-dev-secret-ro
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-// The workplace exception: VIEWERs are read-only everywhere EXCEPT
-// the comment threads - speaking is not directing. The exact path
-// (not a prefix) so a future /api/comments-xyz never rides it; the
-// route itself still enforces the author-or-EDITOR+ rules per action.
+// The workplace exceptions - the ONLY mutations a VIEWER may send.
+// Both are speaking/lens acts, not direction; each route still
+// enforces its own per-action rules on top:
+//   1. /api/comments            - speak (the exact path, not a prefix)
+//   2. PATCH .../projects/x/members - retune your OWN craft lens
+//     (the members route refuses a PATCH for anyone but yourself or
+//     an OWNER, and its add/remove stay OWNER-only regardless)
 const VIEWER_MUTABLE = new Set(["/api/comments"]);
+const VIEWER_LENS_PATCH = /^\/api\/projects\/[^/]+\/members$/;
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -47,12 +51,10 @@ export default async function proxy(req: NextRequest) {
 
   const role = (token.role as string) ?? "VIEWER";
 
-  if (
-    pathname.startsWith("/api/") &&
-    MUTATING.has(req.method) &&
-    role === "VIEWER" &&
-    !VIEWER_MUTABLE.has(pathname)
-  ) {
+  const viewerMayMutate =
+    VIEWER_MUTABLE.has(pathname) || (req.method === "PATCH" && VIEWER_LENS_PATCH.test(pathname));
+
+  if (pathname.startsWith("/api/") && MUTATING.has(req.method) && role === "VIEWER" && !viewerMayMutate) {
     return NextResponse.json(
       { error: "VIEWER is read-only - an OWNER can promote you from the roster" },
       { status: 403 },

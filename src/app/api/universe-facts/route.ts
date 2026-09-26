@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/access";
 import { universePanelData } from "@/lib/universe-facts";
 
 const CATEGORIES = ["WORLD", "CHARACTER", "PROP", "LOCATION", "RULE"];
@@ -12,6 +13,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const data = await universePanelData(projectId);
   return NextResponse.json(data);
 }
@@ -28,6 +31,8 @@ export async function POST(req: Request) {
   const text = body.text ? String(body.text).trim() : "";
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
   if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
+  const access = await requireProjectAccess(req, projectId, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const category = CATEGORIES.includes(String(body.category ?? "")) ? String(body.category) : "WORLD";
   const source = body.source === "DSH" || body.source === "BIBLE" ? String(body.source) : "USER";
   const fact = await db.universeFact.create({

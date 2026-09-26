@@ -4,6 +4,7 @@ import { unlink } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { requireProjectAccess, projectOfRow } from "@/lib/access";
 
 // ─────────────────────────────────────────────────────────────
 // PER-STATE AUDITION HISTORY
@@ -27,9 +28,11 @@ export async function GET(req: Request) {
   if (!stateId) return NextResponse.json({ error: "stateId is required" }, { status: 400 });
   const state = await db.characterState.findUnique({
     where: { id: stateId },
-    select: { id: true, label: true, episodeNumber: true, voiceVariant: true, speedHint: true, pitchHint: true },
+    select: { id: true, label: true, episodeNumber: true, voiceVariant: true, speedHint: true, pitchHint: true, character: { select: { projectId: true } } },
   });
   if (!state) return NextResponse.json({ error: "State not found" }, { status: 404 });
+  const access = await requireProjectAccess(req, state.character.projectId);
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   const rows = await db.stateAudition.findMany({
     where: { stateId },
     orderBy: { createdAt: "desc" },
@@ -42,8 +45,11 @@ export async function DELETE(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id") ?? "";
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
-  const row = await db.stateAudition.findUnique({ where: { id } });
+  const row = await db.stateAudition.findUnique({ where: { id }, select: { url: true, stateId: true } });
   if (!row) return NextResponse.json({ error: "Audition row not found" }, { status: 404 });
+  const auditionProject = await projectOfRow("characterState", row.stateId);
+  const access = await requireProjectAccess(req, auditionProject, { write: true });
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
   await db.stateAudition.delete({ where: { id } });
   if (row.url.startsWith("/auditions/")) {
     await unlink(path.join(process.cwd(), "public", row.url)).catch(() => {});

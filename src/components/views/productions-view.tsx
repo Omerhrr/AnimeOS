@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, FolderKanban, Loader2 } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { Plus, FolderKanban, Loader2, UsersRound } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge, StatCard } from "@/components/views/shared";
+import { CrewDialog } from "@/components/views/crew-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -162,21 +164,43 @@ function CreateProductionDialog() {
 
 export function ProductionsView() {
   const { projectId, setProject, setView } = useStudio();
+  const { data: session } = useSession();
+  const role = session?.user?.role ?? "VIEWER";
+  const isOwner = role === "OWNER";
   const projectsQ = useQuery({ queryKey: ["projects"], queryFn: api.projects });
+  const projects = projectsQ.data ?? [];
 
   return (
     <div>
       <SectionHeader
         title="Productions"
-        sub="Every production is a persistent animated universe: characters, worlds, story state, continuity and render history."
+        sub={isOwner
+          ? "Every production is a persistent animated universe - and as OWNER you hold full access to every one of them."
+          : "The productions on your slate. An OWNER adds you to a crew from a production's Crew panel."}
         right={<CreateProductionDialog />}
       />
+      {projects.length === 0 ? (
+        <div className="studio-panel p-10 text-center">
+          <UsersRound className="h-8 w-8 mx-auto text-muted-foreground/60 mb-3" />
+          <p className="text-sm font-medium mb-1">
+            {isOwner ? "No productions yet" : "Nothing on your slate yet"}
+          </p>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+            {isOwner
+              ? "Initialize the first production - you will have full access to it and to everything the studio makes after it."
+              : "You are not on any production's crew yet. Ask an OWNER to add you - they choose which productions you see and which dashboard lens leads for you."}
+          </p>
+        </div>
+      ) : (
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {(projectsQ.data ?? []).map((p) => (
-          <button
+        {projects.map((p) => (
+          <div
             key={p.id}
+            role="button"
+            tabIndex={0}
             onClick={() => { setProject(p.id); setView("dashboard"); }}
-            className={`studio-panel p-5 text-left transition-all hover:border-white/20 hover:bg-white/[0.045] ${p.id === projectId ? "ring-1 ring-primary/50" : ""}`}
+            onKeyDown={(e) => { if (e.key === "Enter") { setProject(p.id); setView("dashboard"); } }}
+            className={`studio-panel p-5 text-left transition-all hover:border-white/20 hover:bg-white/[0.045] cursor-pointer ${p.id === projectId ? "ring-1 ring-primary/50" : ""}`}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -198,15 +222,22 @@ export function ProductionsView() {
               <StatCard label="Cast" value={p.characterCount} />
               <StatCard label="Renders" value={p.renderCount} />
             </div>
-            <div className="flex gap-1.5 mt-3 text-[10px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-1.5 mt-3 text-[10px] text-muted-foreground">
               <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">{p.format}</span>
               <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">{p.animationType}</span>
               <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">{p.fps} fps</span>
               <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">{p.resolution}</span>
+              {typeof p.crewCount === "number" && (
+                <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10">crew {p.crewCount}</span>
+              )}
+              <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
+                <CrewDialog projectId={p.id} title={p.title} />
+              </span>
             </div>
-          </button>
+          </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
