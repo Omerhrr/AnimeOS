@@ -1,6 +1,7 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { SCENE_PARAM_BOUNDS, type EvaluationAction, type EvaluationFinding } from "@/lib/types";
+import { ensureRenderReview, formatPixelEvidence } from "@/lib/engine/render-review";
 
 // ─────────────────────────────────────────────────────────────
 // DSH EVALUATION LOOP (§50)
@@ -30,6 +31,15 @@ export async function runRenderEvaluation(renderJobId: string) {
 
   const project = await db.project.findUnique({ where: { id: job.projectId } });
 
+  // THE PIXEL REVIEW (iteration 59): before the inspection reasons about
+  // the render, the learned assist layer judges the actual frame - local
+  // measurements plus a vision read against the shot's directed intent.
+  // It is EVIDENCE for the inspection, never a gate of its own, and a
+  // review that cannot run (no clip, no ffmpeg, no provider) never blocks
+  // the inspection - the prompt just reads as before.
+  const pixel = await ensureRenderReview(job.id).catch(() => null);
+  const pixelSection = pixel && pixel.ok ? formatPixelEvidence(pixel.review) : null;
+
   const zai = await ZAI.create();
   const prompt = `You are DSH inspecting a ${job.mode} render of one shot - a studio dallies review. The production engine reports the shot rendered successfully; judge it like a director reviewing the frame series, reasoning over the shot's intent, its cinematography spec, and the scene's live render parameters.
 
@@ -40,7 +50,7 @@ SHOT ${String(job.shot.number).padStart(3, "0")} (attempt ${job.attempt}): ${job
 SPEC: type=${job.shot.shotType}, lens=${job.shot.lens ?? "default"}, movement=${job.shot.movement ?? "static"}, duration=${job.shot.duration}s, lighting=${job.shot.lighting ?? "default"}
 LIVE RENDER PARAMS: fogDensity=${scene.fogDensity}, lightningIntensity=${scene.lightningIntensity}, energyIntensity=${scene.energyIntensity}, cameraDistance=${scene.cameraDistance}, rimLightIntensity=${scene.rimLightIntensity}
 
-${PARAM_HINTS}
+${pixelSection ? `${pixelSection}\n\n` : ""}${PARAM_HINTS}
 
 Decide: does this preview serve the shot's dramatic intent? Typical issues at review: camera too wide/Close for the beat, subject underexposed, effect emission too weak or overwhelming, fog swallowing depth, movement mismatched to the action.
 
@@ -58,7 +68,6 @@ Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (at
   let summary = "Evaluation unavailable - defaulting to revision.";
   let findings: EvaluationFinding[] = [];
   let actions: EvaluationAction[] = [];
-
   try {
     const completion = await zai.chat.completions.create({
       messages: [{ role: "user", content: prompt }],
@@ -84,6 +93,15 @@ Rules: 2-5 findings, at least one GOOD finding if approved. On first attempt (at
           return a;
         })
         .slice(0, 6);
+    }
+    // The pixel review's issues ride the inspection's findings (evidence,
+    // not a gate): the DSH summary and the render card tell one story.
+    if (pixel && pixel.ok && pixel.review.verdict) {
+      const pixelFindings = pixel.review.verdict.issues
+        .filter((i) => i.severity === "CRITICAL" || i.severity === "MAJOR")
+        .slice(0, 4)
+        .map((i) => ({ aspect: i.kind, status: "ISSUE", note: `pixel review (${pixel.review.provider}): ${i.note}` })) as EvaluationFinding[];
+      findings = [...pixelFindings, ...findings].slice(0, 8);
     }
   } catch (err) {
     summary = `DSH inspection pipeline hiccup (${err instanceof Error ? err.message : "unknown"}). Manual review required.`;

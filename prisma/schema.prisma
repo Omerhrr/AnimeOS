@@ -57,6 +57,8 @@ model Project {
   designPresets    DesignPreset[]
   designReviews    DesignReview[]
   designIssues     DesignIssue[]
+  renderReviews    RenderReview[]
+  renderIssues     RenderIssue[]
   assetExports     AssetExport[]
   comments         Comment[]
   memberships      ProjectMembership[]
@@ -187,6 +189,52 @@ model DesignIssue {
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// RENDER REVIEW LAYER (iteration 59 - the learned assist)
+//
+// Pixels are the truth. A finished render is JUDGED by a review
+// pass that measures the actual frame locally (deterministic) and
+// shows it to the vision model together with the shot's DIRECTED
+// intent (provider-honest). The DSH inspection reads it as
+// evidence; a review that was never run judges nothing.
+// ─────────────────────────────────────────────────────────────
+model RenderReview {
+  id          String   @id @default(cuid())
+  projectId   String
+  renderJobId String   @unique // one review per render job - the pixels do not change
+  shotId      String?
+  targetRef   String   // e.g. "Sc1 Sh003" - what was judged
+  state       String   @default("REVIEWED") // PASSED | NEEDS_WORK
+  bar         Float    @default(0.72) // the quality bar this review judged against
+  overall     Float?   // 0..1 weighted overall from the criteria
+  verdict     String?  // JSON {criteria, metrics, frame, intent, issues[], note, provider}
+  issuesFound Int      @default(0)
+  framePath   String?  // the reviewed frame (poster jpg under /renders/posters/)
+  provider    String   @default("local") // vision+local | vision | local
+  createdAt   DateTime @default(now())
+  renderJob   RenderJob @relation(fields: [renderJobId], references: [id], onDelete: Cascade)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues      RenderIssue[]
+
+  @@index([projectId, createdAt])
+}
+
+model RenderIssue {
+  id          String   @id @default(cuid())
+  projectId   String
+  reviewId    String
+  renderJobId String?
+  refName     String
+  severity    String   // CRITICAL | MAJOR | MINOR
+  kind        String   // EXPOSURE | CONTRAST | READABILITY | PALETTE | INTENT | COMPOSITION | STAGE
+  note        String
+  createdAt   DateTime @default(now())
+  review      RenderReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, kind])
 }
 
 model Season {
@@ -572,6 +620,7 @@ model RenderJob {
   project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   shot       Shot?     @relation(fields: [shotId], references: [id], onDelete: Cascade)
   evaluation Evaluation?
+  reviews    RenderReview[]
 }
 
 model Evaluation {

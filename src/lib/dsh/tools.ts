@@ -38,6 +38,7 @@ import { runRoundtrip, isExportFormat } from "@/lib/blender/roundtrip";
 import { compileGrammarSpec, serializeGrammar, BUILT_IN_GRAMMARS, GRAMMAR_MOVES, findBuiltInGrammar } from "@/lib/animation/grammar";
 import { compileFxSpec, serializeFx, BUILT_IN_FX, FX_KINDS, findBuiltInFx } from "@/lib/animation/fx";
 import { compilePhysicsSpec, serializePhysics, BUILT_IN_PHYSICS, PHYSICS_KINDS, findBuiltInPhysics } from "@/lib/animation/physics";
+import { reviewRenderJob, renderPixelContextLine, RENDER_ISSUE_KINDS } from "@/lib/engine/render-review";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -765,6 +766,15 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       physics: "string - a design_physics preset name, a built-in name (The Clash | The Ruin | The Windchime | The Shove | The Recoil), or an inline JSON array of programs; empty string clears",
+    },
+  },
+  {
+    name: "review_render",
+    description: "JUDGE THE PIXELS: run (or read back) the VISION-GUIDED RENDER REVIEW on a finished render - the learned assist layer on the deterministic passes. The review pulls a representative frame from the finished clip, MEASURES it locally (luminance mean and spread, saturation, near-black and clipped-white fractions, a 16-bin histogram: deterministic, the same bytes always land the same numbers), then shows the frame to the vision model TOGETHER WITH the shot's DIRECTED INTENT (the grammar beats, the fx and physics the production put on the shot) and lands a persisted RenderReview: per-criterion scores (exposure and contrast measured locally; readability, palette, intent and composition scored against the direction), an overall %, concrete issues (EXPOSURE | CONTRAST | READABILITY | PALETTE | INTENT | COMPOSITION | STAGE, with severities) and the provider named honestly (vision+local | vision | local). One review per render job: the pixels do not change until a new attempt renders new ones. Read the review back before promising the shot serves its intent, and pair it with the DSH inspection - the review is evidence, the inspection is the verdict.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      jobId: "string - optional explicit render job id (defaults to the shot's latest finished render)",
     },
   },
 ];
@@ -2852,6 +2862,45 @@ export async function executeTool(
         return { status: "OK", result: `THE WORLD OBEYS on Shot ${String(shot.number).padStart(3, "0")} with ${physSource}: ${physShape}. The next render_shot of this shot compiles the programs into real rigid bodies (gravity, bounce, friction, settle) riding the same beat clock as the camera, the cloth and the fx - direct the lens first (set_shot_grammar) so the beats have something to answer${physShape.includes("KNOCK") ? ", and name the designed prop in the shot text when a KNOCK should strike it" : ""}.` };
       }
 
+      case "review_render": {
+        // JUDGE THE PIXELS: resolve the shot (or the explicit job), review
+        // its finished clip, read the verdict back like any other evidence.
+        let job = null as Awaited<ReturnType<typeof db.renderJob.findFirst>>;
+        if (args.jobId) {
+          job = await db.renderJob.findFirst({ where: { id: String(args.jobId), projectId } });
+          if (!job) return { status: "ERROR", result: `No render job "${String(args.jobId)}" in this production.` };
+        } else {
+          let scene: Awaited<ReturnType<typeof latestScene>> = null;
+          if (args.sceneNumber) {
+            const scenes = await db.scene.findMany({
+              where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+              orderBy: { createdAt: "desc" },
+            });
+            scene = scenes[0] ?? null;
+          }
+          if (!scene) scene = await latestScene(projectId);
+          if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+          const shot = await db.shot.findFirst({
+            where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+          });
+          if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+          job = await db.renderJob.findFirst({
+            where: { projectId, shotId: shot.id, outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
+            orderBy: { createdAt: "desc" },
+          });
+          if (!job) return { status: "ERROR", result: `Shot ${String(shot.number).padStart(3, "0")} of Scene ${scene.number} has no finished render yet - queue one (render_shot) and review what exists, not what is promised.` };
+        }
+        const res = await reviewRenderJob(job.id);
+        if (!res.ok) return { status: "ERROR", result: `The pixel review could not run: ${res.error}` };
+        const v = res.review.verdict;
+        const crit = v ? Object.entries(v.criteria).filter(([, x]) => typeof x === "number").map(([k, x]) => `${k} ${(x as number).toFixed(2)}`).join(", ") : "";
+        const m = v?.metrics;
+        const measured = m ? `measured: lumaMean ${m.lumaMean}, lumaStd ${m.lumaStd}, satMean ${m.satMean}, near-black ${(m.darkFrac * 100).toFixed(1)}%, clipped-white ${(m.brightFrac * 100).toFixed(1)}%` : "";
+        const issueLines = (v?.issues ?? []).slice(0, 6).map((i) => `${i.severity} ${i.kind}: ${i.note}`).join("; ") || "none";
+        await landDesignEvent(projectId, `Pixel review on ${res.review.targetRef}: ${res.review.overall !== null ? `${Math.round(res.review.overall * 100)}%` : "unmeasured"} (${res.review.provider}) - ${res.review.state}, ${res.review.issuesFound} issue(s)`, { renderJobId: job.id });
+        return { status: "OK", result: `THE RENDER IS JUDGED: ${res.review.targetRef} (attempt ${job.attempt}) scores ${res.review.overall !== null ? `${Math.round(res.review.overall * 100)}%` : "unmeasured"} - ${res.review.state}, provider ${res.review.provider}, frame ${res.review.framePath ?? "none"}.\n${crit ? `criteria: ${crit}\n` : ""}${measured ? `${measured}\n` : ""}issues: ${issueLines}${v?.note ? `\nnote: ${v.note}` : ""}\nThe review is EVIDENCE, not a verdict: pair it with the DSH inspection on this render, and fix what it names before promising the shot serves its intent (the issue kinds I act on: ${RENDER_ISSUE_KINDS.join(", ")}).` };
+      }
+
       case "design_audit": {
         if (args.library) {
           const res = await auditLibrary(projectId, true);
@@ -3901,7 +3950,7 @@ function designContextLine(
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -3958,6 +4007,8 @@ export async function buildCompactContext(projectId: string) {
     // The design loop (Iteration 51): the self-review standing.
     db.designIssue.findMany({ where: { projectId, status: { in: ["OPEN", "FIXING"] } }, orderBy: { severity: "asc" as const }, take: 8 }).catch(() => []),
     db.designReview.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
+    // The pixel-review standing (Iteration 59): what the learned layer last judged.
+    db.renderReview.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
   ]);
   if (!project) return null;
 
@@ -4069,5 +4120,6 @@ export async function buildCompactContext(projectId: string) {
         ? `human gate ${project.approvalGate ? "ARMED (an APPROVED inspection parks the render; only a creator's approve releases it)" : "off"} - ${gateHeldCount} render(s) awaiting creator approval - ${openCommentCount} unresolved thread(s) the crew is having${openComments.length ? `: ${openComments.map((c) => `${c.authorName} on ${c.anchorType} "${c.body.slice(0, 70)}"`).join(" | ")}` : ""}`
         : null,
     design: designContextLine(project, openDesignIssues, latestDesignReview),
+    pixel: renderPixelContextLine(latestRenderReview),
   };
 }

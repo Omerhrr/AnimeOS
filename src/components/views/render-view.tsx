@@ -8,7 +8,7 @@ import {
   Layers, ListFilter, Play, Clapperboard, Timer, Send, MessagesSquare, ShieldAlert, XCircle,
   ClipboardCheck, Wrench, Download,
 } from "lucide-react";
-import { api, parseActions, parseFindings, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
+import { api, parseActions, parseFindings, parseRenderVerdict, type StudioProject, type BridgeStatusInfo, type EpisodeCutResult } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatusBadge } from "@/components/views/shared";
 import { CommentThread } from "@/components/views/comment-thread";
@@ -1187,6 +1187,64 @@ export function RenderView({ project }: { project: StudioProject }) {
                   </div>
                 </div>
               )}
+
+              {/* THE PIXEL REVIEW (iteration 59): the learned layer's verdict on the finished frame */}
+              {(() => {
+                const review = job.reviews && job.reviews.length > 0 ? job.reviews[0] : null;
+                if (!review || active) return null;
+                const v = parseRenderVerdict(review.verdict);
+                const critEntries = Object.entries(v.criteria).filter(([, x]) => typeof x === "number");
+                const sevCls = (s: string) =>
+                  s === "CRITICAL"
+                    ? "border-rose-400/40 bg-rose-400/10 text-rose-200"
+                    : s === "MAJOR"
+                      ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+                      : "border-white/15 bg-white/5 text-muted-foreground";
+                return (
+                  <div className="mt-3 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.04] p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold flex-wrap">
+                      {review.state === "PASSED" ? (
+                        <><ShieldCheck className="h-3.5 w-3.5 text-cyan-300" /> Pixel review - passed</>
+                      ) : (
+                        <><ShieldX className="h-3.5 w-3.5 text-cyan-300" /> Pixel review - needs work</>
+                      )}
+                      <span className="text-[10px] font-normal text-muted-foreground" title={`provider: ${review.provider}${v.note ? ` - ${v.note}` : ""}`}>
+                        {review.overall !== null ? `${Math.round(review.overall * 100)}%` : "unmeasured"} · {review.provider}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-start gap-2.5">
+                      {review.framePath && (
+                        <img
+                          src={review.framePath}
+                          alt="the reviewed frame"
+                          className="rounded border border-white/10 w-24 shrink-0"
+                          title="the frame the review judged (40% through the clip)"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                          {critEntries.map(([k, x]) => (
+                            <span key={k} className="rounded px-1.5 py-0.5 border border-white/12 bg-white/5 tabular-nums" title={`${k} criterion score`}>
+                              <span className="text-muted-foreground">{k}</span> <span className="font-semibold">{(x as number).toFixed(2)}</span>
+                            </span>
+                          ))}
+                          {v.metrics && (
+                            <span className="rounded px-1.5 py-0.5 border border-white/12 bg-white/5 tabular-nums" title={`measured: lumaMean ${v.metrics.lumaMean}, lumaStd ${v.metrics.lumaStd}, satMean ${v.metrics.satMean}, near-black ${(v.metrics.darkFrac * 100).toFixed(1)}%, clipped-white ${(v.metrics.brightFrac * 100).toFixed(1)}%`}>
+                              <span className="text-muted-foreground">measured</span> <span className="font-semibold">{v.metrics.lumaMean.toFixed(2)}/{v.metrics.lumaStd.toFixed(2)}</span>
+                            </span>
+                          )}
+                          {v.issues.map((i, idx) => (
+                            <span key={idx} className={`rounded px-1.5 py-0.5 border ${sevCls(i.severity)}`} title={`${i.severity} ${i.kind}: ${i.note}`}>
+                              {i.kind}
+                            </span>
+                          ))}
+                        </div>
+                        {v.note && <p className="text-[11px] text-muted-foreground leading-relaxed mt-1.5">{v.note}</p>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {job.evaluation && !active && (
                 <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-3">

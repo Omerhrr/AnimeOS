@@ -49,6 +49,8 @@ export async function GET(req: Request) {
     include: {
       shot: { include: { scene: true } },
       evaluation: true,
+      // The pixel review (iteration 59): the learned layer's verdict rides the card.
+      reviews: { orderBy: { createdAt: "desc" as const }, take: 1 },
     },
   });
   return NextResponse.json(jobs);

@@ -559,6 +559,18 @@ export interface RenderJobRow {
     actions: string; // JSON EvaluationAction[]
     applied: boolean;
   } | null;
+  // the pixel review (iteration 59): the learned layer's verdict on the
+  // finished frame (latest only; verdict is JSON RenderVerdict)
+  reviews: Array<{
+    id: string;
+    targetRef: string;
+    state: string; // PASSED | NEEDS_WORK
+    overall: number | null;
+    provider: string; // vision+local | vision | local
+    framePath: string | null;
+    issuesFound: number;
+    verdict: string | null;
+  }> | null;
 }
 
 // a workplace comment (Iteration 48) - anchored to a production
@@ -921,6 +933,34 @@ export const api = {
 export function parseFindings(raw: string | null | undefined): EvaluationFinding[] {
   if (!raw) return [];
   try { return JSON.parse(raw); } catch { return []; }
+}
+
+// the pixel review's verdict (iteration 59) - parsed defensively, a
+// corrupt verdict degrades to criteria-only rather than crashing the card
+export interface RenderReviewParsed {
+  criteria: Record<string, number>;
+  metrics: { lumaMean: number; lumaStd: number; satMean: number; darkFrac: number; brightFrac: number } | null;
+  issues: Array<{ severity: string; kind: string; note: string }>;
+  note: string;
+  provider: string;
+}
+
+export function parseRenderVerdict(raw: string | null | undefined): RenderReviewParsed {
+  const empty: RenderReviewParsed = { criteria: {}, metrics: null, issues: [], note: "", provider: "local" };
+  if (!raw) return empty;
+  try {
+    const v = JSON.parse(raw) as Partial<RenderReviewParsed> | null;
+    if (!v || typeof v !== "object") return empty;
+    return {
+      criteria: (v.criteria ?? {}) as Record<string, number>,
+      metrics: v.metrics ?? null,
+      issues: Array.isArray(v.issues) ? v.issues.slice(0, 8) : [],
+      note: typeof v.note === "string" ? v.note : "",
+      provider: typeof v.provider === "string" ? v.provider : "local",
+    };
+  } catch {
+    return empty;
+  }
 }
 
 export function parseActions(raw: string | null | undefined): EvaluationAction[] {
