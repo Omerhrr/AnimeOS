@@ -29,6 +29,12 @@ export function isExportFormat(v: string): v is ExportFormat {
   return (EXPORT_FORMATS as string[]).includes(v);
 }
 
+export interface RoundtripCheck {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
 export interface RoundtripReport {
   format: string;
   path: string;
@@ -47,6 +53,17 @@ export interface RoundtripReport {
   missing: string[];
   verified: boolean;
   notes: string[];
+  // iteration 62 hardening: the per-check verdict rows + the identity
+  // comparisons behind them (names, not just counts)
+  materialsMissing?: string[];
+  bonesSrc?: number;
+  bonesRe?: number;
+  bonesMissing?: string[];
+  actionsSrc?: Array<{ name: string; start: number; end: number; fcurves: number }>;
+  actionsRe?: Array<{ name: string; start: number; end: number; fcurves: number }>;
+  uvsSrc?: number;
+  uvsRe?: number;
+  checks?: RoundtripCheck[];
 }
 
 export interface RoundtripResult {
@@ -60,6 +77,7 @@ export interface RoundtripResult {
   publicPath: string | null;
   verified: boolean;
   drift: number | null;
+  checksFailed: number;
   report: RoundtripReport | null;
   log: string;
 }
@@ -76,7 +94,7 @@ function parseMarker(log: string, marker: string): string | null {
  */
 export async function runRoundtrip(assetId: string, format: ExportFormat, verify = true): Promise<RoundtripResult> {
   const asset = await db.blenderAsset.findUnique({ where: { id: assetId } });
-  const base = { assetId, refName: asset?.refName ?? "", format, exportId: null, path: null, publicPath: null, verified: false, drift: null, report: null, log: "" };
+  const base = { assetId, refName: asset?.refName ?? "", format, exportId: null, path: null, publicPath: null, verified: false, drift: null, checksFailed: 0, report: null, log: "" };
   if (!asset) return { ...base, ok: false, error: "asset not found" };
   if (asset.status !== "READY" || !asset.blendPath || !fs.existsSync(asset.blendPath)) {
     return { ...base, ok: false, error: "asset has no accepted .blend on disk - build it first" };
@@ -117,6 +135,7 @@ print("RT_OK", flush=True)
   } catch {
     return { ...base, ok: false, error: "round-trip report unparsable", log: res.log };
   }
+  const checksFailed = (report.checks ?? []).filter((c) => !c.ok).length;
 
   // serve the file for download
   const ext = format === "GLB" ? "glb" : "fbx";
@@ -155,25 +174,34 @@ print("RT_OK", flush=True)
     publicPath: served,
     verified: verify ? report.verified : false,
     drift: report.bboxDeltaPct / 100,
+    checksFailed,
     report,
     log: res.log,
   };
 }
 
 /** Latest export per asset for one production (the UI chip row). */
-export async function latestExportsFor(projectId: string): Promise<Record<string, { format: string; verified: boolean; drift: number | null; publicPath: string | null; createdAt: string }>> {
+export async function latestExportsFor(projectId: string): Promise<Record<string, { format: string; verified: boolean; drift: number | null; checksFailed: number | null; publicPath: string | null; createdAt: string }>> {
   const rows = await db.assetExport.findMany({
     where: { projectId },
     orderBy: { createdAt: "desc" },
     take: 120,
   });
-  const out: Record<string, { format: string; verified: boolean; drift: number | null; publicPath: string | null; createdAt: string }> = {};
+  const out: Record<string, { format: string; verified: boolean; drift: number | null; checksFailed: number | null; publicPath: string | null; createdAt: string }> = {};
   for (const r of rows) {
     if (out[r.assetId]) continue; // first (newest) wins
+    let checksFailed: number | null = null;
+    try {
+      const parsed = JSON.parse(r.report || "null") as { checks?: Array<{ ok: boolean }> } | null;
+      if (parsed?.checks) checksFailed = parsed.checks.filter((c) => !c.ok).length;
+    } catch {
+      /* an unparsable legacy report carries no check rows */
+    }
     out[r.assetId] = {
       format: r.format,
       verified: r.verified,
       drift: r.drift,
+      checksFailed,
       publicPath: r.publicPath,
       createdAt: r.createdAt.toISOString(),
     };

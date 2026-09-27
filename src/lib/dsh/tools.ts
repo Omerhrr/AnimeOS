@@ -508,7 +508,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "blender_export",
-    description: "EXPORT a library asset to GLB or FBX and VERIFY the round trip: the studio's Blender exports the accepted .blend, wipes the scene, re-imports the exported file and compares meshes, triangles, materials and bounding-box dimensions against the source - a report lands (missing meshes, drift %, format notes) and an unverified export is a hope, not a deliverable. GLB drops lights/cameras by design (judged on meshes); FBX re-triangulates ngons (small tri drift is the format). Use it when a deliverable leaves the studio for a game engine, a contractor DCC or a distributor QC lane.",
+    description: "EXPORT a library asset to GLB or FBX and VERIFY the round trip per-check: the studio's Blender exports the accepted .blend, wipes the scene, PURGES the orphaned source datablocks, re-imports the exported file and runs a verdict per check - MESH_NAMES (which named meshes are missing), MESH_COUNT, MATERIAL_NAMES (by name, not just count), ARMATURE_BONES (by name), ACTION (the baked animation's frame range survives; FBX may rename the take), UV_SETS, DIMS (bbox drift, 8% budget) and TRIS (tri delta, 8% budget). verified means EVERY check green - a check that cannot pass honestly fails the export, and an unverified export is a hope, not a deliverable. GLB drops lights/cameras by design (judged on meshes); FBX re-triangulates ngons and exports the clean base meshes (add_leaf_bones=False keeps bone names exact). Use it when a deliverable leaves the studio for a game engine, a contractor DCC or a distributor QC lane.",
     args: {
       refName: "string - the asset's name",
       kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP for registered assets)",
@@ -546,18 +546,20 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "design_sequence",
-    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar is validated at design time - a typo never reaches a shoot. Apply one across a scene with direct_sequence.",
+    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair, optional fx / physics program names (a design_fx / design_physics preset, a built-in like The Slash / The Clash, or an inline programs array - the world answers on the right shots) and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar AND world programs are validated at design time - a typo never reaches a shoot. Apply one across a scene (or the whole episode) with direct_sequence.",
     args: {
       name: "string - the sequence program name (e.g. 'Raid on the Fortress')",
       description: "string (optional) - what this program is for",
-      slots: "JSON array string - [{\"grammar\":\"The Reveal\",\"note\":\"find the temple\"},{\"grammar\":\"The Standoff\"},{\"grammar\":\"The Assault\",\"poseStart\":\"DRAW\",\"poseEnd\":\"SLASH\"}]",
+      slots: "JSON array string - [{\"grammar\":\"The Reveal\",\"note\":\"find the temple\"},{\"grammar\":\"The Standoff\"},{\"grammar\":\"The Assault\",\"poseStart\":\"DRAW\",\"poseEnd\":\"SLASH\",\"fx\":\"The Slash\",\"physics\":\"The Clash\"}]",
     },
   },
   {
     name: "direct_sequence",
-    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar) and optional per-slot poses set the shot's global pair. The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
+    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, and a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, so the world answers on the right shots. scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
     args: {
-      sceneNumber: "number (defaults to latest scene)",
+      sceneNumber: "number (scene scope, defaults to latest scene)",
+      scope: "scene | episode (default scene - episode allocates the slots across every scene of the episode in story order)",
+      episodeNumber: "number (episode scope, defaults to the latest episode with shots)",
       program: "string - a design_sequence preset name (or omit and pass slots inline)",
       slots: "JSON array string (optional) - inline slots when no program is named",
       render: "boolean (optional, default false) - queue a render job for every directed shot",
@@ -2474,10 +2476,14 @@ export async function executeTool(
         if (!res.ok) return { status: "ERROR", result: `EXPORT FAILED for ${refName}: ${res.error}` };
         const rep = res.report;
         if (!rep) return { status: "ERROR", result: "the round-trip report went missing - check the runtime log" };
+        const failedChecks = (rep.checks ?? []).filter((c) => !c.ok);
+        const checksLine = (rep.checks ?? []).length
+          ? `Checks: ${(rep.checks as Array<{ name: string; ok: boolean; detail: string }>).map((c) => `${c.ok ? "+" : "x"} ${c.name} (${c.detail})`).join(", ")}`
+          : "";
         const verdict = res.verified
-          ? `VERIFIED - re-import matched (${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%)`
-          : `NOT VERIFIED - the round trip drifted: ${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%${rep.missing.length ? `, missing: ${rep.missing.join(", ")}` : ""}`;
-        return { status: "OK", result: `EXPORT ${format}: ${refName} -> ${res.publicPath ?? rep.path} (${(rep.bytes / 1024).toFixed(0)}KB)\n${verdict}\nFormat notes: ${rep.notes.join(" ")}\n${res.verified ? "The file is deliverable - a game engine, a contractor DCC or a QC lane can eat it." : "Do NOT ship an unverified export - rebuild or refine, then export again."}` };
+          ? `VERIFIED - every check green (${(rep.checks ?? []).length} checks: ${(rep.checks as Array<{ name: string; ok: boolean }>).map((c) => c.name).join(", ")}); ${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%`
+          : `NOT VERIFIED - ${failedChecks.length || 1} check(s) failed: ${failedChecks.map((c) => `${c.name}: ${c.detail}`).join("; ") || `${rep.meshesRe}/${rep.meshesSrc} meshes, tri delta ${rep.triDeltaPct}%, bbox delta ${rep.bboxDeltaPct}%${rep.missing.length ? `, missing: ${rep.missing.join(", ")}` : ""}`}`;
+        return { status: "OK", result: `EXPORT ${format}: ${refName} -> ${res.publicPath ?? rep.path} (${(rep.bytes / 1024).toFixed(0)}KB)\n${verdict}\n${checksLine ? `${checksLine}\n` : ""}Format notes: ${rep.notes.join(" ")}\n${res.verified ? "The file is deliverable - a game engine, a contractor DCC or a QC lane can eat it." : "Do NOT ship an unverified export - rebuild or refine, then export again."}` };
       }
 
       case "design_sculpt": {
@@ -2655,11 +2661,11 @@ export async function executeTool(
           if (!Array.isArray(parsed)) throw new Error("not an array");
           rawSlots = parsed;
         } catch {
-          return { status: "ERROR", result: "slots must be a JSON array of {grammar, poseStart?, poseEnd?, note?}" };
+          return { status: "ERROR", result: "slots must be a JSON array of {grammar, poseStart?, poseEnd?, fx?, physics?, note?}" };
         }
         if (rawSlots.length < 2) return { status: "ERROR", result: "a sequence program needs at least 2 slots - a single directed shot belongs in set_shot_grammar" };
         if (rawSlots.length > 12) return { status: "ERROR", result: "a sequence program carries at most 12 slots - longer than that is an episode, not a program" };
-        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; note: string | null }> = [];
+        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null }> = [];
         for (let i = 0; i < rawSlots.length; i++) {
           const s = rawSlots[i] as Record<string, unknown>;
           const grammar = String(s?.grammar ?? "").trim();
@@ -2675,10 +2681,41 @@ export async function executeTool(
           }
           const compiled = compileGrammarSpec({ name: `${name}-slot${i + 1}`, beats: resolved.beatsRaw });
           if (!compiled.ok) return { status: "ERROR", result: `slot ${i + 1} (${grammar}): ${compiled.error}` };
+          // design-time validation for the world programs too: a slot may
+          // bind FX and PHYSICS by name (saved preset, built-in or inline)
+          // so the sequence sentence directs the WORLD, not just the lens
+          const fxName = s?.fx ? String(s.fx).trim() : "";
+          if (fxName) {
+            const fxResolved = await resolveFxSource(projectId, fxName);
+            if (!fxResolved) {
+              const registry = [
+                ...BUILT_IN_FX.map((f) => `'${f.name}' (built-in)`),
+                ...((await db.designPreset.findMany({ where: { projectId, kind: "FX" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+              ];
+              return { status: "ERROR", result: `slot ${i + 1}: no fx program named '${fxName}'. Registry: ${registry.join(", ")} - or an inline programs JSON array.` };
+            }
+            const fxCompiled = compileFxSpec({ name: `${name}-slot${i + 1}-fx`, programs: fxResolved.programsRaw });
+            if (!fxCompiled.ok) return { status: "ERROR", result: `slot ${i + 1} fx (${fxName}): ${fxCompiled.error}` };
+          }
+          const physName = s?.physics ? String(s.physics).trim() : "";
+          if (physName) {
+            const physResolved = await resolvePhysicsSource(projectId, physName);
+            if (!physResolved) {
+              const registry = [
+                ...BUILT_IN_PHYSICS.map((f) => `'${f.name}' (built-in)`),
+                ...((await db.designPreset.findMany({ where: { projectId, kind: "PHYSICS" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+              ];
+              return { status: "ERROR", result: `slot ${i + 1}: no physics program named '${physName}'. Registry: ${registry.join(", ")} - or an inline programs JSON array.` };
+            }
+            const physCompiled = compilePhysicsSpec({ name: `${name}-slot${i + 1}-physics`, programs: physResolved.programsRaw });
+            if (!physCompiled.ok) return { status: "ERROR", result: `slot ${i + 1} physics (${physName}): ${physCompiled.error}` };
+          }
           slots.push({
             grammar,
             poseStart: s?.poseStart ? String(s.poseStart) : null,
             poseEnd: s?.poseEnd ? String(s.poseEnd) : null,
+            fx: fxName || null,
+            physics: physName || null,
             note: s?.note ? String(s.note).slice(0, 140) : null,
           });
         }
@@ -2690,24 +2727,71 @@ export async function executeTool(
           update: { spec: JSON.stringify({ description, slots }) },
         });
         await landDesignEvent(projectId, `Sequence program '${name}' ${existed ? "updated" : "designed"} (${slots.length} slots: ${slots.map((s) => s.grammar).join(" -> ")})`, { presetId: preset.id });
-        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slots.map((s, i) => `${i + 1}. ${s.grammar}`).join(", ")}. Apply it across a scene with direct_sequence program:'${name}' - shot i receives slot i's grammar, and the whole flow reads back cut by cut.` };
+        const slotShape = slots.map((s, i) => `${i + 1}. ${s.grammar}${s.fx ? ` +fx ${s.fx}` : ""}${s.physics ? ` +physics ${s.physics}` : ""}`).join(", ");
+        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slotShape}. Apply it across a scene (or scope:'episode' across the whole episode in story order) with direct_sequence program:'${name}' - shot i receives slot i's grammar, slot-named fx and physics ride the same shots, and the whole flow reads back cut by cut.` };
       }
 
       case "direct_sequence": {
-        let scene: Awaited<ReturnType<typeof latestScene>> = null;
-        if (args.sceneNumber) {
-          const scenes = await db.scene.findMany({
-            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
-            orderBy: { createdAt: "desc" },
+        // THE SEQUENCE GRADUATES TO THE EPISODE (iteration 62): the
+        // director's sentence is no longer one scene long - scope:'episode'
+        // allocates the slots across EVERY scene of the episode in story
+        // order, and a slot may bind fx / physics programs so the world
+        // answers on the same sentence, exactly like set_shot_fx/physics.
+        const scope = String(args.scope ?? "scene").trim().toLowerCase() === "episode" ? "episode" : "scene";
+        type FlatShot = { id: string; number: number; sceneNumber: number; label: string };
+        let flat: FlatShot[] = [];
+        let scopeDesc = "";
+        if (scope === "episode") {
+          const eps = await db.episode.findMany({
+            where: { season: { projectId } },
+            orderBy: [{ season: { number: "asc" } }, { number: "desc" }],
+            include: {
+              scenes: {
+                where: { shots: { some: {} } },
+                orderBy: { number: "asc" },
+                include: { shots: { orderBy: { number: "asc" } } },
+              },
+            },
           });
-          scene = scenes[0] ?? null;
+          let ep: (typeof eps)[number] | null = null;
+          if (args.episodeNumber !== undefined && args.episodeNumber !== null) {
+            const want = Number(args.episodeNumber);
+            ep = eps.find((e) => e.number === want && e.scenes.length > 0) ?? null;
+            if (!ep) {
+              const withShots = eps.filter((e) => e.scenes.length > 0).map((e) => `Ep${e.number}`);
+              return { status: "ERROR", result: withShots.length
+                ? `No episode ${want} with shots. Episodes with shots: ${withShots.join(", ")}.`
+                : "No episode with shots exists yet - break down a scene first (create_episode / create_scene / create_shot)." };
+            }
+          } else {
+            ep = eps.find((e) => e.scenes.length > 0) ?? null;
+            if (!ep) return { status: "ERROR", result: "No episode with shots exists yet - break down a scene first (create_episode / create_scene / create_shot)." };
+          }
+          for (const s of ep.scenes) {
+            for (const sh of s.shots) {
+              flat.push({ id: sh.id, number: sh.number, sceneNumber: s.number, label: `Sc${s.number} S${String(sh.number).padStart(3, "0")}` });
+            }
+          }
+          scopeDesc = `episode ${ep.number} (${ep.scenes.length} scene(s) in story order)`;
+        } else {
+          let scene: Awaited<ReturnType<typeof latestScene>> = null;
+          if (args.sceneNumber) {
+            const scenes = await db.scene.findMany({
+              where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+              orderBy: { createdAt: "desc" },
+            });
+            scene = scenes[0] ?? null;
+          }
+          if (!scene) scene = await latestScene(projectId);
+          if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+          const shots = await db.shot.findMany({ where: { sceneId: scene.id }, orderBy: { number: "asc" } });
+          if (shots.length === 0) return { status: "ERROR", result: `Scene ${scene.number} has no shots to direct - break the scene down first (create_shot).` };
+          flat = shots.map((sh) => ({ id: sh.id, number: sh.number, sceneNumber: scene!.number, label: `Shot ${String(sh.number).padStart(3, "0")}` }));
+          scopeDesc = `Scene ${scene.number}`;
         }
-        if (!scene) scene = await latestScene(projectId);
-        if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
-        const shots = await db.shot.findMany({ where: { sceneId: scene.id }, orderBy: { number: "asc" } });
-        if (shots.length === 0) return { status: "ERROR", result: `Scene ${scene.number} has no shots to direct - break the scene down first (create_shot).` };
+        if (flat.length === 0) return { status: "ERROR", result: `${scopeDesc} has no shots to direct - break the scene down first (create_shot).` };
         // the slot list: a named SEQUENCE program first, inline slots otherwise
-        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; note?: unknown }> = [];
+        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown }> = [];
         let sourceName = "";
         const programName = String(args.program ?? "").trim();
         if (programName) {
@@ -2731,17 +2815,21 @@ export async function executeTool(
             if (!Array.isArray(parsed)) throw new Error("not an array");
             slotList = parsed as typeof slotList;
           } catch {
-            return { status: "ERROR", result: "pass program:'<name>' or a slots JSON array of {grammar, poseStart?, poseEnd?}" };
+            return { status: "ERROR", result: "pass program:'<name>' or a slots JSON array of {grammar, poseStart?, poseEnd?, fx?, physics?}" };
           }
           if (slotList.length < 2) return { status: "ERROR", result: "a sequence carries at least 2 slots - a single directed shot belongs in set_shot_grammar" };
           sourceName = "inline slots";
         }
-        // apply slot i -> shot i, compiling every grammar exactly like set_shot_grammar
-        const directed = Math.min(slotList.length, shots.length);
+        // apply slot i -> shot i, compiling every grammar exactly like
+        // set_shot_grammar and the world programs exactly like
+        // set_shot_fx / set_shot_physics
+        const directed = Math.min(slotList.length, flat.length);
         const flow: string[] = [];
         let windBeats = 0;
         let poseCuts = 0;
         let moveClashes = 0;
+        let fxBound = 0;
+        let physBound = 0;
         let lastEndPose: string | null = null;
         let lastLastMove: string | null = null;
         for (let i = 0; i < directed; i++) {
@@ -2750,14 +2838,36 @@ export async function executeTool(
           if (!grammarName) return { status: "ERROR", result: `slot ${i + 1}: grammar is required - every slot directs with a named grammar` };
           const resolved = await resolveGrammarSource(projectId, grammarName);
           if (!resolved) return { status: "ERROR", result: `slot ${i + 1}: no grammar named '${grammarName}' - register it with design_grammar first.` };
-          const compiled = compileGrammarSpec({ name: `${shots[i].id.slice(-6)}-shot-grammar`, beats: resolved.beatsRaw });
+          const compiled = compileGrammarSpec({ name: `${flat[i].id.slice(-6)}-shot-grammar`, beats: resolved.beatsRaw });
           if (!compiled.ok) return { status: "ERROR", result: `slot ${i + 1} (${grammarName}): ${compiled.error}` };
           const poseStart = slot?.poseStart ? String(slot.poseStart) : null;
           const poseEnd = slot?.poseEnd ? String(slot.poseEnd) : null;
-          await db.shot.update({
-            where: { id: shots[i].id },
-            data: { grammar: serializeGrammar(compiled.spec), ...(poseStart ? { poseStart } : {}), ...(poseEnd ? { poseEnd } : {}) },
-          });
+          const data: { grammar: string; poseStart?: string; poseEnd?: string; fx?: string; physics?: string } = { grammar: serializeGrammar(compiled.spec) };
+          if (poseStart) data.poseStart = poseStart;
+          if (poseEnd) data.poseEnd = poseEnd;
+          const fxName = slot?.fx ? String(slot.fx).trim() : "";
+          let fxShape = "";
+          if (fxName) {
+            const fxResolved = await resolveFxSource(projectId, fxName);
+            if (!fxResolved) return { status: "ERROR", result: `slot ${i + 1}: no fx program named '${fxName}' - register it with design_fx first.` };
+            const fxCompiled = compileFxSpec({ name: `${flat[i].id.slice(-6)}-shot-fx`, programs: fxResolved.programsRaw });
+            if (!fxCompiled.ok) return { status: "ERROR", result: `slot ${i + 1} fx (${fxName}): ${fxCompiled.error}` };
+            data.fx = serializeFx(fxCompiled.spec);
+            fxShape = fxCompiled.spec.programs.map((p) => p.kind).join("+");
+            fxBound += 1;
+          }
+          const physName = slot?.physics ? String(slot.physics).trim() : "";
+          let physShape = "";
+          if (physName) {
+            const physResolved = await resolvePhysicsSource(projectId, physName);
+            if (!physResolved) return { status: "ERROR", result: `slot ${i + 1}: no physics program named '${physName}' - register it with design_physics first.` };
+            const physCompiled = compilePhysicsSpec({ name: `${flat[i].id.slice(-6)}-shot-physics`, programs: physResolved.programsRaw });
+            if (!physCompiled.ok) return { status: "ERROR", result: `slot ${i + 1} physics (${physName}): ${physCompiled.error}` };
+            data.physics = serializePhysics(physCompiled.spec);
+            physShape = physCompiled.spec.programs.map((p) => p.kind).join("+");
+            physBound += 1;
+          }
+          await db.shot.update({ where: { id: flat[i].id }, data });
           windBeats += compiled.spec.beats.filter((b) => (b.wind ?? 0) > 0).length;
           const firstMove = compiled.spec.beats[0].move;
           const lastMove = compiled.spec.beats[compiled.spec.beats.length - 1].move;
@@ -2766,27 +2876,29 @@ export async function executeTool(
           if (lastEndPose && startPose && startPose !== lastEndPose) poseCuts += 1;
           lastEndPose = normalizePose(poseEnd ?? compiled.spec.beats[compiled.spec.beats.length - 1].poseEnd ?? "") || lastEndPose;
           lastLastMove = lastMove;
-          flow.push(`Shot ${String(shots[i].number).padStart(3, "0")} <- ${grammarName} (${compiled.spec.beats.map((b) => b.move).join(">")})`);
+          const world = fxName || physName ? ` [${[fxName ? `fx: ${fxShape}` : "", physName ? `physics: ${physShape}` : ""].filter(Boolean).join(" | ")}]` : "";
+          flow.push(`${flat[i].label} <- ${grammarName} (${compiled.spec.beats.map((b) => b.move).join(">")})${world}`);
         }
         const jobIds: string[] = [];
         let mode: "PREVIEW" | "FINAL" = "PREVIEW";
         if (args.render) {
           mode = String(args.mode ?? "PREVIEW") === "FINAL" ? "FINAL" : "PREVIEW";
           for (let i = 0; i < directed; i++) {
-            const job = await createRenderJob(projectId, shots[i].id, mode);
+            const job = await createRenderJob(projectId, flat[i].id, mode);
             jobIds.push(job.id.slice(-6));
           }
         }
-        await landDesignEvent(projectId, `Scene ${scene.number} directed with ${sourceName}: ${directed} shot(s), ${windBeats} wind beat(s)${jobIds.length ? `, ${jobIds.length} ${mode} render(s) queued` : ""}`, { sceneId: scene.id, directed, renders: jobIds.length });
-        const untouched = shots.length - directed;
+        await landDesignEvent(projectId, `${scope === "episode" ? `Episode sequence` : `Scene ${flat[0].sceneNumber}`} directed with ${sourceName}: ${directed} shot(s)${fxBound || physBound ? `, ${fxBound} fx + ${physBound} physics binding(s)` : ""}${jobIds.length ? `, ${jobIds.length} ${mode} render(s) queued` : ""}`, { directed, renders: jobIds.length });
+        const untouched = flat.length - directed;
         const unused = slotList.length - directed;
         const reads: string[] = [];
         if (moveClashes > 0) reads.push(`${moveClashes} cut(s) land on the same move both sides - consider alternating the blocking`);
         if (poseCuts > 0) reads.push(`${poseCuts} pose change(s) across cuts (the cloth whips on each one)`);
         if (windBeats > 0) reads.push(`${windBeats} wind beat(s) - the robes and hair ride those beats`);
+        if (fxBound > 0 || physBound > 0) reads.push(`${fxBound} fx + ${physBound} physics binding(s) - the world answers on those shots`);
         if (untouched > 0) reads.push(`${untouched} shot(s) beyond the plan left untouched`);
         if (unused > 0) reads.push(`${unused} slot(s) had no shot to direct`);
-        return { status: "OK", result: `SEQUENCE DIRECTED (${sourceName}) across ${directed} shot(s) of Scene ${scene.number}:\n${flow.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each shot's beats with the cloth riding them.` : ` Queue renders with render_shot per shot, or re-run with render:true.`}` };
+        return { status: "OK", result: `SEQUENCE DIRECTED (${sourceName}) across ${directed} shot(s) of ${scopeDesc}:\n${flow.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each shot's beats with the cloth riding them.` : ` Queue renders with render_shot per shot, or re-run with render:true.`}` };
       }
 
       case "design_fx": {
@@ -4111,6 +4223,47 @@ export async function executeTool(
   } catch (err) {
     return { status: "ERROR", result: `Tool ${name} failed: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+/** Resolve an FX argument to raw programs: saved FX preset ->
+ * built-in -> inline programs JSON. Null when nothing carries the
+ * name (the caller lists the registry in its refusal). Shared by
+ * set_shot_fx and the sequence program slots (design_sequence /
+ * direct_sequence). */
+async function resolveFxSource(projectId: string, fxArg: string): Promise<{ programsRaw: string; sourceName: string } | null> {
+  const saved = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "FX", name: fxArg } } });
+  if (saved) {
+    try {
+      const parsedSpec = JSON.parse(saved.spec || "null") as { programs?: unknown } | null;
+      if (parsedSpec?.programs) return { programsRaw: JSON.stringify(parsedSpec.programs), sourceName: `preset '${fxArg}'` };
+    } catch {
+      /* a corrupt preset resolves to nothing - the registry refusal tells the director */
+    }
+    return null;
+  }
+  const builtin = findBuiltInFx(fxArg);
+  if (builtin) return { programsRaw: JSON.stringify(builtin.programs), sourceName: `built-in '${builtin.name}'` };
+  if (fxArg.startsWith("[")) return { programsRaw: fxArg, sourceName: "inline programs" };
+  return null;
+}
+
+/** Resolve a PHYSICS argument the same way (saved preset -> built-in ->
+ * inline). Shared by set_shot_physics and the sequence program slots. */
+async function resolvePhysicsSource(projectId: string, physArg: string): Promise<{ programsRaw: string; sourceName: string } | null> {
+  const saved = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "PHYSICS", name: physArg } } });
+  if (saved) {
+    try {
+      const parsedSpec = JSON.parse(saved.spec || "null") as { programs?: unknown } | null;
+      if (parsedSpec?.programs) return { programsRaw: JSON.stringify(parsedSpec.programs), sourceName: `preset '${physArg}'` };
+    } catch {
+      /* a corrupt preset resolves to nothing - the registry refusal tells the director */
+    }
+    return null;
+  }
+  const builtin = findBuiltInPhysics(physArg);
+  if (builtin) return { programsRaw: JSON.stringify(builtin.programs), sourceName: `built-in '${builtin.name}'` };
+  if (physArg.startsWith("[")) return { programsRaw: physArg, sourceName: "inline programs" };
+  return null;
 }
 
 /** Resolve a grammar argument to raw beats: saved GRAMMAR preset ->

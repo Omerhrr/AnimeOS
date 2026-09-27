@@ -138,7 +138,7 @@ async function main() {
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A18 the curriculum grew THE SEQUENCE IS DIRECTED", prompts.includes("- THE SEQUENCE IS DIRECTED") && prompts.includes("cloth and hair RIDE the grammar"));
-  check("A19 rule 32 teaches the wind and the cutting", prompts.includes("32. DRESS THE BEATS, CUT THE SEQUENCE") && prompts.includes("One scene, one sentence."));
+  check("A19 rule 32 teaches the wind and the cutting", prompts.includes("32. DRESS THE BEATS, CUT THE SEQUENCE") && prompts.includes("One scene is one sentence; scope:'episode' is the whole paragraph."));
 
   const renderView = readFileSync("src/components/views/render-view.tsx", "utf8");
   check("A20 the job card flags wind beats on the grammar chips", renderView.includes("a W flag marks a directed wind call") && renderView.includes("W${b.wind!.toFixed(1)}"));

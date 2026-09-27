@@ -209,13 +209,15 @@ function BlenderAssetLibraryCard() {
         error?: string;
         verified?: boolean;
         publicPath?: string | null;
-        report?: { bytes?: number; meshesSrc?: number; meshesRe?: number; triDeltaPct?: number; bboxDeltaPct?: number; missing?: string[] } | null;
+        report?: { bytes?: number; meshesSrc?: number; meshesRe?: number; triDeltaPct?: number; bboxDeltaPct?: number; missing?: string[]; checks?: Array<{ name: string; ok: boolean; detail: string }> } | null;
       };
       if (res.ok === false && res.error) {
         setDesignNote(`EXPORT failed: ${res.error}`);
       } else {
         const rep = res.report ?? {};
-        setDesignNote(`EXPORT ${format} ${res.verified ? "VERIFIED" : "NOT VERIFIED"} - ${rep.meshesRe ?? "?"}/${rep.meshesSrc ?? "?"} meshes, tri delta ${rep.triDeltaPct ?? "?"}%, bbox delta ${rep.bboxDeltaPct ?? "?"}%${res.publicPath ? " - downloading from /exports/" : ""}`);
+        const failed = (rep.checks ?? []).filter((c) => !c.ok);
+        const failedLine = failed.length ? ` - FAILED: ${failed.map((c) => `${c.name}: ${c.detail}`).join("; ")}` : "";
+        setDesignNote(`EXPORT ${format} ${res.verified ? "VERIFIED - every round-trip check green" : "NOT VERIFIED"} - ${rep.meshesRe ?? "?"}/${rep.meshesSrc ?? "?"} meshes, tri delta ${rep.triDeltaPct ?? "?"}%, bbox delta ${rep.bboxDeltaPct ?? "?"}%${failedLine}${res.publicPath ? " - downloading from /exports/" : ""}`);
       }
       await qc.invalidateQueries({ queryKey: ["blender-assets", projectId] });
     } catch (err) {
@@ -368,13 +370,14 @@ function BlenderAssetLibraryCard() {
                     {(() => {
                       const chip = lib.exports?.[a.id];
                       if (!chip) return null;
+                      const failed = typeof chip.checksFailed === "number" ? chip.checksFailed : null;
                       return (
                         <a
                           href={chip.publicPath ?? "#"}
-                          title={`Last export ${chip.format} - ${chip.verified ? `VERIFIED, drift ${Math.round((chip.drift ?? 0) * 100)}%` : "NOT VERIFIED"}`}
+                          title={`Last export ${chip.format} - ${chip.verified ? `VERIFIED, all round-trip checks green, drift ${Math.round((chip.drift ?? 0) * 100)}%` : `NOT VERIFIED${failed !== null ? `, ${failed} check(s) failed` : ""}`}`}
                           className={`rounded px-1 py-0.5 text-[8px] font-bold tracking-wider ${chip.verified ? "bg-emerald-400/10 border border-emerald-400/30 text-emerald-300" : "bg-rose-400/10 border border-rose-400/30 text-rose-300"}`}
                         >
-                          {chip.verified ? "VER" : "UNVER"}
+                          {chip.verified ? "VER" : failed !== null && failed > 0 ? `UNVER:${failed}` : "UNVER"}
                         </a>
                       );
                     })()}

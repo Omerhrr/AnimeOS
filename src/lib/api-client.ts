@@ -369,6 +369,7 @@ export interface BlenderExportChip {
   format: string;
   verified: boolean;
   drift: number | null;
+  checksFailed?: number | null;
   publicPath: string | null;
   createdAt: string;
 }
