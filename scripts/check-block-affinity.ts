@@ -51,7 +51,7 @@ function pct(v: number): string {
 }
 
 let failures = 0;
-function expect(label: string, cond: boolean, detail: string) {
+function expect(label: string, cond: boolean, detail = "") {
   if (!cond) failures += 1;
   console.log(`${cond ? "OK  " : "FAIL"} ${label}${detail ? ` - ${detail}` : ""}`);
 }

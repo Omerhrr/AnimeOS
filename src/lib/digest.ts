@@ -65,6 +65,30 @@ export interface DeliveryOutcome {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// SSRF guard (audit, iteration 68): the digest webhook POSTs to a
+// member-supplied URL, so the URL must be a public http(s) one -
+// never a loopback, link-local, private-range or cloud-metadata
+// host. Applied at the PEN (create_schedule refuses) and again at
+// DELIVERY (the outcome records the refusal - defense in depth).
+const PRIVATE_HOST_RE = /^(localhost$|127\.|0\.0\.0\.0$|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|\[?fc00:|\[?fd..:|\[?fe80:)/i;
+
+export function webhookUrlRefusal(url: string): string | null {
+  const raw = String(url ?? "").trim();
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return "webhookUrl is not a valid URL";
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return "webhookUrl must be an http(s) URL";
+  }
+  if (PRIVATE_HOST_RE.test(u.hostname)) {
+    return "webhookUrl must not point at a loopback or private address";
+  }
+  return null;
+}
+
 function redactUrl(url: string): string {
   try {
     const u = new URL(url);
@@ -92,16 +116,21 @@ export async function deliverDigest(
 
   const webhookUrl = String(targets.webhookUrl ?? "").trim();
   if (webhookUrl) {
-    try {
-      const res = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal: AbortSignal.timeout(8000),
-      });
-      outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: res.ok, detail: `webhook responded ${res.status}` });
-    } catch (err) {
-      outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: err instanceof Error ? err.message.slice(0, 120) : "webhook failed" });
+    const refusal = webhookUrlRefusal(webhookUrl);
+    if (refusal) {
+      outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: refusal });
+    } else {
+      try {
+        const res = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: AbortSignal.timeout(8000),
+        });
+        outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: res.ok, detail: `webhook responded ${res.status}` });
+      } catch (err) {
+        outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: err instanceof Error ? err.message.slice(0, 120) : "webhook failed" });
+      }
     }
   }
 

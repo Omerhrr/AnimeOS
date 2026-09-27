@@ -17,6 +17,13 @@ import { getToken } from "next-auth/jwt";
 
 const AUTH_SECRET = process.env.NEXTAUTH_SECRET ?? "animeos-studio-dev-secret-rotate-me";
 
+// AUDIT (iteration 68): the dev fallback secret is honest about being
+// one - a production deployment without NEXTAUTH_SECRET would sign
+// forgeable session tokens, so it is named loudly at boot.
+if (process.env.NODE_ENV === "production" && !process.env.NEXTAUTH_SECRET) {
+  console.warn("[animeos] NEXTAUTH_SECRET is not set - falling back to the dev secret; session tokens are forgeable. Set NEXTAUTH_SECRET before exposing this studio.");
+}
+
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 // The workplace exceptions - the ONLY mutations a VIEWER may send.

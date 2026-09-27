@@ -3,7 +3,7 @@ import { runPlanSteps, latestPlan, getPlan, type PlanView } from "@/lib/dsh/plan
 import { startRepaintRun, latestRepaintRun } from "@/lib/universe-repaint";
 import { universeReRenderQueue } from "@/lib/universe-facts";
 import { tickProjectJobs } from "@/lib/engine/render";
-import { postDailyDigest } from "@/lib/digest";
+import { postDailyDigest, webhookUrlRefusal } from "@/lib/digest";
 import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
 
 // ─────────────────────────────────────────────────────────────
@@ -258,6 +258,8 @@ export async function createSchedule(
     const hook = String(input.webhookUrl ?? "").trim();
     if (hook) {
       if (!WEBHOOK_RE.test(hook)) return { ok: false, error: "webhookUrl must be an http(s) URL" };
+      const ssrfRefusal = webhookUrlRefusal(hook);
+      if (ssrfRefusal) return { ok: false, error: ssrfRefusal };
       webhookUrl = hook.slice(0, 400);
     }
     const mail = String(input.digestEmail ?? "").trim();
