@@ -698,7 +698,7 @@ def build_secondary_rig(bpy, scn, figure):
         ob.location = (loc[0], loc[1], loc[2] - dz)
         stiff, damp, gain, maxd = SEC_KINDS[kind]
         chains.append({
-            "piv": piv, "kind": kind, "stiff": stiff, "damp": damp,
+            "piv": piv, "ob": ob, "kind": kind, "stiff": stiff, "damp": damp,
             "gain": gain, "max": maxd, "phase": i * 1.7,
             "vel": [0.0, 0.0], "off": [0.0, 0.0],
         })
@@ -777,6 +777,8 @@ def apply_secondary_motion(figure, chains, grammar, shot, t, t_sec, dt, pose_s, 
                 ch["vel"][0] += jerk_kick * ch["gain"] * 16.0 * (0.7 + 0.3 * math.sin(ch["phase"]))
                 ch["vel"][1] += jerk_kick * ch["gain"] * 9.0 * math.sin(ch["phase"] * 1.3)
     for ch in chains:
+        if ch.get("sim"):
+            continue   # v10.0: this part rides the real cloth solver now
         stiff, damp, gain, maxd = ch["stiff"], ch["damp"], ch["gain"], ch["max"]
         # the directed gust + blocking agitation, phased per chain so
         # the eight skirt panels never flap in lockstep
@@ -795,6 +797,7 @@ def apply_secondary_motion(figure, chains, grammar, shot, t, t_sec, dt, pose_s, 
         sweep = abs(ch["off"][0]) + abs(ch["off"][1])
         if sweep > st["maxd"]:
             st["maxd"] = sweep
+    st["last_kick"] = kick   # the solver's anchors answer the same whip
     return st
 
 
@@ -2346,6 +2349,29 @@ def worker_run(job_file):
                 "hair": sum(1 for c in sec_chains if c["kind"] == "HAIR"),
             }
 
+        # ── v10.0 SOLVER-GRADE CLOTH: THE CLOTH IS SOLVED - the hero's
+        #    cloth parts graduate from the spring pivots to the REAL
+        #    Blender cloth solver (the probe's law); hair keeps the
+        #    springs. The air model drives the parts' anchor bones per
+        #    frame and the solver answers with real folds and lag. ──
+        cloth_rig = None
+        if sec_chains and figure:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import cloth_pass
+            cloth_rig = cloth_pass.build_cloth_rig(bpy, scn, figure, sec_chains, frames_total)
+            if cloth_rig is not None:
+                simmed = [p["name"] for p in cloth_rig["parts"]]
+                springs = [c["piv"].name.replace("SecPiv_", "") for c in sec_chains if not c.get("sim")]
+                solver = {
+                    "cloth": "blender-cloth-sim" if simmed else "damped-spring",
+                    "hair": "damped-spring",
+                    "simmed": simmed,
+                    "springs": springs,
+                }
+                if cloth_rig["notes"]:
+                    solver["notes"] = list(cloth_rig["notes"])
+                state.setdefault("secondary", {"chains": len(sec_chains)})["solver"] = solver
+
         # ── v8.0 DIRECTED FX: THE BEATS IGNITE - the world answers the
         #    grammar with the same clock. Programs normalize honestly
         #    (a bad note is skipped with a note, never a crash), the
@@ -2535,12 +2561,19 @@ def worker_run(job_file):
             # the body moves and the cloth answers, never a frame late.
             if phys_rig:
                 physics_pass.apply_physics(phys_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel, f)
+            fagit = MOVE_ENERGY.get(fbeat["move"], 0.3) if grammar else MOVE_ENERGY.get(str(shot.get("movement") or "STATIC").upper(), 0.25)
             if figure:
                 # v7.2: cloth and hair RIDE THE BEATS - the active beat's
                 # wind call and pose changes drive the spring chains,
                 # and a directed REACTION's stagger whips them with the body
                 apply_secondary_motion(figure, sec_chains, grammar, shot,
                                        t, t_sec, 1.0 / fps, pose_s, pose_e, pose_t)
+            if cloth_rig and cloth_rig["parts"]:
+                # v10.0: THE CLOTH IS SOLVED - the same air steers the
+                # simmed parts' anchor bones; the solver weaves the cloth
+                sec_kick = float(((figure.get("_sec") or {}).get("last_kick")) or 0.0) if figure else 0.0
+                cloth_pass.apply_cloth_frame(cloth_rig, figure, t_sec, 1.0 / fps,
+                                             fbi, fwind, fagit, sec_kick)
             if fx_rig:
                 fx_pass.apply_fx(fx_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel)
             boost = 0.0
@@ -2565,6 +2598,19 @@ def worker_run(job_file):
             rep = state.setdefault("secondary", {"chains": len(sec_chains)})
             rep["windBeats"] = sorted(st["wind_beats"])
             rep["maxDeflection"] = round(st["maxd"], 1)
+
+        # v10.0 solver report: what the SOLVER actually did - the widest
+        # anchor sway the air called for (honest evidence: a still frame
+        # reports a small sway, a fallback names its springs)
+        if cloth_rig is not None:
+            sol = state.setdefault("secondary", {}).setdefault("solver", {})
+            sol["maxAnchorSway"] = round(math.degrees(cloth_rig["max_sway"]), 1)
+            if cloth_rig["notes"]:
+                merged = list(sol.get("notes") or [])
+                for n in cloth_rig["notes"]:
+                    if n not in merged:
+                        merged.append(n)
+                sol["notes"] = merged
 
         # fx report: what the world actually did for the beats - the
         # bursts that fired, the trail's peak glow, the widest ring

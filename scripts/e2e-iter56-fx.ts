@@ -119,7 +119,7 @@ async function main() {
 
   const bridge = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
   check("A7 the worker imports the fx pass and normalizes honestly", bridge.includes("import fx_pass") && bridge.includes("fx_pass.normalize_fx(fx_raw, len(grammar) if grammar else 1)"));
-  check("A8 the frame loop drives the fx AFTER the pose, the springs AND the physics (iter58: the body answers before the cloth reads, the spectacle closes the frame)", /apply_secondary_motion\(figure, sec_chains, grammar, shot,\n\s+t, t_sec, 1\.0 \/ fps, pose_s, pose_e, pose_t\)\n\s+if fx_rig:\n\s+fx_pass\.apply_fx/.test(bridge));
+  check("A8 the frame loop drives the fx AFTER the pose, the springs, the physics AND the solver's anchors (iter58: the body answers before the cloth reads; iter65: the solver's anchors ride the same air; the spectacle closes the frame)", /apply_secondary_motion\(figure, sec_chains, grammar, shot,\n\s+t, t_sec, 1\.0 \/ fps, pose_s, pose_e, pose_t\)\n\s+if cloth_rig and cloth_rig\["parts"\]:\n[\s\S]*?cloth_pass\.apply_cloth_frame\(cloth_rig, figure, t_sec, 1\.0 \/ fps,\n\s+fbi, fwind, fagit, sec_kick\)\n\s+if fx_rig:\n\s+fx_pass\.apply_fx/.test(bridge));
   check("A9 the pose velocity mirrors the springs' own drag measure", bridge.includes("fx_vel = sum(abs(fx_row[i] - fx_rig[\"prev_row\"][i]) for i in range(12)) * fps"));
   check("A10 the state reports the evidence (fired bursts, trail peak, max ring)", bridge.includes('frep["burstsFired"] = fx_rig["fired"]') && bridge.includes('frep["trailPeak"] = round(fx_rig["trail_peak"], 1)') && bridge.includes('frep["maxRing"] = round(fx_rig["max_ring"], 2)'));
 
