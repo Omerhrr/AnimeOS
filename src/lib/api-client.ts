@@ -549,6 +549,8 @@ export interface RenderJobRow {
   // finished animated clip (mp4 under /renders/) for MOTION and
   // Blender drivers; null for still-frame fallbacks
   outputUrl: string | null;
+  // the render-fix loop lineage (iteration 60): the attempt this one fixes
+  fixOf?: { attempt: number } | null;
   createdAt: string;
   shot?: (ShotRow & { scene?: { id: string; number: number; title: string } }) | null;
   evaluation: {
@@ -893,6 +895,10 @@ export const api = {
     j<{ ok: boolean }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "apply", evaluationId }) }),
   renderRetry: (jobId: string) =>
     j<{ id: string }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "retry", jobId }) }),
+  // the render-fix loop (iteration 60): apply the parameter fix each open
+  // pixel-review issue calls for, queue the new attempt - its review judges
+  renderFix: (jobId: string) =>
+    j<{ ok: boolean; targetRef: string; attempted: number; applied: Array<{ param: string; from: number; to: number; reason: string }>; wontfix: Array<{ kind: string; note: string }>; newJobId: string | null; newAttempt: number | null }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "fix", jobId }) }),
   renderApprove: (jobId: string) =>
     j<{ ok: boolean }>("/api/render-jobs", { method: "POST", body: JSON.stringify({ action: "approve", jobId }) }),
   // human revision request: the note is required and lands in the

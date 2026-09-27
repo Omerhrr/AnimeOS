@@ -12,26 +12,26 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 model Project {
-  id               String   @id @default(cuid())
-  title            String
-  logline          String?
-  format           String   @default("SERIES") // FEATURE | SERIES | SHORT
-  animationType    String   @default("3D") // 3D | 2D | HYBRID
-  visualStyle      String   @default("DONGHUA") // DONGHUA | ANIME | KOREAN | WESTERN | CUSTOM
-  originalLanguage String   @default("zh-CN")
-  subtitleLanguages String  @default("[]") // JSON string[]
-  fps              Int      @default(24)
-  resolution       String   @default("1920x1080")
+  id                String   @id @default(cuid())
+  title             String
+  logline           String?
+  format            String   @default("SERIES") // FEATURE | SERIES | SHORT
+  animationType     String   @default("3D") // 3D | 2D | HYBRID
+  visualStyle       String   @default("DONGHUA") // DONGHUA | ANIME | KOREAN | WESTERN | CUSTOM
+  originalLanguage  String   @default("zh-CN")
+  subtitleLanguages String   @default("[]") // JSON string[]
+  fps               Int      @default(24)
+  resolution        String   @default("1920x1080")
   // Per-production art style tuning - injected into every art prompt
   // (panel art + model sheets). Empty fields fall back to the preset
   // tokens derived from visualStyle.
   artStylePrompt    String? // custom style directive (overrides preset tokens)
   artPalettePrompt  String? // palette / colour-mood tokens
   artNegativePrompt String? // extra negative tokens appended to the negative tail
-  status           String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
-  approvalGate     Boolean  @default(false) // when on, an APPROVED DSH inspection parks the render at REVIEW until a human approves
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  status            String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  approvalGate      Boolean  @default(false) // when on, an APPROVED DSH inspection parks the render at REVIEW until a human approves
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   seasons          Season[]
   loras            StyleLora[]
@@ -59,6 +59,7 @@ model Project {
   designIssues     DesignIssue[]
   renderReviews    RenderReview[]
   renderIssues     RenderIssue[]
+  retopoFlows      RetopoFlow[]
   assetExports     AssetExport[]
   comments         Comment[]
   memberships      ProjectMembership[]
@@ -76,32 +77,32 @@ model Project {
 // the procedural stand-ins; a missing file falls back honestly.
 // ─────────────────────────────────────────────────────────────
 model BlenderAsset {
-  id            String   @id @default(cuid())
-  projectId     String
-  kind          String   // CHARACTER | ENVIRONMENT | PROP | CREATURE
-  refName       String   // the character's or environment's exact name
-  status        String   @default("DRAFT") // DRAFT | BUILDING | READY | FAILED
-  version       Int      @default(0) // bumped on every accepted build
-  blendPath     String?  // assets/blender/... the accepted .blend
-  previewPath   String?  // the turntable preview png (served from /assets-blender/)
-  buildLog      String?  // tail of the last build attempt's output
-  designSource  String?  // the design text the asset was built from (audit)
-  identityScore Float?   // latest vision score of the preview vs the model sheet (0..1)
-  inspectNote   String?  // the vision model's note on the asset preview
-  inspectedAt   DateTime?
-  qualityScore  Float?   // latest DESIGN AUDIT overall (0..1) - the self-review loop's standing grade
-  lastReviewAt  DateTime? // when the design loop last audited this asset
-  motionPreset  String?  // the MOTION preset (design_motion) baked into the file - the asset performs
-  loopPath      String?  // /assets-blender/{id}.mp4 animated preview loop - the proof of performance
-  motionBakedAt DateTime? // when the armature performance was last baked
+  id              String         @id @default(cuid())
+  projectId       String
+  kind            String // CHARACTER | ENVIRONMENT | PROP | CREATURE
+  refName         String // the character's or environment's exact name
+  status          String         @default("DRAFT") // DRAFT | BUILDING | READY | FAILED
+  version         Int            @default(0) // bumped on every accepted build
+  blendPath       String? // assets/blender/... the accepted .blend
+  previewPath     String? // the turntable preview png (served from /assets-blender/)
+  buildLog        String? // tail of the last build attempt's output
+  designSource    String? // the design text the asset was built from (audit)
+  identityScore   Float? // latest vision score of the preview vs the model sheet (0..1)
+  inspectNote     String? // the vision model's note on the asset preview
+  inspectedAt     DateTime?
+  qualityScore    Float? // latest DESIGN AUDIT overall (0..1) - the self-review loop's standing grade
+  lastReviewAt    DateTime? // when the design loop last audited this asset
+  motionPreset    String? // the MOTION preset (design_motion) baked into the file - the asset performs
+  loopPath        String? // /assets-blender/{id}.mp4 animated preview loop - the proof of performance
+  motionBakedAt   DateTime? // when the armature performance was last baked
   variationPreset String? // the VARIATION preset (design_variation) scattered into the file - the asset breathes
-  sculptPreset   String? // the SCULPT preset (design_sculpt) carved into the file - the surface is finished
-  exports       AssetExport[]
-  meta          String?  // JSON {dna, objects, polyCount, buildMs, ...}
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  reviews       DesignReview[]
+  sculptPreset    String? // the SCULPT preset (design_sculpt) carved into the file - the surface is finished
+  exports         AssetExport[]
+  meta            String? // JSON {dna, objects, polyCount, buildMs, ...}
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviews         DesignReview[]
 
   @@unique([projectId, kind, refName])
 }
@@ -121,18 +122,18 @@ model BlenderAsset {
 //   checks back on its own designs, fixes them and proves the fix.
 // ─────────────────────────────────────────────────────────────
 model AssetExport {
-  id          String   @id @default(cuid())
-  assetId     String
-  projectId   String
-  format      String   // GLB | FBX
-  path        String   // assets/exports/... the exported file
-  publicPath  String?  // /exports/{assetId}.{glb|fbx} when served for download
-  verified    Boolean  @default(false) // the round-trip check re-imported and compared
-  drift       Float?   // max fidelity drift of the round-trip (0..1)
-  report      String?  // JSON: {objectsSrc/Re, trisSrc/Re, missing[], bboxDeltaPct, notes[]}
-  createdAt   DateTime @default(now())
-  asset       BlenderAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id         String       @id @default(cuid())
+  assetId    String
+  projectId  String
+  format     String // GLB | FBX
+  path       String // assets/exports/... the exported file
+  publicPath String? // /exports/{assetId}.{glb|fbx} when served for download
+  verified   Boolean      @default(false) // the round-trip check re-imported and compared
+  drift      Float? // max fidelity drift of the round-trip (0..1)
+  report     String? // JSON: {objectsSrc/Re, trisSrc/Re, missing[], bboxDeltaPct, notes[]}
+  createdAt  DateTime     @default(now())
+  asset      BlenderAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  project    Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([assetId])
 }
@@ -140,9 +141,9 @@ model AssetExport {
 model DesignPreset {
   id         String   @id @default(cuid())
   projectId  String
-  kind       String   // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE | SCULPT | FX | PHYSICS
+  kind       String // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE | SCULPT | FX | PHYSICS
   name       String
-  spec       String   // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats, SEQUENCE = named chain of grammar slots, SCULPT = layered seeded surface-carving spec
+  spec       String // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats, SEQUENCE = named chain of grammar slots, SCULPT = layered seeded surface-carving spec
   usageCount Int      @default(0) // builds that consumed this preset
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -152,19 +153,19 @@ model DesignPreset {
 }
 
 model DesignReview {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   projectId   String
-  assetId     String?  // null = library-wide audit
-  targetRef   String   // the asset's refName, or LIBRARY for a sweep
-  kind        String   // CHARACTER | ENVIRONMENT | PROP | CREATURE | LIBRARY
-  state       String   @default("RUNNING") // RUNNING | PASSED | NEEDS_WORK
-  bar         Float    @default(0.72) // the quality bar this audit judged against
-  overall     Float?   // 0..1 weighted overall from the criteria
-  verdict     String?  // JSON {criteria, issues[], note, provider}
-  issuesFound Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assetId     String? // null = library-wide audit
+  targetRef   String // the asset's refName, or LIBRARY for a sweep
+  kind        String // CHARACTER | ENVIRONMENT | PROP | CREATURE | LIBRARY
+  state       String        @default("RUNNING") // RUNNING | PASSED | NEEDS_WORK
+  bar         Float         @default(0.72) // the quality bar this audit judged against
+  overall     Float? // 0..1 weighted overall from the criteria
+  verdict     String? // JSON {criteria, issues[], note, provider}
+  issuesFound Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   asset       BlenderAsset? @relation(fields: [assetId], references: [id], onDelete: Cascade)
   issues      DesignIssue[]
 
@@ -172,21 +173,21 @@ model DesignReview {
 }
 
 model DesignIssue {
-  id        String    @id @default(cuid())
+  id        String       @id @default(cuid())
   projectId String
   reviewId  String
   assetId   String?
   refName   String
-  severity  String    // CRITICAL | MAJOR | MINOR
-  kind      String    // GEOMETRY | MATERIAL | SILHOUETTE | PROPORTION | PALETTE | LIGHTING | DETAIL | IDENTITY
+  severity  String // CRITICAL | MAJOR | MINOR
+  kind      String // GEOMETRY | MATERIAL | SILHOUETTE | PROPORTION | PALETTE | LIGHTING | DETAIL | IDENTITY
   note      String
-  status    String    @default("OPEN") // OPEN | FIXING | FIXED | WONTFIX
-  fixNote   String?   // what the fix pass did (or why WONTFIX)
+  status    String       @default("OPEN") // OPEN | FIXING | FIXED | WONTFIX
+  fixNote   String? // what the fix pass did (or why WONTFIX)
   fixedAt   DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
   review    DesignReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, status])
 }
@@ -201,38 +202,46 @@ model DesignIssue {
 // evidence; a review that was never run judges nothing.
 // ─────────────────────────────────────────────────────────────
 model RenderReview {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   projectId   String
-  renderJobId String   @unique // one review per render job - the pixels do not change
+  renderJobId String        @unique // one review per render job - the pixels do not change
   shotId      String?
-  targetRef   String   // e.g. "Sc1 Sh003" - what was judged
-  state       String   @default("REVIEWED") // PASSED | NEEDS_WORK
-  bar         Float    @default(0.72) // the quality bar this review judged against
-  overall     Float?   // 0..1 weighted overall from the criteria
-  verdict     String?  // JSON {criteria, metrics, frame, intent, issues[], note, provider}
-  issuesFound Int      @default(0)
-  framePath   String?  // the reviewed frame (poster jpg under /renders/posters/)
-  provider    String   @default("local") // vision+local | vision | local
-  createdAt   DateTime @default(now())
-  renderJob   RenderJob @relation(fields: [renderJobId], references: [id], onDelete: Cascade)
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  targetRef   String // e.g. "Sc1 Sh003" - what was judged
+  state       String        @default("REVIEWED") // PASSED | NEEDS_WORK
+  bar         Float         @default(0.72) // the quality bar this review judged against
+  overall     Float? // 0..1 weighted overall from the criteria
+  verdict     String? // JSON {criteria, metrics, frame, intent, issues[], note, provider}
+  issuesFound Int           @default(0)
+  framePath   String? // the reviewed frame (poster jpg under /renders/posters/)
+  provider    String        @default("local") // vision+local | vision | local
+  createdAt   DateTime      @default(now())
+  renderJob   RenderJob     @relation(fields: [renderJobId], references: [id], onDelete: Cascade)
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   issues      RenderIssue[]
 
   @@index([projectId, createdAt])
 }
 
 model RenderIssue {
-  id          String   @id @default(cuid())
+  id          String       @id @default(cuid())
   projectId   String
   reviewId    String
   renderJobId String?
   refName     String
-  severity    String   // CRITICAL | MAJOR | MINOR
-  kind        String   // EXPOSURE | CONTRAST | READABILITY | PALETTE | INTENT | COMPOSITION | STAGE
+  severity    String // CRITICAL | MAJOR | MINOR
+  kind        String // EXPOSURE | CONTRAST | READABILITY | PALETTE | INTENT | COMPOSITION | STAGE
   note        String
-  createdAt   DateTime @default(now())
+  // The render-fix loop (iteration 60): OPEN | FIXING | FIXED | WONTFIX.
+  // render_fix marks targets FIXING and queues a new attempt; when the
+  // fresh attempt's pixel review lands it is THE JUDGE - a kind the new
+  // pixels stop raising is FIXED, a kind still raised goes back to OPEN
+  // (the way design_fix's re-audit judges its fixes).
+  status      String       @default("OPEN")
+  fixNote     String? // what the fix pass did, or why it did not
+  fixedAt     DateTime?
+  createdAt   DateTime     @default(now())
   review      RenderReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, kind])
 }
@@ -264,7 +273,7 @@ model Episode {
 }
 
 model Environment {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   projectId   String
   name        String
   description String?
@@ -273,14 +282,14 @@ model Environment {
   atmosphere  String? // JSON string[]
   lighting    String?
   createdAt   DateTime @default(now())
-  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   scenes      Scene[]
 
   @@unique([projectId, name])
 }
 
 model Scene {
-  id                 String   @id @default(cuid())
+  id                 String       @id @default(cuid())
   episodeId          String
   number             Int
   title              String
@@ -291,14 +300,14 @@ model Scene {
   atmosphere         String? // JSON string[]
   lighting           String?
   // Live render params the DSH evaluation loop can tune (bridge driver reads these)
-  fogDensity         Float    @default(0.45)
-  lightningIntensity Float    @default(0.55)
-  energyIntensity    Float    @default(0.6)
-  cameraDistance     Float    @default(1.0)
-  rimLightIntensity  Float    @default(0.5)
-  status             String   @default("DRAFT") // DRAFT | BUILDING | PREVIEW | REVIEW | APPROVED | RENDERED
-  createdAt          DateTime @default(now())
-  episode            Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  fogDensity         Float        @default(0.45)
+  lightningIntensity Float        @default(0.55)
+  energyIntensity    Float        @default(0.6)
+  cameraDistance     Float        @default(1.0)
+  rimLightIntensity  Float        @default(0.5)
+  status             String       @default("DRAFT") // DRAFT | BUILDING | PREVIEW | REVIEW | APPROVED | RENDERED
+  createdAt          DateTime     @default(now())
+  episode            Episode      @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   environment        Environment? @relation(fields: [environmentId], references: [id])
   shots              Shot[]
 
@@ -306,32 +315,32 @@ model Scene {
 }
 
 model Shot {
-  id          String   @id @default(cuid())
-  sceneId     String
-  number      Int
-  description String
-  shotType    String   @default("MEDIUM") // ESTABLISHING | WIDE | MEDIUM | CLOSEUP | EXTREME_CLOSEUP | LOW_ANGLE
-  lens        String?  // e.g. "50mm"
-  movement    String?  // ORBIT | DOLLY_IN | STATIC | PAN | TRACKING | CRANE
-  poseStart   String?  // character start pose (see src/lib/animation/poses.ts)
-  poseEnd     String?  // character end pose - drivers interpolate start -> end across the clip
-  duration    Float    @default(4.0)
-  lighting    String?
-  status      String   @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED
-  artworkUrl  String?  // AI-generated panel art (served from /panels/)
+  id             String          @id @default(cuid())
+  sceneId        String
+  number         Int
+  description    String
+  shotType       String          @default("MEDIUM") // ESTABLISHING | WIDE | MEDIUM | CLOSEUP | EXTREME_CLOSEUP | LOW_ANGLE
+  lens           String? // e.g. "50mm"
+  movement       String? // ORBIT | DOLLY_IN | STATIC | PAN | TRACKING | CRANE
+  poseStart      String? // character start pose (see src/lib/animation/poses.ts)
+  poseEnd        String? // character end pose - drivers interpolate start -> end across the clip
+  duration       Float           @default(4.0)
+  lighting       String?
+  status         String          @default("DRAFT") // DRAFT | QUEUED | RENDERING | REVIEW | APPROVED | FINAL | FAILED
+  artworkUrl     String? // AI-generated panel art (served from /panels/)
   artGeneratedAt DateTime? // when the current artworkUrl was generated - art-aware continuity compares this against state/anchor timestamps
-  dialogue    String?  // JSON: Array<{ speaker, text, kind: SPEECH | THOUGHT | SFX }>
+  dialogue       String? // JSON: Array<{ speaker, text, kind: SPEECH | THOUGHT | SFX }>
   // DIRECTED MOTION GRAMMAR (iteration 53): a JSON array of camera
   // beats [{move, from, to, poseStart?, poseEnd?, note?}] the worker
   // plays frame by frame - a shot is DIRECTED (crane down, then push
   // in), not a single move held for the whole clip.
-  grammar     String?  // JSON: Array<{ move, from, to, poseStart?, poseEnd?, note? }>
+  grammar        String? // JSON: Array<{ move, from, to, poseStart?, poseEnd?, note? }>
   // DIRECTED FX (iteration 56): a JSON array of named effect programs
   // [{kind: TRAIL|BURST|AURA|MOTES, color?, intensity?, beats?, note?}]
   // the worker compiles into real emissive geometry that answers the
   // grammar beats - the trail rides the blade, the burst lands at the
   // cut, the aura breathes with the wind call, the motes drift.
-  fx          String?  // JSON: Array<{ kind, color?, intensity?, beats?, note? }>
+  fx             String? // JSON: Array<{ kind, color?, intensity?, beats?, note? }>
   // DIRECTED PHYSICS (iteration 57): a JSON array of named body laws
   // [{kind: KNOCK|DEBRIS|SWAY, intensity?, beats?, target?, note?}]
   // the worker compiles into real rigid bodies integrated per frame
@@ -339,19 +348,19 @@ model Shot {
   // knock strikes where the cut lands, the debris lies where it
   // settles, the lantern swings with the wind call the cloth hangs
   // from.
-  physics     String?  // JSON: Array<{ kind, intensity?, beats?, target?, note? }>
+  physics        String? // JSON: Array<{ kind, intensity?, beats?, target?, note? }>
   // Per-shot style LoRA fine-tuning - selects a production LoRA adapter
   // whose trigger tokens are injected into this shot's art prompt.
-  loraId      String?
-  loraStrength Float?  // 0.1-1.2, falls back to the LoRA's default weight
+  loraId         String?
+  loraStrength   Float? // 0.1-1.2, falls back to the LoRA's default weight
   // Multi-artist workflow - which artist owns this panel
-  artistId    String?
-  createdAt   DateTime @default(now())
-  scene       Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
-  renderJobs  RenderJob[]
-  lora        StyleLora? @relation(fields: [loraId], references: [id], onDelete: SetNull)
-  artist      Artist?    @relation(fields: [artistId], references: [id], onDelete: SetNull)
-  audioCues   AudioCue[]
+  artistId       String?
+  createdAt      DateTime        @default(now())
+  scene          Scene           @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  renderJobs     RenderJob[]
+  lora           StyleLora?      @relation(fields: [loraId], references: [id], onDelete: SetNull)
+  artist         Artist?         @relation(fields: [artistId], references: [id], onDelete: SetNull)
+  audioCues      AudioCue[]
   identityScores IdentityScore[]
   panelEmbedding PanelEmbedding?
 
@@ -366,20 +375,20 @@ model Shot {
 // + strength flow into the art prompt of any shot assigned to it -
 // per-shot style fine-tuning on top of the production style.
 model StyleLora {
-  id            String   @id @default(cuid())
+  id            String         @id @default(cuid())
   projectId     String
   name          String
-  triggerPhrase String   // comma/space-separated trigger tokens injected verbatim
-  weight        Float    @default(0.8) // default strength for shots without an explicit one
-  baseModel     String?  // e.g. "SDXL", "FLUX.1", "animagine-xl"
+  triggerPhrase String // comma/space-separated trigger tokens injected verbatim
+  weight        Float          @default(0.8) // default strength for shots without an explicit one
+  baseModel     String? // e.g. "SDXL", "FLUX.1", "animagine-xl"
   notes         String?
   // Simulated fine-tune runs distilled from the production's approved panels
-  status        String   @default("READY") // READY | TRAINING | FAILED
-  trainProgress Float    @default(1)      // 0..1 while TRAINING, 1 when READY
-  trainedPanels Int?     // dataset size of the last completed run
+  status        String         @default("READY") // READY | TRAINING | FAILED
+  trainProgress Float          @default(1) // 0..1 while TRAINING, 1 when READY
+  trainedPanels Int? // dataset size of the last completed run
   trainedAt     DateTime?
-  createdAt     DateTime @default(now())
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt     DateTime       @default(now())
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   shots         Shot[]
   trainRuns     LoraTrainRun[]
 
@@ -393,12 +402,12 @@ model LoraTrainRun {
   loraId     String
   projectId  String
   status     String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
-  progress   Float     @default(0)         // 0..1
+  progress   Float     @default(0) // 0..1
   step       Int       @default(0)
   totalSteps Int       @default(0)
   panelCount Int       @default(0)
-  lossCurve  String?   // JSON number[] sampled over training
-  runLog     String?   // JSON string[] milestone messages
+  lossCurve  String? // JSON number[] sampled over training
+  runLog     String? // JSON string[] milestone messages
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
   lora       StyleLora @relation(fields: [loraId], references: [id], onDelete: Cascade)
@@ -409,43 +418,43 @@ model LoraTrainRun {
 // Per-artist voice casting: an artist carries a TTS voice and can be
 // cast as the speaking voice of characters (Character.voiceArtist).
 model Artist {
-  id        String   @id @default(cuid())
-  projectId String
-  name      String
-  role      String?  // e.g. "Key animator", "Backgrounds", "Effects"
-  color     String   @default("#7c9cff")
-  voiceId   String?  // TTS voice id this artist performs with
-  createdAt DateTime @default(now())
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  shots     Shot[]
+  id         String      @id @default(cuid())
+  projectId  String
+  name       String
+  role       String? // e.g. "Key animator", "Backgrounds", "Effects"
+  color      String      @default("#7c9cff")
+  voiceId    String? // TTS voice id this artist performs with
+  createdAt  DateTime    @default(now())
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shots      Shot[]
   voiceRoles Character[] @relation("VoiceCast")
 }
 
 // Sound-design cue for a shot's motion panel: timed on the shot's
 // duration timeline and previewed with the WebAudio engine.
 model AudioCue {
-  id         String  @id @default(cuid())
-  shotId     String
-  kind       String  @default("SFX") // SFX | VOICE | BGM | AMBIENCE
-  label      String
-  startMs    Int     @default(0)
-  durationMs Int     @default(600)
-  volume     Float   @default(0.8)
+  id              String   @id @default(cuid())
+  shotId          String
+  kind            String   @default("SFX") // SFX | VOICE | BGM | AMBIENCE
+  label           String
+  startMs         Int      @default(0)
+  durationMs      Int      @default(600)
+  volume          Float    @default(0.8)
   // Real TTS voice render for VOICE cues (served from /voices/);
   // synthesized blip fallback applies when voiceUrl is null.
-  voiceUrl         String?   // rendered take, cache-busted with ?v=
-  voiceActor       String?   // TTS voice name used for the render
-  voiceSpeed       Float?    // speed used for the render (0.5..2.0)
-  voiceDurationMs  Int?      // actual rendered audio duration
-  voiceState       String?   // delivery profile: NEUTRAL | EXCITED | INJURED
-  voiceStateLabel  String?   // character state the delivery was resolved from
-  voiceDelivery    String?   // standing direction: null = auto per render, else NEUTRAL | EXCITED | INJURED
-  voiceNote        String?   // directorial note attached to the delivery
-  voiceCast        String?   // cast artist name that performed the last take
-  voiceSig         String?   // take-input snapshot at render time (JSON: text/voice/delivery/speed) - diffs re-render only takes whose inputs moved
-  acousticReport   String?   // acoustic alignment audit (JSON: provider, runs, nuclei, confirmed/missing tokens, note) - the acoustic slot's persisted verdict on the take
-  createdAt  DateTime @default(now())
-  shot       Shot    @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  voiceUrl        String? // rendered take, cache-busted with ?v=
+  voiceActor      String? // TTS voice name used for the render
+  voiceSpeed      Float? // speed used for the render (0.5..2.0)
+  voiceDurationMs Int? // actual rendered audio duration
+  voiceState      String? // delivery profile: NEUTRAL | EXCITED | INJURED
+  voiceStateLabel String? // character state the delivery was resolved from
+  voiceDelivery   String? // standing direction: null = auto per render, else NEUTRAL | EXCITED | INJURED
+  voiceNote       String? // directorial note attached to the delivery
+  voiceCast       String? // cast artist name that performed the last take
+  voiceSig        String? // take-input snapshot at render time (JSON: text/voice/delivery/speed) - diffs re-render only takes whose inputs moved
+  acousticReport  String? // acoustic alignment audit (JSON: provider, runs, nuclei, confirmed/missing tokens, note) - the acoustic slot's persisted verdict on the take
+  createdAt       DateTime @default(now())
+  shot            Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -453,48 +462,48 @@ model AudioCue {
 // ─────────────────────────────────────────────────────────────
 
 model Character {
-  id             String   @id @default(cuid())
-  projectId      String
-  name           String
-  role           String?  // PROTAGONIST | RIVAL | MENTOR | ANTAGONIST | SUPPORTING
-  age            String?
-  personality    String?
-  backstory      String?
-  appearance     String?  // JSON {face, body, hair, skin, features}
-  wardrobe       String?  // JSON [{name, slot, description}]
-  abilities      String?  // JSON string[]
-  animationLib   String?  // JSON string[]
-  canonicalState String?  // JSON summary of current canonical condition (injuries etc.)
-  modelSheetUrl   String?  // AI-generated character model sheet (served from /sheets/)
+  id               String           @id @default(cuid())
+  projectId        String
+  name             String
+  role             String? // PROTAGONIST | RIVAL | MENTOR | ANTAGONIST | SUPPORTING
+  age              String?
+  personality      String?
+  backstory        String?
+  appearance       String? // JSON {face, body, hair, skin, features}
+  wardrobe         String? // JSON [{name, slot, description}]
+  abilities        String? // JSON string[]
+  animationLib     String? // JSON string[]
+  canonicalState   String? // JSON summary of current canonical condition (injuries etc.)
+  modelSheetUrl    String? // AI-generated character model sheet (served from /sheets/)
   modelSheetPrompt String? // Canonical visual-anchor prompt - reused in every panel art for consistency
-  modelSheetAt    DateTime? // when the current sheet/anchor was generated - art-aware continuity staleness anchor
-  parentId       String?  // derivative source character
-  derivativeType String?  // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
+  modelSheetAt     DateTime? // when the current sheet/anchor was generated - art-aware continuity staleness anchor
+  parentId         String? // derivative source character
+  derivativeType   String? // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
   // Per-artist voice casting: which roster artist speaks for this character
-  voiceArtistId  String?
-  voiceArtist    Artist?  @relation("VoiceCast", fields: [voiceArtistId], references: [id], onDelete: SetNull)
+  voiceArtistId    String?
+  voiceArtist      Artist?          @relation("VoiceCast", fields: [voiceArtistId], references: [id], onDelete: SetNull)
   // Voice-clone slot: the character's own trained voice (trained once
   // from their rendered takes through the configured cloning provider,
   // ANIMEOS_VOICE_CLONE_URL). Performed on every line it can render;
   // catalog TTS stays the honest fallback.
-  cloneVoiceId   String?
-  cloneTrainedAt DateTime?
-  createdAt      DateTime @default(now())
-  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  parent         Character?  @relation("Derivatives", fields: [parentId], references: [id])
-  derivatives    Character[] @relation("Derivatives")
-  states         CharacterState[]
-  stateAuditions StateAudition[]
-  relationsFrom  Relationship[] @relation("RelFrom")
-  relationsTo    Relationship[] @relation("RelTo")
+  cloneVoiceId     String?
+  cloneTrainedAt   DateTime?
+  createdAt        DateTime         @default(now())
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent           Character?       @relation("Derivatives", fields: [parentId], references: [id])
+  derivatives      Character[]      @relation("Derivatives")
+  states           CharacterState[]
+  stateAuditions   StateAudition[]
+  relationsFrom    Relationship[]   @relation("RelFrom")
+  relationsTo      Relationship[]   @relation("RelTo")
 }
 
 model CharacterState {
-  id            String  @id @default(cuid())
+  id            String          @id @default(cuid())
   characterId   String
   label         String
   episodeNumber Int?
-  stateType     String  @default("PERMANENT") // PERMANENT | TEMPORARY | VARIANT
+  stateType     String          @default("PERMANENT") // PERMANENT | TEMPORARY | VARIANT
   cultivation   String?
   weapon        String?
   clothing      String?
@@ -502,10 +511,10 @@ model CharacterState {
   voiceVariant  String? // state voice variant: TTS voice that performs the character's lines while this state is episode-effective (null = cast voice)
   poseStart     String? // state pose preset: the pose the character starts from while this state performs (see src/lib/animation/poses.ts)
   poseEnd       String? // state pose preset: the pose the state's performance moves into - development state changes HOW a pose is performed
-  speedHint     Float?  // state speed hint: multiplier on the take's base speed while this state supplies the performance (1 = no bend)
-  pitchHint     Float?  // state pitch hint: playback pitch factor for takes in this state (1 = natural pitch; <1 deeper, >1 higher)
-  createdAt     DateTime @default(now())
-  character     Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  speedHint     Float? // state speed hint: multiplier on the take's base speed while this state supplies the performance (1 = no bend)
+  pitchHint     Float? // state pitch hint: playback pitch factor for takes in this state (1 = natural pitch; <1 deeper, >1 higher)
+  createdAt     DateTime        @default(now())
+  character     Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
   auditions     StateAudition[]
 }
 
@@ -524,30 +533,30 @@ model CharacterState {
 // kept, older rows (and their WAV files) are pruned. Deleting a
 // state deletes its history.
 model StateAudition {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   stateId     String
   characterId String
   projectId   String
-  url         String   // rendered WAV under /auditions/, cache-busted with ?v=
-  text        String   // the line that was read
-  source      String   // custom | character line | sample
-  voiceId     String   // TTS voice that performed the read
-  deliveryId  String   // register the read was performed in
-  speed       Float    // effective pace incl. state hint (1 = none)
-  pitch       Float    // effective pitch factor (1 = natural)
+  url         String // rendered WAV under /auditions/, cache-busted with ?v=
+  text        String // the line that was read
+  source      String // custom | character line | sample
+  voiceId     String // TTS voice that performed the read
+  deliveryId  String // register the read was performed in
+  speed       Float // effective pace incl. state hint (1 = none)
+  pitch       Float // effective pitch factor (1 = natural)
   durationMs  Int?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime       @default(now())
   state       CharacterState @relation(fields: [stateId], references: [id], onDelete: Cascade)
   character   Character      @relation(fields: [characterId], references: [id], onDelete: Cascade)
 }
 
 model Relationship {
-  id      String @id @default(cuid())
-  fromId  String
-  toId    String
-  type    String // MASTER | RIVAL | BROTHER | ENEMY | CLONE | AVATAR | REINCARNATION | ALLY ...
-  from    Character @relation("RelFrom", fields: [fromId], references: [id], onDelete: Cascade)
-  to      Character @relation("RelTo", fields: [toId], references: [id], onDelete: Cascade)
+  id     String    @id @default(cuid())
+  fromId String
+  toId   String
+  type   String // MASTER | RIVAL | BROTHER | ENEMY | CLONE | AVATAR | REINCARNATION | ALLY ...
+  from   Character @relation("RelFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to     Character @relation("RelTo", fields: [toId], references: [id], onDelete: Cascade)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -555,16 +564,16 @@ model Relationship {
 // ─────────────────────────────────────────────────────────────
 
 model Asset {
-  id             String   @id @default(cuid())
+  id             String         @id @default(cuid())
   projectId      String
-  category       String   // CHARACTER | ENVIRONMENT | PROP | CREATURE | VEHICLE | EFFECT
+  category       String // CHARACTER | ENVIRONMENT | PROP | CREATURE | VEHICLE | EFFECT
   name           String
   description    String?
-  status         String   @default("DRAFT") // DRAFT | BUILDING | REVIEW | APPROVED
-  currentVersion Int      @default(1)
-  linkedEntity   String?  // e.g. "character:<id>" or "environment:<id>"
-  createdAt      DateTime @default(now())
-  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status         String         @default("DRAFT") // DRAFT | BUILDING | REVIEW | APPROVED
+  currentVersion Int            @default(1)
+  linkedEntity   String? // e.g. "character:<id>" or "environment:<id>"
+  createdAt      DateTime       @default(now())
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versions       AssetVersion[]
 }
 
@@ -582,23 +591,23 @@ model AssetVersion {
 // ─────────────────────────────────────────────────────────────
 
 model RenderJob {
-  id         String    @id @default(cuid())
-  projectId  String
-  shotId     String?
-  mode       String    @default("PREVIEW") // PREVIEW | FINAL
-  status     String    @default("QUEUED") // QUEUED | RENDERING | REVIEW | APPROVED | NEEDS_REVISION | FAILED
-  progress   Float     @default(0)
-  stage      String    @default("Queued")
-  attempt    Int       @default(1)
+  id             String         @id @default(cuid())
+  projectId      String
+  shotId         String?
+  mode           String         @default("PREVIEW") // PREVIEW | FINAL
+  status         String         @default("QUEUED") // QUEUED | RENDERING | REVIEW | APPROVED | NEEDS_REVISION | FAILED
+  progress       Float          @default(0)
+  stage          String         @default("Queued")
+  attempt        Int            @default(1)
   // BLENDER (workstation bridge, animated sequence mode) | MOTION
   // (built-in ffmpeg camera-grammar engine) | SIMULATOR (wall-clock
   // fallback when neither engine exists)
-  driver     String    @default("SIMULATOR")
-  durationMs Int       @default(16000)
+  driver         String         @default("SIMULATOR")
+  durationMs     Int            @default(16000)
   // Finished render artifact: an animated clip (mp4) served from
   // /renders/. Still-frame outputs (legacy bridge pngs) keep this
   // null and surface the frame through the job payload instead.
-  outputUrl  String?
+  outputUrl      String?
   // IMG2VID provider task id (async video-generation model). Host
   // protocol jobs poll by AnimeOS jobId; SDK jobs poll by this id.
   providerTaskId String?
@@ -606,32 +615,68 @@ model RenderJob {
   // lip-sync on Lin Yue (1 line, 5 visemes from 1 real take)"). Kept
   // through completion so the finished stage and queue cards keep
   // naming the performance after the poll path rewrites the stage.
-  lipNote  String?
+  lipNote        String?
   // Per-provider telemetry recorded at completion: JSON
   // {spans: [{provider, ms, note?}], takeovers: string[], totalMs,
   // credits} - one span per provider that actually worked on the
   // job (takeovers chain spans), latency per span and an estimated
   // cost read from the documented per-provider rate table. The
   // queue cards surface it as a latency/cost readout.
-  telemetry String?
-  startedAt  DateTime?
-  finishedAt DateTime?
-  createdAt  DateTime  @default(now())
-  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  shot       Shot?     @relation(fields: [shotId], references: [id], onDelete: Cascade)
-  evaluation Evaluation?
-  reviews    RenderReview[]
+  telemetry      String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  // The render-fix loop lineage (iteration 60): when render_fix reads a
+  // review's issues, applies the parameter fix each kind calls for and
+  // queues this job, this names the attempt whose issues it fixes. The
+  // fresh attempt's pixel review judges those issues on landing.
+  fixOfJobId     String?
+  fixOf          RenderJob?     @relation("RenderFixLoop", fields: [fixOfJobId], references: [id], onDelete: SetNull)
+  fixes          RenderJob[]    @relation("RenderFixLoop")
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  shot           Shot?          @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  evaluation     Evaluation?
+  reviews        RenderReview[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEARNED RETOPO FLOWS (iteration 60 - the studio remembers its
+// craft). A retopo run that verified is a lesson: the named flow
+// keeps the budget/parts that drove it and the MEASURED record of
+// every outcome (tris, drift, verified). DSH adopts flows
+// (learn_retopo_flow), applies them (blender_retopo flow:'name'),
+// and design_fix consults the best-verified flow for the kind
+// before it decimates - the re-audit stopping TOPOLOGY earns the
+// flow a clear. Shaped like the Terminology memory: the studio
+// proposes, the record disposes.
+// ─────────────────────────────────────────────────────────────
+model RetopoFlow {
+  id          String   @id @default(cuid())
+  projectId   String
+  kind        String // CHARACTER | ENVIRONMENT | PROP | CREATURE - the flow's asset kind
+  name        String // the flow's name - how DSH applies it (blender_retopo flow:'name')
+  spec        String // JSON RetopoSpec {budget, parts} - the pass the flow drives
+  outcomes    String // JSON [{assetRef, trisBefore, trisAfter, driftPct, verified, at}] - the measured record, appended whatever it measured
+  runs        Int      @default(0) // passes the flow drove
+  clears      Int      @default(0) // re-audits that stopped raising TOPOLOGY after this flow ran
+  learnedFrom String? // the run that taught it (e.g. "PROP:Relic Blade v3")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, name])
+  @@index([projectId, kind])
 }
 
 model Evaluation {
-  id          String   @id @default(cuid())
-  renderJobId String   @unique
-  verdict     String   // APPROVED | NEEDS_REVISION
+  id          String    @id @default(cuid())
+  renderJobId String    @unique
+  verdict     String // APPROVED | NEEDS_REVISION
   summary     String
-  findings    String   // JSON [{aspect, status, note}]
-  actions     String   // JSON [{type, target, param, from, to, reason}]
-  applied     Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  findings    String // JSON [{aspect, status, note}]
+  actions     String // JSON [{type, target, param, from, to, reason}]
+  applied     Boolean   @default(false)
+  createdAt   DateTime  @default(now())
   renderJob   RenderJob @relation(fields: [renderJobId], references: [id], onDelete: Cascade)
 }
 
@@ -642,9 +687,9 @@ model Evaluation {
 model ContinuityEvent {
   id            String   @id @default(cuid())
   projectId     String
-  entityType    String   // PROP | CHARACTER | ENVIRONMENT | ABILITY
+  entityType    String // PROP | CHARACTER | ENVIRONMENT | ABILITY
   entityName    String
-  kind          String   // DESTROYED | INJURED | GAINED | LOST | TRANSFORMED | CUSTOM
+  kind          String // DESTROYED | INJURED | GAINED | LOST | TRANSFORMED | CUSTOM
   episodeNumber Int?
   description   String
   severity      String   @default("INFO") // INFO | WARNING | CRITICAL
@@ -658,16 +703,16 @@ model ContinuityEvent {
 // active facts and land confidence-scored verdicts; low-confidence
 // violations feed the re-render queue in the Continuity view.
 model UniverseFact {
-  id         String   @id @default(cuid())
-  projectId  String
-  text       String
-  category   String   @default("WORLD") // WORLD | CHARACTER | PROP | LOCATION | RULE
-  source     String   @default("USER") // USER | DSH | BIBLE
-  active     Boolean  @default(true) // inactive facts are skipped by vision checks
+  id               String   @id @default(cuid())
+  projectId        String
+  text             String
+  category         String   @default("WORLD") // WORLD | CHARACTER | PROP | LOCATION | RULE
+  source           String   @default("USER") // USER | DSH | BIBLE
+  active           Boolean  @default(true) // inactive facts are skipped by vision checks
   lastRewordedFrom String? // the wording this fact replaced (set on reword, cleared after the re-audit sweep closes the loop)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 // Supervised auto re-paint runner: one pass over the universe-facts
@@ -692,8 +737,8 @@ model Terminology {
   id           String   @id @default(cuid())
   projectId    String
   term         String
-  category     String?  // CHARACTER_NAME | TECHNIQUE | LOCATION | REALM | ORGANIZATION | ITEM
-  translations String   // JSON {lang: translation}
+  category     String? // CHARACTER_NAME | TECHNIQUE | LOCATION | REALM | ORGANIZATION | ITEM
+  translations String // JSON {lang: translation}
   createdAt    DateTime @default(now())
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -704,9 +749,9 @@ model ProductionEvent {
   id        String   @id @default(cuid())
   projectId String?
   actor     String   @default("DSH") // DSH | USER | SYSTEM
-  type      String   // TOOL_CALL | RENDER | EVALUATION | CONTINUITY | PROJECT | STATE_CHANGE
+  type      String // TOOL_CALL | RENDER | EVALUATION | CONTINUITY | PROJECT | STATE_CHANGE
   summary   String
-  payload   String?  // JSON detail
+  payload   String? // JSON detail
   createdAt DateTime @default(now())
   project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
@@ -714,9 +759,9 @@ model ProductionEvent {
 model DshMessage {
   id        String   @id @default(cuid())
   projectId String
-  role      String   // user | dsh
+  role      String // user | dsh
   content   String
-  trace     String?  // JSON [{step, thought, plan, actions:[{tool,args,result,status}]}]
+  trace     String? // JSON [{step, thought, plan, actions:[{tool,args,result,status}]}]
   createdAt DateTime @default(now())
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
@@ -732,7 +777,7 @@ model DshPlan {
   id        String   @id @default(cuid())
   projectId String
   title     String
-  goal      String   // what this plan accomplishes, in the creator's language
+  goal      String // what this plan accomplishes, in the creator's language
   status    String   @default("PROPOSED") // PROPOSED | ACTIVE | PAUSED | DONE | ABORTED
   source    String   @default("DSH") // DSH | CREATOR
   steps     String   @default("[]") // JSON: Array<{tool, args, why, status: PENDING|DONE|ERROR, result?, at?}>
@@ -762,8 +807,8 @@ model StudioSchedule {
   projectId     String
   name          String
   kind          String    @default("PLAN_RUN") // PLAN_RUN | REPAINT_QUEUE | DAILY_DIGEST | PUBLISH_RUN
-  planId        String?   // PLAN_RUN: explicit plan (null = the latest ACTIVE plan at fire time)
-  publishConfig String?   // PUBLISH_RUN: JSON {episodeNumber, platform} - which episode gets staged for which platform each fire
+  planId        String? // PLAN_RUN: explicit plan (null = the latest ACTIVE plan at fire time)
+  publishConfig String? // PUBLISH_RUN: JSON {episodeNumber, platform} - which episode gets staged for which platform each fire
   cadence       String    @default("DAILY") // HOURLY | DAILY | WEEKLY
   intervalHours Int       @default(1) // HOURLY: every N hours (1..24)
   hourUtc       Int       @default(2) // DAILY/WEEKLY: hour of day (0..23), studio-night default
@@ -778,8 +823,8 @@ model StudioSchedule {
   digestEmail   String?
   lastRunAt     DateTime?
   nextRunAt     DateTime?
-  lastStatus    String?   // OK | SKIPPED | ERROR (null = never fired)
-  lastReport    String?   // what the last fire actually did
+  lastStatus    String? // OK | SKIPPED | ERROR (null = never fired)
+  lastReport    String? // what the last fire actually did
   runCount      Int       @default(0)
   createdAt     DateTime  @default(now())
   project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -799,28 +844,28 @@ model StudioSchedule {
 // EVERY production - a shape saved on one show is matchable and
 // applicable on any other.
 model ArcTemplate {
-  id          String   @id @default(cuid())
-  projectId   String?  // null for studio-library templates shared across productions
-  scope       String   @default("PROJECT") // PROJECT | STUDIO
+  id          String    @id @default(cuid())
+  projectId   String? // null for studio-library templates shared across productions
+  scope       String    @default("PROJECT") // PROJECT | STUDIO
   name        String
   description String?
-  segments    String   // JSON Array<{frac: number, kind: "auto" | "state"}>
+  segments    String // JSON Array<{frac: number, kind: "auto" | "state"}>
   // Shape versioning: version counts the current shape (1 = as saved),
   // versions holds every REPLACED shape as JSON
   // [{version, segments, note, at}] newest-first, so an updated beat
   // shape never silently rewrites what earlier applies stamped.
-  version     Int      @default(1)
-  versions    String   @default("[]")
+  version     Int       @default(1)
+  versions    String    @default("[]")
   // Usage counts per scope: how many times this shape was actually
   // APPLIED (a DSH apply or a dialog apply that stamped lines, one
   // count per batch for ensembles). No-op applies (nothing stamped)
   // never count, so the number stays an honest "this show really
   // uses this shape" signal alongside the scope tag.
-  usageCount  Int      @default(0)
+  usageCount  Int       @default(0)
   lastUsedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   // DB-level uniqueness for production templates; studio templates
   // (projectId null) are deduped in the API because SQLite treats
@@ -844,7 +889,7 @@ model ArcTemplate {
 // production, mirroring ArcTemplate's two scopes.
 model PlanTemplate {
   id          String    @id @default(cuid())
-  projectId   String?   // null for studio-library variations shared across productions
+  projectId   String? // null for studio-library variations shared across productions
   baseId      String    @default("custom") // built-in id it was cloned from, or "custom"
   name        String
   summary     String
@@ -871,18 +916,18 @@ model PlanTemplate {
 // the row (the readout the identity panel and DSH rank by). A low
 // worst feeds the re-paint offer next to the score.
 model IdentityScore {
-  id         String   @id @default(cuid())
-  projectId  String
-  shotId     String
-  source     String   @default("PANEL") // PANEL (storyboard art) | RENDER (a frame from the finished clip)
-  scores     String   @default("[]") // JSON IdentityScoreEntry[]
-  worst      Float    @default(1) // min similarity across the panel's cast
-  castSize   Int      @default(0) // how many anchored cast members were judged
-  note       String?  // the vision model's one-line summary for the panel
-  scoredAt   DateTime @default(now())
-  createdAt  DateTime @default(now())
-  shot       Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
-  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  projectId String
+  shotId    String
+  source    String   @default("PANEL") // PANEL (storyboard art) | RENDER (a frame from the finished clip)
+  scores    String   @default("[]") // JSON IdentityScoreEntry[]
+  worst     Float    @default(1) // min similarity across the panel's cast
+  castSize  Int      @default(0) // how many anchored cast members were judged
+  note      String? // the vision model's one-line summary for the panel
+  scoredAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  shot      Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([shotId, source])
 }
@@ -921,18 +966,18 @@ model PanelEmbedding {
 // registered becomes OWNER automatically; everyone after registers
 // as VIEWER and waits for an OWNER's promotion.
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String // bcrypt hash (never leaves the server)
-  role         String   @default("VIEWER") // OWNER | EDITOR | VIEWER
-  lastSeenAt   DateTime? // bumped on each successful API auth (roster liveness)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  comments     Comment[]
-  memberships  ProjectMembership[]
-  invitesCreated Invite[] @relation("InvitesCreated")
-  inviteUsed   Invite?   @relation("InvitesUsed")
+  id             String              @id @default(cuid())
+  email          String              @unique
+  name           String
+  passwordHash   String // bcrypt hash (never leaves the server)
+  role           String              @default("VIEWER") // OWNER | EDITOR | VIEWER
+  lastSeenAt     DateTime? // bumped on each successful API auth (roster liveness)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  comments       Comment[]
+  memberships    ProjectMembership[]
+  invitesCreated Invite[]            @relation("InvitesCreated")
+  inviteUsed     Invite?             @relation("InvitesUsed")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -950,8 +995,8 @@ model Invite {
   id          String    @id @default(cuid())
   code        String    @unique
   role        String    @default("VIEWER") // EDITOR | VIEWER (never OWNER)
-  projectId   String?   // optional crew slot pre-attached to the key
-  craft       String?   // DIRECTING | ART | VOICE | REVIEW (when projectId set)
+  projectId   String? // optional crew slot pre-attached to the key
+  craft       String? // DIRECTING | ART | VOICE | REVIEW (when projectId set)
   createdById String
   usedById    String?   @unique // the member who redeemed it
   usedAt      DateTime?

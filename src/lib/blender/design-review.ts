@@ -7,6 +7,7 @@ import { runBlenderScript, runAssetBuilder, runtimeBlenderBin } from "@/lib/blen
 import { DEFAULT_MOTION_BY_ARCHETYPE } from "@/lib/blender/motion";
 import { DEFAULT_VARIATION_BY_KIND } from "@/lib/blender/variation";
 import { DEFAULT_SCULPT_BY_KIND, DEFAULT_RETOPO_BUDGET, writeSculptSpec, writeRetopoSpec } from "@/lib/blender/sculpt";
+import { bestRetopoFlow, recordRetopoOutcome, reinforceRetopoFlow } from "@/lib/blender/retopo-flows";
 
 // ─────────────────────────────────────────────────────────────
 // THE SELF-CORRECTING DESIGN LOOP (the studio checks its own work)
@@ -976,10 +977,16 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   // THE RETOPO FIX: an asset over its triangle budget is decimated
   // back to law through the builder's retopo-only pass - drift
   // verified, so the shape that survived is the shape that ships.
-  let retopoBaked: { blendPath: string; previewPath: string | null; ops: string; summary: Record<string, unknown> | null; tris: number; objects: number } | null = null;
+  // THE STUDIO REMEMBERS ITS CRAFT (iteration 60): the pass prefers
+  // the kind's best-verified LEARNED FLOW (the named memory of a
+  // budget that worked) over a fresh guess at the law, and the
+  // measured outcome grows that flow's record either way.
+  let retopoBaked: { blendPath: string; previewPath: string | null; ops: string; summary: Record<string, unknown> | null; tris: number; objects: number; flow: string | null } | null = null;
   if (kinds.has("TOPOLOGY")) {
-    const budget = DEFAULT_RETOPO_BUDGET[asset.kind] ?? 20_000;
-    const retopoFile = writeRetopoSpec({ budget, parts: [] }, workDir);
+    const flow = await bestRetopoFlow(asset.projectId, asset.kind);
+    const flowSpec = flow?.spec ?? null;
+    const budget = flowSpec ? flowSpec.budget : (DEFAULT_RETOPO_BUDGET[asset.kind] ?? 20_000);
+    const retopoFile = writeRetopoSpec({ budget, parts: flowSpec?.parts ?? [] }, workDir);
     const dnaFile = path.join(workDir, "fix-dna.json");
     fs.writeFileSync(dnaFile, JSON.stringify({ name: asset.refName }));
     const retopoRun = await runAssetBuilder({
@@ -1013,11 +1020,23 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
     retopoBaked = {
       blendPath: retopoRun.blendPath,
       previewPath: retopoRun.previewPath,
-      ops: `decimated to the ${asset.kind} budget (${retopoRun.retopoSummary?.trisBefore ?? "?"} -> ${retopoRun.retopoSummary?.trisAfter ?? "?"} tris, drift ${retopoRun.retopoSummary?.driftPct ?? "?"}%)`,
+      ops: flow
+        ? `decimated by learned flow '${flow.name}' to the ${budget.toLocaleString()} budget (${retopoRun.retopoSummary?.trisBefore ?? "?"} -> ${retopoRun.retopoSummary?.trisAfter ?? "?"} tris, drift ${retopoRun.retopoSummary?.driftPct ?? "?"}%)`
+        : `decimated to the ${asset.kind} budget (${retopoRun.retopoSummary?.trisBefore ?? "?"} -> ${retopoRun.retopoSummary?.trisAfter ?? "?"} tris, drift ${retopoRun.retopoSummary?.driftPct ?? "?"}%)`,
       summary: retopoRun.retopoSummary,
       tris: retopoRun.tris,
       objects: retopoRun.objects,
+      flow: flow?.name ?? null,
     };
+    if (flow) {
+      await recordRetopoOutcome(asset.projectId, flow.kind, flow.name, {
+        assetRef: `${asset.kind}:${asset.refName} v${newVersion}`,
+        trisBefore: typeof retopoRun.retopoSummary?.trisBefore === "number" ? retopoRun.retopoSummary.trisBefore : null,
+        trisAfter: typeof retopoRun.retopoSummary?.trisAfter === "number" ? retopoRun.retopoSummary.trisAfter : null,
+        driftPct: typeof retopoRun.retopoSummary?.driftPct === "number" ? retopoRun.retopoSummary.driftPct : null,
+        verified: Boolean(retopoRun.retopoSummary?.verified),
+      });
+    }
     currentBlend = retopoRun.blendPath; // the retopo pass saved the new version here
   }
 
@@ -1128,7 +1147,7 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
           ? { ...(newMeta.sculpt ?? {}), name: `${sculptBaked.name} (default)`, ...(sculptBaked.summary ?? {}), applied: true, bakedBy: "design_fix" }
           : newMeta.sculpt,
         retopo: retopoBaked
-          ? { ...(retopoBaked.summary ?? {}), bakedBy: "design_fix" }
+          ? { ...(retopoBaked.summary ?? {}), bakedBy: "design_fix", ...(retopoBaked.flow ? { flow: retopoBaked.flow } : {}) }
           : newMeta.retopo,
         fixPass: { ops: fixOps, fromVersion: asset.version, at: new Date().toISOString() },
       }).slice(0, 4000),
@@ -1138,6 +1157,12 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   // RE-AUDIT: the re-audit decides what is actually fixed
   const reAudit = await auditAsset(asset.id, true);
   const reRaised = new Set(reAudit.issues.filter((i) => i.status === "OPEN").map((i) => i.kind));
+  // Reinforcement (iteration 60): the learned flow drove the pass and
+  // the re-audit stopped raising TOPOLOGY - the flow earns a clear and
+  // rises in the consult ranking.
+  if (retopoBaked?.flow && !reRaised.has("TOPOLOGY")) {
+    await reinforceRetopoFlow(asset.projectId, asset.kind, retopoBaked.flow);
+  }
   let fixed = 0;
   let stillOpen = 0;
   for (const t of tracked) {

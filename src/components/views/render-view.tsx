@@ -1066,6 +1066,14 @@ export function RenderView({ project }: { project: StudioProject }) {
                       {job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL" ? "BLENDER" : job.driver === "IMG2VID" ? "PREVIZ" : job.driver === "MOTION" ? "MOTION" : "SIM"}
                     </span>
                     <StatusBadge status={job.status} />
+                    {job.fixOf && (
+                      <span
+                        className="rounded px-1 py-[1px] text-[8px] font-bold tracking-widest border border-cyan-400/30 bg-cyan-400/10 text-cyan-300"
+                        title={`Queued by the render-fix loop from attempt ${job.fixOf.attempt}'s pixel review - the fresh review judges those issues`}
+                      >
+                        FIX OF ATTEMPT {job.fixOf.attempt}
+                      </span>
+                    )}
                   </div>
                   {job.shot && <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed line-clamp-1">{job.shot.description}</p>}
                 </div>
@@ -1242,6 +1250,22 @@ export function RenderView({ project }: { project: StudioProject }) {
                         {v.note && <p className="text-[11px] text-muted-foreground leading-relaxed mt-1.5">{v.note}</p>}
                       </div>
                     </div>
+                    {canDirect && review.state !== "PASSED" && (
+                      <div className="mt-2.5 pt-2.5 border-t border-cyan-400/15 flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px] border-cyan-400/30 bg-cyan-400/5 text-cyan-200"
+                          disabled={busyId === job.id}
+                          title="The render-fix loop: apply the parameter fix each open issue kind calls for and queue a new attempt - the fresh attempt's pixel review is the judge"
+                          onClick={() => act(() => api.renderFix(job.id), job.id)}
+                        >
+                          {busyId === job.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wrench className="h-3 w-3 mr-1" />}
+                          Fix from review
+                        </Button>
+                        <span className="text-[10px] text-muted-foreground">each kind drives its real parameter fix; the new attempt's review judges</span>
+                      </div>
+                    )}
                   </div>
                 );
               })()}

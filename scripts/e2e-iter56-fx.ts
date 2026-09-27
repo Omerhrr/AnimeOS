@@ -133,12 +133,12 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A16 the registry grew to 75 tools (design_fx 71, set_shot_fx 72; the pixel review joined in iter 59)", toolCount === 75, `count=${toolCount}`);
+  check("A16 the registry grew to 77 tools (design_fx 71, set_shot_fx 72; the pixel review joined in iter 59)", toolCount === 77, `count=${toolCount}`);
   check("A17 the fx resolution order is saved -> built-in -> inline", tools.includes("// resolve: saved FX preset -> built-in -> inline programs"));
   check("A18 set_shot_fx teaches the order of operations (lens first)", tools.includes("direct the lens first (set_shot_grammar) so the beats have something to answer"));
 
   const schema = readFileSync("prisma/schema.prisma", "utf8");
-  check("A19 the shot column carries the fx programs", schema.includes("fx          String?  // JSON: Array<{ kind, color?, intensity?, beats?, note? }>"));
+  check("A19 the shot column carries the fx programs", schema.includes("fx             String? // JSON: Array<{ kind, color?, intensity?, beats?, note? }>"));
   check("A20 the preset registry names the FX kind", schema.includes("GRAMMAR | SEQUENCE | SCULPT | FX"));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");

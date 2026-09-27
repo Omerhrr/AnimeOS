@@ -39,6 +39,11 @@ import { compileGrammarSpec, serializeGrammar, BUILT_IN_GRAMMARS, GRAMMAR_MOVES,
 import { compileFxSpec, serializeFx, BUILT_IN_FX, FX_KINDS, findBuiltInFx } from "@/lib/animation/fx";
 import { compilePhysicsSpec, serializePhysics, BUILT_IN_PHYSICS, PHYSICS_KINDS, findBuiltInPhysics } from "@/lib/animation/physics";
 import { reviewRenderJob, renderPixelContextLine, RENDER_ISSUE_KINDS } from "@/lib/engine/render-review";
+import { fixRenderIssues } from "@/lib/engine/render-fix";
+import {
+  findRetopoFlow, learnRetopoFlow, recordRetopoOutcome, listRetopoFlows, retopoFlowsContextLine,
+  type RetopoOutcome,
+} from "@/lib/blender/retopo-flows";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -510,12 +515,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "blender_retopo",
-    description: "Run the RETOPOLOGY BUDGET pass on a library asset: collapse-decimate its meshes toward the kind's triangle budget (CHARACTER 80k, ENVIRONMENT 120k, PROP 20k, CREATURE 60k) and VERIFY the shape survived - bounding-box drift is measured and a verified verdict lands with the tris before/after. A sculpted asset that grew past its budget comes back to law here; an unverified retopo is a hope, not a deliverable. Saves a NEW versioned .blend and re-renders the preview.",
+    description: "Run the RETOPOLOGY BUDGET pass on a library asset: collapse-decimate its meshes toward the kind's triangle budget (CHARACTER 80k, ENVIRONMENT 120k, PROP 20k, CREATURE 60k) or toward a LEARNED FLOW's budget, and VERIFY the shape survived - bounding-box drift is measured and a verified verdict lands with the tris before/after. A sculpted asset that grew past its budget comes back to law here; an unverified retopo is a hope, not a deliverable. Passing flow:'<name>' drives the pass with the production's LEARNED RETOPO FLOW (the memory of a verified run): the outcome is appended to the flow's record and the re-audit's verdict reinforces it. Saves a NEW versioned .blend and re-renders the preview.",
     args: {
       refName: "string - the asset's name",
       kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP for registered assets)",
       budget: "number (optional - override the kind's triangle budget; clamped 200..2,000,000)",
       parts: "string (optional - comma-separated object-name filters; default every mesh)",
+      flow: "string (optional - a learned retopo flow's name: its budget/parts drive the pass and the measured outcome grows the flow's record)",
     },
   },
   {
@@ -775,6 +781,27 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       jobId: "string - optional explicit render job id (defaults to the shot's latest finished render)",
+    },
+  },
+  {
+    name: "render_fix",
+    description: "THE FIX RETURNS TO THE PIXELS: run the RENDER-FIX LOOP on a reviewed render - the way design_fix re-audits assets, but on the shot. Read the pixel review's OPEN issues, apply the REAL parameter fix each kind calls for (EXPOSURE lifts the energy and rim lights or pulls them down when blown; CONTRAST cuts the fog that flattens the spread; STAGE raises the rim so the figure reads; READABILITY clears the air and moves the camera in; COMPOSITION reframes the way the note decides; PALETTE nudges the energy mix), queue a NEW attempt with those parameters (fixOf lineage names the reviewed attempt), and let the FRESH attempt's pixel review be the judge - an issue is FIXED only when the new pixels stop raising it. INTENT issues refuse parameters honestly: intent lives in the direction, adjust the beats and re-render. Read what cleared and what did not from the issue fix notes afterwards.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      jobId: "string - optional explicit render job id (defaults to the shot's latest finished render)",
+      issueIds: "JSON array of issue ids (optional - defaults to ALL open issues of the render's review)",
+    },
+  },
+  {
+    name: "learn_retopo_flow",
+    description: "THE STUDIO REMEMBERS ITS CRAFT: save a LEARNED RETOPO FLOW - the production's named memory of a retopo recipe that verified, per asset kind (budget, optional part filters, and the measured record of every outcome it produces). A flow is learned from a measured run (pass refName of the asset blender_retopo measured; the verified numbers seed the record) or registered from the kind's budget law. From then on blender_retopo flow:'<name>' drives passes with it and grows the record, and design_fix consults the best-verified flow for the kind before it decimates - every re-audit that stops raising TOPOLOGY earns the flow a clear. This is how the memory grows: a verified run that nobody names is a lesson the studio re-pays for every build.",
+    args: {
+      name: "string - the flow's name (e.g. 'relic-hero-20k')",
+      kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default PROP)",
+      refName: "string (optional - the asset whose measured blender_retopo run seeds the record)",
+      budget: "number (optional - default the kind's triangle budget law; clamped 200..2,000,000)",
+      parts: "string (optional - comma-separated object-name filters; default every mesh)",
     },
   },
 ];
@@ -2468,9 +2495,18 @@ export async function executeTool(
         if (!asset.blendPath || asset.status !== "READY") {
           return { status: "ERROR", result: `${refName} has no accepted .blend on disk - rebuild it first (blender_asset_build).` };
         }
+        // THE STUDIO REMEMBERS ITS CRAFT (iteration 60): a learned flow
+        // drives the pass with the budget/parts that verified before,
+        // and the measured outcome grows the flow's record.
+        const flowName = String(args.flow ?? "").trim();
+        const flow = flowName ? await findRetopoFlow(projectId, asset.kind, flowName) : null;
+        if (flowName && !flow) {
+          return { status: "ERROR", result: `No learned retopo flow named "${flowName}" in this production - learn one from a verified run (learn_retopo_flow with refName) or run the pass on the kind's budget law.` };
+        }
+        const flowSpec = flow?.spec ?? null;
         const compiled = compileRetopoSpec({
-          budget: args.budget !== undefined ? Number(args.budget) : (DEFAULT_RETOPO_BUDGET[asset.kind] ?? 20_000),
-          parts: args.parts !== undefined ? String(args.parts) : null,
+          budget: args.budget !== undefined ? Number(args.budget) : flowSpec ? flowSpec.budget : (DEFAULT_RETOPO_BUDGET[asset.kind] ?? 20_000),
+          parts: args.parts !== undefined ? String(args.parts) : flowSpec ? flowSpec.parts.join(",") : null,
         });
         if (!compiled.ok) return { status: "ERROR", result: compiled.error };
         const project = await db.project.findUnique({ where: { id: asset.projectId }, select: { title: true } });
@@ -2506,16 +2542,29 @@ export async function executeTool(
               ...newMeta,
               tris: run.tris,
               objects: run.objects,
-              retopo: { ...summary, bakedBy: "blender_retopo", budget: compiled.spec.budget },
+              retopo: { ...summary, bakedBy: "blender_retopo", budget: compiled.spec.budget, ...(flow ? { flow: flow.name } : {}) },
             }).slice(0, 4000),
           },
         });
+        // The flow's record grows with whatever the pass measured -
+        // a flow's failures are part of its lesson.
+        if (flow) {
+          await recordRetopoOutcome(projectId, flow.kind, flow.name, {
+            assetRef: `${asset.kind}:${asset.refName} v${asset.version + 1}`,
+            trisBefore: typeof summary.trisBefore === "number" ? summary.trisBefore : null,
+            trisAfter: typeof summary.trisAfter === "number" ? summary.trisAfter : null,
+            driftPct: typeof summary.driftPct === "number" ? summary.driftPct : null,
+            verified: Boolean(summary.verified),
+          });
+        }
         await landDesignEvent(
           asset.projectId,
-          `Retopo pass: ${asset.kind.toLowerCase()} ${asset.refName} v${asset.version} -> v${asset.version + 1} (${summary.trisBefore ?? "?"} -> ${summary.trisAfter ?? "?"} tris toward a ${compiled.spec.budget.toLocaleString()} budget, drift ${summary.driftPct ?? "?"}%, ${summary.verified ? "VERIFIED" : "NOT VERIFIED"})`,
+          `Retopo pass: ${asset.kind.toLowerCase()} ${asset.refName} v${asset.version} -> v${asset.version + 1} (${summary.trisBefore ?? "?"} -> ${summary.trisAfter ?? "?"} tris toward a ${compiled.spec.budget.toLocaleString()} budget${flow ? `, flow '${flow.name}'` : ""}, drift ${summary.driftPct ?? "?"}%, ${summary.verified ? "VERIFIED" : "NOT VERIFIED"})`,
           { assetId: asset.id, summary },
         );
-        return { status: "OK", result: `RETOPO ${summary.verified ? "VERIFIED" : "NOT VERIFIED"}: ${refName} v${asset.version} -> v${asset.version + 1} - ${summary.trisBefore ?? "?"} -> ${summary.trisAfter ?? "?"} tris toward the ${compiled.spec.budget.toLocaleString()} budget, bbox drift ${summary.driftPct ?? "?"}%${summary.ratioFloorHit ? " (the ratio floor bit: the budget cannot be honored without butchering the shape - report it honestly)" : ""}. ${summary.verified ? "The shape survived - the asset ships at its budget." : "The drift or the budget failed the verdict - do not ship it; refine and re-run."}` };
+        const flowNote = flow ? ` Flow '${flow.name}' drove the pass (now ${flow.runs + 1} run(s) on record, ${flow.clears} clear(s)).` : "";
+        const learnHint = summary.verified && !flow ? ` Verified with no named flow behind it - worth remembering: learn_retopo_flow (name it, kind ${asset.kind}, budget ${compiled.spec.budget}) so the next ${asset.kind.toLowerCase()} retopo starts here and design_fix prefers it.` : "";
+        return { status: "OK", result: `RETOPO ${summary.verified ? "VERIFIED" : "NOT VERIFIED"}: ${refName} v${asset.version} -> v${asset.version + 1} - ${summary.trisBefore ?? "?"} -> ${summary.trisAfter ?? "?"} tris toward the ${compiled.spec.budget.toLocaleString()} budget${flow ? ` (flow '${flow.name}')` : ""}, bbox drift ${summary.driftPct ?? "?"}%${summary.ratioFloorHit ? " (the ratio floor bit: the budget cannot be honored without butchering the shape - report it honestly)" : ""}.${flowNote}${learnHint} ${summary.verified ? "The shape survived - the asset ships at its budget." : "The drift or the budget failed the verdict - do not ship it; refine and re-run."}` };
       }
 
       case "design_grammar": {
@@ -2899,6 +2948,91 @@ export async function executeTool(
         const issueLines = (v?.issues ?? []).slice(0, 6).map((i) => `${i.severity} ${i.kind}: ${i.note}`).join("; ") || "none";
         await landDesignEvent(projectId, `Pixel review on ${res.review.targetRef}: ${res.review.overall !== null ? `${Math.round(res.review.overall * 100)}%` : "unmeasured"} (${res.review.provider}) - ${res.review.state}, ${res.review.issuesFound} issue(s)`, { renderJobId: job.id });
         return { status: "OK", result: `THE RENDER IS JUDGED: ${res.review.targetRef} (attempt ${job.attempt}) scores ${res.review.overall !== null ? `${Math.round(res.review.overall * 100)}%` : "unmeasured"} - ${res.review.state}, provider ${res.review.provider}, frame ${res.review.framePath ?? "none"}.\n${crit ? `criteria: ${crit}\n` : ""}${measured ? `${measured}\n` : ""}issues: ${issueLines}${v?.note ? `\nnote: ${v.note}` : ""}\nThe review is EVIDENCE, not a verdict: pair it with the DSH inspection on this render, and fix what it names before promising the shot serves its intent (the issue kinds I act on: ${RENDER_ISSUE_KINDS.join(", ")}).` };
+      }
+
+      case "render_fix": {
+        // THE FIX RETURNS TO THE PIXELS: resolve the reviewed render,
+        // apply the parameter fix each open issue kind calls for, queue
+        // the new attempt - the fresh attempt's pixel review is the judge.
+        let job = null as Awaited<ReturnType<typeof db.renderJob.findFirst>>;
+        if (args.jobId) {
+          job = await db.renderJob.findFirst({ where: { id: String(args.jobId), projectId } });
+          if (!job) return { status: "ERROR", result: `No render job "${String(args.jobId)}" in this production.` };
+        } else {
+          let scene: Awaited<ReturnType<typeof latestScene>> = null;
+          if (args.sceneNumber) {
+            const scenes = await db.scene.findMany({
+              where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+              orderBy: { createdAt: "desc" },
+            });
+            scene = scenes[0] ?? null;
+          }
+          if (!scene) scene = await latestScene(projectId);
+          if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+          const shot = await db.shot.findFirst({
+            where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+          });
+          if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+          job = await db.renderJob.findFirst({
+            where: { projectId, shotId: shot.id, outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
+            orderBy: { createdAt: "desc" },
+          });
+          if (!job) return { status: "ERROR", result: `Shot ${String(shot.number).padStart(3, "0")} of Scene ${scene.number} has no finished render to fix - queue one (render_shot), let the review judge it, then fix what it names.` };
+        }
+        let issueIds: string[] | undefined;
+        if (args.issueIds !== undefined) {
+          try {
+            const parsed = JSON.parse(String(args.issueIds));
+            if (Array.isArray(parsed)) issueIds = parsed.map(String);
+          } catch {
+            return { status: "ERROR", result: "issueIds must be a JSON array of issue ids." };
+          }
+        }
+        const res = await fixRenderIssues(job.id, issueIds);
+        if (!res.ok) return { status: "ERROR", result: res.error ?? "the render fix failed" };
+        if (res.attempted === 0) return { status: "OK", result: `${res.targetRef} has no open review issues to fix - run review_render for the current standing.` };
+        const appliedText = res.applied.map((op) => `${op.param} ${op.from} -> ${op.to}`).join(", ");
+        const refused = res.wontfix.length > 0 ? ` Refused honestly: ${res.wontfix.map((w) => w.kind).join(", ")} - ${res.wontfix[0]?.note ?? "no parameter fix"}.` : "";
+        if (res.applied.length === 0) {
+          return { status: "OK", result: `THE FIX REFUSED: ${res.targetRef} - no parameter can act on these issue kinds.${refused} Adjust the direction (set_shot_grammar / set_shot_fx) and re-render.` };
+        }
+        return { status: "OK", result: `THE FIX RETURNS TO THE PIXELS: ${res.targetRef} - ${res.applied.length} parameter fix(es) applied (${appliedText}); attempt ${res.newAttempt} queued with the adjusted scene.${refused}\nThe fresh attempt's pixel review is THE JUDGE: review_render it when it lands - an issue is fixed only when the new pixels stop raising it (the way design_fix's re-audit judges its fixes). The issue fix notes carry what cleared and what did not; loop while the review names majors the pixels can answer.` };
+      }
+
+      case "learn_retopo_flow": {
+        const name = String(args.name ?? "").trim();
+        if (!name) return { status: "ERROR", result: "name is required - a flow the studio applies by name (blender_retopo flow:'<name>')." };
+        const kindRaw = String(args.kind ?? "PROP").toUpperCase();
+        if (!isBlenderAssetKind(kindRaw)) return { status: "ERROR", result: `kind must be one of CHARACTER | ENVIRONMENT | PROP | CREATURE (got "${kindRaw}").` };
+        let seedOutcome: RetopoOutcome | null = null;
+        let learnedFrom: string | null = null;
+        if (args.refName !== undefined && String(args.refName).trim()) {
+          const refName = String(args.refName).trim();
+          const asset = await db.blenderAsset.findFirst({ where: { projectId, refName }, orderBy: { updatedAt: "desc" } });
+          if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - a flow is learned from a run that exists, not from a guess.` };
+          const meta = (() => { try { return JSON.parse(asset.meta || "{}") as Record<string, unknown>; } catch { return {}; } })();
+          const retopoMeta = meta.retopo as Record<string, unknown> | undefined;
+          if (!retopoMeta || typeof retopoMeta !== "object") {
+            return { status: "ERROR", result: `${refName} carries no measured retopo run - run blender_retopo on it first; the flow's record is seeded from measured numbers.` };
+          }
+          learnedFrom = `${asset.kind}:${asset.refName} v${asset.version}`;
+          seedOutcome = {
+            assetRef: learnedFrom,
+            trisBefore: typeof retopoMeta.trisBefore === "number" ? retopoMeta.trisBefore : null,
+            trisAfter: typeof retopoMeta.trisAfter === "number" ? retopoMeta.trisAfter : null,
+            driftPct: typeof retopoMeta.driftPct === "number" ? retopoMeta.driftPct : null,
+            verified: Boolean(retopoMeta.verified),
+            at: new Date().toISOString(),
+          };
+        }
+        const compiled = compileRetopoSpec({
+          budget: args.budget !== undefined ? Number(args.budget) : (DEFAULT_RETOPO_BUDGET[kindRaw] ?? 20_000),
+          parts: args.parts !== undefined ? String(args.parts) : null,
+        });
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const flow = await learnRetopoFlow({ projectId, kind: kindRaw, name, spec: compiled.spec, seedOutcome, learnedFrom });
+        await landDesignEvent(projectId, `Retopo flow '${name}' ${seedOutcome ? "learned from a measured run" : "registered"} for ${kindRaw.toLowerCase()} (budget ${compiled.spec.budget.toLocaleString()})`, { flowId: flow.id, kind: kindRaw });
+        return { status: "OK", result: `RETOPO FLOW '${name}' remembered for ${kindRaw.toLowerCase()}: budget ${compiled.spec.budget.toLocaleString()}, parts ${flow.spec.parts.length ? flow.spec.parts.join(", ") : "every mesh"}${seedOutcome ? `, seeded with the measured run (${seedOutcome.trisBefore ?? "?"} -> ${seedOutcome.trisAfter ?? "?"} tris, drift ${seedOutcome.driftPct ?? "?"}%, ${seedOutcome.verified ? "verified" : "NOT verified"})` : ", no measured outcome yet"}. Apply it with blender_retopo flow:'${name}' - every outcome grows the record - and design_fix consults the best-verified flow for the kind before it decimates; each re-audit that stops raising TOPOLOGY earns the flow a clear.` };
       }
 
       case "design_audit": {
@@ -3950,7 +4084,7 @@ function designContextLine(
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -4009,6 +4143,8 @@ export async function buildCompactContext(projectId: string) {
     db.designReview.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
     // The pixel-review standing (Iteration 59): what the learned layer last judged.
     db.renderReview.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
+    // The learned retopo flows (Iteration 60): the studio's remembered craft.
+    listRetopoFlows(projectId).catch(() => []),
   ]);
   if (!project) return null;
 
@@ -4121,5 +4257,6 @@ export async function buildCompactContext(projectId: string) {
         : null,
     design: designContextLine(project, openDesignIssues, latestDesignReview),
     pixel: renderPixelContextLine(latestRenderReview),
+    retopoFlows: retopoFlowsContextLine(learnedRetopoFlows),
   };
 }

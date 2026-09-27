@@ -114,7 +114,7 @@ async function main() {
 
   // ───────────────────── A. source-level checks ─────────────────────
   const schema = readFileSync("prisma/schema.prisma", "utf8");
-  check("A1 the RenderReview model exists (one review per job, provider named)", schema.includes("model RenderReview") && schema.includes("renderJobId String   @unique") && schema.includes("provider    String   @default(\"local\") // vision+local | vision | local"));
+  check("A1 the RenderReview model exists (one review per job, provider named)", schema.includes("model RenderReview") && schema.includes("renderJobId String        @unique") && schema.includes("provider    String        @default(\"local\") // vision+local | vision | local"));
   check("A2 the RenderIssue model exists with the seven kinds", schema.includes("model RenderIssue") && schema.includes("// EXPOSURE | CONTRAST | READABILITY | PALETTE | INTENT | COMPOSITION | STAGE"));
 
   const lib = readFileSync("src/lib/engine/render-review.ts", "utf8");
@@ -134,7 +134,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A13 the registry grew to 75 tools (review_render judges the pixels)", toolCount === 75, `count=${toolCount}`);
+  check("A13 the registry grew to 77 tools (review_render judges the pixels)", toolCount === 77, `count=${toolCount}`);
   check("A14 review_render teaches the learned layer (local measure + vision read + honest provider)", tools.includes("JUDGE THE PIXELS") && tools.includes("vision+local | vision | local") && tools.includes("One review per render job"));
   check("A15 the tool refuses to review what does not exist", tools.includes("review what exists, not what is promised"));
   check("A16 the context carries the pixel standing", tools.includes("pixel: renderPixelContextLine(latestRenderReview)") && lib.includes("latest pixel review:"));

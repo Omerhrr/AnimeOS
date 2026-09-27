@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireRole, authGuardResponse } from "@/lib/auth";
 import { requireProjectAccess } from "@/lib/access";
 import { createRenderJob, tickProjectJobs, applyEvaluationActions } from "@/lib/engine/render";
+import { fixRenderIssues } from "@/lib/engine/render-fix";
 import { runRenderEvaluation } from "@/lib/dsh/evaluator";
 
 /** Render queue state. Ticks all active jobs; triggers DSH inspection for completed ones. */
@@ -49,6 +50,8 @@ export async function GET(req: Request) {
     include: {
       shot: { include: { scene: true } },
       evaluation: true,
+      // The render-fix loop lineage (iteration 60): the attempt this one fixes.
+      fixOf: { select: { attempt: true } },
       // The pixel review (iteration 59): the learned layer's verdict rides the card.
       reviews: { orderBy: { createdAt: "desc" as const }, take: 1 },
     },
@@ -62,6 +65,10 @@ export async function GET(req: Request) {
  *  - { action: "batch", episodeIds[], mode }         → queue a render per shot across episodes
  *  - { action: "apply", evaluationId }               → apply DSH modifications + re-render
  *  - { action: "retry", jobId }                      → re-render same shot (attempt+1)
+ *  - { action: "fix", jobId }                        → THE RENDER-FIX LOOP: apply the parameter
+ *                                                      fix each open pixel-review issue calls for
+ *                                                      and queue the new attempt (the fresh
+ *                                                      attempt's review is the judge)
  *  - { action: "approve", jobId }                    → human approve (EDITOR+) → FINAL-eligible;
  *                                                      with the approval gate on this is the ONLY
  *                                                      way a DSH-approved render becomes APPROVED
@@ -150,6 +157,28 @@ export async function POST(req: Request) {
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     const next = await createRenderJob(job.projectId, job.shotId, job.mode as "PREVIEW" | "FINAL");
     return NextResponse.json({ id: next.id });
+  }
+
+  if (action === "fix") {
+    // THE FIX RETURNS TO THE PIXELS (iteration 60): the reviewed render's
+    // open issues drive real parameter fixes; the new attempt's review judges.
+    const job = await db.renderJob.findUnique({ where: { id: String(body.jobId) } });
+    if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    const access = await requireProjectAccess(req, job.projectId, { write: true });
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    let issueIds: string[] | undefined;
+    if (Array.isArray(body.issueIds)) issueIds = body.issueIds.map(String);
+    const res = await fixRenderIssues(job.id, issueIds);
+    if (!res.ok) return NextResponse.json({ error: res.error ?? "the render fix failed" }, { status: 400 });
+    return NextResponse.json({
+      ok: true,
+      targetRef: res.targetRef,
+      attempted: res.attempted,
+      applied: res.applied,
+      wontfix: res.wontfix,
+      newJobId: res.newJobId,
+      newAttempt: res.newAttempt,
+    });
   }
 
   if (action === "approve") {

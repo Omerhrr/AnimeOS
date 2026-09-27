@@ -26,7 +26,12 @@ import { extractRenderPoster } from "@/lib/identity";
 // run is named as absent - never silently skipped.
 // The DSH inspection reads the review as EVIDENCE; the review is
 // one per render job (the pixels do not change until a new
-// attempt renders new ones).
+// attempt renders new ones). And when the fresh attempt was
+// queued by the render-fix loop (iteration 60: fixOfJobId names
+// the lineage), THIS review is also the judge of the fix that
+// preceded it - an issue the new pixels stop raising is FIXED,
+// a kind still raised goes back to OPEN with the honest note
+// (the way design_fix's re-audit judges its fixes).
 // ─────────────────────────────────────────────────────────────
 
 export const RENDER_BAR = 0.72;
@@ -502,6 +507,11 @@ export async function reviewRenderJob(renderJobId: string, opts?: { useVision?: 
     },
   });
 
+  // THE FIX RETURNS TO THE PIXELS (iteration 60): when this attempt
+  // was queued by the render-fix loop, this fresh review is THE JUDGE
+  // of the issues it set out to fix. Never blocks the review itself.
+  await reconcileRenderFixes(job.id).catch(() => {});
+
   return {
     ok: true,
     review: {
@@ -517,6 +527,59 @@ export async function reviewRenderJob(renderJobId: string, opts?: { useVision?: 
  */
 export async function ensureRenderReview(renderJobId: string): Promise<RenderReviewResult | { ok: false; error: string }> {
   return reviewRenderJob(renderJobId);
+}
+
+// ─────────────────────────────────────────────────────────────
+// THE FIX RETURNS TO THE PIXELS - the reconciliation (iteration
+// 60). Called when a fresh review lands: if the job fixes a
+// previous attempt (fixOfJobId), the freshly-raised kinds judge
+// that attempt's FIXING issues. Judged by KIND, exactly like
+// design_fix's re-audit judges its own fixes: the kind the new
+// pixels stop raising is FIXED; a kind still raised goes back to
+// OPEN (so a later render_fix can target it again) with the
+// honest note that the re-review still flags it.
+// ─────────────────────────────────────────────────────────────
+export async function reconcileRenderFixes(renderJobId: string): Promise<{ cleared: number; held: number } | null> {
+  const job = await db.renderJob.findUnique({
+    where: { id: renderJobId },
+    select: { id: true, fixOfJobId: true, attempt: true, status: true },
+  });
+  if (!job?.fixOfJobId) return null;
+  const review = await db.renderReview.findUnique({ where: { renderJobId }, include: { issues: true } });
+  if (!review) return null;
+  const fixing = await db.renderIssue.findMany({ where: { renderJobId: job.fixOfJobId, status: "FIXING" } });
+  if (fixing.length === 0) return null;
+  const raised = new Set(review.issues.map((i) => i.kind));
+  let cleared = 0;
+  let held = 0;
+  for (const t of fixing) {
+    if (raised.has(t.kind)) {
+      held += 1;
+      await db.renderIssue.update({
+        where: { id: t.id },
+        data: {
+          status: "OPEN",
+          fixNote: `${t.fixNote ?? "fix queued"} - but attempt ${job.attempt}'s review still flags ${t.kind}`,
+        },
+      });
+    } else {
+      cleared += 1;
+      await db.renderIssue.update({
+        where: { id: t.id },
+        data: { status: "FIXED", fixNote: `cleared by attempt ${job.attempt}'s pixel review`, fixedAt: new Date() },
+      });
+    }
+  }
+  await db.productionEvent.create({
+    data: {
+      projectId: review.projectId,
+      actor: "DSH",
+      type: "EVALUATION",
+      summary: `Render fix judged - ${cleared}/${fixing.length} issue(s) cleared by attempt ${job.attempt}'s review${held ? `, ${held} still flagged (the loop may run again)` : ""}`,
+      payload: JSON.stringify({ renderJobId, fixOfJobId: job.fixOfJobId, cleared, held, raisedKinds: [...raised] }).slice(0, 4000),
+    },
+  });
+  return { cleared, held };
 }
 
 /** The pixel evidence as compact text for the DSH inspection prompt (or null when no review ran). */

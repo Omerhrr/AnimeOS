@@ -113,15 +113,15 @@ async function main() {
 
   // ───────────────────── A. source-level checks ─────────────────────
   const schema = readFileSync("prisma/schema.prisma", "utf8");
-  check("A1 shots carry the directed grammar column", schema.includes("grammar     String?"));
+  check("A1 shots carry the directed grammar column", schema.includes("grammar        String?"));
   check("A2 assets carry the variation preset column", schema.includes("variationPreset String?"));
-  check("A3 the AssetExport model persists exports + verification", schema.includes("model AssetExport") && schema.includes("verified    Boolean") && schema.includes("drift       Float?"));
+  check("A3 the AssetExport model persists exports + verification", schema.includes("model AssetExport") && schema.includes("verified   Boolean      @default(false)") && schema.includes("drift      Float?"));
   check("A4 the preset registry names VARIATION and GRAMMAR kinds", schema.includes("MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR"));
 
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry grew to 75 tools (the pixel review joined in iter 59)", toolCount === 75, `count=${toolCount}`);
+  check("A5 the registry grew to 77 tools (the pixel review joined in iter 59)", toolCount === 77, `count=${toolCount}`);
   check("A6 design_variation registers the seeded GN layout law", tools.includes('name: "design_variation"') && tools.includes("SCATTER (instances across a carrier surface) | ARRAY (instances along a spine/grid)"));
   check("A7 blender_export verifies the round trip", tools.includes('name: "blender_export"') && tools.includes("an unverified export is a hope, not a deliverable"));
   check("A8 design_grammar + set_shot_grammar direct the lens", tools.includes('name: "design_grammar"') && tools.includes('name: "set_shot_grammar"') && tools.includes("The Reveal, The Standoff, The Assault, The Ascent, The Withdrawal"));

@@ -104,15 +104,15 @@ async function main() {
   // ───────────────────── A. source-level checks ─────────────────────
   const schema = readFileSync("prisma/schema.prisma", "utf8");
   check("A1 the design-mastery tables exist (DesignPreset, DesignReview, DesignIssue)", ["model DesignPreset", "model DesignReview", "model DesignIssue"].every((m) => schema.includes(m)));
-  check("A2 presets are unique per production+kind+name; issues carry a lifecycle", schema.includes("@@unique([projectId, kind, name])") && schema.includes('status    String    @default("OPEN") // OPEN | FIXING | FIXED | WONTFIX'));
-  check("A3 assets carry the self-review grade (qualityScore + lastReviewAt)", schema.includes("qualityScore  Float?") && schema.includes("lastReviewAt  DateTime?"));
+  check("A2 presets are unique per production+kind+name; issues carry a lifecycle", schema.includes("@@unique([projectId, kind, name])") && schema.includes('status    String       @default("OPEN") // OPEN | FIXING | FIXED | WONTFIX'));
+  check("A3 assets carry the self-review grade (qualityScore + lastReviewAt)", schema.includes("qualityScore    Float?") && schema.includes("lastReviewAt    DateTime?"));
 
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const designTools = ["design_material", "design_lighting", "design_audit", "design_fix", "design_status"];
   check("A4 the five design tools are registered", designTools.every((t) => tools.includes(`name: "${t}"`)));
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry stands at 75 tools (the pixel review joined in iter 59)", toolCount === 75, `count=${toolCount}`);
+  check("A5 the registry stands at 77 tools (the pixel review joined in iter 59)", toolCount === 77, `count=${toolCount}`);
   check("A6 the build tool now takes four kinds + recipe names", tools.includes('kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE",') && tools.includes("material: \"string (optional - a design_material recipe name") && tools.includes("lighting: \"string (optional - a design_lighting rig name"));
 
   const builder = readFileSync("bridges/blender/asset_builder.py", "utf8");

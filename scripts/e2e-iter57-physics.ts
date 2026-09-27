@@ -139,12 +139,12 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A19 the registry grew to 75 tools (design_physics 73, set_shot_physics 74; the pixel review joined in iter 59)", toolCount === 75, `count=${toolCount}`);
+  check("A19 the registry grew to 77 tools (design_physics 73, set_shot_physics 74; the pixel review joined in iter 59)", toolCount === 77, `count=${toolCount}`);
   check("A20 the physics resolution order is saved -> built-in -> inline", tools.includes("// resolve: saved physics preset -> built-in -> inline programs"));
   check("A21 set_shot_physics teaches the order of operations (lens first)", tools.includes("direct the lens first (set_shot_grammar) so the beats have something to answer"));
 
   const schema = readFileSync("prisma/schema.prisma", "utf8");
-  check("A22 the shot column carries the body laws", schema.includes("physics     String?  // JSON: Array<{ kind, intensity?, beats?, target?, note? }>"));
+  check("A22 the shot column carries the body laws", schema.includes("physics        String? // JSON: Array<{ kind, intensity?, beats?, target?, note? }>"));
   check("A23 the preset registry names the PHYSICS kind", schema.includes("SCULPT | FX | PHYSICS"));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
