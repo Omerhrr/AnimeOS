@@ -2040,6 +2040,22 @@ def shade_hex(h, k):
     )
 
 
+def _comp_set_sock(node, name, value):
+    """Set a compositor node's parameter the 5.x way - the params live
+    in INPUT SOCKETS now (the old node attributes are gone). Duplicated
+    socket names (a color socket + a factor float) resolve by shape:
+    the value must be accepted, otherwise the next match is tried."""
+    for s in node.inputs:
+        if s.name != name:
+            continue
+        try:
+            s.default_value = value
+            return True
+        except Exception:
+            continue
+    return False
+
+
 def worker_run(job_file):
     import bpy
     import mathutils
@@ -2603,6 +2619,79 @@ def worker_run(job_file):
             scn.cycles.transmission_bounces = 0
             scn.cycles.transparent_max_bounces = 0
         state["render"] = {"samples": 48 if mode == "FINAL" else 10, "bounces": 4 if mode == "FINAL" else 0}
+
+        # ── THE FINAL FRAME IS GRADED (iteration 73): a FINAL render
+        #    leaves the compositor with the post the raw frame was
+        #    missing - bloom (the energy blades and fx glow), the
+        #    donghua room grade (cool lift, warm gain, +6% saturation)
+        #    - deterministic fixed numbers, PREVIEW stays raw.
+        if mode == "FINAL":
+            landed = []
+            try:
+                try:
+                    scn.render.use_compositing = True
+                except Exception:
+                    pass
+                # the CPU law: the GPU compositor needs a GL context,
+                # and this headless farm (and every render box like it)
+                # has none - the CPU compositor renders the same graph
+                try:
+                    scn.render.compositor_device = "CPU"
+                except Exception:
+                    pass
+                # 5.x: the scene's compositor is a CompositorNodeTree on
+                # compositing_node_group; 4.x kept Scene.node_tree. The
+                # old Composite output node is GONE in 5.x - the output
+                # is an interface socket + a NodeGroupOutput node.
+                tree = None
+                try:
+                    tree = scn.compositing_node_group
+                except Exception:
+                    tree = None
+                if tree is None:
+                    try:
+                        tree = scn.node_tree
+                    except Exception:
+                        tree = None
+                if tree is None:
+                    tree = bpy.data.node_groups.new("AnimeOSGrade", "CompositorNodeTree")
+                    scn.compositing_node_group = tree
+                tree.nodes.clear()
+                try:
+                    if not any(s.name == "Image" and s.in_out == "OUTPUT" for s in tree.interface.items_tree):
+                        tree.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+                except Exception:
+                    pass
+                rl = tree.nodes.new("CompositorNodeRLayers")
+                go = tree.nodes.new("NodeGroupOutput")
+                cur = rl
+                try:
+                    g = tree.nodes.new("CompositorNodeGlare")
+                    if _comp_set_sock(g, "Type", "Bloom"):
+                        _comp_set_sock(g, "Threshold", 1.0)
+                        _comp_set_sock(g, "Size", 8.0)
+                        _comp_set_sock(g, "Quality", "Medium")
+                        tree.links.new(cur.outputs["Image"], g.inputs[0])
+                        cur = g
+                        landed.append("bloom")
+                except Exception:
+                    pass
+                try:
+                    cb = tree.nodes.new("CompositorNodeColorBalance")
+                    _comp_set_sock(cb, "Lift", (0.98, 0.985, 1.02, 1.0))
+                    _comp_set_sock(cb, "Gain", (1.03, 1.0, 0.965, 1.0))
+                    tree.links.new(cur.outputs["Image"], cb.inputs[0])
+                    cur = cb
+                    landed.append("grade")
+                except Exception:
+                    pass
+                tree.links.new(cur.outputs["Image"], go.inputs[0])
+                if not landed:
+                    landed = ["skipped: no compositor node landed"]
+            except Exception as exc:  # noqa: BLE001
+                landed = [f"skipped: {exc}"]
+            state["render"]["grade"] = landed
+
         scn.render.resolution_x = out_w
         scn.render.resolution_y = out_h
         scn.render.resolution_percentage = 100

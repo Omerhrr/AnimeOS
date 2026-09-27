@@ -481,6 +481,7 @@ export interface BuilderRunResult {
   variationSummary: Record<string, unknown> | null;
   sculptSummary: Record<string, unknown> | null;
   retopoSummary: Record<string, unknown> | null;
+  paintSummary: Record<string, unknown> | null;
   objects: number;
   tris: number;
   outDir: string;
@@ -513,12 +514,12 @@ export async function runAssetBuilder(opts: {
 }): Promise<BuilderRunResult> {
   const bin = runtimeBlenderBin();
   if (!bin) {
-    return { ok: false, log: "no Blender binary - provision the runtime first", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, variationSummary: null, sculptSummary: null, retopoSummary: null, objects: 0, tris: 0, outDir: "" };
+    return { ok: false, log: "no Blender binary - provision the runtime first", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, variationSummary: null, sculptSummary: null, retopoSummary: null, paintSummary: null, objects: 0, tris: 0, outDir: "" };
   }
   fs.mkdirSync(opts.outDir, { recursive: true });
   const builder = path.join(process.cwd(), "bridges", "blender", "asset_builder.py");
   if (!fs.existsSync(builder)) {
-    return { ok: false, log: "asset_builder.py missing from bridges/blender", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, variationSummary: null, sculptSummary: null, retopoSummary: null, objects: 0, tris: 0, outDir: "" };
+    return { ok: false, log: "asset_builder.py missing from bridges/blender", blendPath: null, previewPath: null, loopPath: null, motionSummary: null, variationSummary: null, sculptSummary: null, retopoSummary: null, paintSummary: null, objects: 0, tris: 0, outDir: "" };
   }
   const argv = ["-b", "-P", builder, "--", "--kind", opts.kind, "--dna", opts.dnaPath, "--out", opts.outDir];
   if (opts.name) argv.push("--name", opts.name);
@@ -586,6 +587,15 @@ export async function runAssetBuilder(opts: {
       retopoSummary = null;
     }
   }
+  const paintRaw = parseBuilderMarker(run.out.replace(/\r/g, "\n"), "PAINT_SUMMARY");
+  let paintSummary: Record<string, unknown> | null = null;
+  if (paintRaw) {
+    try {
+      paintSummary = JSON.parse(paintRaw) as Record<string, unknown>;
+    } catch {
+      paintSummary = null;
+    }
+  }
   const objects = parseInt(parseBuilderMarker(run.out, "ASSET_OBJECTS") ?? "0", 10) || 0;
   const tris = parseInt(parseBuilderMarker(run.out, "ASSET_TRIS") ?? "0", 10) || 0;
   const err = parseBuilderMarker(run.out, "ASSET_ERROR");
@@ -601,6 +611,7 @@ export async function runAssetBuilder(opts: {
     variationSummary,
     sculptSummary,
     retopoSummary,
+    paintSummary,
     objects,
     tris,
     outDir: opts.outDir,

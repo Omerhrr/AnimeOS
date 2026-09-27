@@ -2455,7 +2455,10 @@ async function executeToolInner(
           : kindRaw === "CHARACTER"
             ? " Every render job of this exact cast now loads this asset instead of rebuilding procedural stand-ins."
             : " Every render job of this exact environment now loads this asset.";
-        return { status: "OK", result: `DESIGNED ${kindRaw.toLowerCase()} asset built and accepted into the library: ${refName} v${res.version} - ${res.objects} objects, ${res.tris.toLocaleString()} tris, ${(res.buildMs / 1000).toFixed(1)}s in the Blender runtime${guidance ? ` (guidance recorded: "${guidance}")` : ""}.${rideHint} Next professional step: design_audit on it, then design_fix for whatever it finds.${inspectHint}` };
+        const paintClause = typeof res.paintMaps === "number" && res.paintMaps > 0
+          ? `, painted (${res.paintMaps} surface maps)`
+          : "";
+        return { status: "OK", result: `DESIGNED ${kindRaw.toLowerCase()} asset built and accepted into the library: ${refName} v${res.version} - ${res.objects} objects, ${res.tris.toLocaleString()} tris${paintClause}, ${(res.buildMs / 1000).toFixed(1)}s in the Blender runtime${guidance ? ` (guidance recorded: "${guidance}")` : ""}.${rideHint} Next professional step: design_audit on it, then design_fix for whatever it finds.${inspectHint}` };
       }
 
       case "blender_asset_inspect": {

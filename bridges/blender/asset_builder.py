@@ -165,6 +165,7 @@ def main():
     import motion_rig
     import variation_nodes
     import sculpt_pass
+    import paint_pass
 
     scn = bpy.context.scene
 
@@ -347,6 +348,16 @@ def main():
         if rsum is None:
             fail(f"retopo pass failed: {rerr}")
         print(f"RETOPO_SUMMARY {json.dumps(rsum)}", flush=True)
+
+    # THE SKIN IS PAINTED (iteration 73): every character / prop /
+    # creature build ships with painted surface maps (deterministic,
+    # painted FROM the law colors), box UVs and the shader upgrades
+    # (skin subsurface, cloth sheen). The flat-color look is gone.
+    if kind in ("CHARACTER", "PROP", "CREATURE") and not from_blend:
+        psum, perr = paint_pass.apply_paint(bpy, scn, out_dir, slug, seed_text=f"{kind}:{slug}")
+        if psum is None:
+            fail(f"paint pass failed: {perr}")
+        print(f"PAINT_SUMMARY {json.dumps(psum)}", flush=True)
 
     obj_count = len(scn.objects)
     tris = 0

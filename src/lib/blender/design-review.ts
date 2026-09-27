@@ -130,6 +130,7 @@ function localAudit(asset: {
     variation?: { name?: string; kind?: string; instances?: number } | null;
     sculpt?: { name?: string; meanMove?: number; roughnessRatio?: number; applied?: boolean } | null;
     retopo?: { budget?: number; verified?: boolean; driftPct?: number } | null;
+    paint?: { maps?: unknown[]; uvs?: number; wired?: number } | null;
     dna?: { archetype?: string } | null;
   };
   let meta: AssetMeta | null = null;
@@ -252,7 +253,7 @@ function localAudit(asset: {
   }
   const note = asset.status !== "READY"
     ? "the asset is not in an accepted state"
-    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}${asset.motionPreset && loopOnDisk ? ", performing" : asset.motionPreset ? ", motion unbaked" : ", motionless"}${gnApplied ? ", varied (GN)" : asset.kind === "ENVIRONMENT" ? ", wallpaper" : ""}${sculptApplied ? ", sculpted" : asset.kind === "ENVIRONMENT" || asset.kind === "CREATURE" ? ", unfinished surface" : ""}${meta?.retopo?.verified ? ", retopo verified" : ""}`;
+    : `local audit: ${objects} objects, ${tris.toLocaleString()} tris, ${(bytes / 1024).toFixed(0)}KB preview${meta?.lightingRig ? ", designed rig" : ", default rig"}${asset.motionPreset && loopOnDisk ? ", performing" : asset.motionPreset ? ", motion unbaked" : ", motionless"}${gnApplied ? ", varied (GN)" : asset.kind === "ENVIRONMENT" ? ", wallpaper" : ""}${sculptApplied ? ", sculpted" : asset.kind === "ENVIRONMENT" || asset.kind === "CREATURE" ? ", unfinished surface" : ""}${meta?.retopo?.verified ? ", retopo verified" : ""}${meta?.paint && Array.isArray((meta.paint as { maps?: unknown[] }).maps) ? `, painted (${(meta.paint as { maps: unknown[] }).maps.length} maps, ${(meta.paint as { uvs?: number }).uvs ?? 0} uv meshes)` : ""}`;
   return { criteria, overall, note, provider: "local", issues };
 }
 

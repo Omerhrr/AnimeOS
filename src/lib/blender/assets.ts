@@ -50,6 +50,7 @@ export interface BuildAssetResult {
   tris: number;
   buildMs: number;
   log: string;
+  paintMaps: number | null;
 }
 
 function slugOf(name: string): string {
@@ -152,14 +153,14 @@ export async function buildBlenderAsset(
   if (!runtimeBlenderBin()) {
     return {
       ok: false, assetId: "", version: 0, status: "FAILED", blendPath: null, previewPath: null,
-      objects: 0, tris: 0, buildMs: 0, log: "no Blender binary - provision the runtime first",
+      objects: 0, tris: 0, buildMs: 0, paintMaps: null, log: "no Blender binary - provision the runtime first",
     };
   }
   const resolved = await designDnaFor(projectId, kind, refName);
   if (!resolved.ok) {
     return {
       ok: false, assetId: "", version: 0, status: "FAILED", blendPath: null, previewPath: null,
-      objects: 0, tris: 0, buildMs: 0, log: resolved.error,
+      objects: 0, tris: 0, buildMs: 0, paintMaps: null, log: resolved.error,
     };
   }
   const project = await db.project.findUnique({ where: { id: projectId }, select: { title: true } });
@@ -172,7 +173,7 @@ export async function buildBlenderAsset(
   if (presets?.planName && !sculptPlan) {
     return {
       ok: false, assetId: "", version: 0, status: "NOT_BUILT", blendPath: null,
-      previewPath: null, objects: 0, tris: 0, buildMs: 0,
+      previewPath: null, objects: 0, tris: 0, buildMs: 0, paintMaps: null,
       log: `sculpt plan '${presets.planName}' not found in this production - plan one first (plan_sculpt) or pass sculpt:<design_sculpt preset>`,
     };
   }
@@ -229,7 +230,7 @@ export async function buildBlenderAsset(
     if (kind === "CHARACTER" || kind === "ENVIRONMENT") {
       return {
         ok: false, assetId: "", version: 0, status: "FAILED", blendPath: null, previewPath: null,
-        objects: 0, tris: 0, buildMs: 0,
+        objects: 0, tris: 0, buildMs: 0, paintMaps: null,
         log: `motion presets apply to PROP and CREATURE assets - a ${kind.toLowerCase()} ${kind === "CHARACTER" ? "performs through the directed pose system" : "is static by design"}`,
       };
     }
@@ -337,7 +338,7 @@ export async function buildBlenderAsset(
     await landDesignEvent(projectId, `Blender asset build FAILED for ${kind.toLowerCase()} ${refName}`, { error: run.log.slice(-600) });
     return {
       ok: false, assetId: updated.id, version, status: "FAILED", blendPath: null,
-      previewPath: null, objects: run.objects, tris: run.tris, buildMs, log: run.log,
+      previewPath: null, objects: run.objects, tris: run.tris, buildMs, paintMaps: null, log: run.log,
     };
   }
 
@@ -369,6 +370,7 @@ export async function buildBlenderAsset(
     sculpt: sculptPreset
       ? { name: sculptPreset.name, ...(sculptPlan ? { plan: sculptPlan.name } : {}), ...run.sculptSummary, applied: true }
       : null,
+    paint: run.paintSummary,
     objects: run.objects,
     tris: run.tris,
     buildMs,
@@ -395,8 +397,8 @@ export async function buildBlenderAsset(
   });
   await landDesignEvent(
     projectId,
-    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""}${variationPreset ? `, varied '${variationPreset.name}'` : ""}${sculptPreset ? `, sculpted '${sculptPreset.name}'` : ""})`,
-    { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null, variation: variationPreset?.name ?? null, sculpt: sculptPreset?.name ?? null },
+    `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""}${variationPreset ? `, varied '${variationPreset.name}'` : ""}${sculptPreset ? `, sculpted '${sculptPreset.name}'` : ""}${run.paintSummary && Array.isArray((run.paintSummary as { maps?: unknown[] }).maps) ? `, painted (${(run.paintSummary as { maps: unknown[] }).maps.length} maps)` : ""})`,
+    { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null, variation: variationPreset?.name ?? null, sculpt: sculptPreset?.name ?? null, painted: Boolean(run.paintSummary) },
   );
   // THE MEMORY GROWS: a plan-driven carve appends what the pass
   // MEASURED to the plan's record - verified or not, the honest way
@@ -413,6 +415,9 @@ export async function buildBlenderAsset(
   return {
     ok: true, assetId: updated.id, version, status: "READY", blendPath: finalBlend,
     previewPath: updated.previewPath, objects: run.objects, tris: run.tris, buildMs, log: run.log,
+    paintMaps: run.paintSummary && Array.isArray((run.paintSummary as { maps?: unknown[] }).maps)
+      ? (run.paintSummary as { maps: unknown[] }).maps.length
+      : null,
   };
 }
 
