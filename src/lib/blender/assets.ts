@@ -5,6 +5,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { characterDesignDna, environmentDna, propDna, creatureDna } from "@/lib/animation/design";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import { runAssetBuilder, runtimeBlenderBin } from "@/lib/blender/runtime";
+import { currentActorId } from "@/lib/dsh/actor-context";
 import type { MotionSpec } from "@/lib/blender/motion";
 import type { VariationSpec } from "@/lib/blender/variation";
 import type { SculptSpec } from "@/lib/blender/sculpt";
@@ -63,6 +64,9 @@ export async function landDesignEvent(projectId: string, summary: string, payloa
       type: "PROJECT",
       summary,
       payload: JSON.stringify(payload).slice(0, 4000),
+      // MEMBER ATTRIBUTION (iteration 68): the member driving the
+      // tool that landed this event (empty store = the studio itself)
+      userId: currentActorId(),
     },
   }).catch(() => {});
 }

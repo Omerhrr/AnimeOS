@@ -11,6 +11,7 @@ export type StudioView =
   | "comic"
   | "timeline"
   | "manifest"
+  | "calendar"
   | "render"
   | "reviews"
   | "continuity"

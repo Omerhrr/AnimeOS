@@ -178,7 +178,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A13 the registry stands at 80 tools (the aligner extends the mouth, it adds no tool)", toolCount === 80, `count=${toolCount}`);
+  check("A13 the registry stands at 81 tools (the aligner extends the mouth, it adds no tool)", toolCount === 81, `count=${toolCount}`);
 
   // ───────────────────── B. the pure aligner over a REAL synthesized WAV ─────────────────────
   const bursts = [300, 700, 1100, 1500];
@@ -310,7 +310,7 @@ async function main() {
   if (report?.phonemeTimeline) {
     const t = report.phonemeTimeline;
     check("D9 the persisted timeline carries millisecond phoneme windows", t.units.length >= 4 && t.units.every((u) => u.eMs > u.sMs && typeof u.o === "number"), JSON.stringify(t.units.slice(0, 3)));
-    check("D10 the persisted words sit on the planted bursts", t.words.length === 4 && t.words.every((w, i) => Math.abs((w.sMs + w.eMs) / 2 - bursts[i]) <= 130), JSON.stringify(t.words));
+    check("D10 the persisted words sit on the planted bursts (the timeline is CUE time: take time + startMs 200)", t.words.length === 4 && t.words.every((w, i) => Math.abs((w.sMs + w.eMs) / 2 - (bursts[i] + 200)) <= 130), JSON.stringify(t.words));
     check("D11 the persisted note is honest about the placement", t.note.length > 0 && (t.note.includes("anchors") || t.note.includes("proportional")), t.note);
   } else {
     check("D9 the audit records the refused plan honestly", !!report && typeof report.note === "string" && report.note.length > 0, report?.note ?? "no report");

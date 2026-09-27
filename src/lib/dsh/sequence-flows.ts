@@ -65,6 +65,11 @@ export interface SequenceFlowSlot {
    * gusty grammar). Validated at design time against the compiled
    * grammar's beat count - a typo never reaches a shoot. */
   wind?: Array<number | null> | number | null;
+  /** The slot's SOLVER call (iteration 68): a number 0..1 that scales
+   * the cloth solver's ANSWER for the whole shot - the directed air,
+   * the beat impulse, the stagger sway - never its physics. A per-shot
+   * answer, not a per-beat gust; absent = the full probed response. */
+  cloth?: number | null;
 }
 
 export interface SequenceFlowSpec {
@@ -256,6 +261,39 @@ export function formatSlotWind(wind: Array<number | null> | number | null): stri
   const n = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""));
   if (Array.isArray(wind)) return `wind [${wind.map((w) => (w === null ? "keep" : n(w))).join(",")}]`;
   return `wind ${wind === null ? "-" : n(wind)}`;
+}
+
+// ── THE SLOT'S SOLVER CALL (iteration 68 - per-shot solver
+//    intensity at sequence scale) ──
+// The cloth solver answers the air the sentence calls; its INTENSITY
+// is itself directable. A CLOTH call is one number 0..1 per shot that
+// scales the solver's ANSWER - the directed air, the beat impulse,
+// the stagger sway - never its physics (mass, stiffness and the pin
+// law stay probed). Absent = the full probed response; 0 is a
+// stillness call (the anchors hold, the solver settles the garment).
+// It is deliberately NOT per-beat: the wind call is the per-beat
+// gust, the cloth call is the whole shot's answer.
+
+export function compileSlotCloth(
+  input: unknown,
+  label: string,
+): { ok: true; cloth: number | null } | { ok: false; error: string } {
+  if (input === undefined || input === null || input === "") return { ok: true, cloth: null };
+  if (Array.isArray(input)) {
+    return { ok: false, error: `${label}: a CLOTH call is one number 0..1 for the whole shot - the solver's intensity is a per-shot answer, not a per-beat gust (the wind call is the per-beat one)` };
+  }
+  const c = Number(input);
+  if (!Number.isFinite(c)) {
+    return { ok: false, error: `${label}: cloth must be a number 0..1 (got ${String(input)})` };
+  }
+  return { ok: true, cloth: Math.max(0, Math.min(1, c)) };
+}
+
+/** Format a solver call for the flow read (absent formats empty). */
+export function formatSlotCloth(cloth: number | null): string {
+  if (cloth === null || cloth === undefined) return "";
+  const n = Number.isInteger(cloth) ? String(cloth) : cloth.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return `cloth ${n}`;
 }
 
 export function parseSlots(raw: string | null | undefined): SequenceFlowSlot[] {

@@ -266,6 +266,11 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // per frame under the probed law (a corrupt column degrades
         // to no physics - an honest clean stage)
         ...(shot.physics ? (() => { try { const ph = JSON.parse(shot.physics); return Array.isArray(ph) && ph.length > 0 ? { physics: ph } : {}; } catch { return {}; } })() : {}),
+        // PER-SHOT SOLVER INTENSITY (iteration 68): the shot's CLOTH
+        // call rides the payload - the worker scales the cloth solver's
+        // ANSWER (the directed air, the beat impulse) to the directed
+        // intensity; absent = the full probed response
+        ...(typeof shot.cloth === "number" ? { cloth: shot.cloth } : {}),
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),

@@ -45,6 +45,14 @@ KICK_DAMP = 7.0
 KICK_MAX = 0.35
 STAGGER_ANGLE = 0.45    # the body's jerk sways the anchors
 
+# v10.1 THE SOLVER ANSWERS THE CALL: the director's per-shot CLOTH
+# call (a number 0..1) scales the solver's ANSWER - the directed air,
+# the beat impulse, the stagger sway - never its physics (mass,
+# stiffness and the pin law stay probed). Absent = 1.0, the full
+# probed response; 0 is a stillness call (the anchors hold, the
+# solver still settles the garment under gravity). Deterministic:
+# the same call on the same grammar always lands the same cloth.
+
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -154,27 +162,37 @@ def build_cloth_rig(bpy, scn, figure, chains, frames_total):
     return {"parts": parts, "notes": notes, "prev_beat": -1, "max_sway": 0.0}
 
 
-def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick):
+def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick, intensity=1.0):
     """Drive every part's anchor bone for this frame with the SAME
     deterministic air the springs ride: the beat's wind call and
     blocking energy, a phased per-part gust (the panels never flap in
     lockstep), the beat-boundary impulse through a damped anchor
-    spring, and the body's published stagger jerk."""
+    spring, and the body's published stagger jerk.
+
+    v10.1: the director's CLOTH call (intensity 0..1) scales the
+    solver's ANSWER - every directed term answers at the called
+    intensity; the solver's physics stay probed law. A stillness call
+    (0) holds the anchors near rest while the solver settles the
+    garment under gravity - stillness, not a frozen cache."""
     if not rig or not rig["parts"]:
         return
+    intensity = clamp(float(intensity), 0.0, 1.0)
     if beat_idx != rig["prev_beat"]:
         if rig["prev_beat"] >= 0:
             kick = max(kick, 0.3)   # a cut stirs the air - same as the springs
         rig["prev_beat"] = beat_idx
+    kick = kick * intensity   # the call scales the impulse too
     stg = figure.get("_stagger") if figure else None
-    jerk = min(1.0, float((stg or {}).get("jerk") or 0.0) / 1.4)
+    jerk = min(1.0, float((stg or {}).get("jerk") or 0.0) / 1.4) * intensity
     svx = float((stg or {}).get("vx") or 0.0)
-    drive = wind * 1.45 + agit * 0.45 + 0.12   # ambient life: holds never freeze
+    drive = (wind * 1.45 + agit * 0.45 + 0.12) * intensity   # ambient life answers the call too
     for p in rig["parts"]:
         gain, phase = p["gain"], p["phase"]
         # the directed air: the held call plus the per-part gust
-        ax = wind * 0.9 * gain + drive * gain * 0.10 * (1.0 + math.sin(t_sec * 2.4 + phase))
-        ay = 0.35 * gain * math.sin(t_sec * 1.7 + phase) * (0.3 + wind)
+        # (every term answers at the called intensity - the wind's
+        # direct pull, the gust's amplitude, the lateral breath)
+        ax = wind * intensity * 0.9 * gain + drive * gain * 0.10 * (1.0 + math.sin(t_sec * 2.4 + phase))
+        ay = 0.35 * gain * math.sin(t_sec * 1.7 + phase) * (0.3 + wind * intensity)
         # the beat-boundary impulse through the anchor spring
         p["kv"] += kick * gain * KICK_IMPULSE * (0.7 + 0.3 * math.sin(phase))
         p["kv"] += (-KICK_STIFF * p["ka"] - KICK_DAMP * p["kv"]) * dt
@@ -184,7 +202,7 @@ def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick):
         # the body answers the violence: the stagger sways the anchors
         if jerk > 0.0:
             ax += jerk * STAGGER_ANGLE * gain * (0.7 + 0.3 * math.sin(phase))
-            ay += min(0.3, abs(svx) * 0.5) * gain
+            ay += min(0.3, abs(svx) * 0.5) * intensity * gain
         ax = clamp(ax, -ANCHOR_MAX, ANCHOR_MAX)
         ay = clamp(ay, -ANCHOR_MAX * 0.6, ANCHOR_MAX * 0.6)
         to_h = Matrix.Translation(p["head"])

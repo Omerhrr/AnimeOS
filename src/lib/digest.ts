@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { canonHealthData } from "@/lib/canon-health";
 import { identityDriftData } from "@/lib/identity";
+import { buildMemberDigest } from "@/lib/studio/member-digests";
+import { presenceBucket } from "@/lib/studio/presence";
 
 // ─────────────────────────────────────────────────────────────
 // DAILY DIGEST - the studio writes to the creator
@@ -243,6 +245,57 @@ export interface DigestRow {
   events: number;
   createdAt: string;
   deliveries: Array<{ kind: string; target: string; ok: boolean; detail: string }>;
+}
+
+/** Post ONE MEMBER's digest as a DIGEST production event (iteration
+ * 68): the same honest ledger read the daily digest keeps, scoped to
+ * the member's attributed events and their crew-thread comments.
+ * A quiet member is reported honestly - a digest is never invented. */
+export async function postMemberDigest(
+  projectId: string,
+  memberRef: string,
+  windowHours = DIGEST_WINDOW_HOURS,
+): Promise<{ ok: true; digest: ReturnType<typeof buildMemberDigest> } | { ok: false; error: string }> {
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, title: true } });
+  if (!project) return { ok: false, error: "Production not found" };
+  if (!memberRef.trim()) return { ok: false, error: "name the member (name or email)" };
+  const member = await db.user.findFirst({
+    where: { OR: [{ email: { equals: memberRef.trim() } }, { name: { equals: memberRef.trim() } }] },
+    select: { id: true, name: true, role: true, lastSeenAt: true },
+  });
+  if (!member) {
+    return { ok: false, error: `no member named '${memberRef.trim()}' in the studio roster` };
+  }
+  const hours = Math.min(168, Math.max(1, Math.round(windowHours) || DIGEST_WINDOW_HOURS));
+  const now = new Date();
+  const since = new Date(now.getTime() - hours * 3_600_000);
+  const [events, commentCount] = await Promise.all([
+    db.productionEvent.findMany({
+      where: { projectId, userId: member.id, createdAt: { gte: since } },
+      orderBy: { createdAt: "asc" as const },
+      select: { type: true, summary: true, payload: true, createdAt: true },
+      take: 1000,
+    }),
+    db.comment.count({ where: { projectId, authorId: member.id, createdAt: { gte: since } } }),
+  ]);
+  const digest = buildMemberDigest({
+    member: { name: member.name, role: member.role },
+    events: events.map((e) => ({ type: e.type, summary: e.summary, createdAt: e.createdAt, payload: e.payload })),
+    comments: commentCount,
+    windowHours: hours,
+    now,
+  });
+  await db.productionEvent.create({
+    data: {
+      projectId,
+      actor: "SYSTEM",
+      type: "DIGEST",
+      summary: `${digest.headline.slice(0, 300)}`,
+      payload: JSON.stringify({ text: digest.lines.join("\n"), windowHours: hours, events: digest.events, member: member.name, presence: presenceBucket(member.lastSeenAt, now), memberDigest: true }),
+      userId: member.id,
+    },
+  });
+  return { ok: true, digest };
 }
 
 /** The digest panel's feed: the most recent posted digests. */

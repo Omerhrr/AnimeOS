@@ -67,6 +67,7 @@ export async function GET(req: Request) {
                         poseEnd: true,
                         fx: true,
                         physics: true,
+                        cloth: true,
                       },
                     },
                   },
@@ -150,6 +151,7 @@ export async function GET(req: Request) {
             poseEnd: sh.poseEnd,
             fx: parseJson<FxRow>(sh.fx).map((p) => ({ kind: p.kind, intensity: p.intensity })),
             physics: parseJson<PhysRow>(sh.physics).map((p) => ({ kind: p.kind, intensity: p.intensity })),
+            cloth: typeof sh.cloth === "number" ? sh.cloth : null,
             render: latestByShot.get(sh.id) ?? null,
           };
         }),

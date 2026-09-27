@@ -679,6 +679,7 @@ export interface ManifestShot {
   poseEnd: string | null;
   fx: Array<{ kind: string; intensity?: number }>;
   physics: Array<{ kind: string; intensity?: number }>;
+  cloth?: number | null;
   render: { id: string; status: string; mode: string; attempt: number } | null;
 }
 export interface ManifestScene {
@@ -775,6 +776,76 @@ export interface CrewView {
   candidates: Array<{ id: string; name: string; email: string; role: string }>;
 }
 
+// ── STUDIO FLOOR (iteration 68): presence + member digests ──
+export type PresenceBucketType = "online" | "recent" | "away" | "offline";
+
+export interface PresenceMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  lastSeenAt: string | null;
+  bucket: PresenceBucketType;
+  label: string;
+  seats: Array<{ projectId: string; projectTitle: string; craft: string }>;
+}
+
+export interface PresenceFeed {
+  now: string;
+  counts: { online: number; recent: number };
+  members: PresenceMember[];
+}
+
+export interface MemberDigestRow {
+  id: string;
+  email: string;
+  role: string;
+  craft: string | null;
+  onCrew: boolean;
+  bucket: PresenceBucketType;
+  digest: {
+    name: string;
+    role: string;
+    headline: string;
+    lines: string[];
+    toolCalls: number;
+    comments: number;
+    events: number;
+    quiet: boolean;
+  };
+}
+
+export interface MemberDigestFeed {
+  now: string;
+  windowHours: number;
+  members: MemberDigestRow[];
+}
+
+// ── THE RELEASE CALENDAR (iteration 68) ──
+export interface ReleaseEpisode {
+  id: string;
+  seasonNumber: number;
+  number: number;
+  title: string;
+  synopsis: string | null;
+  status: string;
+  releaseAt: string | null;
+  releasePlatform: string | null;
+  daysUntil: number | null;
+  state: "UNSCHEDULED" | "DUE" | "SLATED";
+  sceneCount: number;
+  shotCount: number;
+  approvedShots: number;
+}
+
+export interface ReleaseCalendar {
+  now: string;
+  episodes: ReleaseEpisode[];
+  slated: ReleaseEpisode[];
+  due: ReleaseEpisode[];
+  unscheduled: ReleaseEpisode[];
+}
+
 export const api = {
   // queries
   projects: () => j<ProjectSummary[]>("/api/projects"),
@@ -782,6 +853,11 @@ export const api = {
   emphasis: (projectId?: string | null) =>
     j<StudioEmphasis>(`/api/studio/emphasis${projectId ? `?projectId=${projectId}` : ""}`),
   crew: (projectId: string) => j<CrewView>(`/api/projects/${projectId}/members`),
+  presence: () => j<PresenceFeed>("/api/studio/presence"),
+  memberDigests: (projectId: string, hours = 24) => j<MemberDigestFeed>(`/api/studio/digests?projectId=${projectId}&hours=${hours}`),
+  releases: (projectId: string) => j<ReleaseCalendar>(`/api/releases?projectId=${projectId}`),
+  setRelease: (body: { episodeId: string; releaseAt?: string; releasePlatform?: string | null }) =>
+    j<{ id: string; releaseAt: string | null; releasePlatform: string | null }>("/api/releases", { method: "PATCH", body: JSON.stringify(body) }),
   addCrewMember: (projectId: string, body: { userId: string; craft?: string }) =>
     j<{ note?: string }>(`/api/projects/${projectId}/members`, { method: "POST", body: JSON.stringify(body) }),
   patchCraft: (projectId: string, body: { userId: string; craft: string }) =>

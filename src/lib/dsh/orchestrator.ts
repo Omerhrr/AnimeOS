@@ -99,6 +99,7 @@ export async function runDshTurn(
               type: "PROJECT",
               summary: `Created by DSH directing '${projectTitleOf(outcome.result)}'${user ? ` - ${user.name} leads its crew (DIRECTING)` : ""}; conversation continues from the turn's home production`,
               payload: JSON.stringify({ bornFrom, by: user?.id ?? null, tool: "create_project" }),
+              userId: user?.id ?? null,
             },
           }).catch(() => null);
         }
@@ -123,6 +124,9 @@ export async function runDshTurn(
           type: "TOOL_CALL",
           summary: `${action.tool} → ${outcome.result.split("\n")[0].slice(0, 180)}`,
           payload: JSON.stringify({ tool: action.tool, args: action.args, status: outcome.status }),
+          // MEMBER ATTRIBUTION (iteration 68): the member whose turn
+          // this is drove every tool call in it
+          userId: user?.id ?? null,
         },
       });
     }

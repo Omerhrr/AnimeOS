@@ -125,7 +125,7 @@ async function main() {
   check("A4 the stack order is Armature -> Subsurf -> Cloth", pass.indexOf('"AirAnchor", "ARMATURE"') < pass.indexOf('"Subd", "SUBSURF"') && pass.indexOf('"Subd", "SUBSURF"') < pass.indexOf('"Cloth", "CLOTH"'));
   check("A5 the pin and deform groups pin the same band (weight 1)", pass.includes('pin.add([v.index], 1.0, "REPLACE")') && pass.includes('air.add([v.index], 1.0, "REPLACE")') && pass.includes('st.vertex_group_mass = "Pin"'));
   check("A6 honest refusals keep the spring (coarse geometry, no height, already solved)", pass.includes("too coarse to solve") && pass.includes("has no height to pin") && pass.includes("already carries a solver"));
-  check("A7 the air model is the springs' own (the wind call, the drive, the stagger)", pass.includes("drive = wind * 1.45 + agit * 0.45 + 0.12") && pass.includes("figure.get(\"_stagger\")") && pass.includes("STAGGER_ANGLE * gain"));
+  check("A7 the air model is the springs' own (the wind call, the drive, the stagger)", pass.includes("drive = (wind * 1.45 + agit * 0.45 + 0.12) * intensity") && pass.includes("figure.get(\"_stagger\")") && pass.includes("STAGGER_ANGLE * gain"));
   check("A8 the anchors are deterministic (explicit matrices about the hang point)", pass.includes("Matrix.Rotation(ax, 4, \"X\") @ Matrix.Rotation(ay, 4, \"Y\")") && pass.includes("to_h.inverted()"));
 
   const bridge = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
@@ -143,7 +143,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A15 the registry stands at 80 tools (the solver extends the render, it adds no tool)", toolCount === 80, `count=${toolCount}`);
+  check("A15 the registry stands at 81 tools (the solver extends the render, it adds no tool)", toolCount === 81, `count=${toolCount}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A16 the curriculum grew THE CLOTH IS SOLVED", prompts.includes("- THE CLOTH IS SOLVED") && prompts.includes("a robe that answers nothing is a costume"));

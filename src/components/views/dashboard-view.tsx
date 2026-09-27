@@ -3,14 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Link2, MonitorPlay, Users, Film, ArrowRight, ShieldCheck, ShieldX,
-  Clapperboard, Palette, Mic2, MessagesSquare, Radio, Crown, UserCog,
+  Clapperboard, Palette, Mic2, MessagesSquare, Radio, Crown, UserCog, RadioTower,
 } from "lucide-react";
-import { api, parseFindings, type StudioEmphasis, type Craft } from "@/lib/api-client";
+import { api, parseFindings, type StudioEmphasis, type Craft, type PresenceBucketType, type MemberDigestRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatCard, StatusBadge } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 const CRAFT_CHIP: Record<Craft, { label: string; icon: typeof Clapperboard; cls: string; blurb: string }> = {
   DIRECTING: { label: "Directing lens", icon: Film, cls: "text-amber-300 border-amber-400/30 bg-amber-400/10", blurb: "Story funnel, DSH direction and the gate - your slate leads." },
@@ -34,6 +35,71 @@ function CraftChip({ emphasis }: { emphasis: StudioEmphasis }) {
     <span className={`inline-flex items-center gap-1.5 text-[10px] tracking-widest uppercase px-2 py-1 rounded border ${lens.cls}`}>
       <UserCog className="h-3 w-3" /> {lens.label}
     </span>
+  );
+}
+
+/** The studio floor (iteration 68): presence + member digests - who
+ * is in the room and what each member actually caused in the window.
+ * Polling this panel IS the heartbeat: the presence endpoint touches
+ * the caller on every read, so the floor stays live by being read. */
+const DOT: Record<PresenceBucketType, string> = {
+  online: "bg-emerald-400",
+  recent: "bg-amber-400",
+  away: "bg-zinc-500",
+  offline: "bg-zinc-700",
+};
+
+function StudioFloorPanel({ projectId }: { projectId: string | null }) {
+  const digestsQ = useQuery({
+    queryKey: ["studio-floor", projectId],
+    queryFn: () => api.memberDigests(projectId!),
+    enabled: Boolean(projectId),
+    refetchInterval: 60_000,
+  });
+  const presenceQ = useQuery({
+    queryKey: ["studio-presence"],
+    queryFn: () => api.presence(),
+    refetchInterval: 60_000,
+  });
+  const rows = digestsQ.data?.members ?? [];
+  const online = presenceQ.data?.counts.online ?? 0;
+  const bucketOf = new Map((presenceQ.data?.members ?? []).map((m) => [m.id, m.bucket as PresenceBucketType]));
+  return (
+    <div className="studio-panel p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <RadioTower className="h-4 w-4 text-primary" /> Studio floor
+        </h3>
+        <span className="text-[10px] text-muted-foreground uppercase tracking-widest">
+          {online} at the bench · last {digestsQ.data?.windowHours ?? 24}h
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">The roster is empty - invite the crew from the avatar menu.</p>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {rows.map((m: MemberDigestRow) => {
+            const bucket = bucketOf.get(m.id) ?? m.bucket;
+            return (
+              <div key={m.id} className="rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", DOT[bucket])} title={bucket} />
+                  <span className="text-xs font-medium truncate">{m.digest.name}</span>
+                  <span className="text-[9px] px-1 py-0.5 rounded border border-white/10 bg-white/5 text-muted-foreground shrink-0">{m.role}</span>
+                  {m.craft && <span className="text-[9px] text-violet-300 shrink-0">{m.craft.toLowerCase()}</span>}
+                </div>
+                <div className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                  {m.digest.headline.replace(/^.*? - /, "")}
+                  {!m.digest.quiet && m.digest.lines.slice(0, 2).map((l, i) => (
+                    <div key={i} className="truncate">· {l}</div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -341,6 +407,9 @@ export function DashboardView() {
           {showReview && <ReviewPanel emphasis={emphasis} />}
         </div>
       )}
+
+      {/* The studio floor: presence + member digests (crew-readable) */}
+      <StudioFloorPanel projectId={projectId} />
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Active renders */}

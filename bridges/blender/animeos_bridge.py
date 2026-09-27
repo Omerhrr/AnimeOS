@@ -2400,6 +2400,17 @@ def worker_run(job_file):
         #    springs. The air model drives the parts' anchor bones per
         #    frame and the solver answers with real folds and lag. ──
         cloth_rig = None
+        # v10.1 THE SOLVER ANSWERS THE CALL: the shot's CLOTH call (a
+        # number 0..1) scales the solver's ANSWER - the directed air,
+        # the beat impulse, the stagger sway - never its physics.
+        # Absent = 1.0, the full probed response; a corrupt value
+        # degrades honestly to the full response.
+        cloth_call = shot.get("cloth")
+        cloth_intensity = 1.0
+        cloth_called = False
+        if isinstance(cloth_call, (int, float)) and not isinstance(cloth_call, bool):
+            cloth_intensity = max(0.0, min(1.0, float(cloth_call)))
+            cloth_called = True
         if sec_chains and figure:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import cloth_pass
@@ -2413,6 +2424,8 @@ def worker_run(job_file):
                     "simmed": simmed,
                     "springs": springs,
                 }
+                if cloth_called:
+                    solver["clothCall"] = round(cloth_intensity, 3)
                 if cloth_rig["notes"]:
                     solver["notes"] = list(cloth_rig["notes"])
                 state.setdefault("secondary", {"chains": len(sec_chains)})["solver"] = solver
@@ -2626,10 +2639,11 @@ def worker_run(job_file):
                                        t, t_sec, 1.0 / fps, pose_s, pose_e, pose_t)
             if cloth_rig and cloth_rig["parts"]:
                 # v10.0: THE CLOTH IS SOLVED - the same air steers the
-                # simmed parts' anchor bones; the solver weaves the cloth
+                # simmed parts' anchor bones; the solver weaves the cloth.
+                # v10.1: the shot's CLOTH call scales the answer.
                 sec_kick = float(((figure.get("_sec") or {}).get("last_kick")) or 0.0) if figure else 0.0
                 cloth_pass.apply_cloth_frame(cloth_rig, figure, t_sec, 1.0 / fps,
-                                             fbi, fwind, fagit, sec_kick)
+                                             fbi, fwind, fagit, sec_kick, cloth_intensity)
             if fx_rig:
                 fx_pass.apply_fx(fx_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel)
             boost = 0.0
