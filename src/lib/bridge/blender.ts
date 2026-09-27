@@ -222,6 +222,14 @@ interface CharacterDesignDnaWire {
   bladeColor: string;
   build: string;
   beard?: boolean;
+  // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
+  // measured into a palette and planned into bounded material pulls
+  sheetConformance?: {
+    characterName: string;
+    palette: string[];
+    rows: Array<{ role: string; mat: string; from: string; to: string; delta: number; skipped?: string }>;
+    note?: string;
+  };
 }
 interface EnvironmentDesignDnaWire {
   name: string;

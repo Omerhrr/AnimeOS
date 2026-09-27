@@ -33,6 +33,10 @@ export interface CharacterDesignDna {
   beard: boolean;
   /** The design text the DNA was compiled from (audit trail). */
   source: string;
+  /** v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
+   *  measured into a palette and planned into bounded material pulls
+   *  (only the hero's entry carries one). */
+  sheetConformance?: import("@/lib/blender/sheet-palette").SheetConformance;
 }
 
 export type TerrainKind = "terrace" | "peak" | "forest" | "gorge" | "temple";

@@ -2273,6 +2273,51 @@ def worker_run(job_file):
                 "hairStyle": str(hero.get("hairStyle") or "short"),
                 "weapon": str(hero.get("weaponType") or "none"),
             }
+
+            # ── v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical
+            #    model sheet is COLOR LAW over the DNA defaults - the
+            #    payload's planned pulls recolor the named materials
+            #    (RobeMat/AccentMat/HairMat/BootsMat) whether the figure
+            #    was built procedurally or loaded as the designed asset
+            #    (the sheet is what identity is scored against; the
+            #    recipes' other parameters stay untouched). Skipped rows
+            #    are named honestly. ──
+            conf = None
+            cast_p = shot.get("cast") or []
+            if isinstance(cast_p, list) and cast_p and isinstance(cast_p[0], dict):
+                conf = cast_p[0].get("sheetConformance")
+            if isinstance(conf, dict) and conf.get("rows"):
+                applied, skipped = [], []
+                for row in conf["rows"]:
+                    if not isinstance(row, dict):
+                        continue
+                    mat = bpy.data.materials.get(str(row.get("mat") or ""))
+                    if mat is None:
+                        skipped.append({"mat": row.get("mat"), "skipped": "no such material on the stage"})
+                        continue
+                    b = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
+                    if b is None:
+                        skipped.append({"mat": row.get("mat"), "skipped": "no principled node"})
+                        continue
+                    r, g, bl = hex_to_rgb(str(row.get("to") or "#000000"))
+                    b.inputs["Base Color"].default_value = (r, g, bl, 1.0)
+                    if row.get("skipped"):
+                        skipped.append({"mat": row.get("mat"), "skipped": str(row.get("skipped"))})
+                    else:
+                        applied.append({
+                            "mat": row.get("mat"),
+                            "from": row.get("from"),
+                            "to": row.get("to"),
+                            "delta": round(float(row.get("delta") or 0.0), 3),
+                        })
+                if applied or skipped:
+                    state["identity"] = {
+                        "sheet": conf.get("characterName"),
+                        "palette": conf.get("palette") or [],
+                        "conformed": applied,
+                        "skipped": skipped,
+                        "law": "the sheet is color law over the DNA defaults; recipe parameters untouched",
+                    }
             # a second detected character stands off across the set,
             # facing the hero (static stance - blocking depth)
             if len(cast) > 1:
@@ -2492,11 +2537,22 @@ def worker_run(job_file):
         scn.cycles.device = "CPU"
         scn.cycles.samples = 48 if mode == "FINAL" else 10
         scn.cycles.use_denoising = mode == "FINAL"
-        scn.cycles.max_bounces = 0
-        scn.cycles.diffuse_bounces = 0
-        scn.cycles.glossy_bounces = 0
-        scn.cycles.transmission_bounces = 0
-        scn.cycles.transparent_max_bounces = 0
+        # v10.1: the FINAL frame reads like a room - real interreflection
+        # (the zero-bounce look flattened every material into plastic);
+        # PREVIEW keeps the fast flat path unchanged
+        if mode == "FINAL":
+            scn.cycles.max_bounces = 4
+            scn.cycles.diffuse_bounces = 2
+            scn.cycles.glossy_bounces = 3
+            scn.cycles.transmission_bounces = 2
+            scn.cycles.transparent_max_bounces = 4
+        else:
+            scn.cycles.max_bounces = 0
+            scn.cycles.diffuse_bounces = 0
+            scn.cycles.glossy_bounces = 0
+            scn.cycles.transmission_bounces = 0
+            scn.cycles.transparent_max_bounces = 0
+        state["render"] = {"samples": 48 if mode == "FINAL" else 10, "bounces": 4 if mode == "FINAL" else 0}
         scn.render.resolution_x = out_w
         scn.render.resolution_y = out_h
         scn.render.resolution_percentage = 100

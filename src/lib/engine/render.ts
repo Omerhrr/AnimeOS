@@ -22,6 +22,7 @@ import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
+import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
 import {
   img2vidHost, img2vidProvider, submitImg2VidJob, pollImg2VidJob,
   submitImg2VidZaiJob, pollImg2VidZaiJob,
@@ -167,9 +168,8 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     // builds the DESIGNED characters and set, not anonymous stand-ins.
     const episodeNumber = shot.scene.episode.number;
     const castRows = await db.character.findMany({ where: { projectId }, include: { states: true } });
-    const cast = detectCast(castRows, shot.description)
-      .slice(0, 2)
-      .map((c) => {
+    const detected = detectCast(castRows, shot.description).slice(0, 2);
+    const cast = detected.map((c) => {
         const st = [...c.states]
           .filter((s) => s.episodeNumber === null || s.episodeNumber <= episodeNumber)
           .sort((a, b) => (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1) || b.createdAt.getTime() - a.createdAt.getTime())[0];
@@ -182,6 +182,40 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
           stateWeapon: st?.weapon ?? null,
         });
       });
+
+    // THE SHEET DRESSES THE RENDER (v10.1): the hero's canonical model
+    // sheet is COLOR LAW over the DNA defaults - its pixels are measured
+    // into a palette (deterministic, the same bytes always land the same
+    // colors) and the figure's robe/accent/hair/boots pull a bounded
+    // 35% toward their nearest cluster before a single frame renders.
+    // A missing or unreadable sheet is honestly absent; a color already
+    // true to the sheet is skipped and named.
+    let sheetConformance: SheetConformance | null = null;
+    const heroRow = detected[0];
+    const heroDna = cast[0];
+    if (heroRow?.modelSheetUrl && heroDna) {
+      const sheetPath = path.join(process.cwd(), "public", heroRow.modelSheetUrl.split("?")[0]);
+      if (fs.existsSync(sheetPath)) {
+        try {
+          const palette = await extractSheetPalette(await fs.promises.readFile(sheetPath));
+          const rows = planSheetConformance(
+            { robe: heroDna.robeColor, accent: heroDna.robeAccent, hair: heroDna.hairColor, boots: BOOTS_DEFAULT },
+            palette,
+          );
+          sheetConformance = {
+            characterName: heroDna.name,
+            palette,
+            rows,
+            note: "the canonical sheet is color law over the DNA defaults - a bounded pull, recipe parameters untouched",
+          };
+        } catch {
+          sheetConformance = null;
+        }
+      }
+    }
+    if (sheetConformance && cast.length > 0) {
+      cast[0] = { ...cast[0], sheetConformance };
+    }
     const env = shot.scene.environment
       ? environmentDna({
           name: shot.scene.environment.name,
