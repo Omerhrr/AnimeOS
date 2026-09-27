@@ -455,6 +455,17 @@ export interface AcousticAuditReport {
   missing: number | null; // tokens the voice skipped (neural rung only)
   matchRatio: number | null;
   transcript: string | null; // what the ASR heard (neural rung only)
+  // TIMESTAMPED PHONEME ALIGNMENT (iteration 67): the forced aligner's
+  // millisecond phoneme windows over this take, persisted with the
+  // evidence they were measured from (null when the plan or anchors
+  // could not serve - the note says why)
+  phonemeTimeline: {
+    units: Array<{ ph: string; v: string; sMs: number; eMs: number; o: number; stop: boolean }>;
+    words: Array<{ text: string; sMs: number; eMs: number }>;
+    anchors: number;
+    proportional: boolean;
+    note: string;
+  } | null;
   note: string;
   auditedAt: string;
 }
@@ -521,6 +532,7 @@ export async function auditVoiceTakeAcoustics(
     missing: null,
     matchRatio: null,
     transcript: null,
+    phonemeTimeline: null,
     note: "",
     auditedAt: new Date().toISOString(),
   };
@@ -549,6 +561,31 @@ export async function auditVoiceTakeAcoustics(
   base.speechMs = profile.speechMs;
   base.gapMs = profile.gapMs;
 
+  // TIMESTAMPED PHONEME ALIGNMENT: the plan (when the model serves it)
+  // force-aligned onto this take's measured anchors, persisted to the
+  // millisecond. A refused plan leaves the timeline null and the note
+  // says so - evidence is never invented.
+  try {
+    const { neuralPhonemePlan } = await import("@/lib/animation/viseme-neural");
+    const { alignPhonemeTimeline, STOP_VISEMES } = await import("@/lib/animation/align");
+    const { audioOpennessSampler } = await import("@/lib/animation/viseme-audio");
+    const plan = await neuralPhonemePlan([line]);
+    const units = plan?.lines[0];
+    const sampler = audioOpennessSampler(wav, span);
+    const aligned = units && sampler ? alignPhonemeTimeline({ units, line, span, profile, shapes: (await import("@/lib/animation/viseme-neural")).NEURAL_VISEME_SHAPES, opennessAt: sampler }) : null;
+    if (aligned) {
+      base.phonemeTimeline = {
+        units: aligned.timeline.units.map((u) => ({ ph: u.ph, v: u.v, sMs: u.sMs, eMs: u.eMs, o: u.o, stop: STOP_VISEMES.has(u.v) })),
+        words: aligned.timeline.words,
+        anchors: aligned.timeline.anchors,
+        proportional: aligned.timeline.proportional,
+        note: aligned.timeline.note,
+      };
+    }
+  } catch {
+    // the timeline is evidence, not a gate - a failure here stays null
+  }
+
   if (provider === "neural") {
     const transcript = await transcribeTake(wav);
     if (transcript) {
@@ -570,6 +607,12 @@ export async function auditVoiceTakeAcoustics(
     base.note = `acoustic slot off - the plan's even spread stands (take carries ${profile.nuclei.length} anchors unused)`;
   } else {
     base.note = `DSP evidence recorded: ${profile.runs.length} speech run${profile.runs.length === 1 ? "" : "s"}, warp snaps to ${profile.nuclei.length} syllable anchor${profile.nuclei.length === 1 ? "" : "s"} at render`;
+  }
+  if (base.phonemeTimeline) {
+    const t = base.phonemeTimeline;
+    base.note += `; phoneme-aligned to the millisecond (${t.units.length} phones over ${t.words.length} words${t.proportional ? ", anchors scarce - proportional" : `, ${t.anchors} anchors`})`;
+  } else if (base.retimed) {
+    base.note += "; phoneme timeline unavailable (plan or anchors refused) - the render-time paths stand";
   }
   return { ok: true, report: base };
 }

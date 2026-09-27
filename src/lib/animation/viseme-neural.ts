@@ -1,7 +1,8 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { buildSpeechProgram, buildVisemes, type SpeechProgram, type Viseme } from "@/lib/animation/lipsync";
-import { analyzeTakeVisemes, type AudioTake } from "@/lib/animation/viseme-audio";
 import { acousticProvider, analyzeAcoustics, retimedPlanVisemes, transcribeTake, reweightUnitsForAsr } from "@/lib/animation/acoustic";
+import { analyzeTakeVisemes, audioOpennessSampler, type AudioTake } from "@/lib/animation/viseme-audio";
+import { alignPhonemeTimeline } from "@/lib/animation/align";
 
 // ─────────────────────────────────────────────────────────────
 // NEURAL VISEME PASS - a phoneme plan from the language model,
@@ -224,6 +225,9 @@ export interface NeuralSpeechProgram extends SpeechProgram {
   planOk: boolean; // did the neural plan arrive?
   acousticSpans: number; // spans whose plan timing was re-timed from the WAV
   acousticAnchors: number; // syllable anchors the re-time snapped to
+  alignedSpans: number; // spans FORCE-ALIGNED to the millisecond (iter 67)
+  alignedUnits: number; // phoneme windows the aligner placed
+  alignedStops: number; // closed stops the plan placed to the ms
   asrSpans: number; // spans whose plan was re-weighted from ASR word evidence
   asrConfirmed: number; // line tokens the transcript backed
   asrMissing: number; // line tokens the voice skipped
@@ -247,7 +251,7 @@ export async function neuralSpeechProgram(input: {
     voiceTakes: input.takes.map((t) => ({ startMs: t.startMs, durationMs: t.durationMs })),
   });
   if (base.spans.length === 0) {
-    return { ...base, audioVisemes: 0, audioTakes: 0, neuralSpans: 0, neuralTextSpans: 0, planOk: false, acousticSpans: 0, acousticAnchors: 0, asrSpans: 0, asrConfirmed: 0, asrMissing: 0 };
+    return { ...base, audioVisemes: 0, audioTakes: 0, neuralSpans: 0, neuralTextSpans: 0, planOk: false, acousticSpans: 0, acousticAnchors: 0, alignedSpans: 0, alignedUnits: 0, alignedStops: 0, asrSpans: 0, asrConfirmed: 0, asrMissing: 0 };
   }
 
   const lineTexts = base.spans.map((s) => s.text);
@@ -264,6 +268,9 @@ export async function neuralSpeechProgram(input: {
   let neuralTextSpans = 0;
   let acousticSpans = 0;
   let acousticAnchors = 0;
+  let alignedSpans = 0;
+  let alignedUnits = 0;
+  let alignedStops = 0;
   let asrSpans = 0;
   let asrConfirmed = 0;
   let asrMissing = 0;
@@ -293,19 +300,49 @@ export async function neuralSpeechProgram(input: {
         }
       }
       // DSP RUNG: warp the (possibly re-weighted) plan onto the take's
-      // real speech runs / silences / syllable anchors before the conform.
+      // real speech runs / silences / syllable anchors. The FORCED
+      // ALIGNER tries first (iteration 67): words land ON the measured
+      // anchors, phoneme windows measure their own openness, and the
+      // plan's closed stops cap the mouth in their exact window. When
+      // it cannot engage, the weight warp keeps the older law.
+      let alignedUsed = false;
       if (planVisemes.length > 0 && acousticOn && lineUnits && take?.wav) {
         const profile = analyzeAcoustics(take.wav, { startMs: span.startMs, endMs: span.endMs });
         if (profile) {
-          const retimed = retimedPlanVisemes(lineUnits, { startMs: span.startMs, endMs: span.endMs }, profile, NEURAL_VISEME_SHAPES);
-          if (retimed.length > 0) {
-            planVisemes = retimed;
+          const sampler = audioOpennessSampler(take.wav, { startMs: span.startMs, endMs: span.endMs });
+          const aligned = sampler
+            ? alignPhonemeTimeline({
+                units: lineUnits,
+                line: span.text,
+                span: { startMs: span.startMs, endMs: span.endMs },
+                profile,
+                shapes: NEURAL_VISEME_SHAPES,
+                opennessAt: sampler,
+              })
+            : null;
+          if (aligned && aligned.visemes.length > 0) {
+            planVisemes = aligned.visemes;
             acousticSpans += 1;
             acousticAnchors += profile.nuclei.length;
+            alignedSpans += 1;
+            alignedUnits += aligned.timeline.units.length;
+            alignedStops += aligned.stops;
+            alignedUsed = true;
+          } else {
+            const retimed = retimedPlanVisemes(lineUnits, { startMs: span.startMs, endMs: span.endMs }, profile, NEURAL_VISEME_SHAPES);
+            if (retimed.length > 0) {
+              planVisemes = retimed;
+              acousticSpans += 1;
+              acousticAnchors += profile.nuclei.length;
+            }
           }
         }
       }
-      const conformed = planVisemes.length > 0 ? conformVisemesToPlan(audio, planVisemes) : audio;
+      const conformed = alignedUsed
+        ? planVisemes   // the aligner's segments already carry plan identity + measured openness
+        : planVisemes.length > 0
+          ? conformVisemesToPlan(audio, planVisemes)
+          : audio;
       visemes.push(...conformed);
       audioVisemes += audio.length;
       audioTakes += 1;
@@ -318,7 +355,7 @@ export async function neuralSpeechProgram(input: {
     }
   }
 
-  return { ...base, visemes, audioVisemes, audioTakes, neuralSpans, neuralTextSpans, planOk: Boolean(plan), acousticSpans, acousticAnchors, asrSpans, asrConfirmed, asrMissing };
+  return { ...base, visemes, audioVisemes, audioTakes, neuralSpans, neuralTextSpans, planOk: Boolean(plan), acousticSpans, acousticAnchors, alignedSpans, alignedUnits, alignedStops, asrSpans, asrConfirmed, asrMissing };
 }
 
 /** Stage / event note naming what shaped the mouth. */
@@ -329,6 +366,7 @@ export function describeNeuralSpeechProgram(program: NeuralSpeechProgram): strin
   const parts: string[] = [];
   if (program.audioTakes > 0) parts.push(`${program.audioTakes} real take${program.audioTakes === 1 ? "" : "s"}`);
   if (program.asrSpans > 0) parts.push(`ASR-confirmed ${program.asrConfirmed} word${program.asrConfirmed === 1 ? "" : "s"}${program.asrMissing > 0 ? ` (${program.asrMissing} skipped)` : ""}`);
+  if (program.alignedSpans > 0) parts.push(`phoneme-aligned (${program.alignedUnits} phones, ${program.alignedStops} stop closure${program.alignedStops === 1 ? "" : "s"})`);
   if (program.acousticSpans > 0) parts.push(`acoustic re-timed on ${program.acousticAnchors} syllable anchor${program.acousticAnchors === 1 ? "" : "s"}`);
   if (program.neuralSpans > 0) parts.push("neural phoneme shaping");
   if (program.neuralTextSpans > 0 && program.audioTakes === 0) parts.push("neural phoneme plan");

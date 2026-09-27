@@ -211,6 +211,45 @@ export interface AudioTake {
   wav: Buffer | null; // the take's PCM bytes (null = no take on disk)
 }
 
+/**
+ * AUDIO OPENNESS SAMPLER (iteration 67): the envelope's openness at
+ * any clip millisecond, from the same classification + smoothing the
+ * segment path uses (closed under the gate, fricative hiss, vowel
+ * curve). This is what the phoneme aligner samples per unit window -
+ * openness stays AUDIO-owned at phoneme resolution. Null when the
+ * take cannot be decoded or carries no usable speech envelope.
+ */
+export function audioOpennessSampler(
+  wav: Buffer,
+  span: { startMs: number; endMs: number },
+): ((ms: number) => number) | null {
+  const parsed = parseWavMono(wav);
+  if (!parsed) return null;
+  const frames = frameAudio(parsed);
+  if (frames.length < 4) return null;
+  const gateRef = loudnessGate(frames);
+  if (!gateRef) return null;
+  const { peak, gate } = gateRef;
+  const raw = frames.map((f) => {
+    if (f.rms < gate) return 0.04;
+    if (f.zcr > 0.32 && f.rms < peak * 0.6) return 0.26;
+    const env = clamp01((f.rms - gate) / (peak - gate));
+    return 0.28 + 0.72 * Math.pow(env, 0.75);
+  });
+  const smoothed = raw.map((_, i) => {
+    const a = raw[Math.max(0, i - 1)];
+    const b = raw[i];
+    const c = raw[Math.min(raw.length - 1, i + 1)];
+    return (a + b + c) / 3;
+  });
+  return (ms: number) => {
+    const k = Math.round((ms - span.startMs) / FRAME_MS);
+    if (k < 0) return smoothed[0];
+    if (k >= smoothed.length) return smoothed[smoothed.length - 1];
+    return smoothed[k];
+  };
+}
+
 export interface AudioSpeechProgram extends SpeechProgram {
   audioVisemes: number; // visemes derived from real audio
   audioTakes: number; // spans whose mouth came from a real take
