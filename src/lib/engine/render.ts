@@ -277,6 +277,12 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // volumes answer the beats with); absent = the full probed
         // response
         ...(typeof shot.flesh === "number" ? { flesh: shot.flesh } : {}),
+        // KEYFRAME CHOREOGRAPHY (iteration 74): the shot's keyed
+        // performance rides the payload - the worker performs the
+        // keys (anticipation, strike, hold, follow-through) instead of
+        // the two-pose slide, with the impact flare + camera punch +
+        // the smear (a corrupt column degrades to the plain path)
+        ...(shot.choreo ? (() => { try { const c = JSON.parse(shot.choreo); return c && typeof c === "object" && !Array.isArray(c) ? { choreo: c } : {}; } catch { return {}; } })() : {}),
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),

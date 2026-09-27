@@ -178,7 +178,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A13 the registry stands at 81 tools (the aligner extends the mouth, it adds no tool)", toolCount === 81, `count=${toolCount}`);
+  check("A13 the registry stands at 83 tools (the aligner extends the mouth, it adds no tool)", toolCount === 83, `count=${toolCount}`);
 
   // ───────────────────── B. the pure aligner over a REAL synthesized WAV ─────────────────────
   const bursts = [300, 700, 1100, 1500];

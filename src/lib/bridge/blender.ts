@@ -260,6 +260,16 @@ export interface BridgeJobPayload {
     // lag - both 0..1 per shot; absent = the full probed response
     cloth?: number;
     flesh?: number;
+    // KEYFRAME CHOREOGRAPHY (iteration 74): the keyed performance the
+    // body performs instead of the two-pose slide - the keys own the
+    // body, the impact frame flares a real light and punches the
+    // camera, the striking limb smears
+    choreo?: {
+      name?: string;
+      keys: Array<{ at: number; pose: string; kind?: string }>;
+      impact?: { at: number; frames: number; punch: number; flash: number } | null;
+      smear?: { at: number; frames: number; amount: number } | null;
+    } | null;
   };
   scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number; environment?: EnvironmentDesignDnaWire };
   // ASSET LIBRARY (v4.1): paths to accepted .blend assets for this

@@ -39,6 +39,7 @@ import { runRoundtrip, isExportFormat } from "@/lib/blender/roundtrip";
 import { compileGrammarSpec, serializeGrammar, BUILT_IN_GRAMMARS, GRAMMAR_MOVES, findBuiltInGrammar } from "@/lib/animation/grammar";
 import { compileFxSpec, serializeFx, BUILT_IN_FX, FX_KINDS, findBuiltInFx } from "@/lib/animation/fx";
 import { compilePhysicsSpec, serializePhysics, BUILT_IN_PHYSICS, PHYSICS_KINDS, findBuiltInPhysics } from "@/lib/animation/physics";
+import { compileChoreo, BUILT_IN_CHOREO } from "@/lib/animation/choreography";
 import { reviewRenderJob, renderPixelContextLine, RENDER_ISSUE_KINDS } from "@/lib/engine/render-review";
 import { fixRenderIssues } from "@/lib/engine/render-fix";
 import { proposeRedirection } from "@/lib/engine/render-redirection";
@@ -811,6 +812,26 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       physics: "string - a design_physics preset name, a built-in name (The Clash | The Ruin | The Windchime | The Shove | The Recoil), or an inline JSON array of programs; empty string clears",
+    },
+  },
+  {
+    name: "design_choreography",
+    description: "Design a NAMED CHOREOGRAPHY PROGRAM and register it as the production's performance language: a KEYED performance the body performs instead of sliding between two poses. keys is an ordered array of 2..8 {at, pose, kind} rows - at is the normalized clip moment 0..1 (first key at 0, last at 1, time runs forward), pose is the body vocabulary (STANCE/WALK/LUNGE/SLASH/CAST/DRAW/BLOCK/LEAP/CROUCH/FALL/RISE/BOW/POINT) and kind names the SEGMENT INTO that key: 'anticipation' (the wind-up that earns the strike), 'strike' (the explosive segment - most of the distance in the first frames), 'hold' (the read), 'follow' (the settle back), 'move' (the standard eased travel). Two accents come with it: impact {at, frames 1..6, punch 0..8, flash 0..1} flares a REAL light at the strike and punches the camera with a decaying kick, and smear {at, frames 1..4, amount 0..1} stretches the striking limb up to 1.35x on the fastest frames - the stylized speed line no single frame can fake. THE KEYS OWN THE BODY: the camera grammar still owns the lens, and the cloth, flesh and physics still answer the performing body's velocity. Built-ins exist by name (The Combo, The Draw Storm, The Rising Fang); apply with set_shot_choreography.",
+    args: {
+      name: "string - the performance's name (e.g. 'Sky Cleaver')",
+      keys: "string (JSON array) - 2..8 {at, pose, kind} rows; first at 0, last at 1, time runs forward",
+      impact: "string (optional JSON {at, frames, punch, flash}) - the strike's real light flare + decaying camera kick",
+      smear: "string (optional JSON {at, frames, amount}) - the striking limb's stylized stretch",
+      note: "string (optional)",
+    },
+  },
+  {
+    name: "set_shot_choreography",
+    description: "MAKE THE BODY PERFORM: apply a NAMED choreography program (a design_choreography preset, a built-in - The Combo / The Draw Storm / The Rising Fang - or an inline JSON program) to one shot. The next render of the shot performs the KEYS instead of the two-pose slide: the anticipation winds up, the strike explodes, the hold sells the read, the follow-through settles - the impact frame flares a real light and punches the camera, the striking limb smears on the fastest frames. The keys own the body; the camera grammar still owns the lens and the cloth, flesh and physics still answer the performing body. Direct the lens first (set_shot_grammar) so the performance has a frame worth cutting to. Pass choreo as empty string to clear back to the plain slide.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      choreo: "string - a design_choreography preset name, a built-in name (The Combo | The Draw Storm | The Rising Fang), or an inline JSON program; empty string clears",
     },
   },
   {
@@ -3350,6 +3371,108 @@ async function executeToolInner(
         const physShape = compiledPhys.spec.programs.map((p) => `${p.kind}${p.target ? `>${p.target}` : ""}${p.beats !== "ALL" && Array.isArray(p.beats) ? `@beat ${p.beats.join(",")}` : ""}`).join(" + ");
         await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} obeys its body law from ${physSource}: ${physShape}`, { shotId: shot.id, physics: physSource });
         return { status: "OK", result: `THE WORLD OBEYS on Shot ${String(shot.number).padStart(3, "0")} with ${physSource}: ${physShape}. The next render_shot of this shot compiles the programs into real rigid bodies (gravity, bounce, friction, settle) riding the same beat clock as the camera, the cloth and the fx - direct the lens first (set_shot_grammar) so the beats have something to answer${physShape.includes("KNOCK") ? ", and name the designed prop in the shot text when a KNOCK should strike it" : ""}.` };
+      }
+
+      case "design_choreography": {
+        const name = String(args.name ?? "").trim();
+        if (!name) return { status: "ERROR", result: "name is required - the performance's name in the show's language." };
+        let keysRaw: unknown = args.keys;
+        if (typeof keysRaw === "string") {
+          try {
+            keysRaw = JSON.parse(keysRaw);
+          } catch {
+            return { status: "ERROR", result: "keys is not valid JSON - pass an array like [{\"at\":0,\"pose\":\"STANCE\",\"kind\":\"hold\"},{\"at\":0.42,\"pose\":\"SLASH\",\"kind\":\"strike\"},{\"at\":1,\"pose\":\"STANCE\",\"kind\":\"follow\"}]." };
+          }
+        }
+        const parseOpt = (v: unknown, what: string): { ok: true; value: unknown } | { ok: false; error: string } => {
+          if (v === undefined || v === null || String(v).trim() === "") return { ok: true, value: null };
+          if (typeof v === "string") {
+            try {
+              return { ok: true, value: JSON.parse(v) };
+            } catch {
+              return { ok: false, error: `${what} is not valid JSON` };
+            }
+          }
+          return { ok: true, value: v };
+        };
+        const impactParsed = parseOpt(args.impact, "impact");
+        if (!impactParsed.ok) return { status: "ERROR", result: `${impactParsed.error} - pass an object {at, frames, punch, flash}.` };
+        const smearParsed = parseOpt(args.smear, "smear");
+        if (!smearParsed.ok) return { status: "ERROR", result: `${smearParsed.error} - pass an object {at, frames, amount}.` };
+        const compiled = compileChoreo({ keys: keysRaw, impact: impactParsed.value, smear: smearParsed.value, note: args.note ? String(args.note) : null }, name);
+        if (!compiled.ok) return { status: "ERROR", result: compiled.error };
+        const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "CHOREOGRAPHY", name } } });
+        const preset = await db.designPreset.upsert({
+          where: { projectId_kind_name: { projectId, kind: "CHOREOGRAPHY", name } },
+          create: { projectId, kind: "CHOREOGRAPHY", name, spec: JSON.stringify(compiled.spec) },
+          update: { spec: JSON.stringify(compiled.spec) },
+        });
+        const shape = compiled.spec.keys.map((k) => `${k.pose.toLowerCase()}@${k.at}:${k.kind}`).join(" -> ");
+        const accents = [compiled.spec.impact ? "impact flare + camera punch" : null, compiled.spec.smear ? "limb smear" : null].filter(Boolean).join(" + ");
+        await landDesignEvent(projectId, `Choreography '${name}' ${existed ? "updated" : "designed"} (${compiled.spec.keys.length} keys${accents ? `, ${accents}` : ""})`, { presetId: preset.id });
+        return { status: "OK", result: `Choreography preset '${name}' ${existed ? "updated" : "registered"}: ${shape}${accents ? ` - with ${accents}` : ""}. Apply it to any shot with set_shot_choreography choreo:'${name}' - the body performs the keys instead of sliding between two poses: anticipation earns the strike, the hold sells the read, the follow-through settles it. The keys own the body; the camera grammar still owns the lens, and the cloth, flesh and physics still answer the performing body.` };
+      }
+
+      case "set_shot_choreography": {
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
+        if (args.sceneNumber) {
+          const scenes = await db.scene.findMany({
+            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+            orderBy: { createdAt: "desc" },
+          });
+          scene = scenes[0] ?? null;
+        }
+        if (!scene) scene = await latestScene(projectId);
+        if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        const chArg = String(args.choreo ?? "").trim();
+        if (!chArg) {
+          await db.shot.update({ where: { id: shot.id }, data: { choreo: null } });
+          await landDesignEvent(projectId, `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} (back to the two-pose slide)`, { shotId: shot.id });
+          return { status: "OK", result: `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} - the body slides between its start/end poses again.` };
+        }
+        // resolve: saved choreography preset -> built-in -> inline program
+        const savedCh = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "CHOREOGRAPHY", name: chArg } } });
+        let specRaw: unknown;
+        let chSource: string;
+        let builtinName: string | undefined;
+        if (savedCh) {
+          try {
+            specRaw = JSON.parse(savedCh.spec || "null");
+            chSource = `preset '${chArg}'`;
+          } catch {
+            return { status: "ERROR", result: `Choreography preset '${chArg}' is corrupt - redesign it with design_choreography.` };
+          }
+        } else {
+          const builtin = BUILT_IN_CHOREO.find((b) => b.name?.toLowerCase() === chArg.toLowerCase());
+          if (builtin) {
+            specRaw = builtin;
+            chSource = `built-in '${builtin.name}'`;
+            builtinName = builtin.name;
+          } else if (chArg.startsWith("{")) {
+            specRaw = chArg;
+            chSource = "inline program";
+          } else {
+            const registry = [
+              ...BUILT_IN_CHOREO.map((b) => `'${b.name}' (built-in)`),
+              ...((await db.designPreset.findMany({ where: { projectId, kind: "CHOREOGRAPHY" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+            ];
+            return { status: "ERROR", result: `No choreography named '${chArg}'. Registry: ${registry.join(", ")} - or pass an inline JSON program like {"keys":[{"at":0,"pose":"STANCE","kind":"hold"},{"at":0.42,"pose":"SLASH","kind":"strike"},{"at":1,"pose":"STANCE","kind":"follow"}],"impact":{"at":0.42,"frames":3,"punch":2.5,"flash":0.8}}.` };
+          }
+        }
+        const compiledCh = compileChoreo(specRaw, chSource);
+        if (!compiledCh.ok) return { status: "ERROR", result: `${chSource} does not compile: ${compiledCh.error}` };
+        const perfName = (specRaw !== null && typeof specRaw === "object" && !Array.isArray(specRaw) && typeof (specRaw as { name?: unknown }).name === "string" && (specRaw as { name: string }).name.trim())
+          ? (specRaw as { name: string }).name.trim()
+          : (savedCh ? chArg : builtinName);
+        const perf = { ...compiledCh.spec, name: perfName };
+        await db.shot.update({ where: { id: shot.id }, data: { choreo: JSON.stringify(perf) } });
+        const chShape = compiledCh.spec.keys.map((k) => `${k.pose.toLowerCase()}@${k.at}:${k.kind}`).join(" -> ");
+        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} performs from ${chSource}: ${chShape}`, { shotId: shot.id, choreo: chSource });
+        return { status: "OK", result: `THE BODY PERFORMS on Shot ${String(shot.number).padStart(3, "0")} with ${chSource}: ${chShape}${compiledCh.spec.impact ? ", the impact frame flares a real light and punches the camera" : ""}${compiledCh.spec.smear ? ", the striking limb smears on the fastest frames" : ""}. The next render_shot of this shot performs the keys instead of the two-pose slide - the keys own the body, the camera grammar still owns the lens, and the cloth, flesh and physics still answer the performing body. Direct the lens first (set_shot_grammar) so the performance has a frame worth cutting to.` };
       }
 
       case "review_render": {

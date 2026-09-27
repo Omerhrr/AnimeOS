@@ -2533,6 +2533,35 @@ def worker_run(job_file):
                 if phys_all:
                     state["physics"]["notes"] = phys_all
 
+        # ── v12.0 KEYFRAME CHOREOGRAPHY: THE PERFORMANCE IS KEYED - the
+        #    body performs the PROGRAM (anticipation / strike / hold /
+        #    follow-through) instead of sliding between two poses, the
+        #    impact frame flares a real light and punches the camera,
+        #    the striking limb smears on the fastest frames. The keys
+        #    own the body; the grammar still owns the lens, the
+        #    solvers still answer the velocity. ──
+        choreo_prog = None
+        choreo_raw = shot.get("choreo")
+        if isinstance(choreo_raw, dict):
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import choreography_pass
+            choreo_prog, choreo_err = choreography_pass.normalize_choreo(choreo_raw)
+            if choreo_prog:
+                ch_impacts = choreography_pass.impact_frames(choreo_prog, frames_total) if frames_total else []
+                choreo_flash = choreography_pass.build_impact_light(bpy, scn, choreo_prog)
+                if choreo_prog.get("impact") and not choreo_flash:
+                    ch_impacts = []
+                state["choreo"] = {
+                    "name": str(choreo_raw.get("name") or "inline program")[:48],
+                    "keys": len(choreo_prog["keys"]),
+                    "poseKeys": [k["pose"] for k in choreo_prog["keys"]],
+                    "segments": len(choreo_prog["keys"]) - 1,
+                    "impactFrames": ch_impacts,
+                    "punch": choreo_prog["impact"]["punch"] if choreo_prog.get("impact") else 0.0,
+                }
+            else:
+                state["choreoNote"] = f"choreo refused: {choreo_err} - the plain two-pose path performs"
+
         # ── AnimeOS scene params: designed sky when the environment
         #    DNA carries one, legacy fog world otherwise ──
         fog = float(scene_p.get("fogDensity", 0.45))
@@ -2710,6 +2739,7 @@ def worker_run(job_file):
         out_path = os.path.join(out_dir, f"{job_id}.mp4")
 
         # ── frame loop: camera grammar + lightning strobe per frame ──
+        choreo_max_smear = 0.0
         for f in range(1, frames_total + 1):
             t = (f - 1) / max(1, frames_total - 1)
             if grammar:
@@ -2720,15 +2750,30 @@ def worker_run(job_file):
             else:
                 pos, target, lens = camera_pose(shot, scene_p, t)
                 pose_t, pose_s, pose_e = t, pose_start, pose_end
+            if choreo_prog:
+                # THE PERFORMANCE IS KEYED: the program owns the body
+                # this frame (the lens stays the grammar's)
+                pose_s, pose_e, pose_t = choreography_pass.pose_state_at(choreo_prog, t)
             cam.data.lens = lens
             cam.location = mathutils.Vector(pos)
             direction = mathutils.Vector(target) - cam.location
             cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+            if choreo_prog:
+                # the impact frame's decaying camera punch + the strike
+                # light's energy (after the grammar aims the lens - the
+                # kick rides on top)
+                choreography_pass.apply_impact(choreo_prog, cam, choreo_flash, f, frames_total)
 
             t_sec = (f - 1) / fps
             if figure:
                 apply_pose(figure, pose_s, pose_e, pose_t, t_sec,
                            speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None)
+                if choreo_prog:
+                    # the smear rides AFTER the pose call (the pose sets
+                    # rotations; the smear stretches the limb on top)
+                    s = choreography_pass.apply_smear(choreo_prog, figure, f, frames_total)
+                    if s > choreo_max_smear:
+                        choreo_max_smear = s
             # v8.0: THE WORLD ANSWERS THE BEATS - the burst lands where
             # the cut lands, the trail flares with the pose velocity,
             # the aura breathes with the beat's wind call, the motes
@@ -2866,6 +2911,10 @@ def worker_run(job_file):
                 }
 
         # ── encode ──
+        if choreo_prog:
+            # the performance's measured answer: how far the striking
+            # limb actually stretched (0 when no smear window fired)
+            state["choreo"]["maxSmear"] = round(choreo_max_smear, 3)
         state["stage"] = "Blender: encoding clip"
         state["progress"] = 0.9
         flush()

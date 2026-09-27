@@ -358,6 +358,14 @@ model Shot {
   // settles, the lantern swings with the wind call the cloth hangs
   // from.
   physics        String? // JSON: Array<{ kind, intensity?, beats?, target?, note? }>
+  // KEYFRAME CHOREOGRAPHY (iteration 74): a JSON program
+  // {name?, keys: [{at, pose, kind: hold|anticipation|strike|follow|move}],
+  //  impact?: {at, frames, punch, flash}, smear?: {at, frames, amount}}
+  // the worker performs instead of the two-pose slide - the keys own
+  // the body (anticipation, the strike, the hold, the follow-through),
+  // the impact frame flares a real light and punches the camera, the
+  // striking limb smears on the fastest frames.
+  choreo         String? // JSON: ChoreoProgram (see src/lib/animation/choreography.ts)
   // PER-SHOT SOLVER INTENSITY (iteration 68): the CLOTH call - a
   // number 0..1 the director calls on the shot to scale the cloth
   // solver's ANSWER (the directed air, the beat impulse, the stagger
