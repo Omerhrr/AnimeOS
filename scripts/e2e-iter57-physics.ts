@@ -139,7 +139,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A19 the registry stands at 79 tools (iter61 joined) (design_physics 73, set_shot_physics 74; the pixel review joined in iter 59)", toolCount === 79, `count=${toolCount}`);
+  check("A19 the registry stands at 80 tools (iter63 joined) (design_physics 73, set_shot_physics 74; the pixel review joined in iter 59)", toolCount === 80, `count=${toolCount}`);
   check("A20 the physics resolution order is saved -> built-in -> inline", tools.includes("// resolve: saved physics preset -> built-in -> inline programs"));
   check("A21 set_shot_physics teaches the order of operations (lens first)", tools.includes("direct the lens first (set_shot_grammar) so the beats have something to answer"));
 

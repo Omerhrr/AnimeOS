@@ -46,6 +46,11 @@ import {
   type RetopoOutcome,
 } from "@/lib/blender/retopo-flows";
 import { planSculpt, listSculptPlans, sculptPlansContextLine, surfaceReadLine } from "@/lib/blender/sculpt-plans";
+import {
+  SEQUENCE_REGISTERS, isSequenceRegister, learnSequenceFlow, bestSequenceFlow, recordSequenceOutcome,
+  flowsLearnedFromProgram, listSequenceFlows, sequenceFlowsContextLine,
+  type SequenceFlowSlot,
+} from "@/lib/dsh/sequence-flows";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -555,15 +560,26 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "direct_sequence",
-    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, and a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, so the world answers on the right shots. scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
+    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, and a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, so the world answers on the right shots. scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. THE STUDIO REMEMBERS ITS SENTENCES: with no program and no slots, pass register:'<register>' (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) to direct from the register's best-proven LEARNED SEQUENCE FLOW (adopted with learn_sequence_flow) - every application grows the flow's measured record. The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
     args: {
       sceneNumber: "number (scene scope, defaults to latest scene)",
       scope: "scene | episode (default scene - episode allocates the slots across every scene of the episode in story order)",
       episodeNumber: "number (episode scope, defaults to the latest episode with shots)",
-      program: "string - a design_sequence preset name (or omit and pass slots inline)",
+      program: "string - a design_sequence preset name (or omit and pass slots inline, or pass register to consult a learned flow)",
       slots: "JSON array string (optional) - inline slots when no program is named",
+      register: "string (optional) - with no program and no slots: consult the register's best-proven learned sequence flow (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE)",
       render: "boolean (optional, default false) - queue a render job for every directed shot",
       mode: "PREVIEW | FINAL (default PREVIEW, only with render)",
+    },
+  },
+  {
+    name: "learn_sequence_flow",
+    description: "ADOPT A VERIFIED SEQUENCE as the production's named flow for a dramatic REGISTER (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) - the studio remembers its sentences the way it remembers verified retopo budgets: the program's design-time-validated slots become the flow's sentence, and every direct_sequence that drives the program (or the flow itself, via register:'<register>') grows the flow's MEASURED record - shots stamped, wind beats, pose cuts, move clashes, world bindings, renders queued. A direction that lands whole (every slot stamped a real shot) verifies; one whose flow read raises no blocking note (zero move clashes) on top of that earns the flow a clear and rises in the consult ranking. A flow that never landed whole is never consulted. The record is honest: an outcome is appended whatever it measured.",
+    args: {
+      name: "string - the flow's name (e.g. 'Raid grammar')",
+      register: "string - BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE",
+      program: "string - a design_sequence preset name whose slots become the flow's sentence",
+      description: "string (optional) - overrides the program's description in the flow's spec",
     },
   },
   {
@@ -2790,9 +2806,13 @@ export async function executeTool(
           scopeDesc = `Scene ${scene.number}`;
         }
         if (flat.length === 0) return { status: "ERROR", result: `${scopeDesc} has no shots to direct - break the scene down first (create_shot).` };
-        // the slot list: a named SEQUENCE program first, inline slots otherwise
+        // the slot list: a named SEQUENCE program first, an inline slot
+        // array next, and with NEITHER the register consult (iteration
+        // 63): the studio starts from the sentence that verified, not
+        // from a fresh guess
         let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown }> = [];
         let sourceName = "";
+        let consultFlow: { register: string; name: string } | null = null;
         const programName = String(args.program ?? "").trim();
         if (programName) {
           const preset = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name: programName } } });
@@ -2809,6 +2829,25 @@ export async function executeTool(
           if (slotList.length < 2) return { status: "ERROR", result: `Sequence program '${programName}' is corrupt (needs 2+ valid slots) - redesign it with design_sequence.` };
           sourceName = `program '${programName}'`;
           await db.designPreset.update({ where: { id: preset.id }, data: { usageCount: { increment: 1 } } });
+        } else if (args.slots === undefined || String(args.slots ?? "").trim() === "") {
+          // THE STUDIO REMEMBERS ITS SENTENCES (iteration 63): consult
+          // the register's best-proven learned flow
+          const register = String(args.register ?? "").trim().toUpperCase();
+          if (!register) {
+            return { status: "ERROR", result: "pass program:'<name>', a slots JSON array, or register:'<register>' to direct from a learned sequence flow (registers: BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE)." };
+          }
+          if (!isSequenceRegister(register)) {
+            return { status: "ERROR", result: `register must be one of BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE (got "${register}").` };
+          }
+          const flow = await bestSequenceFlow(projectId, register);
+          if (!flow) {
+            const registry = (await db.sequenceFlow.findMany({ where: { projectId }, select: { register: true, name: true } }))
+              .map((r) => `${r.register}:'${r.name}'`);
+            return { status: "ERROR", result: `No learned flow for register ${register} that ever landed whole. Learned flows: ${registry.join(", ") || "(none)"}. Adopt one with learn_sequence_flow, or pass program:'<name>' or slots inline - the memory consults only what verified.` };
+          }
+          slotList = flow.spec.slots as typeof slotList;
+          consultFlow = { register: flow.register, name: flow.name };
+          sourceName = `learned flow '${flow.name}' (register ${flow.register}, ${flow.runs} run(s), ${flow.clears} clear(s))`;
         } else {
           try {
             const parsed = typeof args.slots === "string" ? (JSON.parse(args.slots) as unknown) : args.slots;
@@ -2898,7 +2937,79 @@ export async function executeTool(
         if (fxBound > 0 || physBound > 0) reads.push(`${fxBound} fx + ${physBound} physics binding(s) - the world answers on those shots`);
         if (untouched > 0) reads.push(`${untouched} shot(s) beyond the plan left untouched`);
         if (unused > 0) reads.push(`${unused} slot(s) had no shot to direct`);
-        return { status: "OK", result: `SEQUENCE DIRECTED (${sourceName}) across ${directed} shot(s) of ${scopeDesc}:\n${flow.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each shot's beats with the cloth riding them.` : ` Queue renders with render_shot per shot, or re-run with render:true.`}` };
+        // THE MEMORY GROWS FROM WHAT THE RUN MEASURED (iteration 63):
+        // the direction's read lands on the learned flows it drove -
+        // the consulted flow itself, or every flow the named program
+        // taught. A direction that landed whole (every slot stamped a
+        // real shot) verifies; a clean read on top of that earns the
+        // clear (recorded on the same write).
+        const outcome = {
+          scope: scopeDesc,
+          program: programName || null,
+          slots: slotList.length,
+          directed,
+          untouched,
+          unused,
+          windBeats,
+          poseCuts,
+          moveClashes,
+          fxBound,
+          physBound,
+          rendersQueued: jobIds.length,
+          verified: unused === 0 && directed > 0,
+        };
+        const memoryLines: string[] = [];
+        const memoryLine = (row: { name: string; register: string; runs: number; clears: number }) =>
+          `learned flow '${row.name}' (${row.register}) recorded the run: ${row.runs} run(s), ${row.clears} clear(s) - ${outcome.verified ? "the sentence landed whole" : "the sentence did NOT land whole (see the flow read)"}${outcome.verified && moveClashes === 0 ? ", the clean read earns the clear" : ""}`;
+        if (consultFlow) {
+          const row = await recordSequenceOutcome(projectId, consultFlow.register, consultFlow.name, outcome);
+          if (row) memoryLines.push(memoryLine(row));
+        } else if (programName) {
+          const taught = await flowsLearnedFromProgram(projectId, programName);
+          for (const f of taught) {
+            const row = await recordSequenceOutcome(projectId, f.register, f.name, outcome);
+            if (row) memoryLines.push(memoryLine(row));
+          }
+        }
+        return { status: "OK", result: `SEQUENCE DIRECTED (${sourceName}) across ${directed} shot(s) of ${scopeDesc}:\n${flow.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${memoryLines.length ? `\nMemory: ${memoryLines.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each shot's beats with the cloth riding them.` : ` Queue renders with render_shot per shot, or re-run with render:true.`}` };
+      }
+
+      case "learn_sequence_flow": {
+        // THE STUDIO REMEMBERS ITS SENTENCES (iteration 63): a verified
+        // direction is a lesson - the same adoption law the retopo
+        // flows and the sculpt plans obey.
+        const name = String(args.name ?? "").trim();
+        if (!name) return { status: "ERROR", result: "name is required - a flow the studio consults by name (direct_sequence register:'<register>' ranks them)." };
+        const register = String(args.register ?? "").trim().toUpperCase();
+        if (!isSequenceRegister(register)) return { status: "ERROR", result: `register must be one of BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE (got "${register}").` };
+        const programName = String(args.program ?? "").trim();
+        if (!programName) return { status: "ERROR", result: "program is required - a flow is learned from a design_sequence program whose slots validated at design time, not from a guess." };
+        const preset = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name: programName } } });
+        if (!preset) {
+          const registry = (await db.designPreset.findMany({ where: { projectId, kind: "SEQUENCE" }, select: { name: true } })).map((r) => `'${r.name}'`);
+          return { status: "ERROR", result: `No sequence program named '${programName}'. Registry: ${registry.join(", ") || "(empty)"} - design one with design_sequence first; a flow is learned from a program that exists.` };
+        }
+        let slots: SequenceFlowSlot[] = [];
+        let description: string | null = null;
+        try {
+          const parsed = JSON.parse(preset.spec || "null") as { description?: unknown; slots?: unknown } | null;
+          if (Array.isArray(parsed?.slots) && parsed.slots.length >= 2) {
+            slots = parsed.slots as SequenceFlowSlot[];
+            description = typeof parsed?.description === "string" ? parsed.description : null;
+          }
+        } catch {
+          slots = [];
+        }
+        if (slots.length < 2) return { status: "ERROR", result: `Sequence program '${programName}' is corrupt (needs 2+ valid slots) - redesign it with design_sequence; the flow learns a sentence that compiles.` };
+        const flow = await learnSequenceFlow({
+          projectId,
+          register,
+          name,
+          spec: { description: description ?? (String(args.description ?? "").trim() || null), slots },
+          learnedFrom: programName,
+        });
+        await landDesignEvent(projectId, `Sequence flow '${name}' adopted for ${register.toLowerCase()} direction (learned from program '${programName}', ${slots.length} slot(s): ${slots.map((s) => s.grammar).join(" -> ")})`, { flowId: flow.id });
+        return { status: "OK", result: `SEQUENCE FLOW '${flow.name}' remembered for ${register.toLowerCase()} direction: ${slots.length} slot(s) - ${slots.map((s) => s.grammar).join(" -> ")} (learned from program '${programName}'). Consult it with direct_sequence register:'${register}' (no program, no slots - the register's best-proven flow starts the sentence); every direction the flow drives grows its measured record, a run that lands whole with a clean read earns the clear, and the context's learned sequence flows line carries the standing.` };
       }
 
       case "design_fx": {
@@ -4323,7 +4434,7 @@ function designContextLine(
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows, learnedSculptPlans] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows, learnedSculptPlans, learnedSequenceFlows] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -4386,6 +4497,8 @@ export async function buildCompactContext(projectId: string) {
     listRetopoFlows(projectId).catch(() => []),
     // The learned sculpt plans (Iteration 61): the surface the studio has READ.
     listSculptPlans(projectId).catch(() => []),
+    // The learned sequence flows (Iteration 63): the sentences the studio remembers.
+    listSequenceFlows(projectId).catch(() => []),
   ]);
   if (!project) return null;
 
@@ -4500,5 +4613,6 @@ export async function buildCompactContext(projectId: string) {
     pixel: renderPixelContextLine(latestRenderReview),
     retopoFlows: retopoFlowsContextLine(learnedRetopoFlows),
     sculptPlans: sculptPlansContextLine(learnedSculptPlans),
+    sequenceFlows: sequenceFlowsContextLine(learnedSequenceFlows),
   };
 }

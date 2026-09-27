@@ -658,6 +658,72 @@ export interface SceneAnalysis {
   design?: { cast: CharacterDesignDnaView[]; environment: EnvironmentDesignDnaView | null };
 }
 
+// ── The sequence manifest panel (Iteration 63): the director's call sheet ──
+export interface ManifestBeat {
+  move: string;
+  from: number;
+  to: number;
+  wind?: number;
+  poses?: string | null;
+}
+export interface ManifestShot {
+  id: string;
+  number: number;
+  label: string;
+  description: string;
+  shotType: string;
+  duration: number;
+  status: string;
+  beats: ManifestBeat[];
+  poseStart: string | null;
+  poseEnd: string | null;
+  fx: Array<{ kind: string; intensity?: number }>;
+  physics: Array<{ kind: string; intensity?: number }>;
+  render: { id: string; status: string; mode: string; attempt: number } | null;
+}
+export interface ManifestScene {
+  number: number;
+  title: string;
+  status: string;
+  shots: ManifestShot[];
+}
+export interface ManifestEpisode {
+  id: string;
+  number: number;
+  title: string;
+  status: string;
+  scenes: ManifestScene[];
+}
+export interface ManifestSlot {
+  grammar: string;
+  poseStart: string | null;
+  poseEnd: string | null;
+  fx: string | null;
+  physics: string | null;
+  note: string | null;
+}
+export interface ManifestProgram {
+  name: string;
+  description: string | null;
+  slots: ManifestSlot[];
+  usageCount: number;
+  updatedAt: string;
+}
+export interface ManifestFlow {
+  register: string;
+  name: string;
+  slots: ManifestSlot[];
+  runs: number;
+  clears: number;
+  learnedFrom: string | null;
+  lastVerified: boolean | null;
+}
+export interface SequenceManifest {
+  episodes: ManifestEpisode[];
+  programs: ManifestProgram[];
+  flows: ManifestFlow[];
+}
+
 // ── Per-role dashboard emphasis + per-project crew (Iteration 49) ──
 export type Craft = "DIRECTING" | "ART" | "VOICE" | "REVIEW";
 
@@ -718,6 +784,7 @@ export const api = {
     j<{ note?: string }>(`/api/projects/${projectId}/members?userId=${userId}`, { method: "DELETE" }),
   sceneAnalysis: (id: string) => j<SceneAnalysis>(`/api/scenes?id=${id}`),
   renderJobs: (projectId: string) => j<RenderJobRow[]>(`/api/render-jobs?projectId=${projectId}`),
+  sequenceManifest: (projectId: string) => j<SequenceManifest>(`/api/sequence-manifest?projectId=${projectId}`),
   dshMessages: (projectId: string) => j<DshMessageRow[]>(`/api/dsh?projectId=${projectId}`),
   bridgeStatus: () => j<BridgeStatusInfo>("/api/bridge"),
   blenderRuntime: () => j<BlenderRuntimeStatus>("/api/blender-runtime"),

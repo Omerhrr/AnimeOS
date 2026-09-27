@@ -61,6 +61,7 @@ model Project {
   renderIssues     RenderIssue[]
   retopoFlows      RetopoFlow[]
   sculptPlans      SculptPlan[]
+  sequenceFlows    SequenceFlow[]
   assetExports     AssetExport[]
   comments         Comment[]
   memberships      ProjectMembership[]
@@ -678,6 +679,40 @@ model SculptPlan {
 
   @@unique([projectId, kind, name])
   @@index([projectId, kind])
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEARNED SEQUENCE FLOWS (iteration 63 - the studio remembers its
+// sentences). A direction that verified is a LESSON the same way
+// a retopo pass that verified is: the named flow keeps the slot
+// sentence (grammars + poses + fx/physics bindings, validated at
+// adoption through the SEQUENCE preset's design-time law) and the
+// MEASURED record of every direction it drove (scope, shots
+// stamped, wind beats, pose cuts, move clashes, world bindings,
+// renders queued). DSH adopts a verified program with
+// learn_sequence_flow (per dramatic REGISTER - battle, pursuit,
+// reveal...), consults the best-proven flow with direct_sequence
+// register:'<register>' when no program is named, and every
+// application that lands whole and reads clean earns a clear.
+// Shaped exactly like the retopo flows and sculpt plans: the
+// studio proposes, the record disposes.
+// ─────────────────────────────────────────────────────────────
+model SequenceFlow {
+  id          String   @id @default(cuid())
+  projectId   String
+  register    String // BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE - the dramatic register the flow serves
+  name        String // the flow's name - how DSH consults it (direct_sequence register:'<register>')
+  spec        String // JSON {description, slots: [{grammar, poseStart, poseEnd, fx, physics, note}]} - the sentence the flow directs
+  outcomes    String // JSON [{scope, program, slots, directed, untouched, unused, windBeats, poseCuts, moveClashes, fxBound, physBound, rendersQueued, verified, at}] - the measured record of every direction it drove
+  runs        Int      @default(0) // directions the flow drove
+  clears      Int      @default(0) // directions whose flow read landed whole with no blocking note (verified + zero move clashes)
+  learnedFrom String? // the sequence program that taught it (a design_sequence preset name)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, register, name])
+  @@index([projectId, register])
 }
 
 model RetopoFlow {

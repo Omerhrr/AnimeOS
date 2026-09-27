@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import {
   Clapperboard, MessageSquareDot, FolderKanban, Users, Film, GanttChartSquare,
   MonitorPlay, ShieldAlert, Languages, History, Sparkles, Loader2, Gauge, BookOpen, Captions,
-  MessagesSquare,
+  MessagesSquare, ListVideo,
 } from "lucide-react";
 import { useStudio, type StudioView, } from "@/lib/store";
 import { api } from "@/lib/api-client";
@@ -22,6 +22,7 @@ import { CharactersView } from "@/components/views/characters-view";
 import { StoryView } from "@/components/views/story-view";
 import { ComicView } from "@/components/views/comic-view";
 import { TimelineView } from "@/components/views/timeline-view";
+import { ManifestView } from "@/components/views/manifest-view";
 import { RenderView } from "@/components/views/render-view";
 import { ContinuityView } from "@/components/views/continuity-view";
 import { TerminologyView } from "@/components/views/terminology-view";
@@ -43,6 +44,7 @@ const NAV: Array<{ id: StudioView; label: string; icon: React.ComponentType<{ cl
   { id: "story", label: "Story & Scenes", icon: Film, group: "Production" },
   { id: "comic", label: "Comic Mode", icon: BookOpen, group: "Production" },
   { id: "timeline", label: "Timeline", icon: GanttChartSquare, group: "Production" },
+  { id: "manifest", label: "Manifest", icon: ListVideo, group: "Production" },
   { id: "render", label: "Render Queue", icon: MonitorPlay, group: "Pipeline" },
   { id: "reviews", label: "Reviews", icon: MessagesSquare, group: "Pipeline" },
   { id: "continuity", label: "Continuity", icon: ShieldAlert, group: "Pipeline" },
@@ -195,6 +197,7 @@ function Shell() {
               {view === "story" && <StoryView project={project} />}
               {view === "comic" && <ComicView project={project} />}
               {view === "timeline" && <TimelineView project={project} />}
+              {view === "manifest" && <ManifestView project={project} />}
               {view === "render" && <RenderView project={project} />}
               {view === "reviews" && <ReviewsView project={project} />}
               {view === "continuity" && <ContinuityView project={project} />}

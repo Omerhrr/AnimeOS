@@ -10,6 +10,7 @@ export type StudioView =
   | "story"
   | "comic"
   | "timeline"
+  | "manifest"
   | "render"
   | "reviews"
   | "continuity"
