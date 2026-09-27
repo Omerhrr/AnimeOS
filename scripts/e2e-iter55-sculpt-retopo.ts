@@ -122,9 +122,9 @@ async function main() {
   const review = readFileSync("src/lib/blender/design-review.ts", "utf8");
   check("A11 the audit gained the SCULPT criterion (0.08)", review.includes("sculpt: 0.08") && review.includes('kind: "SCULPT"'));
   check("A12 the TOPOLOGY budget issue names the numbers", review.includes("DEFAULT_RETOPO_BUDGET") && review.includes("over its triangle budget"));
-  check("A13 the fix loop carves the default sculpt + decimates back to law", review.includes("DEFAULT_SCULPT_BY_KIND") && review.includes("carved the default") && review.includes("decimated to the"));
+  check("A13 the fix loop carves the learned plan or the default sculpt + decimates back to law", review.includes("DEFAULT_SCULPT_BY_KIND") && review.includes("learned plan") && review.includes("decimated to the"));
 
-  check("A14 the registry holds 77 tools incl. design_fx + set_shot_fx (the pixel review joined in iter 59)", TOOL_DEFS.length === 77 && TOOL_DEFS.some((t) => t.name === "design_sculpt") && TOOL_DEFS.some((t) => t.name === "blender_retopo"), `registry ${TOOL_DEFS.length}`);
+  check("A14 the registry holds 79 tools (iter61 joined) incl. design_fx + set_shot_fx (the pixel review joined in iter 59)", TOOL_DEFS.length === 79 && TOOL_DEFS.some((t) => t.name === "design_sculpt") && TOOL_DEFS.some((t) => t.name === "blender_retopo"), `registry ${TOOL_DEFS.length}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A15 the curriculum grew SCULPT IS FINISHING", prompts.includes("- SCULPT IS FINISHING") && prompts.includes("a sculpt you cannot measure is a sculpt you cannot trust"));

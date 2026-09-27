@@ -40,10 +40,12 @@ import { compileFxSpec, serializeFx, BUILT_IN_FX, FX_KINDS, findBuiltInFx } from
 import { compilePhysicsSpec, serializePhysics, BUILT_IN_PHYSICS, PHYSICS_KINDS, findBuiltInPhysics } from "@/lib/animation/physics";
 import { reviewRenderJob, renderPixelContextLine, RENDER_ISSUE_KINDS } from "@/lib/engine/render-review";
 import { fixRenderIssues } from "@/lib/engine/render-fix";
+import { proposeRedirection } from "@/lib/engine/render-redirection";
 import {
   findRetopoFlow, learnRetopoFlow, recordRetopoOutcome, listRetopoFlows, retopoFlowsContextLine,
   type RetopoOutcome,
 } from "@/lib/blender/retopo-flows";
+import { planSculpt, listSculptPlans, sculptPlansContextLine, surfaceReadLine } from "@/lib/blender/sculpt-plans";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
 import { presetPosesForStateLabel } from "@/lib/animation/state-poses";
 import { parseDialogue, serializeDialogue, stampStateArc, type DialogueLine } from "@/lib/comic/dialogue";
@@ -399,6 +401,7 @@ export const TOOL_DEFS: ToolDef[] = [
       motion: "string (optional - a design_motion preset name; bakes a REAL armature performance into the .blend and renders the animated preview loop)",
       variation: "string (optional - a design_variation preset name; attaches a REAL Geometry Nodes scatter/array layout to the asset)",
       sculpt: "string (optional - a design_sculpt preset name; carves layered seeded surface detail into the asset before the save)",
+      plan: "string (optional - a plan_sculpt LEARNED PLAN name; the planned surface law is carved into the asset and the pass's measured evidence grows the plan's record - the learned layer reading the surface before the carve)",
     },
   },
   {
@@ -802,6 +805,26 @@ export const TOOL_DEFS: ToolDef[] = [
       refName: "string (optional - the asset whose measured blender_retopo run seeds the record)",
       budget: "number (optional - default the kind's triangle budget law; clamped 200..2,000,000)",
       parts: "string (optional - comma-separated object-name filters; default every mesh)",
+    },
+  },
+  {
+    name: "plan_sculpt",
+    description: "THE SURFACE IS READ BEFORE IT IS CARVED: run VISION-GUIDED SCULPT PLANNING on a library asset - the learned layer's read of the surface before any carve touches it. The asset's actual .blend is opened READ-ONLY and MEASURED by a deterministic probe (tris, verts, bbox, Laplacian roughness - the same detail metric the sculpt pass reports - its spread, tri density, and a flatness number where 1.0 is the clean builder slab the audit calls unfinished), then the asset's own preview PNG is shown TOGETHER WITH those numbers to the vision model, which plans the treatment in the studio's three-layer vocabulary (swell / fold / grain with intensities and scales). The planned layers compile through the SAME law design_sculpt obeys (unknown kinds and wild numbers refused at the boundary) and land as a NAMED SCULPT PLAN - the production's memory of how this kind of surface is finished. From then on blender_asset_build plan:'<name>' carves it (the pass's measured evidence grows the plan's record), and design_fix consults the kind's best-proven plan before any default recipe - every re-audit that stops raising SCULPT earns the plan a clear. The provider is named honestly (vision+local | local): when the vision pass cannot run, the plan degrades to the probe numbers alone and says so.",
+    args: {
+      refName: "string - the library asset whose surface is read",
+      name: "string - the plan's name (e.g. 'cloudsea-terrain-v1')",
+      kind: "CHARACTER | ENVIRONMENT | PROP | CREATURE (default: the asset's own kind)",
+      vision: "boolean (optional - default true; false plans from the probe numbers alone)",
+    },
+  },
+  {
+    name: "render_redirection",
+    description: "THE FIX GRADUATES TO THE DIRECTION: when a reviewed render's issues are not the light's fault, stop re-lighting and RE-DIRECT. Run this on a finished render's pixel review after the parameter level has had its chance: INTENT issues are always direction-level (iteration 60's honest refusal), and any other kind escalates once its parameter fix already ran in this render's fixOf lineage and the pixels still raise it. The planner proposes CONCRETE re-directions in the compiled vocabulary - a directed WIND call on the widest beat, a re-shaped beat (hold + push-in), an AURA presence, MOTES for a stage that reads empty, the quietest fx program raised - every op CITES the issue that called for it (kind, severity, the review's own numbers). The proposal applies through the SAME compilers set_shot_grammar/set_shot_fx obey (a typo never reaches a shoot), queues a NEW attempt with the same fixOf lineage, and the fresh pixel review is THE JUDGE - by kind, the same law that judges a parameter fix. CONTRAST and PALETTE refuse even when escalated: contrast lives in the light law, palette in the materials - honesty outranks coverage. A one-move shot cannot be re-framed: direct a grammar first.",
+    args: {
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
+      jobId: "string - optional explicit render job id (defaults to the shot's latest finished render)",
+      issueIds: "JSON array of issue ids (optional - defaults to ALL open issues of the render's review)",
     },
   },
 ];
@@ -2299,6 +2322,7 @@ export async function executeTool(
           motionName: String(args.motion ?? "").trim() || null,
           variationName: String(args.variation ?? "").trim() || null,
           sculptName: String(args.sculpt ?? "").trim() || null,
+          planName: String(args.plan ?? "").trim() || null,
         });
         if (!res.ok) return { status: "ERROR", result: `Asset build failed for ${refName}: ${res.log.slice(-400)}` };
         const inspectHint = kindRaw === "CHARACTER"
@@ -3033,6 +3057,68 @@ export async function executeTool(
         const flow = await learnRetopoFlow({ projectId, kind: kindRaw, name, spec: compiled.spec, seedOutcome, learnedFrom });
         await landDesignEvent(projectId, `Retopo flow '${name}' ${seedOutcome ? "learned from a measured run" : "registered"} for ${kindRaw.toLowerCase()} (budget ${compiled.spec.budget.toLocaleString()})`, { flowId: flow.id, kind: kindRaw });
         return { status: "OK", result: `RETOPO FLOW '${name}' remembered for ${kindRaw.toLowerCase()}: budget ${compiled.spec.budget.toLocaleString()}, parts ${flow.spec.parts.length ? flow.spec.parts.join(", ") : "every mesh"}${seedOutcome ? `, seeded with the measured run (${seedOutcome.trisBefore ?? "?"} -> ${seedOutcome.trisAfter ?? "?"} tris, drift ${seedOutcome.driftPct ?? "?"}%, ${seedOutcome.verified ? "verified" : "NOT verified"})` : ", no measured outcome yet"}. Apply it with blender_retopo flow:'${name}' - every outcome grows the record - and design_fix consults the best-verified flow for the kind before it decimates; each re-audit that stops raising TOPOLOGY earns the flow a clear.` };
+      }
+
+      case "plan_sculpt": {
+        const refName = String(args.refName ?? "").trim();
+        if (!refName) return { status: "ERROR", result: "refName is required - the surface is read from a real asset, not a vibe." };
+        const asset = await db.blenderAsset.findFirst({ where: { projectId, refName }, orderBy: { updatedAt: "desc" } });
+        if (!asset) return { status: "ERROR", result: `No library asset named "${refName}" - design one first (blender_asset_build); the probe reads the actual .blend.` };
+        const kindRaw = args.kind !== undefined ? String(args.kind).toUpperCase() : asset.kind;
+        if (!isBlenderAssetKind(kindRaw)) return { status: "ERROR", result: `kind must be one of CHARACTER | ENVIRONMENT | PROP | CREATURE (got "${kindRaw}").` };
+        const name = String(args.name ?? "").trim() || `${asset.refName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}-plan`;
+        const useVision = args.vision === undefined ? true : Boolean(args.vision);
+        const res = await planSculpt({ projectId, assetId: asset.id, name, useVision });
+        if (!res.ok) return { status: "ERROR", result: `the surface read failed: ${res.error}` };
+        const readLine = surfaceReadLine(res.read);
+        const layers = res.plan.spec.layers.map((l) => `${l.kind} i${l.intensity} s${l.scale}`).join(" + ");
+        const visionLine = res.note ? ` ${res.note}` : "";
+        return { status: "OK", result: `THE SURFACE WAS READ (provider ${res.provider}): ${readLine}${visionLine}\nSCULPT PLAN '${res.plan.name}' ${res.created ? "saved" : "updated"} for ${res.plan.kind.toLowerCase()}: ${layers} over subdivision ${res.plan.spec.subdivision}, seed ${res.plan.spec.seed}. Carve it with blender_asset_build plan:'${res.plan.name}' - the pass's measured evidence grows the plan's record - and design_fix now consults the kind's best-proven plan before any default recipe; every re-audit that stops raising SCULPT earns the plan a clear. The carve you can cite beats the slab you hoped for.` };
+      }
+
+      case "render_redirection": {
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
+        if (args.sceneNumber) {
+          const scenes = await db.scene.findMany({
+            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+            orderBy: { createdAt: "desc" },
+          });
+          scene = scenes[0] ?? null;
+        }
+        if (!scene) scene = await latestScene(projectId);
+        if (!scene) return { status: "ERROR", result: "No scene exists - direct a shot first (create_episode / the breakdown tools)." };
+        const shot = await db.shot.findFirst({ where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 } });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        let jobId = args.jobId ? String(args.jobId).trim() : "";
+        if (!jobId) {
+          const latest = await db.renderJob.findFirst({
+            where: { shotId: shot.id, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
+            orderBy: { createdAt: "desc" },
+          });
+          if (!latest) return { status: "ERROR", result: "no finished render for this shot yet - review what exists, not what is promised (render_shot, then review_render)." };
+          jobId = latest.id;
+        }
+        let issueIds: string[] | undefined;
+        if (args.issueIds !== undefined && String(args.issueIds).trim()) {
+          try {
+            const parsed = JSON.parse(String(args.issueIds)) as unknown;
+            if (!Array.isArray(parsed)) return { status: "ERROR", result: "issueIds must be a JSON array of issue ids." };
+            issueIds = parsed.map(String);
+          } catch {
+            return { status: "ERROR", result: "issueIds must be a JSON array of issue ids." };
+          }
+        }
+        const res = await proposeRedirection(jobId, issueIds);
+        if (!res.ok) return { status: "ERROR", result: res.error ?? "the re-direction could not run" };
+        if (res.proposed === 0) {
+          return { status: "OK", result: `NO RE-DIRECTION PROPOSED for ${res.targetRef} - ${res.opsChain}. The graduated law is honest: it proposes only what the direction can actually act, and it refuses what it cannot (contrast lives in the light law, palette in the materials).` };
+        }
+        const ops = [
+          ...res.grammarOps.map((o) => `GRAMMAR ${o.op} (cited ${o.citedKind} ${o.citedSeverity}${o.citedNumber ? ` ${o.citedNumber}` : ""}): ${o.detail}`),
+          ...res.fxOps.map((o) => `FX ${o.kind} @${o.intensity}${o.beats === "ALL" ? " ALL" : ` beats ${(o.beats as number[]).join(".")}`} (cited ${o.citedKind} ${o.citedSeverity}${o.citedNumber ? ` ${o.citedNumber}` : ""}): ${o.detail}`),
+        ].join("; ");
+        const refusals = res.refusals.length > 0 ? ` Refusals: ${res.refusals.map((r) => `${r.kind} - ${r.note}`).join("; ")}.` : "";
+        return { status: "OK", result: `THE FIX GRADUATED TO THE DIRECTION on ${res.targetRef}: ${res.proposed} re-direction op(s) proposed and applied through the compilers - ${ops}.${refusals} Attempt ${res.newAttempt ?? "?"} is queued (fixOf lineage names the reviewed attempt) and its fresh pixel review is THE JUDGE - by kind, the same law that judges a parameter fix. Escalated kinds this run: ${res.exhaustedKinds.length ? res.exhaustedKinds.join(", ") : "INTENT (always direction-level)"}. Read the verdict from the new review's issues, never from intention.` };
       }
 
       case "design_audit": {
@@ -4084,7 +4170,7 @@ function designContextLine(
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows, learnedSculptPlans] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -4145,6 +4231,8 @@ export async function buildCompactContext(projectId: string) {
     db.renderReview.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" as const } }).catch(() => null),
     // The learned retopo flows (Iteration 60): the studio's remembered craft.
     listRetopoFlows(projectId).catch(() => []),
+    // The learned sculpt plans (Iteration 61): the surface the studio has READ.
+    listSculptPlans(projectId).catch(() => []),
   ]);
   if (!project) return null;
 
@@ -4258,5 +4346,6 @@ export async function buildCompactContext(projectId: string) {
     design: designContextLine(project, openDesignIssues, latestDesignReview),
     pixel: renderPixelContextLine(latestRenderReview),
     retopoFlows: retopoFlowsContextLine(learnedRetopoFlows),
+    sculptPlans: sculptPlansContextLine(learnedSculptPlans),
   };
 }

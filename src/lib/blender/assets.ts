@@ -9,6 +9,7 @@ import type { MotionSpec } from "@/lib/blender/motion";
 import type { VariationSpec } from "@/lib/blender/variation";
 import type { SculptSpec } from "@/lib/blender/sculpt";
 import { writeSculptSpec } from "@/lib/blender/sculpt";
+import { findSculptPlan, recordSculptOutcome } from "@/lib/blender/sculpt-plans";
 
 // ─────────────────────────────────────────────────────────────
 // BLENDER ASSET LIBRARY (design once, render many)
@@ -142,7 +143,7 @@ export async function buildBlenderAsset(
   kind: BlenderAssetKind,
   refName: string,
   guidance?: string | null,
-  presets?: { materialName?: string | null; lightingName?: string | null; motionName?: string | null; variationName?: string | null; sculptName?: string | null },
+  presets?: { materialName?: string | null; lightingName?: string | null; motionName?: string | null; variationName?: string | null; sculptName?: string | null; planName?: string | null },
 ): Promise<BuildAssetResult> {
   if (!runtimeBlenderBin()) {
     return {
@@ -158,6 +159,19 @@ export async function buildBlenderAsset(
     };
   }
   const project = await db.project.findUnique({ where: { id: projectId }, select: { title: true } });
+
+  // THE LEARNED LAYER DRIVES THE CARVE (iteration 61): resolve the named
+  // sculpt plan BEFORE the BUILDING upsert - a plan that was named but
+  // does not exist is an honest refusal that leaves the asset's standing
+  // untouched (a naming error, not a build failure).
+  const sculptPlan = presets?.planName ? await findSculptPlan(projectId, kind, presets.planName) : null;
+  if (presets?.planName && !sculptPlan) {
+    return {
+      ok: false, assetId: "", version: 0, status: "NOT_BUILT", blendPath: null,
+      previewPath: null, objects: 0, tris: 0, buildMs: 0,
+      log: `sculpt plan '${presets.planName}' not found in this production - plan one first (plan_sculpt) or pass sculpt:<design_sculpt preset>`,
+    };
+  }
 
   const existing = await db.blenderAsset.findUnique({
     where: { projectId_kind_refName: { projectId, kind, refName } },
@@ -290,7 +304,12 @@ export async function buildBlenderAsset(
       }
     }
   }
-  const sculptFile = sculptPreset ? writeSculptSpec(sculptPreset.spec, workDir) : null;
+  let sculptFile = sculptPreset ? writeSculptSpec(sculptPreset.spec, workDir) : null;
+
+  if (sculptPlan) {
+    sculptPreset = { name: sculptPlan.name, spec: sculptPlan.spec };
+    sculptFile = writeSculptSpec(sculptPlan.spec, workDir);
+  }
 
   const run = await runAssetBuilder({
     kind,
@@ -344,7 +363,7 @@ export async function buildBlenderAsset(
       ? { name: variationPreset.name, ...run.variationSummary, spec: variationPreset.spec }
       : null,
     sculpt: sculptPreset
-      ? { name: sculptPreset.name, ...run.sculptSummary, applied: true }
+      ? { name: sculptPreset.name, ...(sculptPlan ? { plan: sculptPlan.name } : {}), ...run.sculptSummary, applied: true }
       : null,
     objects: run.objects,
     tris: run.tris,
@@ -375,6 +394,18 @@ export async function buildBlenderAsset(
     `Blender asset built: ${kind.toLowerCase()} ${refName} v${version} (${run.objects} objects, ${(run.tris).toLocaleString()} tris, ${(buildMs / 1000).toFixed(1)}s${motionPreset ? `, performing '${motionPreset.name}'` : ""}${variationPreset ? `, varied '${variationPreset.name}'` : ""}${sculptPreset ? `, sculpted '${sculptPreset.name}'` : ""})`,
     { assetId: updated.id, version, blendPath: finalBlend, motion: motionPreset?.name ?? null, variation: variationPreset?.name ?? null, sculpt: sculptPreset?.name ?? null },
   );
+  // THE MEMORY GROWS: a plan-driven carve appends what the pass
+  // MEASURED to the plan's record - verified or not, the honest way
+  // (the same law the retopo flows obey).
+  if (sculptPlan) {
+    await recordSculptOutcome(projectId, sculptPlan.kind, sculptPlan.name, {
+      assetRef: `${kind}:${refName} v${version}`,
+      meanMove: typeof run.sculptSummary?.meanMove === "number" ? run.sculptSummary.meanMove : null,
+      roughnessRatio: typeof run.sculptSummary?.roughnessRatio === "number" ? run.sculptSummary.roughnessRatio : null,
+      trisBefore: typeof run.sculptSummary?.trisBefore === "number" ? run.sculptSummary.trisBefore : null,
+      trisAfter: typeof run.sculptSummary?.trisAfter === "number" ? run.sculptSummary.trisAfter : null,
+    }).catch(() => null);
+  }
   return {
     ok: true, assetId: updated.id, version, status: "READY", blendPath: finalBlend,
     previewPath: updated.previewPath, objects: run.objects, tris: run.tris, buildMs, log: run.log,
@@ -488,6 +519,8 @@ export async function blenderAssetLibrary(projectId: string) {
       loopPath: r.loopPath,
       variationPreset: r.variationPreset,
       sculptPreset: r.sculptPreset,
+      // the learned plan that carved the current surface (iteration 61)
+      sculptPlan: (() => { try { return (JSON.parse(r.meta || "{}") as { sculpt?: { plan?: string } }).sculpt?.plan ?? null; } catch { return null; } })(),
       identityScore: r.identityScore,
       inspectNote: r.inspectNote,
       inspectedAt: r.inspectedAt ? r.inspectedAt.toISOString() : null,

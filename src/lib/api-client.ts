@@ -357,6 +357,7 @@ export interface BlenderAssetRow {
   loopPath?: string | null;
   variationPreset?: string | null;
   sculptPreset?: string | null;
+  sculptPlan?: string | null;
   identityScore: number | null;
   inspectNote: string | null;
   inspectedAt: string | null;

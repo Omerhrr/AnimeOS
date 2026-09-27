@@ -300,8 +300,8 @@ function BlenderAssetLibraryCard() {
                   </span>
                 )}
                 {a.sculptPreset && (
-                  <span className="absolute top-1 left-[4.25rem] rounded px-1 py-0.5 text-[8px] font-bold tracking-wider bg-black/60 text-amber-300" title={`Sculpt preset: ${a.sculptPreset}`}>
-                    +SCULPT
+                  <span className="absolute top-1 left-[4.25rem] rounded px-1 py-0.5 text-[8px] font-bold tracking-wider bg-black/60 text-amber-300" title={a.sculptPlan ? `Sculpted by learned plan: ${a.sculptPlan}` : `Sculpt preset: ${a.sculptPreset}`}>
+                    {a.sculptPlan ? "+PLAN" : "+SCULPT"}
                   </span>
                 )}
                 {openForAsset.length > 0 && (

@@ -60,6 +60,7 @@ model Project {
   renderReviews    RenderReview[]
   renderIssues     RenderIssue[]
   retopoFlows      RetopoFlow[]
+  sculptPlans      SculptPlan[]
   assetExports     AssetExport[]
   comments         Comment[]
   memberships      ProjectMembership[]
@@ -650,6 +651,35 @@ model RenderJob {
 // flow a clear. Shaped like the Terminology memory: the studio
 // proposes, the record disposes.
 // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// LEARNED SCULPT PLANS (iteration 61 - the surface is read before
+// it is carved). A plan is the named memory of a surface treatment
+// that was planned from a MEASURED read of the actual mesh (a
+// deterministic probe: tris, bbox, Laplacian roughness) plus a
+// vision read of the asset's own preview - the learned layer
+// reading the surface before the carve, the way the retopo flows
+// remember a verified budget. The record is honest: every carve
+// the plan drove appends what the pass MEASURED, verified or not.
+// ─────────────────────────────────────────────────────────────
+model SculptPlan {
+  id          String   @id @default(cuid())
+  projectId   String
+  kind        String // CHARACTER | ENVIRONMENT | PROP | CREATURE - the plan's asset kind
+  name        String // the plan's name - how DSH drives it (blender_asset_build plan:'name')
+  spec        String // JSON SculptSpec {name, layers, subdivision, seed, parts} - the carve the plan compiles to
+  reading     String // JSON {surface: <probe read>, vision: {note, provider}, cited: [...]} - the evidence the plan was read FROM
+  outcomes    String // JSON [{assetRef, meanMove, roughnessRatio, trisBefore, trisAfter, at}] - the measured record of every carve it drove
+  runs        Int      @default(0) // carves the plan drove
+  clears      Int      @default(0) // re-audits that stopped raising SCULPT after this plan carved
+  learnedFrom String? // the asset whose surface taught it (e.g. "ENVIRONMENT:Cloudsea Terrace v2")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, kind, name])
+  @@index([projectId, kind])
+}
+
 model RetopoFlow {
   id          String   @id @default(cuid())
   projectId   String

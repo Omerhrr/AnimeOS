@@ -8,6 +8,7 @@ import { DEFAULT_MOTION_BY_ARCHETYPE } from "@/lib/blender/motion";
 import { DEFAULT_VARIATION_BY_KIND } from "@/lib/blender/variation";
 import { DEFAULT_SCULPT_BY_KIND, DEFAULT_RETOPO_BUDGET, writeSculptSpec, writeRetopoSpec } from "@/lib/blender/sculpt";
 import { bestRetopoFlow, recordRetopoOutcome, reinforceRetopoFlow } from "@/lib/blender/retopo-flows";
+import { bestSculptPlan, recordSculptOutcome, reinforceSculptPlan } from "@/lib/blender/sculpt-plans";
 
 // ─────────────────────────────────────────────────────────────
 // THE SELF-CORRECTING DESIGN LOOP (the studio checks its own work)
@@ -921,9 +922,16 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   // THE SCULPT FIX: an unfinished surface gets the kind's default
   // sculpt recipe carved through the builder's sculpt-only pass,
   // landing a new .blend whose surface carries measured detail.
-  let sculptBaked: { blendPath: string; previewPath: string | null; ops: string; name: string; summary: Record<string, unknown> | null; tris: number; objects: number } | null = null;
+  // THE LEARNED LAYER READS FIRST (iteration 61): the kind's
+  // best-verified SCULPT PLAN (a treatment planned from a measured
+  // surface read + a vision read) is preferred over the raw default
+  // recipe - the studio starts from what it READ and what worked,
+  // not from a fresh guess; the measured carve grows the plan's
+  // record either way.
+  let sculptBaked: { blendPath: string; previewPath: string | null; ops: string; name: string; summary: Record<string, unknown> | null; tris: number; objects: number; plan: string | null } | null = null;
   if (kinds.has("SCULPT")) {
-    const defaultSpec = DEFAULT_SCULPT_BY_KIND[asset.kind] ?? null;
+    const learnedPlan = await bestSculptPlan(asset.projectId, asset.kind);
+    const defaultSpec = learnedPlan?.spec ?? DEFAULT_SCULPT_BY_KIND[asset.kind] ?? null;
     if (!defaultSpec) {
       for (const t of targets.filter((x) => x.kind === "SCULPT")) {
         await db.designIssue.update({ where: { id: t.id }, data: { status: "OPEN", fixNote: "no default sculpt recipe for this kind - register one with design_sculpt and rebuild with sculpt:<name>", updatedAt: new Date() } });
@@ -964,12 +972,24 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
       sculptBaked = {
         blendPath: sculptRun.blendPath,
         previewPath: sculptRun.previewPath,
-        ops: `carved the default ${asset.kind.toLowerCase()} sculpt (moved ${sculptRun.sculptSummary?.meanMove ?? "?"} units mean)`,
+        ops: `carved ${learnedPlan ? `learned plan '${learnedPlan.name}'` : `the default ${asset.kind.toLowerCase()} sculpt`} (moved ${sculptRun.sculptSummary?.meanMove ?? "?"} units mean)`,
         name: defaultSpec.name,
         summary: sculptRun.sculptSummary,
         tris: sculptRun.tris,
         objects: sculptRun.objects,
+        plan: learnedPlan?.name ?? null,
       };
+      // THE MEMORY GROWS: the plan-driven fix carve appends what the
+      // pass measured (the honest-record law, iter 60's flows).
+      if (learnedPlan) {
+        await recordSculptOutcome(asset.projectId, learnedPlan.kind, learnedPlan.name, {
+          assetRef: `${asset.kind}:${asset.refName} (design_fix)`,
+          meanMove: typeof sculptRun.sculptSummary?.meanMove === "number" ? sculptRun.sculptSummary.meanMove : null,
+          roughnessRatio: typeof sculptRun.sculptSummary?.roughnessRatio === "number" ? sculptRun.sculptSummary.roughnessRatio : null,
+          trisBefore: typeof sculptRun.sculptSummary?.trisBefore === "number" ? sculptRun.sculptSummary.trisBefore : null,
+          trisAfter: typeof sculptRun.sculptSummary?.trisAfter === "number" ? sculptRun.sculptSummary.trisAfter : null,
+        });
+      }
       currentBlend = sculptRun.blendPath; // the sculpt pass saved the new version here
     }
   }
@@ -1144,7 +1164,7 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
           ? { ...(newMeta.variation ?? {}), name: `${variationBaked.name} (default)`, bakedBy: "design_fix", instances: 48 }
           : newMeta.variation,
         sculpt: sculptBaked
-          ? { ...(newMeta.sculpt ?? {}), name: `${sculptBaked.name} (default)`, ...(sculptBaked.summary ?? {}), applied: true, bakedBy: "design_fix" }
+          ? { ...(newMeta.sculpt ?? {}), name: `${sculptBaked.name}${sculptBaked.plan ? " (learned plan)" : " (default)"}`, ...(sculptBaked.summary ?? {}), applied: true, bakedBy: "design_fix", ...(sculptBaked.plan ? { plan: sculptBaked.plan } : {}) }
           : newMeta.sculpt,
         retopo: retopoBaked
           ? { ...(retopoBaked.summary ?? {}), bakedBy: "design_fix", ...(retopoBaked.flow ? { flow: retopoBaked.flow } : {}) }
@@ -1162,6 +1182,11 @@ export async function fixIssues(assetId: string, issueIds?: string[]): Promise<F
   // rises in the consult ranking.
   if (retopoBaked?.flow && !reRaised.has("TOPOLOGY")) {
     await reinforceRetopoFlow(asset.projectId, asset.kind, retopoBaked.flow);
+  }
+  // Reinforcement (iteration 61): the learned sculpt plan carved and
+  // the re-audit stopped raising SCULPT - the plan earns a clear.
+  if (sculptBaked?.plan && !reRaised.has("SCULPT")) {
+    await reinforceSculptPlan(asset.projectId, asset.kind, sculptBaked.plan);
   }
   let fixed = 0;
   let stillOpen = 0;
