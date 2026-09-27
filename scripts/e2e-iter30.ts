@@ -67,7 +67,7 @@ function extractFrame(file: string, atSec: number, out: string): Promise<boolean
   });
 }
 
-const BLENDER_BIN = "/home/z/blender-4.3.2-linux-x64/blender";
+const BLENDER_BIN = "/home/z/blender-5.2.2-linux-x64/blender";
 
 // the in-Blender rig probe: build the v3.2 figure for real, drive it,
 // and report the face/hand state as JSON (no render, ~seconds)

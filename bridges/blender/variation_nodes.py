@@ -24,7 +24,8 @@
 #             blades, colonnades, banners over a gate, coin
 #             piles.
 #
-# Node palette used (all verified against Blender 4.3.2 headless):
+# Node palette used (all verified against Blender 4.3.2 headless,
+#   re-verified under 5.2.2 LTS at the runtime upgrade):
 #   GeometryNodeDistributePointsOnFaces (distribute_method RANDOM,
 #     Seed input - deterministic)
 #   GeometryNodeObjectInfo (Object input - the source)

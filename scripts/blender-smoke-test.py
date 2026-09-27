@@ -2,7 +2,7 @@
 # (same protocol submitLocalJob uses; 1-second PREVIEW shot).
 import json, os, subprocess, sys, time
 
-ROOT = "/home/z/my-project"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # the repo root, wherever it lives
 SCRIPT = os.path.join(ROOT, "bridges", "blender", "animeos_bridge.py")
 OUT_DIR = os.path.join(ROOT, "public", "renders")
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -38,7 +38,13 @@ job_file = os.path.join(OUT_DIR, ".job-blender-smoke-test.json")
 with open(job_file, "w") as fh:
     json.dump(payload, fh)
 
-bin_path = "/home/z/blender-4.3.2-linux-x64/blender"
+bin_path = next(
+    p for p in (
+        "/home/z/blender-5.2.2-linux-x64/blender",
+        "/home/z/blender-4.3.2-linux-x64/blender",
+    )
+    if os.path.exists(p)
+)
 state_file = job_file  # the worker rewrites the same file as state
 t0 = time.time()
 proc = subprocess.run(

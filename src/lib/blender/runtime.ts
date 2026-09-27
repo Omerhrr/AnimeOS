@@ -43,9 +43,10 @@ const RESIDENT_RESTART_BACKOFF_MS = 4000;
 const EXEC_TIMEOUT_MS = 4 * 60_000;
 const EXEC_MAX_SCRIPT_BYTES = 96 * 1024;
 
-// The pinned release the studio provisions for itself (matches the
-// bridge's known-good 4.3.x line; Cycles CPU proven on this box).
-const BLENDER_VERSION_TAG = "4.3.2";
+// The pinned release the studio provisions for itself (the current
+// stable line; Cycles CPU proven on this box, bridge + builder + the
+// solver passes verified against it at the upgrade commit).
+const BLENDER_VERSION_TAG = "5.2.2";
 const BLENDER_URL = `https://download.blender.org/release/Blender${BLENDER_VERSION_TAG.slice(0, 3)}/blender-${BLENDER_VERSION_TAG}-linux-x64.tar.xz`;
 const BLENDER_DIR = path.join(process.env.HOME ?? "/home/z", `blender-${BLENDER_VERSION_TAG}-linux-x64`);
 const BLENDER_BIN = path.join(BLENDER_DIR, "blender");

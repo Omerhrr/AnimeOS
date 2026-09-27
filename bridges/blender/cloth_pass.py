@@ -9,7 +9,7 @@ the Armature -> Subsurf -> Cloth modifier stack turns that anchor
 motion into real solver dynamics: lag, folds and follow-through no
 spring can fake. Hair keeps the damped springs.
 
-The law was probed first (tmp/cloth_probe.py, real Blender 4.3.2):
+The law was probed first (tmp/cloth_probe.py, real Blender 4.3.2; re-verified under 5.2.2 LTS at the runtime upgrade):
 the pin convention (weight 1 pins), a held storm swinging the tip
 5.3 cm against the calm hold's 0.2 cm, pairwise-distance span proving
 real deformation, bit-exact determinism across rebuilds, and a walk

@@ -11,6 +11,7 @@ keyframe can fake. The skeleton carries the body's weight (gravity
 zeroed on the solver - probed law); the solver owns only the LAG.
 
 The law was probed first (tmp/flesh_probe.py, real Blender 4.3.2,
+re-verified under 5.2.2 LTS at the runtime upgrade,
 differential measurement - the solver's own answer isolated against
 its armature-only twin): a storm program's peak lag 2.13 cm against
 the calm hold's 0.015 cm (ratio 141.75 - real dynamics, not noise),

@@ -96,6 +96,7 @@ function localBinCandidates(): string[] {
   const home = process.env.HOME ?? "/home/z";
   out.push(
     `${home}/.venv/bin/blender`,
+    "/home/z/blender-5.2.2-linux-x64/blender",
     "/home/z/blender-4.3.2-linux-x64/blender",
     "/usr/local/bin/blender",
     "/usr/bin/blender",

@@ -44,7 +44,7 @@ fs.mkdirSync(rendersDir, { recursive: true });
 const jobFile = path.join(rendersDir, ".job-design-smoke-v4.json");
 fs.writeFileSync(jobFile, JSON.stringify({ jobId: payload.jobId, payload, outDir: rendersDir }));
 
-const bin = "/home/z/blender-4.3.2-linux-x64/blender";
+const bin = "/home/z/blender-5.2.2-linux-x64/blender";
 const script = path.join(process.cwd(), "bridges", "blender", "animeos_bridge.py");
 console.log("spawning worker...");
 const child = spawn(bin, ["-b", "-P", script, "--", "--worker", "--job", jobFile], { stdio: ["ignore", "pipe", "pipe"] });

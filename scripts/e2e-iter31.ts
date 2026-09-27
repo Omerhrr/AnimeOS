@@ -79,7 +79,7 @@ function extractFrame(file: string, atSec: number, out: string): Promise<boolean
   });
 }
 
-const BLENDER_BIN = "/home/z/blender-4.3.2-linux-x64/blender";
+const BLENDER_BIN = "/home/z/blender-5.2.2-linux-x64/blender";
 
 // in-Blender lip-sync probe: the mouth rig must PERFORM a viseme when
 // speech is sampled and hold the pose mouth when it is not

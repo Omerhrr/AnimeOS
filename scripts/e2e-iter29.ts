@@ -206,7 +206,7 @@ if (step === "tool") {
   const shots = proj.seasons[0].episodes[0].scenes[0].shots.sort((a, b) => a.number - b.number);
   console.log(`fixture project ${projectId} with ${shots.length} shots, ${proj.characters.length} characters`);
 
-  const blenderDir = "/home/z/blender-4.3.2-linux-x64";
+  const blenderDir = "/home/z/blender-5.2.2-linux-x64";
   const blenderBackup = "/home/z/.blender-e2e-hidden";
   const hideBlender = () => { try { if (fs.existsSync(blenderDir)) fs.renameSync(blenderDir, blenderBackup); } catch { /* ignore */ } };
   const unhideBlender = () => { try { if (fs.existsSync(blenderBackup)) fs.renameSync(blenderBackup, blenderDir); } catch { /* ignore */ } };
