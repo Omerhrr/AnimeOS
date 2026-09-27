@@ -16,7 +16,7 @@ import {
 } from "@/lib/animation/viseme-neural";
 import {
   bridgeStatus, submitRenderJob, pollJobProgress,
-  pollLocalJob, localJobStale,
+  pollLocalJob, localJobStale, pumpLocalWaiters, localWaitDepth, WORKER_TIMEOUT_MS,
 } from "@/lib/bridge/blender";
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
@@ -314,6 +314,16 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         ? "Blender: headless sequence worker spawned"
         : `Blender: job submitted → ${bridge.host}`;
       clipMs = Math.round(shot.duration * 1000);
+    } else if (submit.queued3d && mode === "FINAL") {
+      // iteration 75: the 3D pool is full - a FINAL render KEEPS THE
+      // DESIGNED ENGINE and parks for the next free slot (a FINAL
+      // falling to the ffmpeg previz engine would be a quality lie).
+      // The tick pumps the wait queue; the slot frees within a poll.
+      driver = "BLENDER_LOCAL";
+      stage = `3D-WAIT: Blender - waiting for a 3D worker slot (position ${submit.position ?? 1}) - FINAL keeps the designed engine`;
+      clipMs = Math.round(shot.duration * 1000);
+    } else if (submit.queued3d) {
+      stage = `Blender 3D pool full (${submit.error ?? "unknown"}) - PREVIEW overflows to the built-in engine`;
     } else {
       stage = `Blender submit failed (${submit.error ?? "unknown"}) - trying the built-in engine`;
     }
@@ -509,6 +519,42 @@ export async function tickRenderJob(jobId: string) {
   if (job.status !== "RENDERING") return job;
 
   if (job.driver === "BLENDER_LOCAL") {
+    // iteration 75: a parked FINAL waits for a pool slot - pump the
+    // wait queue on every tick so a freed slot is claimed within one
+    // poll, and fail honestly if the waiter was lost (a server
+    // restart drops the in-memory queue) after the worker timeout.
+    if (job.stage.startsWith("3D-WAIT")) {
+      pumpLocalWaiters();
+      const waitedMs = Date.now() - (job.startedAt?.getTime() ?? Date.now());
+      if (waitedMs > WORKER_TIMEOUT_MS) {
+        return db.renderJob.update({
+          where: { id: jobId },
+          data: { status: "FAILED", progress: 100, stage: "Blender: lost its 3D slot (the render server restarted) - queue the render again", finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER_LOCAL", job.startedAt, job.durationMs / 1000, "lost waiter")) },
+          include: { evaluation: true },
+        });
+      }
+      const parkedProg = pollLocalJob(job.id);
+      if (parkedProg.polled) {
+        // the pump admitted this job and its worker already answered
+        const progress = Math.min(99, Math.floor((parkedProg.progress ?? 0) * 100));
+        if (progress !== job.progress || (parkedProg.stage && parkedProg.stage !== job.stage)) {
+          return db.renderJob.update({
+            where: { id: jobId },
+            data: { progress, stage: parkedProg.stage ?? stageFor(progress) },
+            include: { evaluation: true },
+          });
+        }
+        return job;
+      }
+      // still parked - keep the honest wait line fresh (the queue may
+      // have moved; the depth is re-read every tick)
+      const depth = localWaitDepth();
+      const fresh = `3D-WAIT: Blender - waiting for a 3D worker slot (${depth} waiting) - FINAL keeps the designed engine`;
+      if (fresh !== job.stage) {
+        return db.renderJob.update({ where: { id: jobId }, data: { stage: fresh }, include: { evaluation: true } });
+      }
+      return job;
+    }
     if (localJobStale(job.id)) {
       return db.renderJob.update({
         where: { id: jobId },

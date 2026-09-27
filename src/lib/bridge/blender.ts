@@ -32,9 +32,11 @@ import { ensureResident, residentHost, provisionBlender } from "@/lib/blender/ru
 //      headless worker process
 //        blender -b -P animeos_bridge.py -- --worker --job <file>
 //      which renders the clip and streams per-frame progress into a
-//      small JSON state file the render pipeline polls. One local
-//      worker at a time (a 4GB-class box renders one 3D clip at a
-//      time); extra jobs fall through to the MOTION engine.
+//      small JSON state file the render pipeline polls. Since
+//      iteration 75 the workers form a POOL (ANIMEOS_RENDER_WORKERS,
+//      default 2): when the pool is full a PREVIEW falls through to
+//      the MOTION engine while a FINAL parks in a priority wait queue
+//      (FINAL over PREVIEW, older first) until a slot frees.
 //
 // If none of these exist the render pipeline uses the built-in MOTION
 // engine (ffmpeg camera moves over key art) or, failing that, the
@@ -44,7 +46,17 @@ import { ensureResident, residentHost, provisionBlender } from "@/lib/blender/ru
 const HOST_ENV = process.env.ANIMEOS_BLENDER_HOST ?? "";
 const BLENDER_BIN_ENV = process.env.ANIMEOS_BLENDER_BIN ?? "";
 const PROBE_TIMEOUT_MS = 1200;
-const WORKER_TIMEOUT_MS = 15 * 60_000;
+export const WORKER_TIMEOUT_MS = 15 * 60_000;
+
+/** The 3D worker pool size (iteration 75): ANIMEOS_RENDER_WORKERS,
+ * default 2, clamped 1..4 - Cycles CPU workers share cores, so more
+ * slots means slower clips, not more throughput, past a small pool.
+ * Read LIVE so a runtime can retune the pool without a restart. */
+export function renderWorkers(): number {
+  const raw = Number(process.env.ANIMEOS_RENDER_WORKERS ?? 2);
+  if (!Number.isFinite(raw)) return 2;
+  return Math.max(1, Math.min(4, Math.round(raw)));
+}
 
 export type BridgeSource = "env" | "resident" | "local" | null;
 
@@ -62,8 +74,20 @@ export interface BridgeStatus {
 let localBinCache: string | null | undefined; // undefined = not probed yet
 let localVersionCache: string | null = null;
 let lastProbe: { at: number; live: boolean } = { at: 0, live: false };
-let localWorkers = 0; // running local worker count (serialize 3D renders)
+let localWorkers = 0; // running local worker count (bounded by the pool)
 let provisionKicked = false; // self-heal provisioning fired once per lifetime
+
+// THE 3D WAIT QUEUE (iteration 75): FINAL renders keep the designed
+// engine when the pool is full - they park here in priority order
+// (FINAL over PREVIEW, older first) until a slot frees. PREVIEW still
+// overflows to the MOTION engine (previz does not wait for a GPU).
+interface LocalWaiter {
+  jobId: string;
+  payload: BridgeJobPayload;
+  enqueuedAt: number;
+  final: boolean;
+}
+const localWaiters: LocalWaiter[] = [];
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 4000): Promise<Response> {
   const controller = new AbortController();
@@ -195,7 +219,7 @@ export async function bridgeStatus(force = false): Promise<BridgeStatus> {
     return {
       mode: "LIVE_BLENDER", source: "local", host: bin, reachable: true,
       blenderVersion: version, scene: "sequence worker pool", busy: localWorkers > 0,
-      detail: `Headless Blender ${version} at ${bin} - one 3D sequence worker at a time, overflow renders fall to the MOTION engine`,
+      detail: `Headless Blender ${version} at ${bin} - a ${renderWorkers()}-slot 3D worker pool (ANIMEOS_RENDER_WORKERS), FINAL renders park for a slot, PREVIEW overflows to the MOTION engine`,
     };
   }
 
@@ -287,6 +311,11 @@ export interface BridgeJobPayload {
 export interface BridgeSubmitResult {
   submitted: boolean;
   path: "env" | "resident" | "local" | null;
+  // iteration 75: the 3D pool was full - the job ENQUEUED (FINAL parks
+  // for a slot; PREVIEW may fall through to MOTION at the caller's
+  // discretion). position is 1-based depth at enqueue time.
+  queued3d?: boolean;
+  position?: number;
   error?: string;
 }
 
@@ -322,11 +351,26 @@ function jobFileFor(jobId: string): string {
   return path.join(process.cwd(), "public", "renders", `.job-${jobId}.json`);
 }
 
-/** Spawn a detached headless Blender worker for one job. */
+/** Spawn a detached headless Blender worker for one job. When the
+ * pool is full the job ENQUEUES instead of failing: PREVIEW falls
+ * through to the MOTION engine (the caller sees queued3d and decides),
+ * FINAL parks until pumpLocalWaiters() admits it. */
 export function submitLocalJob(payload: BridgeJobPayload): BridgeSubmitResult {
   const bin = localBlenderBin();
   if (!bin) return { submitted: false, path: "local", error: "no local blender binary" };
-  if (localWorkers >= 1) return { submitted: false, path: "local", error: "local worker busy" };
+  const cap = renderWorkers();
+  if (localWorkers >= cap) {
+    const final = payload.mode === "FINAL";
+    if (!localWaiters.some((w) => w.jobId === payload.jobId)) {
+      localWaiters.push({ jobId: payload.jobId, payload, enqueuedAt: Date.now(), final });
+    }
+    const position = localWaiters.findIndex((w) => w.jobId === payload.jobId) + 1;
+    return { submitted: false, path: "local", queued3d: true, position, error: `3d worker pool full (${localWorkers}/${cap})` };
+  }
+  return spawnLocalWorker(payload, bin);
+}
+
+function spawnLocalWorker(payload: BridgeJobPayload, bin?: string): BridgeSubmitResult {
   const script = path.join(process.cwd(), "bridges", "blender", "animeos_bridge.py");
   if (!fs.existsSync(script)) return { submitted: false, path: "local", error: "bridge script missing" };
   const rendersDir = path.join(process.cwd(), "public", "renders");
@@ -334,7 +378,7 @@ export function submitLocalJob(payload: BridgeJobPayload): BridgeSubmitResult {
   const jobFile = jobFileFor(payload.jobId);
   fs.writeFileSync(jobFile, JSON.stringify({ jobId: payload.jobId, payload, outDir: rendersDir }));
   try {
-    const child = spawn(bin, ["-b", "-P", script, "--", "--worker", "--job", jobFile], {
+    const child = spawn(bin ?? localBlenderBin() ?? "blender", ["-b", "-P", script, "--", "--worker", "--job", jobFile], {
       stdio: "ignore",
       detached: true,
       cwd: process.cwd(),
@@ -349,6 +393,33 @@ export function submitLocalJob(payload: BridgeJobPayload): BridgeSubmitResult {
     try { fs.unlinkSync(jobFile); } catch { /* cleanup best-effort */ }
     return { submitted: false, path: "local", error: err instanceof Error ? err.message : "worker spawn failed" };
   }
+}
+
+/** Admit waiting jobs into free pool slots, in priority order: FINAL
+ * over PREVIEW, then oldest first (the age boost is the wait itself).
+ * Called from the render tick so a freed slot is picked up within one
+ * poll. Returns the admitted jobIds. */
+export function pumpLocalWaiters(): string[] {
+  const admitted: string[] = [];
+  while (localWaiters.length > 0 && localWorkers < renderWorkers()) {
+    const now = Date.now();
+    const ageMin = (w: LocalWaiter): number => (now - w.enqueuedAt) / 60_000;
+    localWaiters.sort((a, b) => {
+      const pa = (a.final ? 10 : 0) + Math.min(5, ageMin(a));
+      const pb = (b.final ? 10 : 0) + Math.min(5, ageMin(b));
+      return pb - pa || a.enqueuedAt - b.enqueuedAt;
+    });
+    const w = localWaiters.shift();
+    if (!w) break;
+    const res = spawnLocalWorker(w.payload);
+    if (res.submitted) admitted.push(w.jobId);
+  }
+  return admitted;
+}
+
+/** How deep the 3D wait queue is (the parked job's stage names it). */
+export function localWaitDepth(): number {
+  return localWaiters.length;
 }
 
 /** Poll a local worker's state file into the shared progress shape. */
@@ -384,7 +455,15 @@ export async function submitRenderJob(payload: BridgeJobPayload): Promise<Bridge
     if (resident.submitted) return resident;
     const local = submitLocalJob(payload);
     if (local.submitted) return local;
-    return { submitted: false, path: null, error: envResult.error ?? resident.error ?? local.error };
+    // the pool may have ENQUEUED the job (queued3d) - propagate the
+    // honest truth so the caller parks a FINAL instead of overflowing
+    return {
+      submitted: false,
+      path: null,
+      queued3d: local.queued3d,
+      position: local.position,
+      error: envResult.error ?? resident.error ?? local.error,
+    };
   }
   return envResult;
 }
