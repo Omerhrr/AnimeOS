@@ -1,6 +1,5 @@
-import NextAuth from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { handlers } from "@/lib/auth";
 
-const handler = NextAuth(authOptions);
-
-export { handler as GET, handler as POST };
+// next-auth v5 (Auth.js): the shared handlers the lib exports - the
+// credentials flow the sign-in page and every E2E suite drive.
+export const { GET, POST } = handlers;

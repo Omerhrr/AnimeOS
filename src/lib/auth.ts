@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────
-// MULTI-USER STUDIO AUTH (NextAuth v4, credentials + JWT)
+// MULTI-USER STUDIO AUTH (next-auth v5 / Auth.js, credentials + JWT)
 //
 // The studio is a shared workspace with role-gated WRITES:
 //   VIEWER  read-only (every mutating API call is refused)
@@ -14,9 +14,19 @@
 //      EVERY call, so a role change lands immediately (no re-login
 //      needed for the DB-backed checks; the proxy claim catches up
 //      on the member's next sign-in).
+//
+// v5 MIGRATION (iteration 70): the v4 NextAuthOptions object became
+// the NextAuth() call whose handlers the auth route re-exports;
+// getServerSession became the auth() helper; the JWT/token surface
+// (getToken from next-auth/jwt, the uid/role claims, the 7-day JWT
+// session, the credentials flow the sign-in page and every E2E use)
+// is unchanged. The migration's other half is the dependency graph:
+// v5 no longer bundles a vulnerable nodemailer (the studio's email
+// transport is a direct, patched nodemailer@10 dep), which closed
+// the last open advisory chain - `npm audit` reads 0.
 // ─────────────────────────────────────────────────────────────
 
-import { NextAuthOptions, getServerSession } from "next-auth";
+import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { getToken } from "next-auth/jwt";
 import bcrypt from "bcryptjs";
@@ -54,7 +64,7 @@ export interface SessionUser {
   role: StudioRole;
 }
 
-export const authOptions: NextAuthOptions = {
+export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: AUTH_SECRET,
   session: { strategy: "jwt", maxAge: 7 * 24 * 3600 }, // 7 days
   pages: { signIn: "/signin" },
@@ -73,7 +83,7 @@ export const authOptions: NextAuthOptions = {
         if (!user) return null;
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
-        return { id: user.id, email: user.email, name: user.name, role: user.role } as never;
+        return { id: user.id, email: user.email, name: user.name, role: user.role };
       },
     }),
   ],
@@ -93,7 +103,7 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
   },
-};
+});
 
 // ─── The fine gate: fresh-from-DB identity for route handlers ──
 // Accepts the incoming Request (route handlers pass it straight
@@ -115,7 +125,7 @@ export async function sessionUser(req?: Request, opts?: { touch?: boolean }): Pr
     }
     // No request object (server components): fall back to the cached
     // session claim - good enough for reads, never used for writes.
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.id) return null;
     return { id: session.user.id, email: session.user.email ?? "", name: session.user.name ?? "", role: session.user.role ?? "VIEWER" };
   } catch {
