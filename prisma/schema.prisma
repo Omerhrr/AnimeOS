@@ -366,6 +366,14 @@ model Shot {
   // 0 is a stillness call (the anchors hold, the solver settles the
   // garment under gravity).
   cloth          Float?
+  // PER-SHOT SOLVER INTENSITY (iteration 69): the FLESH call - a
+  // number 0..1 the director calls on the shot to scale the
+  // soft-body solver's ANSWER (the beat impulse, the stagger sway,
+  // the wind breath the trunk and face volumes lag with) - never its
+  // physics (mass, springs and the goal law stay probed). Null = the
+  // solver answers at its full probed response; 0 is a stillness
+  // call (the anchors hold, the solver keeps its own settle).
+  flesh          Float?
   // Per-shot style LoRA fine-tuning - selects a production LoRA adapter
   // whose trigger tokens are injected into this shot's art prompt.
   loraId         String?

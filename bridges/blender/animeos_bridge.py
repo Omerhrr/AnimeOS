@@ -2430,6 +2430,43 @@ def worker_run(job_file):
                     solver["notes"] = list(cloth_rig["notes"])
                 state.setdefault("secondary", {"chains": len(sec_chains)})["solver"] = solver
 
+        # ── v11.0 SOLVER-GRADE FLESH: THE FLESH LAGS THE BEAT - the
+        #    figure's trunk and face volumes graduate from rigid
+        #    geometry to the REAL Blender soft-body solver (the probe's
+        #    law): the directed air steers each region's anchor bone
+        #    and the solver answers with real inertia lag, overshoot
+        #    and settle. ──
+        flesh_rig = None
+        # v11.1 THE SOLVER ANSWERS THE CALL: the shot's FLESH call (a
+        # number 0..1) scales the solver's ANSWER - the beat impulse,
+        # the stagger sway, the wind breath - never its physics.
+        # Absent = 1.0, the full probed response; a corrupt value
+        # degrades honestly to the full response.
+        flesh_call = shot.get("flesh")
+        flesh_intensity = 1.0
+        flesh_called = False
+        if isinstance(flesh_call, (int, float)) and not isinstance(flesh_call, bool):
+            flesh_intensity = max(0.0, min(1.0, float(flesh_call)))
+            flesh_called = True
+        if figure:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import flesh_pass
+            flesh_rig = flesh_pass.build_flesh_rig(bpy, scn, figure, frames_total)
+            if flesh_rig is not None:
+                fsolver = state.setdefault("secondary", {}).setdefault("solver", {})
+                fsimmed = [p["name"] for p in flesh_rig["parts"]]
+                if fsimmed:
+                    fsolver["flesh"] = "blender-softbody-sim"
+                    fsolver["fleshSimmed"] = fsimmed
+                if flesh_called:
+                    fsolver["fleshCall"] = round(flesh_intensity, 3)
+                if flesh_rig["notes"]:
+                    merged = list(fsolver.get("notes") or [])
+                    for n in flesh_rig["notes"]:
+                        if n not in merged:
+                            merged.append(n)
+                    fsolver["notes"] = merged
+
         # ── v8.0 DIRECTED FX: THE BEATS IGNITE - the world answers the
         #    grammar with the same clock. Programs normalize honestly
         #    (a bad note is skipped with a note, never a crash), the
@@ -2644,6 +2681,14 @@ def worker_run(job_file):
                 sec_kick = float(((figure.get("_sec") or {}).get("last_kick")) or 0.0) if figure else 0.0
                 cloth_pass.apply_cloth_frame(cloth_rig, figure, t_sec, 1.0 / fps,
                                              fbi, fwind, fagit, sec_kick, cloth_intensity)
+            if flesh_rig and flesh_rig["parts"]:
+                # v11.0: THE FLESH LAGS THE BEAT - the same inputs steer
+                # the flesh regions' anchor bones one solver up; the
+                # soft-body solver weaves the lag. v11.1: the shot's
+                # FLESH call scales the answer.
+                sec_kick = float(((figure.get("_sec") or {}).get("last_kick")) or 0.0) if figure else 0.0
+                flesh_pass.apply_flesh_frame(flesh_rig, figure, t_sec, 1.0 / fps,
+                                             fbi, fwind, fagit, sec_kick, flesh_intensity)
             if fx_rig:
                 fx_pass.apply_fx(fx_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel)
             boost = 0.0
@@ -2681,6 +2726,19 @@ def worker_run(job_file):
                     if n not in merged:
                         merged.append(n)
                 sol["notes"] = merged
+
+        # v11.0 flesh report: what the SOLVER actually did - the widest
+        # anchor drive the beats called for (the probed law answers with
+        # real lag; a still shot reports a small drive, honestly)
+        if flesh_rig is not None and flesh_rig["parts"]:
+            fsol = state.setdefault("secondary", {}).setdefault("solver", {})
+            fsol["maxFleshDrive"] = round(math.degrees(flesh_rig["max_drive"]), 1)
+            if flesh_rig["notes"]:
+                merged = list(fsol.get("notes") or [])
+                for n in flesh_rig["notes"]:
+                    if n not in merged:
+                        merged.append(n)
+                fsol["notes"] = merged
 
         # fx report: what the world actually did for the beats - the
         # bursts that fired, the trail's peak glow, the widest ring

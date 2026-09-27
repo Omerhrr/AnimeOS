@@ -51,7 +51,7 @@ import {
   flowsLearnedFromProgram, listSequenceFlows, sequenceFlowsContextLine,
   recordProgramOutcome, unadoptedVerifiedPrograms, sequenceAdoptionSuggestionsLine,
   compileSlotWind, windFitsGrammar, applySlotWind, formatSlotWind,
-  compileSlotCloth, formatSlotCloth,
+  compileSlotCloth, formatSlotCloth, compileSlotFlesh, formatSlotFlesh,
   type SequenceFlowSlot,
 } from "@/lib/dsh/sequence-flows";
 import { runWithActor } from "@/lib/dsh/actor-context";
@@ -557,32 +557,33 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_shot_grammar",
-    description: "DIRECT a shot with a motion grammar: apply a NAMED grammar (a design_grammar preset or a built-in - The Reveal, The Standoff, The Assault, The Ascent, The Withdrawal) or an inline beat array to one shot. The render worker then plays the camera BEAT BY BEAT with eased crossfades between beats, and a beat's own pose pair moves the subject with the lens - a directed sequence, not one move held for the whole clip. Optionally direct the SOLVER too: cloth is the shot's CLOTH call, one number 0..1 that scales the cloth solver's ANSWER for the whole clip (0 stills the solver, 1 the full probed storm; pass an empty string to clear back to the full response). Pass grammar as empty string to clear it back to the shot's single movement.",
+    description: "DIRECT a shot with a motion grammar: apply a NAMED grammar (a design_grammar preset or a built-in - The Reveal, The Standoff, The Assault, The Ascent, The Withdrawal) or an inline beat array to one shot. The render worker then plays the camera BEAT BY BEAT with eased crossfades between beats, and a beat's own pose pair moves the subject with the lens - a directed sequence, not one move held for the whole clip. Optionally direct the SOLVERS too: cloth is the shot's CLOTH call, one number 0..1 that scales the cloth solver's ANSWER for the whole clip (0 stills the solver, 1 the full probed storm; pass an empty string to clear back to the full response), and flesh is the shot's FLESH call, one number 0..1 that scales the soft-body solver's lag the same way (the trunk and face volumes answer the beats with real inertia). Pass grammar as empty string to clear it back to the shot's single movement.",
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       grammar: "string - a grammar preset name, a built-in name, an inline beats JSON array, or empty string to clear",
       cloth: "number 0..1 (optional) - the CLOTH call: the solver intensity this shot's cloth answers at (empty string clears back to the full response)",
+      flesh: "number 0..1 (optional) - the FLESH call: the soft-body solver intensity the shot's trunk and face volumes lag at (empty string clears back to the full response)",
     },
   },
   {
     name: "design_sequence",
-    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair, optional fx / physics program names (a design_fx / design_physics preset, a built-in like The Slash / The Clash, or an inline programs array - the world answers on the right shots), an optional WIND call (a number 0..1 drives the slot's grammar's every beat, or an array keyed per beat with null keeping the grammar's own gust and 0 a stillness call - the robes and hair ride what the sentence calls), an optional CLOTH call (one number 0..1 for the whole shot - scales the cloth solver's ANSWER, the per-shot intensity the fabric answers at, 0 stills the solver) and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar, air call, solver call AND world programs are validated at design time - a typo never reaches a shoot. Apply one across a scene (or the whole episode) with direct_sequence.",
+    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair, optional fx / physics program names (a design_fx / design_physics preset, a built-in like The Slash / The Clash, or an inline programs array - the world answers on the right shots), an optional WIND call (a number 0..1 drives the slot's grammar's every beat, or an array keyed per beat with null keeping the grammar's own gust and 0 a stillness call - the robes and hair ride what the sentence calls), an optional CLOTH call (one number 0..1 for the whole shot - scales the cloth solver's ANSWER, the per-shot intensity the fabric answers at, 0 stills the solver), an optional FLESH call (one number 0..1 - scales the soft-body solver's lag the same way) and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar, air call, solver calls AND world programs are validated at design time - a typo never reaches a shoot. Apply one across a scene (or the whole episode) with direct_sequence.",
     args: {
       name: "string - the sequence program name (e.g. 'Raid on the Fortress')",
       description: "string (optional) - what this program is for",
-      slots: "JSON array string - [{\"grammar\":\"The Reveal\",\"note\":\"find the temple\"},{\"grammar\":\"The Standoff\",\"wind\":[null,0.8]},{\"grammar\":\"The Assault\",\"poseStart\":\"DRAW\",\"poseEnd\":\"SLASH\",\"wind\":0.6,\"cloth\":0.7,\"fx\":\"The Slash\",\"physics\":\"The Clash\"}]",
+      slots: "JSON array string - [{\"grammar\":\"The Reveal\",\"note\":\"find the temple\"},{\"grammar\":\"The Standoff\",\"wind\":[null,0.8]},{\"grammar\":\"The Assault\",\"poseStart\":\"DRAW\",\"poseEnd\":\"SLASH\",\"wind\":0.6,\"cloth\":0.7,\"flesh\":0.8,\"fx\":\"The Slash\",\"physics\":\"The Clash\"}]",
     },
   },
   {
     name: "direct_sequence",
-    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, a slot's WIND call rides its grammar's beats (the robes and hair answer the air the sentence calls), and a slot's CLOTH call (one number 0..1) sets the shot's solver intensity - the whole clip's cloth answers at that directed answer. scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. THE STUDIO REMEMBERS ITS SENTENCES: with no program and no slots, pass register:'<register>' (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) to direct from the register's best-proven LEARNED SEQUENCE FLOW (adopted with learn_sequence_flow) - every application grows the flow's measured record, and the consult itself names the verified programs no flow carries yet (a proven sentence should not wait to be remembered). The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, solver calls the fabric answers, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
+    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, a slot's WIND call rides its grammar's beats (the robes and hair answer the air the sentence calls), and a slot's CLOTH and FLESH calls (one number 0..1 each) set the shot's solver intensities - the whole clip's cloth and soft bodies answer at the directed answers. scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. THE STUDIO REMEMBERS ITS SENTENCES: with no program and no slots, pass register:'<register>' (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) to direct from the register's best-proven LEARNED SEQUENCE FLOW (adopted with learn_sequence_flow) - every application grows the flow's measured record, and the consult itself names the verified programs no flow carries yet (a proven sentence should not wait to be remembered). The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, solver calls the fabric and the flesh answer, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
     args: {
       sceneNumber: "number (scene scope, defaults to latest scene)",
       scope: "scene | episode (default scene - episode allocates the slots across every scene of the episode in story order)",
       episodeNumber: "number (episode scope, defaults to the latest episode with shots)",
       program: "string - a design_sequence preset name (or omit and pass slots inline, or pass register to consult a learned flow)",
-      slots: "JSON array string (optional) - inline slots when no program is named: {grammar, poseStart?, poseEnd?, fx?, physics?, wind?, cloth?}",
+      slots: "JSON array string (optional) - inline slots when no program is named: {grammar, poseStart?, poseEnd?, fx?, physics?, wind?, cloth?, flesh?}",
       register: "string (optional) - with no program and no slots: consult the register's best-proven learned sequence flow (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE)",
       render: "boolean (optional, default false) - queue a render job for every directed shot",
       mode: "PREVIEW | FINAL (default PREVIEW, only with render)",
@@ -2736,15 +2737,21 @@ async function executeToolInner(
           await landDesignEvent(projectId, `Grammar cleared on Shot ${String(shot.number).padStart(3, "0")} (back to its single movement)`, { shotId: shot.id });
           return { status: "OK", result: `GRAMMAR cleared on Shot ${String(shot.number).padStart(3, "0")} - it renders on its single movement (${shot.movement ?? "STATIC"}) again.` };
         }
-        // the shot's SOLVER call (iteration 68): a CLOTH call is one
-        // number 0..1 for the whole shot - pass it with the grammar or
-        // alone on a later call; an explicit "" clears back to the
-        // full probed response. Absent leaves the standing call.
+        // the shot's SOLVER calls (iterations 68-69): a CLOTH or FLESH
+        // call is one number 0..1 for the whole shot - pass it with the
+        // grammar or alone on a later call; an explicit "" clears back
+        // to the full probed response. Absent leaves the standing call.
         let clothPatch: number | null | undefined;
         if ("cloth" in args) {
           const clothParsed = compileSlotCloth(args.cloth, "cloth");
           if (!clothParsed.ok) return { status: "ERROR", result: clothParsed.error };
           clothPatch = clothParsed.cloth;
+        }
+        let fleshPatch: number | null | undefined;
+        if ("flesh" in args) {
+          const fleshParsed = compileSlotFlesh(args.flesh, "flesh");
+          if (!fleshParsed.ok) return { status: "ERROR", result: fleshParsed.error };
+          fleshPatch = fleshParsed.flesh;
         }
         // resolve: saved GRAMMAR preset -> built-in -> inline beats
         const resolved = await resolveGrammarSource(projectId, grammarArg);
@@ -2758,12 +2765,13 @@ async function executeToolInner(
         const { beatsRaw, sourceName } = resolved;
         const compiled = compileGrammarSpec({ name: `${shot.id.slice(-6)}-shot-grammar`, beats: beatsRaw });
         if (!compiled.ok) return { status: "ERROR", result: `the ${sourceName} beats do not compile: ${compiled.error}` };
-        await db.shot.update({ where: { id: shot.id }, data: { grammar: serializeGrammar(compiled.spec), ...(clothPatch !== undefined ? { cloth: clothPatch } : {}) } });
+        await db.shot.update({ where: { id: shot.id }, data: { grammar: serializeGrammar(compiled.spec), ...(clothPatch !== undefined ? { cloth: clothPatch } : {}), ...(fleshPatch !== undefined ? { flesh: fleshPatch } : {}) } });
         const shape = compiled.spec.beats.map((b) => `${b.move} ${Math.round(b.from * 100)}-${Math.round(b.to * 100)}%`).join(" -> ");
         const poseBeats = compiled.spec.beats.filter((b) => b.poseStart || b.poseEnd).length;
-        const clothLine = clothPatch !== null && clothPatch !== undefined ? ` The solver answers at cloth ${clothPatch} for this shot.` : clothPatch === null ? " The solver call cleared - the cloth answers at its full probed response." : "";
-        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} directed with ${sourceName}: ${shape}`, { shotId: shot.id, grammar: sourceName, cloth: clothPatch ?? undefined });
-        return { status: "OK", result: `DIRECTED Shot ${String(shot.number).padStart(3, "0")} with ${sourceName}: ${shape}${poseBeats ? ` (${poseBeats} beat(s) carry their own pose pair - the subject moves with the lens)` : ""}.${clothLine} The next render_shot of this shot plays the grammar beat by beat with eased crossfades; the vocabulary the worker performs: ${GRAMMAR_MOVES.join(", ")}.` };
+        const clothLine = clothPatch !== null && clothPatch !== undefined ? ` The cloth answers at cloth ${clothPatch} for this shot.` : clothPatch === null ? " The cloth call cleared - the cloth answers at its full probed response." : "";
+        const fleshLine = fleshPatch !== null && fleshPatch !== undefined ? ` The flesh lags at flesh ${fleshPatch} for this shot.` : fleshPatch === null ? " The flesh call cleared - the soft bodies answer at their full probed response." : "";
+        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} directed with ${sourceName}: ${shape}`, { shotId: shot.id, grammar: sourceName, cloth: clothPatch ?? undefined, flesh: fleshPatch ?? undefined });
+        return { status: "OK", result: `DIRECTED Shot ${String(shot.number).padStart(3, "0")} with ${sourceName}: ${shape}${poseBeats ? ` (${poseBeats} beat(s) carry their own pose pair - the subject moves with the lens)` : ""}.${clothLine}${fleshLine} The next render_shot of this shot plays the grammar beat by beat with eased crossfades; the vocabulary the worker performs: ${GRAMMAR_MOVES.join(", ")}.` };
       }
 
       case "design_sequence": {
@@ -2779,7 +2787,7 @@ async function executeToolInner(
         }
         if (rawSlots.length < 2) return { status: "ERROR", result: "a sequence program needs at least 2 slots - a single directed shot belongs in set_shot_grammar" };
         if (rawSlots.length > 12) return { status: "ERROR", result: "a sequence program carries at most 12 slots - longer than that is an episode, not a program" };
-        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null; wind?: Array<number | null> | number | null; cloth?: number | null }> = [];
+        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null; wind?: Array<number | null> | number | null; cloth?: number | null; flesh?: number | null }> = [];
         for (let i = 0; i < rawSlots.length; i++) {
           const s = rawSlots[i] as Record<string, unknown>;
           const grammar = String(s?.grammar ?? "").trim();
@@ -2808,6 +2816,10 @@ async function executeToolInner(
           // a per-shot answer, not a per-beat gust
           const clothParsed = compileSlotCloth(s?.cloth, `slot ${i + 1} (${grammar})`);
           if (!clothParsed.ok) return { status: "ERROR", result: clothParsed.error };
+          // the slot's FLESH call (iteration 69): the soft-body solver's
+          // per-shot answer, one solver up from the cloth
+          const fleshParsed = compileSlotFlesh(s?.flesh, `slot ${i + 1} (${grammar})`);
+          if (!fleshParsed.ok) return { status: "ERROR", result: fleshParsed.error };
           // design-time validation for the world programs too: a slot may
           // bind FX and PHYSICS by name (saved preset, built-in or inline)
           // so the sequence sentence directs the WORLD, not just the lens
@@ -2846,6 +2858,7 @@ async function executeToolInner(
             note: s?.note ? String(s.note).slice(0, 140) : null,
             ...(windParsed.wind !== null ? { wind: windParsed.wind } : {}),
             ...(clothParsed.cloth !== null ? { cloth: clothParsed.cloth } : {}),
+            ...(fleshParsed.flesh !== null ? { flesh: fleshParsed.flesh } : {}),
           });
         }
         const description = String(args.description ?? "").trim() || null;
@@ -2857,8 +2870,8 @@ async function executeToolInner(
           update: { spec: JSON.stringify({ description, slots }), ...(existed ? { outcomes: "[]" } : {}) },
         });
         await landDesignEvent(projectId, `Sequence program '${name}' ${existed ? "updated" : "designed"} (${slots.length} slots: ${slots.map((s) => s.grammar).join(" -> ")})`, { presetId: preset.id });
-        const slotShape = slots.map((s, i) => `${i + 1}. ${s.grammar}${s.wind !== undefined && s.wind !== null ? ` +${formatSlotWind(s.wind)}` : ""}${s.cloth !== undefined && s.cloth !== null ? ` +${formatSlotCloth(s.cloth)}` : ""}${s.fx ? ` +fx ${s.fx}` : ""}${s.physics ? ` +physics ${s.physics}` : ""}`).join(", ");
-        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slotShape}.${hadRecord ? " (the measured record resets - a redesigned sentence is a new sentence)" : ""} Apply it across a scene (or scope:'episode' across the whole episode in story order) with direct_sequence program:'${name}' - shot i receives slot i's grammar, slot-named fx and physics ride the same shots, a slot's wind call rides its grammar's beats, a slot's cloth call sets the shot's solver intensity, and the whole flow reads back cut by cut.` };
+        const slotShape = slots.map((s, i) => `${i + 1}. ${s.grammar}${s.wind !== undefined && s.wind !== null ? ` +${formatSlotWind(s.wind)}` : ""}${s.cloth !== undefined && s.cloth !== null ? ` +${formatSlotCloth(s.cloth)}` : ""}${s.flesh !== undefined && s.flesh !== null ? ` +${formatSlotFlesh(s.flesh)}` : ""}${s.fx ? ` +fx ${s.fx}` : ""}${s.physics ? ` +physics ${s.physics}` : ""}`).join(", ");
+        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slotShape}.${hadRecord ? " (the measured record resets - a redesigned sentence is a new sentence)" : ""} Apply it across a scene (or scope:'episode' across the whole episode in story order) with direct_sequence program:'${name}' - shot i receives slot i's grammar, slot-named fx and physics ride the same shots, a slot's wind call rides its grammar's beats, a slot's cloth and flesh calls set the shot's solver intensities, and the whole flow reads back cut by cut.` };
       }
 
       case "direct_sequence": {
@@ -2924,7 +2937,7 @@ async function executeToolInner(
         // array next, and with NEITHER the register consult (iteration
         // 63): the studio starts from the sentence that verified, not
         // from a fresh guess
-        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown; wind?: unknown; cloth?: unknown }> = [];
+        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown; wind?: unknown; cloth?: unknown; flesh?: unknown }> = [];
         let sourceName = "";
         let consultFlow: { register: string; name: string } | null = null;
         const programName = String(args.program ?? "").trim();
@@ -2987,6 +3000,7 @@ async function executeToolInner(
         const flow: string[] = [];
         let windBeats = 0;
         let clothCalls = 0;
+        let fleshCalls = 0;
         let poseCuts = 0;
         let moveClashes = 0;
         let fxBound = 0;
@@ -3011,18 +3025,23 @@ async function executeToolInner(
           if (windFit) return { status: "ERROR", result: windFit };
           const windTouched = applySlotWind(compiled.spec.beats, windParsed.wind);
           const airShape = windTouched > 0 && windParsed.wind !== null ? formatSlotWind(windParsed.wind) : "";
-          // the slot's SOLVER call (iteration 68): the shot's cloth
-          // answers at the called intensity; a slot without a call
-          // clears a stale one - the sentence re-stages the shot
+          // the slot's SOLVER calls (iterations 68-69): the shot's cloth
+          // answers at the called cloth intensity, the soft bodies at the
+          // called flesh intensity; a slot without a call clears a stale
+          // one - the sentence re-stages the shot
           const clothParsed = compileSlotCloth(slot?.cloth, `slot ${i + 1} (${grammarName})`);
           if (!clothParsed.ok) return { status: "ERROR", result: clothParsed.error };
           const clothShape = formatSlotCloth(clothParsed.cloth);
+          const fleshParsed = compileSlotFlesh(slot?.flesh, `slot ${i + 1} (${grammarName})`);
+          if (!fleshParsed.ok) return { status: "ERROR", result: fleshParsed.error };
+          const fleshShape = formatSlotFlesh(fleshParsed.flesh);
           const poseStart = slot?.poseStart ? String(slot.poseStart) : null;
           const poseEnd = slot?.poseEnd ? String(slot.poseEnd) : null;
-          const data: { grammar: string; poseStart?: string; poseEnd?: string; fx?: string; physics?: string; cloth?: number | null } = { grammar: serializeGrammar(compiled.spec) };
+          const data: { grammar: string; poseStart?: string; poseEnd?: string; fx?: string; physics?: string; cloth?: number | null; flesh?: number | null } = { grammar: serializeGrammar(compiled.spec) };
           if (poseStart) data.poseStart = poseStart;
           if (poseEnd) data.poseEnd = poseEnd;
           data.cloth = clothParsed.cloth;   // null clears - the sentence owns the staging
+          data.flesh = fleshParsed.flesh;   // null clears - the sentence owns the staging
           const fxName = slot?.fx ? String(slot.fx).trim() : "";
           let fxShape = "";
           if (fxName) {
@@ -3048,6 +3067,7 @@ async function executeToolInner(
           await db.shot.update({ where: { id: flat[i].id }, data });
           windBeats += compiled.spec.beats.filter((b) => (b.wind ?? 0) > 0).length;
           if (clothParsed.cloth !== null) clothCalls += 1;
+          if (fleshParsed.flesh !== null) fleshCalls += 1;
           const firstMove = compiled.spec.beats[0].move;
           const lastMove = compiled.spec.beats[compiled.spec.beats.length - 1].move;
           if (lastLastMove && lastLastMove === firstMove) moveClashes += 1;
@@ -3055,7 +3075,7 @@ async function executeToolInner(
           if (lastEndPose && startPose && startPose !== lastEndPose) poseCuts += 1;
           lastEndPose = normalizePose(poseEnd ?? compiled.spec.beats[compiled.spec.beats.length - 1].poseEnd ?? "") || lastEndPose;
           lastLastMove = lastMove;
-          const world = fxName || physName || airShape || clothShape ? ` [${[airShape, clothShape, fxName ? `fx: ${fxShape}` : "", physName ? `physics: ${physShape}` : ""].filter(Boolean).join(" | ")}]` : "";
+          const world = fxName || physName || airShape || clothShape || fleshShape ? ` [${[airShape, clothShape, fleshShape, fxName ? `fx: ${fxShape}` : "", physName ? `physics: ${physShape}` : ""].filter(Boolean).join(" | ")}]` : "";
           flow.push(`${flat[i].label} <- ${grammarName} (${compiled.spec.beats.map((b) => b.move).join(">")})${world}`);
         }
         const jobIds: string[] = [];
@@ -3074,7 +3094,8 @@ async function executeToolInner(
         if (moveClashes > 0) reads.push(`${moveClashes} cut(s) land on the same move both sides - consider alternating the blocking`);
         if (poseCuts > 0) reads.push(`${poseCuts} pose change(s) across cuts (the cloth whips on each one)`);
         if (windBeats > 0) reads.push(`${windBeats} wind beat(s) - the robes and hair ride those beats`);
-        if (clothCalls > 0) reads.push(`${clothCalls} solver call(s) - the cloth answers at the directed intensity on those shots`);
+        if (clothCalls > 0) reads.push(`${clothCalls} cloth call(s) - the cloth answers at the directed intensity on those shots`);
+        if (fleshCalls > 0) reads.push(`${fleshCalls} flesh call(s) - the soft bodies lag at the directed intensity on those shots`);
         if (fxBound > 0 || physBound > 0) reads.push(`${fxBound} fx + ${physBound} physics binding(s) - the world answers on those shots`);
         if (untouched > 0) reads.push(`${untouched} shot(s) beyond the plan left untouched`);
         if (unused > 0) reads.push(`${unused} slot(s) had no shot to direct`);
@@ -3093,6 +3114,7 @@ async function executeToolInner(
           unused,
           windBeats,
           clothCalls,
+          fleshCalls,
           poseCuts,
           moveClashes,
           fxBound,

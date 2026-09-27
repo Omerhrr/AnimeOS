@@ -271,6 +271,12 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // ANSWER (the directed air, the beat impulse) to the directed
         // intensity; absent = the full probed response
         ...(typeof shot.cloth === "number" ? { cloth: shot.cloth } : {}),
+        // PER-SHOT SOLVER INTENSITY (iteration 69): the shot's FLESH
+        // call rides the payload the same one up - the worker scales
+        // the soft-body solver's ANSWER (the lag the trunk and face
+        // volumes answer the beats with); absent = the full probed
+        // response
+        ...(typeof shot.flesh === "number" ? { flesh: shot.flesh } : {}),
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),

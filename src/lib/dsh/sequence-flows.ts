@@ -70,6 +70,11 @@ export interface SequenceFlowSlot {
    * the beat impulse, the stagger sway - never its physics. A per-shot
    * answer, not a per-beat gust; absent = the full probed response. */
   cloth?: number | null;
+  /** The slot's FLESH call (iteration 69): a number 0..1 that scales
+   * the soft-body solver's ANSWER for the whole shot - the lag the
+   * trunk and face volumes answer the beats with. Per-shot like the
+   * cloth call; absent = the full probed response. */
+  flesh?: number | null;
 }
 
 export interface SequenceFlowSpec {
@@ -294,6 +299,36 @@ export function formatSlotCloth(cloth: number | null): string {
   if (cloth === null || cloth === undefined) return "";
   const n = Number.isInteger(cloth) ? String(cloth) : cloth.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
   return `cloth ${n}`;
+}
+
+// ── THE SLOT'S FLESH CALL (iteration 69 - the soft-body solver's
+//    per-shot intensity at sequence scale) ──
+// One solver up from the cloth: the trunk and face volumes answer the
+// beats with real inertia lag, and its INTENSITY is directable the
+// same way the cloth's is - one number 0..1 per shot that scales the
+// solver's ANSWER (the beat impulse, the stagger sway, the wind
+// breath), never its physics (the probed goal law stays).
+
+export function compileSlotFlesh(
+  input: unknown,
+  label: string,
+): { ok: true; flesh: number | null } | { ok: false; error: string } {
+  if (input === undefined || input === null || input === "") return { ok: true, flesh: null };
+  if (Array.isArray(input)) {
+    return { ok: false, error: `${label}: a FLESH call is one number 0..1 for the whole shot - the soft-body solver's intensity is a per-shot answer, not a per-beat gust (the wind call is the per-beat one)` };
+  }
+  const c = Number(input);
+  if (!Number.isFinite(c)) {
+    return { ok: false, error: `${label}: flesh must be a number 0..1 (got ${String(input)})` };
+  }
+  return { ok: true, flesh: Math.max(0, Math.min(1, c)) };
+}
+
+/** Format a flesh call for the flow read (absent formats empty). */
+export function formatSlotFlesh(flesh: number | null): string {
+  if (flesh === null || flesh === undefined) return "";
+  const n = Number.isInteger(flesh) ? String(flesh) : flesh.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return `flesh ${n}`;
 }
 
 export function parseSlots(raw: string | null | undefined): SequenceFlowSlot[] {

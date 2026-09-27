@@ -126,7 +126,7 @@ async function main() {
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
   check("A8 the registry stands at 81 tools (schedule_release joins)", toolCount === 81, `count=${toolCount}`);
-  check("A9 set_shot_grammar directs the solver per shot", tools.includes("the shot's SOLVER call (iteration 68)") && tools.includes("cloth: \"number 0..1 (optional) - the CLOTH call"));
+  check("A9 set_shot_grammar directs the solver per shot", tools.includes("the shot's SOLVER calls (iterations 68-69)") && tools.includes("cloth: \"number 0..1 (optional) - the CLOTH call"));
   check("A10 the sentence carries the call (design + direct + learn)", tools.includes("compileSlotCloth") && tools.includes("null clears - the sentence owns the staging") && tools.includes("each slot's air call and solver call included"));
   check("A11 schedule_release is the calendar's pen", tools.includes("SLATE AN EPISODE'S RELEASE") && tools.includes("case \"schedule_release\""));
   check("A12 post_digest can post ONE member's digest", tools.includes("postMemberDigest") && tools.includes("member: \"string (optional) - a member's name or email"));

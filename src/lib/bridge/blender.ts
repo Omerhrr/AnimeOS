@@ -254,6 +254,11 @@ export interface BridgeJobPayload {
     speech?: { visemes: Array<{ s: number; e: number; o: number; w: number; r: number }>; lines: number } | null;
     // DESIGN: the detected cast (index 0 = the hero the rig drives)
     cast?: CharacterDesignDnaWire[];
+    // PER-SHOT SOLVER CALLS (iterations 68-69): the CLOTH call scales
+    // the cloth solver's ANSWER, the FLESH call the soft-body solver's
+    // lag - both 0..1 per shot; absent = the full probed response
+    cloth?: number;
+    flesh?: number;
   };
   scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number; environment?: EnvironmentDesignDnaWire };
   // ASSET LIBRARY (v4.1): paths to accepted .blend assets for this
