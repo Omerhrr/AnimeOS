@@ -70,6 +70,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // never a loopback, link-local, private-range or cloud-metadata
 // host. Applied at the PEN (create_schedule refuses) and again at
 // DELIVERY (the outcome records the refusal - defense in depth).
+// ANIMEOS_WEBHOOK_ALLOW_PRIVATE=1 (iteration 71) is the documented
+// DEV/TEST escape: it lets the E2E suite point a channel at a local
+// receiver to prove delivery over the real runtime. Production
+// deployments never set it; the guard then bites at both layers.
 const PRIVATE_HOST_RE = /^(localhost$|127\.|0\.0\.0\.0$|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1\]?$|\[?fc00:|\[?fd..:|\[?fe80:)/i;
 
 export function webhookUrlRefusal(url: string): string | null {
@@ -84,6 +88,7 @@ export function webhookUrlRefusal(url: string): string | null {
     return "webhookUrl must be an http(s) URL";
   }
   if (PRIVATE_HOST_RE.test(u.hostname)) {
+    if (process.env.ANIMEOS_WEBHOOK_ALLOW_PRIVATE === "1") return null;
     return "webhookUrl must not point at a loopback or private address";
   }
   return null;

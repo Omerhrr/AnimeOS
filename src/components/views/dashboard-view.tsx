@@ -1,14 +1,17 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Link2, MonitorPlay, Users, Film, ArrowRight, ShieldCheck, ShieldX,
-  Clapperboard, Palette, Mic2, MessagesSquare, Radio, Crown, UserCog, RadioTower,
+  Clapperboard, Palette, Mic2, MessagesSquare, Radio, Crown, UserCog, RadioTower, Send,
 } from "lucide-react";
 import { api, parseFindings, type StudioEmphasis, type Craft, type PresenceBucketType, type MemberDigestRow } from "@/lib/api-client";
 import { useStudio } from "@/lib/store";
 import { SectionHeader, StatCard, StatusBadge } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -98,6 +101,116 @@ function StudioFloorPanel({ projectId }: { projectId: string | null }) {
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** My outbound (iteration 71): the member's own notification channels
+ * and the honest delivery ledger - where the studio's news leaves the
+ * building for them, and what actually happened to each attempt. */
+const OUT_STATUS: Record<string, string> = {
+  SENT: "text-emerald-300 border-emerald-400/30 bg-emerald-400/10",
+  REFUSED: "text-amber-300 border-amber-400/30 bg-amber-400/10",
+  FAILED: "text-red-300 border-red-400/30 bg-red-400/10",
+};
+
+function OutboundPanel() {
+  const qc = useQueryClient();
+  const notifQ = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => api.notifications(),
+    refetchInterval: 120_000,
+  });
+  const [webhook, setWebhook] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const cfg = notifQ.data?.config;
+  const deliveries = notifQ.data?.deliveries ?? [];
+
+  async function patch(body: Parameters<typeof api.patchNotifications>[0], note: string) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.patchNotifications(body);
+      await qc.invalidateQueries({ queryKey: ["notifications"] });
+      setMsg(note);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message.slice(0, 140) : "the pen refused");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="studio-panel p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Send className="h-4 w-4 text-primary" /> My outbound
+        </h3>
+        <span className="text-[10px] text-muted-foreground uppercase tracking-widest">
+          {deliveries.length > 0 ? `${deliveries.filter((d) => d.status === "SENT").length}/${deliveries.length} delivered` : "nothing sent yet"}
+        </span>
+      </div>
+      {cfg ? (
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input
+              value={webhook}
+              onChange={(e) => setWebhook(e.target.value)}
+              placeholder={cfg.webhookRedacted ?? "https://hooks.example.com/my-channel"}
+              className="h-8 text-xs flex-1"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={busy || !webhook.trim()}
+              onClick={() => patch({ notifyWebhook: webhook.trim() }, "webhook saved - the delivery ledger proves the next push")}
+            >
+              Save webhook
+            </Button>
+            {cfg.webhookRedacted && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs text-muted-foreground"
+                disabled={busy}
+                onClick={() => { setWebhook(""); patch({ notifyWebhook: null }, "webhook cleared"); }}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          <div className="grid sm:grid-cols-3 gap-2">
+            <label className="flex items-center justify-between rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
+              <span className="text-[11px] leading-tight">Digest pushes</span>
+              <Switch checked={cfg.notifyOnDigest} disabled={busy} onCheckedChange={(v) => patch({ notifyOnDigest: v }, v ? "digests will reach your channels" : "digest pushes off")} />
+            </label>
+            <label className="flex items-center justify-between rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2">
+              <span className="text-[11px] leading-tight">Release slates</span>
+              <Switch checked={cfg.notifyOnRelease} disabled={busy} onCheckedChange={(v) => patch({ notifyOnRelease: v }, v ? "slates will reach your channels" : "release pushes off")} />
+            </label>
+            <label className="flex items-center justify-between rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2" title={cfg.smtpConfigured ? "SMTP transport is configured" : "no SMTP transport configured (set ANIMEOS_SMTP_URL) - rows still land honestly"}>
+              <span className="text-[11px] leading-tight">Email to me{!cfg.smtpConfigured && <span className="block text-[9px] text-muted-foreground">no transport configured</span>}</span>
+              <Switch checked={cfg.notifyEmail} disabled={busy} onCheckedChange={(v) => patch({ notifyEmail: v }, v ? "your account email joins the channels" : "email off")} />
+            </label>
+          </div>
+          {msg && <p className="text-[10px] text-muted-foreground">{msg}</p>}
+          {deliveries.length > 0 && (
+            <div className="space-y-1">
+              {deliveries.slice(0, 5).map((d) => (
+                <div key={d.id} className="flex items-center gap-2 text-[10px]">
+                  <span className={cn("text-[9px] px-1 py-0.5 rounded border shrink-0", OUT_STATUS[d.status] ?? "text-muted-foreground border-white/10 bg-white/5")}>{d.status}</span>
+                  <span className="text-muted-foreground shrink-0">{d.kind}</span>
+                  <span className="truncate text-muted-foreground">{d.detail ?? ""}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground py-2">Reading your channels…</p>
       )}
     </div>
   );
@@ -410,6 +523,9 @@ export function DashboardView() {
 
       {/* The studio floor: presence + member digests (crew-readable) */}
       <StudioFloorPanel projectId={projectId} />
+
+      {/* My outbound: the member's own channels + delivery ledger */}
+      <OutboundPanel />
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Active renders */}

@@ -27,13 +27,16 @@ if (process.env.NODE_ENV === "production" && !process.env.NEXTAUTH_SECRET) {
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 // The workplace exceptions - the ONLY mutations a VIEWER may send.
-// Both are speaking/lens acts, not direction; each route still
+// All are speaking/lens/personal acts, not direction; each route still
 // enforces its own per-action rules on top:
 //   1. /api/comments            - speak (the exact path, not a prefix)
-//   2. PATCH .../projects/x/members - retune your OWN craft lens
+//   2. /api/notifications       - tune your OWN outbound channels
+//     (iteration 71; the route is strictly self-scoped - it reads and
+//     writes only the caller's row, never another member's)
+//   3. PATCH .../projects/x/members - retune your OWN craft lens
 //     (the members route refuses a PATCH for anyone but yourself or
 //     an OWNER, and its add/remove stay OWNER-only regardless)
-const VIEWER_MUTABLE = new Set(["/api/comments"]);
+const VIEWER_MUTABLE = new Set(["/api/comments", "/api/notifications"]);
 const VIEWER_LENS_PATCH = /^\/api\/projects\/[^/]+\/members$/;
 
 export default async function proxy(req: NextRequest) {

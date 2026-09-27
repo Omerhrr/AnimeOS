@@ -18,6 +18,7 @@ import { studioPulse } from "@/lib/studio-pulse";
 import { canonHealthData } from "@/lib/canon-health";
 import { scheduleHealthData } from "@/lib/schedule-health";
 import { postDailyDigest, postMemberDigest } from "@/lib/digest";
+import { notifyMembers, deliverToMember, describeFanout } from "@/lib/studio/notify";
 import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
 import { uploadStagedPackage, findStagedPackage } from "@/lib/comic/upload";
 import { parseSrt, serializeSrt } from "@/lib/subtitles/srt";
@@ -1719,7 +1720,9 @@ async function executeToolInner(
           // unschedule: clear the date (and the platform with it)
           await db.episode.update({ where: { id: episode.id }, data: { releaseAt: null, releasePlatform: null } });
           await landDesignEvent(projectId, `EP${episode.number} unscheduled - off the release calendar`, { episodeId: episode.id });
-          return { status: "OK", result: `EP${episode.number} '${episode.title}' unscheduled - it is off the release calendar (still ${episode.status.toLowerCase()} in production).` };
+          // v71: a date coming OFF the calendar is news the subscribed crew asked for
+          const fanout = await notifyMembers(projectId, "RELEASE", `EP${episode.number} '${episode.title}' unscheduled`, [`EP${episode.number} '${episode.title}' is off the release calendar (still ${episode.status.toLowerCase()} in production).`]).catch(() => ({ reached: 0, refused: 0, failed: 0, skipped: 0 }));
+          return { status: "OK", result: `EP${episode.number} '${episode.title}' unscheduled - it is off the release calendar (still ${episode.status.toLowerCase()} in production). ${describeFanout(fanout)}` };
         }
         const data: { releaseAt?: Date | null; releasePlatform?: string | null } = {};
         if (args.platform !== undefined) data.releasePlatform = platformArg ? platformArg.slice(0, 40) : null;
@@ -1735,6 +1738,8 @@ async function executeToolInner(
         const platform = data.releasePlatform !== undefined ? data.releasePlatform : episode.releasePlatform;
         const due = slated ? slated.getTime() < Date.now() : false;
         await landDesignEvent(projectId, `EP${episode.number} slated for ${slated ? slated.toISOString().slice(0, 10) : "no date"}${platform ? ` on ${platform}` : ""} - the release calendar holds it`, { episodeId: episode.id, releaseAt: slated ? slated.toISOString() : null, platform: platform ?? null });
+        // v71: PER-MEMBER OUTBOUND - the subscribed crew hears the slate
+        const fanout = await notifyMembers(projectId, "RELEASE", `EP${episode.number} slated for ${slated ? slated.toISOString().slice(0, 10) : "no date"}${platform ? ` on ${platform}` : ""}`, [`EP${episode.number} '${episode.title}' is slated for ${slated ? slated.toISOString().slice(0, 10) : "no date"}${platform ? ` on ${platform}` : ""} - the release calendar holds it${due ? " (that date is already PAST - the calendar reads it RELEASED)" : ""}.`]).catch(() => ({ reached: 0, refused: 0, failed: 0, skipped: 0 }));
         const nextUp = await db.episode.findMany({
           where: { season: { projectId }, releaseAt: { gt: new Date() } },
           orderBy: { releaseAt: "asc" },
@@ -1742,7 +1747,7 @@ async function executeToolInner(
           select: { number: true, releaseAt: true, releasePlatform: true },
         });
         const nextLine = nextUp.length > 0 ? ` Next up: ${nextUp.map((e) => `EP${e.number} ${e.releaseAt ? e.releaseAt.toISOString().slice(0, 10) : "?"}${e.releasePlatform ? ` (${e.releasePlatform})` : ""}`).join(", ")}.` : "";
-        return { status: "OK", result: `EP${episode.number} '${episode.title}' slated for ${slated ? slated.toISOString().slice(0, 10) : "(no date - unscheduled)"}${platform ? ` on ${platform}` : ""}${due ? " - that date is already PAST, the calendar reads it RELEASED" : ""}.${nextLine} The Releases view holds the calendar; the episode's production status (${episode.status}) stays the render pipeline's truth.` };
+        return { status: "OK", result: `EP${episode.number} '${episode.title}' slated for ${slated ? slated.toISOString().slice(0, 10) : "(no date - unscheduled)"}${platform ? ` on ${platform}` : ""}${due ? " - that date is already PAST, the calendar reads it RELEASED" : ""}.${nextLine} ${describeFanout(fanout)} The Releases view holds the calendar; the episode's production status (${episode.status}) stays the render pipeline's truth.` };
       }
 
       case "steer_schedule": {
@@ -2317,11 +2322,22 @@ async function executeToolInner(
           // actually caused in the window - attributed events + comments
           const result = await postMemberDigest(projectId, memberRef, window);
           if (!result.ok) return { status: "ERROR", result: result.error ?? "the member digest failed to build" };
-          return { status: "OK", result: `Member digest posted for ${result.digest.name} (last ${window}h):\n${result.digest.headline}\n${result.digest.lines.join("\n")}\nThe digest panel keeps the history; the dashboard's studio floor shows every member's digest live.` };
+          // v71: the member's own channels get their digest too (if they
+          // subscribed) - every attempt lands on the delivery ledger
+          const memberRow = await db.user.findFirst({
+            where: { OR: [{ email: { equals: memberRef.trim() } }, { name: { equals: memberRef.trim() } }] },
+            select: { id: true, email: true, notifyWebhook: true, notifyEmail: true },
+          });
+          const fan = memberRow ? await deliverToMember(memberRow, "DIGEST", result.digest.headline, result.digest.lines, projectId) : [];
+          const fanLine = memberRow && fan.length > 0 ? ` Outbound: ${fan.filter((f) => f.ok).length}/${fan.length} channel(s) reached${fan.some((f) => !f.ok) ? " (the delivery ledger names the rest)" : ""}.` : "";
+          return { status: "OK", result: `Member digest posted for ${result.digest.name} (last ${window}h):\n${result.digest.headline}\n${result.digest.lines.join("\n")}\nThe digest panel keeps the history; the dashboard's studio floor shows every member's digest live.${fanLine}` };
         }
         const result = await postDailyDigest(projectId, window);
         if (!result.ok) return { status: "ERROR", result: result.error ?? "the digest failed to build" };
-        return { status: "OK", result: `Digest posted to the creator (last ${result.digest.windowHours}h, ${result.digest.events} production event(s)):\n${result.digest.lines.join("\n")}\nThe digest panel on this view keeps the history; a DAILY_DIGEST schedule (create_schedule) posts one automatically on its cadence.` };
+        // v71: PER-MEMBER OUTBOUND - subscribed members (crew + OWNERs)
+        // get the digest pushed to their own channels, honestly ledgered
+        const fanout = await notifyMembers(projectId, "DIGEST", result.digest.headline, result.digest.lines).catch(() => ({ reached: 0, refused: 0, failed: 0, skipped: 0 }));
+        return { status: "OK", result: `Digest posted to the creator (last ${result.digest.windowHours}h, ${result.digest.events} production event(s)):\n${result.digest.lines.join("\n")}\n${describeFanout(fanout)}\nThe digest panel on this view keeps the history; a DAILY_DIGEST schedule (create_schedule) posts one automatically on its cadence.` };
       }
 
       case "publish_cut": {

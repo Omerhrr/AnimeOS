@@ -779,6 +779,29 @@ export interface CrewView {
 // ── STUDIO FLOOR (iteration 68): presence + member digests ──
 export type PresenceBucketType = "online" | "recent" | "away" | "offline";
 
+// ── PER-MEMBER OUTBOUND (iteration 71): channels + delivery ledger ──
+export interface NotificationConfig {
+  email: string;
+  webhookRedacted: string | null;
+  notifyEmail: boolean;
+  notifyOnDigest: boolean;
+  notifyOnRelease: boolean;
+  smtpConfigured: boolean;
+}
+
+export interface NotificationRow {
+  id: string;
+  kind: string;
+  status: string;
+  detail: string | null;
+  createdAt: string;
+}
+
+export interface NotificationFeed {
+  config: NotificationConfig;
+  deliveries: NotificationRow[];
+}
+
 export interface PresenceMember {
   id: string;
   name: string;
@@ -855,6 +878,9 @@ export const api = {
   crew: (projectId: string) => j<CrewView>(`/api/projects/${projectId}/members`),
   presence: () => j<PresenceFeed>("/api/studio/presence"),
   memberDigests: (projectId: string, hours = 24) => j<MemberDigestFeed>(`/api/studio/digests?projectId=${projectId}&hours=${hours}`),
+  notifications: () => j<NotificationFeed>("/api/notifications"),
+  patchNotifications: (body: { notifyWebhook?: string | null; notifyEmail?: boolean; notifyOnDigest?: boolean; notifyOnRelease?: boolean }) =>
+    j<{ ok: boolean; config: { webhookRedacted: string | null; notifyEmail: boolean; notifyOnDigest: boolean; notifyOnRelease: boolean } }>("/api/notifications", { method: "PATCH", body: JSON.stringify(body) }),
   releases: (projectId: string) => j<ReleaseCalendar>(`/api/releases?projectId=${projectId}`),
   setRelease: (body: { episodeId: string; releaseAt?: string; releasePlatform?: string | null }) =>
     j<{ id: string; releaseAt: string | null; releasePlatform: string | null }>("/api/releases", { method: "PATCH", body: JSON.stringify(body) }),

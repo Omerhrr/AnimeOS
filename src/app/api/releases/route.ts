@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireProjectAccess } from "@/lib/access";
+import { notifyMembers } from "@/lib/studio/notify";
 
 // ─────────────────────────────────────────────────────────────
 // THE RELEASE CALENDAR (iteration 68): when the show meets its
@@ -112,9 +113,19 @@ export async function PATCH(req: Request) {
     data.releasePlatform = raw ? raw.slice(0, 40) : null;
   }
   const updated = await db.episode.update({ where: { id: episode.id }, data });
+  // v71: PER-MEMBER OUTBOUND - the dialog's slate change is news the
+  // subscribed crew asked for (same fan-out the schedule_release tool runs)
+  const slatedFor = updated.releaseAt ? updated.releaseAt.toISOString().slice(0, 10) : null;
+  const fanout = await notifyMembers(
+    episode.season.projectId,
+    "RELEASE",
+    `EP${episode.number} ${slatedFor ? `slated for ${slatedFor}` : "unscheduled"}${updated.releasePlatform ? ` on ${updated.releasePlatform}` : ""}`,
+    [`EP${episode.number} '${episode.title}' is ${slatedFor ? `slated for ${slatedFor}${updated.releasePlatform ? ` on ${updated.releasePlatform}` : ""}` : "off the release calendar"}.`],
+  ).catch(() => ({ reached: 0, refused: 0, failed: 0, skipped: 0 }));
   return NextResponse.json({
     id: updated.id,
     releaseAt: updated.releaseAt ? updated.releaseAt.toISOString() : null,
     releasePlatform: updated.releasePlatform,
+    outbound: fanout,
   });
 }
