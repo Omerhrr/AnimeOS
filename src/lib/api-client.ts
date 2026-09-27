@@ -701,6 +701,7 @@ export interface ManifestSlot {
   fx: string | null;
   physics: string | null;
   note: string | null;
+  wind?: Array<number | null> | number | null;
 }
 export interface ManifestProgram {
   name: string;
@@ -708,6 +709,11 @@ export interface ManifestProgram {
   slots: ManifestSlot[];
   usageCount: number;
   updatedAt: string;
+  runs: number;
+  verifiedRuns: number;
+  lastVerified: boolean | null;
+  unadopted: boolean;
+  learnedBy: string[];
 }
 export interface ManifestFlow {
   register: string;

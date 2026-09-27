@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 
 // ─────────────────────────────────────────────────────────────
 // LEARNED SEQUENCE FLOWS (iteration 63 - the studio remembers
-// its sentences)
+// its sentences; iteration 64 - the sentence calls the air,
+// the consult names its teachers)
 //
 // A direction that verified is a LESSON, not an event. This is
 // the production's sequence flow memory, shaped like the retopo
@@ -16,6 +17,11 @@ import { db } from "@/lib/db";
 //     it as the register's named flow (learn_sequence_flow) -
 //     the same adoption law the retopo flows and the
 //     Terminology memory obey ("that is how the memory grows").
+//     The consult proposes it itself now: every program-driven
+//     direction lands its measured record on the PROGRAM's own
+//     ledger, and a program that verified without a flow is named
+//     by the consult (success, refusal, and the context line) -
+//     a proven sentence should not wait to be remembered.
 //   - APPLICATION: every direct_sequence that drives the flow
 //     (or the program it was learned from) appends what the run
 //     MEASURED. A direction that landed whole (every slot
@@ -53,6 +59,12 @@ export interface SequenceFlowSlot {
   fx: string | null;
   physics: string | null;
   note: string | null;
+  /** The slot's air call (iteration 64): a number drives EVERY beat of
+   * the slot's grammar, an array is keyed per beat (null leaves the
+   * grammar's own call - explicit 0 is a stillness call that calms a
+   * gusty grammar). Validated at design time against the compiled
+   * grammar's beat count - a typo never reaches a shoot. */
+  wind?: Array<number | null> | number | null;
 }
 
 export interface SequenceFlowSpec {
@@ -78,6 +90,173 @@ export interface SequenceOutcome {
 }
 
 const MAX_OUTCOMES = 24;
+
+/** The outcome a PROGRAM-driven direction lands on the program's own
+ * ledger (same shape the flows keep, minus the program field - it IS
+ * the program). */
+export type SequenceProgramOutcome = Omit<SequenceOutcome, "program" | "at"> & { program?: string | null };
+
+export interface ProgramRecord {
+  name: string;
+  runs: number; // directions the program drove (of the kept record)
+  verifiedRuns: number; // directions that landed whole
+  lastVerified: boolean | null;
+}
+
+function parseProgramOutcomes(raw: string | null | undefined): SequenceProgramOutcome[] {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? (parsed as SequenceProgramOutcome[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The program's own measured record (iteration 64): every
+ * program-driven direction appends what it measured, verified or not
+ * - the same honest ledger the flows keep, so the consult can name
+ * the sentences that PROVED themselves.
+ * Returns null when the preset vanished - an honest null, never a
+ * silent row. */
+export async function recordProgramOutcome(
+  projectId: string,
+  programName: string,
+  outcome: SequenceProgramOutcome,
+): Promise<ProgramRecord | null> {
+  const preset = await db.designPreset.findUnique({
+    where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name: programName } },
+  });
+  if (!preset) return null;
+  const outcomes = [...parseProgramOutcomes(preset.outcomes), { ...outcome, at: new Date().toISOString() }].slice(-MAX_OUTCOMES);
+  await db.designPreset.update({ where: { id: preset.id }, data: { outcomes: JSON.stringify(outcomes) } });
+  return programRecord(preset.name, outcomes);
+}
+
+function programRecord(name: string, outcomes: SequenceProgramOutcome[]): ProgramRecord {
+  const last = outcomes.length > 0 ? outcomes[outcomes.length - 1] : null;
+  return {
+    name,
+    runs: outcomes.length,
+    verifiedRuns: outcomes.filter((o) => o.verified).length,
+    lastVerified: last ? last.verified : null,
+  };
+}
+
+/** The verified-but-unadopted programs (iteration 64): SEQUENCE
+ * programs whose directions landed whole but that no learned flow
+ * carries yet (no flow was ever learned from them). This is what the
+ * consult reads before it answers - the studio proposes adopting its
+ * own proven sentences instead of waiting for DSH to remember. */
+export async function unadoptedVerifiedPrograms(projectId: string): Promise<ProgramRecord[]> {
+  const [presets, flows] = await Promise.all([
+    db.designPreset.findMany({
+      where: { projectId, kind: "SEQUENCE" },
+      orderBy: { updatedAt: "desc" as const },
+      take: 40,
+      select: { name: true, outcomes: true },
+    }),
+    db.sequenceFlow.findMany({ where: { projectId }, select: { learnedFrom: true } }),
+  ]);
+  const adopted = new Set(flows.map((f) => f.learnedFrom).filter((n): n is string => Boolean(n)));
+  return presets
+    .filter((p) => !adopted.has(p.name))
+    .map((p) => programRecord(p.name, parseProgramOutcomes(p.outcomes)))
+    .filter((p) => p.verifiedRuns > 0)
+    .slice(0, 6);
+}
+
+/** The consult's adoption suggestion line: the proven sentences no
+ * flow carries yet, named so DSH can adopt them in one call. */
+export function sequenceAdoptionSuggestionsLine(programs: ProgramRecord[]): string | null {
+  if (programs.length === 0) return null;
+  const parts = programs
+    .slice(0, 2)
+    .map((p) => `'${p.name}' (${p.verifiedRuns} landed-whole run${p.verifiedRuns === 1 ? "" : "(s)"} of ${p.runs})`);
+  return `Adoption: ${parts.join(", ")} verified but no flow carries ${programs.length === 1 ? "it" : "them"} yet - learn_sequence_flow register:'<register>' program:'<name>' grows the memory (the consult only starts from what adopted).`;
+}
+
+// ── THE SLOT'S AIR CALL (iteration 64 - per-beat secondary motion
+//    at sequence scale) ──
+// The worker's secondary rig rides each grammar beat's wind (the
+// gust the cloth and hair answer). A grammar carries its own wind
+// per beat; a SEQUENCE slot may now call the air OVER the grammar:
+// a number drives every beat of the slot's grammar, an array is
+// keyed per beat (null keeps the grammar's own gust; explicit 0 is
+// a stillness call that calms a gusty grammar). Validated at design
+// time against the compiled grammar's beat count - a typo never
+// reaches a shoot.
+
+export function compileSlotWind(
+  input: unknown,
+  label: string,
+): { ok: true; wind: Array<number | null> | number | null } | { ok: false; error: string } {
+  if (input === undefined || input === null || input === "") return { ok: true, wind: null };
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  if (Array.isArray(input)) {
+    if (input.length === 0) {
+      return { ok: false, error: `${label}: an empty wind array directs no air - pass a number 0..1 or one entry per beat (null keeps the grammar's own gust)` };
+    }
+    const out: Array<number | null> = [];
+    for (let i = 0; i < input.length; i++) {
+      const e = input[i];
+      if (e === null || e === undefined || e === "") {
+        out.push(null);
+        continue;
+      }
+      const w = Number(e);
+      if (!Number.isFinite(w)) {
+        return { ok: false, error: `${label}: wind[${i}] must be a number 0..1 or null (got ${String(e)})` };
+      }
+      out.push(clamp(w));
+    }
+    return { ok: true, wind: out };
+  }
+  const w = Number(input);
+  if (!Number.isFinite(w)) {
+    return { ok: false, error: `${label}: wind must be a number 0..1 or an array keyed per beat (got ${String(input)})` };
+  }
+  return { ok: true, wind: clamp(w) };
+}
+
+/** Does the slot's air call fit the grammar it rides? An array may
+ * not name more beats than the grammar directs (shorter is fine -
+ * the unnamed beats keep their own call). Returns the error or null. */
+export function windFitsGrammar(wind: Array<number | null> | number | null, beatCount: number, label: string): string | null {
+  if (Array.isArray(wind) && wind.length > beatCount) {
+    return `${label}: wind names ${wind.length} beat(s) but the grammar directs ${beatCount} - the air call must fit the grammar's beats`;
+  }
+  return null;
+}
+
+/** Apply a slot's air call to a freshly compiled grammar's beats,
+ * mutating in place (the compiled spec is per-shot, never shared).
+ * Returns how many beats the call actually touched. */
+export function applySlotWind(beats: Array<{ wind?: number | null }>, wind: Array<number | null> | number | null): number {
+  if (wind === null || wind === undefined) return 0;
+  let touched = 0;
+  if (Array.isArray(wind)) {
+    beats.forEach((b, i) => {
+      const w = wind[i];
+      if (w !== null && w !== undefined) {
+        b.wind = w;
+        touched += 1;
+      }
+    });
+  } else {
+    beats.forEach((b) => {
+      b.wind = wind as number;
+      touched += 1;
+    });
+  }
+  return touched;
+}
+
+/** Format an air call for the flow read (honest about stillness). */
+export function formatSlotWind(wind: Array<number | null> | number | null): string {
+  const n = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""));
+  if (Array.isArray(wind)) return `wind [${wind.map((w) => (w === null ? "keep" : n(w))).join(",")}]`;
+  return `wind ${wind === null ? "-" : n(wind)}`;
+}
 
 export function parseSlots(raw: string | null | undefined): SequenceFlowSlot[] {
   try {

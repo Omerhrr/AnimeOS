@@ -78,7 +78,7 @@ export function ManifestView({ project }: { project: StudioProject }) {
         <div className="flex items-center gap-2 mb-2">
           <ScrollText className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold tracking-tight">Sequence programs</h3>
-          <span className="text-[11px] text-muted-foreground">{manifest?.programs.length ?? 0} - designed with design_sequence, applied with direct_sequence</span>
+          <span className="text-[11px] text-muted-foreground">{manifest?.programs.length ?? 0} - designed with design_sequence, applied with direct_sequence; the consult proposes the verified ones no flow carries</span>
         </div>
         {(manifest?.programs.length ?? 0) === 0 ? (
           <div className="studio-panel p-6 text-center text-sm text-muted-foreground">
@@ -93,6 +93,19 @@ export function ManifestView({ project }: { project: StudioProject }) {
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">used {p.usageCount}x</span>
                 </div>
                 {p.description && <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{p.description}</p>}
+                {p.runs > 0 && (
+                  <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-muted-foreground">
+                    <span className="tabular-nums">{p.runs} run{p.runs === 1 ? "" : "s"}</span>
+                    <span>·</span>
+                    <span className="tabular-nums text-emerald-300">{p.verifiedRuns} landed whole</span>
+                    {p.unadopted && (
+                      <span className="px-1 py-0.5 rounded text-[9px] bg-amber-400/10 border border-amber-400/25 text-amber-300" title="verified but no learned flow carries it - the consult proposes adopting it (learn_sequence_flow)">unadopted</span>
+                    )}
+                    {p.learnedBy.map((n) => (
+                      <span key={n} className="px-1 py-0.5 rounded text-[9px] bg-violet-400/10 border border-violet-400/25 text-violet-300 truncate" title={`adopted as flow '${n}'`}>flow: {n}</span>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-1 mt-2">
                   {p.slots.map((s, i) => (
                     <span key={i} className="inline-flex items-center gap-1">
@@ -105,6 +118,7 @@ export function ManifestView({ project }: { project: StudioProject }) {
                       </span>
                       {s.fx && <span className="px-1 py-0.5 rounded text-[9px] bg-amber-400/10 border border-amber-400/25 text-amber-300">fx</span>}
                       {s.physics && <span className="px-1 py-0.5 rounded text-[9px] bg-orange-400/10 border border-orange-400/25 text-orange-300">phys</span>}
+                      {s.wind !== undefined && s.wind !== null && <span className="px-1 py-0.5 rounded text-[9px] bg-cyan-400/10 border border-cyan-400/25 text-cyan-300" title={Array.isArray(s.wind) ? `wind per beat: ${s.wind.map((w) => (w === null ? "keep" : w)).join(", ")}` : `wind ${s.wind} - every beat of this slot's grammar`}>air</span>}
                     </span>
                   ))}
                 </div>

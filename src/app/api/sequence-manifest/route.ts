@@ -6,15 +6,18 @@ import { requireProjectAccess } from "@/lib/access";
 import { parseSlots } from "@/lib/dsh/sequence-flows";
 
 // ─────────────────────────────────────────────────────────────
-// THE SEQUENCE MANIFEST (iteration 63) - the director's call
+// THE SEQUENCE MANIFEST (iterations 63-64) - the director's call
 // sheet: the show's cutting language as it STANDS. Three ledgers
 // in one read:
 //   episodes  - every scene's shots in story order, each with the
-//               beat chain its grammar directs, the pose pair,
-//               the fx/physics the world answers on, and the
-//               latest render state
+//               beat chain its grammar directs (wind included),
+//               the pose pair, the fx/physics the world answers
+//               on, and the latest render state
 //   programs  - the named sequence programs (design_sequence
-//               presets) - the sentences the studio can direct
+//               presets) - the sentences the studio can direct,
+//               with their measured records and whether a learned
+//               flow carries them yet (the consult proposes the
+//               verified-but-unadopted ones)
 //   flows     - the learned sequence flows (learn_sequence_flow)
 //               - the sentences the studio REMEMBERS, with their
 //               measured records
@@ -84,7 +87,7 @@ export async function GET(req: Request) {
       where: { projectId, kind: "SEQUENCE" },
       orderBy: { updatedAt: "desc" as const },
       take: 40,
-      select: { name: true, spec: true, usageCount: true, updatedAt: true },
+      select: { name: true, spec: true, outcomes: true, usageCount: true, updatedAt: true },
     }),
     db.sequenceFlow.findMany({
       where: { projectId },
@@ -154,9 +157,15 @@ export async function GET(req: Request) {
     })),
   );
 
+  const adoptedBy = new Map<string, string[]>();
+  for (const f of flows) {
+    if (!f.learnedFrom) continue;
+    adoptedBy.set(f.learnedFrom, [...(adoptedBy.get(f.learnedFrom) ?? []), f.name]);
+  }
+
   const programs = presets.map((p) => {
     let description: string | null = null;
-    let slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null }> = [];
+    let slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null; wind?: Array<number | null> | number | null }> = [];
     try {
       const parsed = JSON.parse(p.spec || "null") as { description?: unknown; slots?: unknown } | null;
       if (Array.isArray(parsed?.slots)) slots = parsed.slots as typeof slots;
@@ -164,7 +173,31 @@ export async function GET(req: Request) {
     } catch {
       slots = [];
     }
-    return { name: p.name, description, slots, usageCount: p.usageCount, updatedAt: p.updatedAt.toISOString() };
+    // the program's measured record (iteration 64): what its
+    // directions landed, and whether a flow carries it yet - the
+    // verified-but-unadopted sentences are what the consult proposes
+    const outcomes = (() => {
+      try {
+        const parsed = JSON.parse(p.outcomes || "[]") as unknown;
+        return Array.isArray(parsed) ? (parsed as Array<{ verified: boolean; at: string }>) : [];
+      } catch {
+        return [];
+      }
+    })();
+    const last = outcomes.length > 0 ? outcomes[outcomes.length - 1] : null;
+    const learnedBy = adoptedBy.get(p.name) ?? [];
+    return {
+      name: p.name,
+      description,
+      slots,
+      usageCount: p.usageCount,
+      updatedAt: p.updatedAt.toISOString(),
+      runs: outcomes.length,
+      verifiedRuns: outcomes.filter((o) => o.verified).length,
+      lastVerified: last ? last.verified : null,
+      unadopted: learnedBy.length === 0 && outcomes.some((o) => o.verified),
+      learnedBy,
+    };
   });
 
   const flowsOut = flows.map((f) => {

@@ -146,6 +146,7 @@ model DesignPreset {
   kind       String // MATERIAL | LIGHTING | MOTION | VARIATION | GRAMMAR | SEQUENCE | SCULPT | FX | PHYSICS
   name       String
   spec       String // JSON: MATERIAL = principled recipe, LIGHTING = rig params, MOTION = performance spec, VARIATION = GN scatter/array spec, GRAMMAR = directed camera beats, SEQUENCE = named chain of grammar slots, SCULPT = layered seeded surface-carving spec
+  outcomes   String   @default("[]") // JSON [{scope, slots, directed, untouched, unused, windBeats, poseCuts, moveClashes, fxBound, physBound, rendersQueued, verified, at}] - the measured record of the directions a SEQUENCE program drove (a redesigned sentence resets it - a new sentence is a new lesson)
   usageCount Int      @default(0) // builds that consumed this preset
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

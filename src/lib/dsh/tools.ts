@@ -49,6 +49,8 @@ import { planSculpt, listSculptPlans, sculptPlansContextLine, surfaceReadLine } 
 import {
   SEQUENCE_REGISTERS, isSequenceRegister, learnSequenceFlow, bestSequenceFlow, recordSequenceOutcome,
   flowsLearnedFromProgram, listSequenceFlows, sequenceFlowsContextLine,
+  recordProgramOutcome, unadoptedVerifiedPrograms, sequenceAdoptionSuggestionsLine,
+  compileSlotWind, windFitsGrammar, applySlotWind, formatSlotWind,
   type SequenceFlowSlot,
 } from "@/lib/dsh/sequence-flows";
 import { normalizePose, poseChip, describePosePair } from "@/lib/animation/poses";
@@ -534,10 +536,10 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "design_grammar",
-    description: "Design a NAMED MOTION GRAMMAR and register it as the production's blocking law: 2..6 DIRECTED camera beats over one shot (CRANE down to find the hero, then DOLLY_IN as the sword clears the sheath), each beat one move (ORBIT | PAN | TRACKING | CRANE | DOLLY_IN | DOLLY_OUT | TILT_UP | TILT_DOWN | STATIC) over a 0..1 fraction of the clip, optionally carrying its own pose pair so the SUBJECT moves with the lens. Reusable named grammars are how a show keeps its blocking language consistent; apply one with set_shot_grammar.",
+    description: "Design a NAMED MOTION GRAMMAR and register it as the production's blocking law: 2..6 DIRECTED camera beats over one shot (CRANE down to find the hero, then DOLLY_IN as the sword clears the sheath), each beat one move (ORBIT | PAN | TRACKING | CRANE | DOLLY_IN | DOLLY_OUT | TILT_UP | TILT_DOWN | STATIC) over a 0..1 fraction of the clip, optionally carrying its own pose pair so the SUBJECT moves with the lens and its own WIND call (0..1 - the gust the cloth and hair ride on that beat). Reusable named grammars are how a show keeps its blocking language consistent; apply one with set_shot_grammar.",
     args: {
       name: "string - the grammar name (e.g. 'Cultivation Reveal')",
-      beats: "JSON array string - [{\"move\":\"CRANE\",\"from\":0,\"to\":0.5},{\"move\":\"DOLLY_IN\",\"from\":0.5,\"to\":1}], optional per-beat poseStart/poseEnd and note",
+      beats: "JSON array string - [{\"move\":\"CRANE\",\"from\":0,\"to\":0.5},{\"move\":\"DOLLY_IN\",\"from\":0.5,\"to\":1,\"wind\":0.8}], optional per-beat poseStart/poseEnd, wind (0..1) and note",
     },
   },
   {
@@ -551,22 +553,22 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "design_sequence",
-    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair, optional fx / physics program names (a design_fx / design_physics preset, a built-in like The Slash / The Clash, or an inline programs array - the world answers on the right shots) and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar AND world programs are validated at design time - a typo never reaches a shoot. Apply one across a scene (or the whole episode) with direct_sequence.",
+    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair, optional fx / physics program names (a design_fx / design_physics preset, a built-in like The Slash / The Clash, or an inline programs array - the world answers on the right shots), an optional WIND call (a number 0..1 drives the slot's grammar's every beat, or an array keyed per beat with null keeping the grammar's own gust and 0 a stillness call - the robes and hair ride what the sentence calls) and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar, air call AND world programs are validated at design time - a typo never reaches a shoot. Apply one across a scene (or the whole episode) with direct_sequence.",
     args: {
       name: "string - the sequence program name (e.g. 'Raid on the Fortress')",
       description: "string (optional) - what this program is for",
-      slots: "JSON array string - [{\"grammar\":\"The Reveal\",\"note\":\"find the temple\"},{\"grammar\":\"The Standoff\"},{\"grammar\":\"The Assault\",\"poseStart\":\"DRAW\",\"poseEnd\":\"SLASH\",\"fx\":\"The Slash\",\"physics\":\"The Clash\"}]",
+      slots: "JSON array string - [{\"grammar\":\"The Reveal\",\"note\":\"find the temple\"},{\"grammar\":\"The Standoff\",\"wind\":[null,0.8]},{\"grammar\":\"The Assault\",\"poseStart\":\"DRAW\",\"poseEnd\":\"SLASH\",\"wind\":0.6,\"fx\":\"The Slash\",\"physics\":\"The Clash\"}]",
     },
   },
   {
     name: "direct_sequence",
-    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, and a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, so the world answers on the right shots. scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. THE STUDIO REMEMBERS ITS SENTENCES: with no program and no slots, pass register:'<register>' (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) to direct from the register's best-proven LEARNED SEQUENCE FLOW (adopted with learn_sequence_flow) - every application grows the flow's measured record. The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
+    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, and a slot's WIND call rides its grammar's beats (the robes and hair answer the air the sentence calls). scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. THE STUDIO REMEMBERS ITS SENTENCES: with no program and no slots, pass register:'<register>' (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) to direct from the register's best-proven LEARNED SEQUENCE FLOW (adopted with learn_sequence_flow) - every application grows the flow's measured record, and the consult itself names the verified programs no flow carries yet (a proven sentence should not wait to be remembered). The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
     args: {
       sceneNumber: "number (scene scope, defaults to latest scene)",
       scope: "scene | episode (default scene - episode allocates the slots across every scene of the episode in story order)",
       episodeNumber: "number (episode scope, defaults to the latest episode with shots)",
       program: "string - a design_sequence preset name (or omit and pass slots inline, or pass register to consult a learned flow)",
-      slots: "JSON array string (optional) - inline slots when no program is named",
+      slots: "JSON array string (optional) - inline slots when no program is named: {grammar, poseStart?, poseEnd?, fx?, physics?, wind?}",
       register: "string (optional) - with no program and no slots: consult the register's best-proven learned sequence flow (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE)",
       render: "boolean (optional, default false) - queue a render job for every directed shot",
       mode: "PREVIEW | FINAL (default PREVIEW, only with render)",
@@ -574,7 +576,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "learn_sequence_flow",
-    description: "ADOPT A VERIFIED SEQUENCE as the production's named flow for a dramatic REGISTER (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) - the studio remembers its sentences the way it remembers verified retopo budgets: the program's design-time-validated slots become the flow's sentence, and every direct_sequence that drives the program (or the flow itself, via register:'<register>') grows the flow's MEASURED record - shots stamped, wind beats, pose cuts, move clashes, world bindings, renders queued. A direction that lands whole (every slot stamped a real shot) verifies; one whose flow read raises no blocking note (zero move clashes) on top of that earns the flow a clear and rises in the consult ranking. A flow that never landed whole is never consulted. The record is honest: an outcome is appended whatever it measured.",
+    description: "ADOPT A VERIFIED SEQUENCE as the production's named flow for a dramatic REGISTER (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) - the studio remembers its sentences the way it remembers verified retopo budgets: the program's design-time-validated slots become the flow's sentence (each slot's air call included), and every direct_sequence that drives the program (or the flow itself, via register:'<register>') grows the flow's MEASURED record - shots stamped, wind beats, pose cuts, move clashes, world bindings, renders queued. A direction that lands whole (every slot stamped a real shot) verifies; one whose flow read raises no blocking note (zero move clashes) on top of that earns the flow a clear and rises in the consult ranking. A flow that never landed whole is never consulted. The record is honest: an outcome is appended whatever it measured, and the consult names the programs that verified but were never adopted.",
     args: {
       name: "string - the flow's name (e.g. 'Raid grammar')",
       register: "string - BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE",
@@ -2681,7 +2683,7 @@ export async function executeTool(
         }
         if (rawSlots.length < 2) return { status: "ERROR", result: "a sequence program needs at least 2 slots - a single directed shot belongs in set_shot_grammar" };
         if (rawSlots.length > 12) return { status: "ERROR", result: "a sequence program carries at most 12 slots - longer than that is an episode, not a program" };
-        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null }> = [];
+        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null; wind?: Array<number | null> | number | null }> = [];
         for (let i = 0; i < rawSlots.length; i++) {
           const s = rawSlots[i] as Record<string, unknown>;
           const grammar = String(s?.grammar ?? "").trim();
@@ -2697,6 +2699,14 @@ export async function executeTool(
           }
           const compiled = compileGrammarSpec({ name: `${name}-slot${i + 1}`, beats: resolved.beatsRaw });
           if (!compiled.ok) return { status: "ERROR", result: `slot ${i + 1} (${grammar}): ${compiled.error}` };
+          // the slot's AIR call (iteration 64): per-beat secondary motion
+          // at sequence scale - a number drives the grammar's every
+          // beat, an array is keyed per beat, and it must FIT the
+          // grammar it rides
+          const windParsed = compileSlotWind(s?.wind, `slot ${i + 1} (${grammar})`);
+          if (!windParsed.ok) return { status: "ERROR", result: windParsed.error };
+          const windFit = windFitsGrammar(windParsed.wind, compiled.spec.beats.length, `slot ${i + 1} (${grammar})`);
+          if (windFit) return { status: "ERROR", result: windFit };
           // design-time validation for the world programs too: a slot may
           // bind FX and PHYSICS by name (saved preset, built-in or inline)
           // so the sequence sentence directs the WORLD, not just the lens
@@ -2733,18 +2743,20 @@ export async function executeTool(
             fx: fxName || null,
             physics: physName || null,
             note: s?.note ? String(s.note).slice(0, 140) : null,
+            ...(windParsed.wind !== null ? { wind: windParsed.wind } : {}),
           });
         }
         const description = String(args.description ?? "").trim() || null;
         const existed = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name } } });
+        const hadRecord = Boolean(existed && existed.outcomes && existed.outcomes !== "[]");
         const preset = await db.designPreset.upsert({
           where: { projectId_kind_name: { projectId, kind: "SEQUENCE", name } },
           create: { projectId, kind: "SEQUENCE", name, spec: JSON.stringify({ description, slots }) },
-          update: { spec: JSON.stringify({ description, slots }) },
+          update: { spec: JSON.stringify({ description, slots }), ...(existed ? { outcomes: "[]" } : {}) },
         });
         await landDesignEvent(projectId, `Sequence program '${name}' ${existed ? "updated" : "designed"} (${slots.length} slots: ${slots.map((s) => s.grammar).join(" -> ")})`, { presetId: preset.id });
-        const slotShape = slots.map((s, i) => `${i + 1}. ${s.grammar}${s.fx ? ` +fx ${s.fx}` : ""}${s.physics ? ` +physics ${s.physics}` : ""}`).join(", ");
-        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slotShape}. Apply it across a scene (or scope:'episode' across the whole episode in story order) with direct_sequence program:'${name}' - shot i receives slot i's grammar, slot-named fx and physics ride the same shots, and the whole flow reads back cut by cut.` };
+        const slotShape = slots.map((s, i) => `${i + 1}. ${s.grammar}${s.wind !== undefined && s.wind !== null ? ` +${formatSlotWind(s.wind)}` : ""}${s.fx ? ` +fx ${s.fx}` : ""}${s.physics ? ` +physics ${s.physics}` : ""}`).join(", ");
+        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slotShape}.${hadRecord ? " (the measured record resets - a redesigned sentence is a new sentence)" : ""} Apply it across a scene (or scope:'episode' across the whole episode in story order) with direct_sequence program:'${name}' - shot i receives slot i's grammar, slot-named fx and physics ride the same shots, a slot's wind call rides its grammar's beats, and the whole flow reads back cut by cut.` };
       }
 
       case "direct_sequence": {
@@ -2810,7 +2822,7 @@ export async function executeTool(
         // array next, and with NEITHER the register consult (iteration
         // 63): the studio starts from the sentence that verified, not
         // from a fresh guess
-        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown }> = [];
+        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown; wind?: unknown }> = [];
         let sourceName = "";
         let consultFlow: { register: string; name: string } | null = null;
         const programName = String(args.program ?? "").trim();
@@ -2843,7 +2855,14 @@ export async function executeTool(
           if (!flow) {
             const registry = (await db.sequenceFlow.findMany({ where: { projectId }, select: { register: true, name: true } }))
               .map((r) => `${r.register}:'${r.name}'`);
-            return { status: "ERROR", result: `No learned flow for register ${register} that ever landed whole. Learned flows: ${registry.join(", ") || "(none)"}. Adopt one with learn_sequence_flow, or pass program:'<name>' or slots inline - the memory consults only what verified.` };
+            // the consult names its teachers (iteration 64): a program
+            // that verified without a flow is the adoption the memory
+            // is missing - propose it by name, not a bare refusal
+            const unadopted = await unadoptedVerifiedPrograms(projectId);
+            const suggestion = unadopted.length > 0
+              ? ` These programs verified but were never adopted: ${unadopted.slice(0, 2).map((p) => `'${p.name}' (${p.verifiedRuns} landed-whole run${p.verifiedRuns === 1 ? "" : "(s)"} of ${p.runs})`).join(", ")} - adopt one with learn_sequence_flow register:'${register}' program:'<name>' name:'<your name>'.`
+              : "";
+            return { status: "ERROR", result: `No learned flow for register ${register} that ever landed whole. Learned flows: ${registry.join(", ") || "(none)"}.${suggestion} Adopt one with learn_sequence_flow, or pass program:'<name>' or slots inline - the memory consults only what verified.` };
           }
           slotList = flow.spec.slots as typeof slotList;
           consultFlow = { register: flow.register, name: flow.name };
@@ -2879,6 +2898,16 @@ export async function executeTool(
           if (!resolved) return { status: "ERROR", result: `slot ${i + 1}: no grammar named '${grammarName}' - register it with design_grammar first.` };
           const compiled = compileGrammarSpec({ name: `${flat[i].id.slice(-6)}-shot-grammar`, beats: resolved.beatsRaw });
           if (!compiled.ok) return { status: "ERROR", result: `slot ${i + 1} (${grammarName}): ${compiled.error}` };
+          // the slot's air call (iteration 64): patch the compiled
+          // beats' wind BEFORE serializing - the shot's grammar carries
+          // the sentence's air, the worker's secondary rig rides it,
+          // and the windBeats count measures the patched air honestly
+          const windParsed = compileSlotWind(slot?.wind, `slot ${i + 1} (${grammarName})`);
+          if (!windParsed.ok) return { status: "ERROR", result: windParsed.error };
+          const windFit = windFitsGrammar(windParsed.wind, compiled.spec.beats.length, `slot ${i + 1} (${grammarName})`);
+          if (windFit) return { status: "ERROR", result: windFit };
+          const windTouched = applySlotWind(compiled.spec.beats, windParsed.wind);
+          const airShape = windTouched > 0 && windParsed.wind !== null ? formatSlotWind(windParsed.wind) : "";
           const poseStart = slot?.poseStart ? String(slot.poseStart) : null;
           const poseEnd = slot?.poseEnd ? String(slot.poseEnd) : null;
           const data: { grammar: string; poseStart?: string; poseEnd?: string; fx?: string; physics?: string } = { grammar: serializeGrammar(compiled.spec) };
@@ -2915,7 +2944,7 @@ export async function executeTool(
           if (lastEndPose && startPose && startPose !== lastEndPose) poseCuts += 1;
           lastEndPose = normalizePose(poseEnd ?? compiled.spec.beats[compiled.spec.beats.length - 1].poseEnd ?? "") || lastEndPose;
           lastLastMove = lastMove;
-          const world = fxName || physName ? ` [${[fxName ? `fx: ${fxShape}` : "", physName ? `physics: ${physShape}` : ""].filter(Boolean).join(" | ")}]` : "";
+          const world = fxName || physName || airShape ? ` [${[airShape, fxName ? `fx: ${fxShape}` : "", physName ? `physics: ${physShape}` : ""].filter(Boolean).join(" | ")}]` : "";
           flow.push(`${flat[i].label} <- ${grammarName} (${compiled.spec.beats.map((b) => b.move).join(">")})${world}`);
         }
         const jobIds: string[] = [];
@@ -2964,11 +2993,22 @@ export async function executeTool(
         if (consultFlow) {
           const row = await recordSequenceOutcome(projectId, consultFlow.register, consultFlow.name, outcome);
           if (row) memoryLines.push(memoryLine(row));
+          // the consult names its teachers (iteration 64): a proven
+          // sentence no flow carries yet is proposed on the same read
+          const adoption = sequenceAdoptionSuggestionsLine(await unadoptedVerifiedPrograms(projectId));
+          if (adoption) memoryLines.push(adoption);
         } else if (programName) {
           const taught = await flowsLearnedFromProgram(projectId, programName);
           for (const f of taught) {
             const row = await recordSequenceOutcome(projectId, f.register, f.name, outcome);
             if (row) memoryLines.push(memoryLine(row));
+          }
+          // the program keeps its own measured record too (iteration
+          // 64) - it is what lets the consult name it when no flow
+          // ever adopted it
+          const programRow = await recordProgramOutcome(projectId, programName, outcome);
+          if (programRow && outcome.verified && taught.length === 0) {
+            memoryLines.push(`program '${programName}' landed whole (${programRow.verifiedRuns} landed-whole run${programRow.verifiedRuns === 1 ? "" : "(s)"} of ${programRow.runs}) and no flow carries it yet - learn_sequence_flow register:'<register>' program:'${programName}' name:'<name>' teaches the memory`);
           }
         }
         return { status: "OK", result: `SEQUENCE DIRECTED (${sourceName}) across ${directed} shot(s) of ${scopeDesc}:\n${flow.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${memoryLines.length ? `\nMemory: ${memoryLines.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each shot's beats with the cloth riding them.` : ` Queue renders with render_shot per shot, or re-run with render:true.`}` };
@@ -4434,7 +4474,7 @@ function designContextLine(
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows, learnedSculptPlans, learnedSequenceFlows] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows, learnedSculptPlans, learnedSequenceFlows, unadoptedSequencePrograms] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -4499,6 +4539,8 @@ export async function buildCompactContext(projectId: string) {
     listSculptPlans(projectId).catch(() => []),
     // The learned sequence flows (Iteration 63): the sentences the studio remembers.
     listSequenceFlows(projectId).catch(() => []),
+    // The verified-but-unadopted programs (Iteration 64): the sentences the consult proposes.
+    unadoptedVerifiedPrograms(projectId).catch(() => []),
   ]);
   if (!project) return null;
 
@@ -4614,5 +4656,6 @@ export async function buildCompactContext(projectId: string) {
     retopoFlows: retopoFlowsContextLine(learnedRetopoFlows),
     sculptPlans: sculptPlansContextLine(learnedSculptPlans),
     sequenceFlows: sequenceFlowsContextLine(learnedSequenceFlows),
+    sequenceAdoptions: sequenceAdoptionSuggestionsLine(unadoptedSequencePrograms),
   };
 }
