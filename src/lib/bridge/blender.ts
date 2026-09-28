@@ -298,6 +298,19 @@ interface CharacterDesignDnaWire {
     hairRough: number;
     fields?: string[];
   };
+  // iteration 85 THE HAIR IS GROOMED: the sheet read's own silhouette
+  // sentence compiled into a bounded groom profile (sweep / flow /
+  // flyaway / taper) - the worker grows guide-fitted STRANDS with it
+  // (LOD by framing: close framings carry the full pass). An adherent
+  // build always rides one; a guess build keeps the volumes (no
+  // profile on the wire at all).
+  groomProfile?: {
+    sweep: number;
+    flow: number;
+    flyaway: number;
+    taper: number;
+    fields?: string[];
+  };
   // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
   // measured into a palette and planned into bounded material pulls
   // (iteration 80: every detected cast member carries their own)

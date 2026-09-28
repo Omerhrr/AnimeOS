@@ -28,6 +28,7 @@
 import { db } from "@/lib/db";
 import { castIdentityMeasurement, scoreRenderIdentity, type CastIdentityMeasurement, type IdentitySource } from "@/lib/identity";
 import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
+import { parseGroomProfile, groomProfileLine } from "@/lib/blender/groom";
 import { reanchorCharacter } from "@/lib/reanchor";
 import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
 
@@ -333,7 +334,11 @@ function adherenceLineFromRead(name: string, read: { hairStyle: unknown; hairCol
   const faceLine = faceProfileLine(face);
   const materials = parseMaterialProfile(typeof read.skinTone === "string" ? read.skinTone : null, typeof read.robeColor === "string" ? read.robeColor : null, typeof read.hairColor === "string" ? read.hairColor : null);
   const materialLine = materialProfileLine(materials);
+  // THE HAIR IS GROOMED (iteration 85): the read's own silhouette
+  // sentence directs the hair's groom - the line rides the ledger too
+  const groom = parseGroomProfile(typeof read.silhouette === "string" ? read.silhouette : null, typeof read.hairStyle === "string" ? read.hairStyle : null);
+  const groomLine = groomProfileLine(groom);
   return owned.length > 0
-    ? `${name}: sheet-adherent build (${owned.join(", ")} from the sheet read; palette pull 0.75; ${shapeLine}; ${faceLine}; ${materialLine})`
+    ? `${name}: sheet-adherent build (${owned.join(", ")} from the sheet read; palette pull 0.75; ${shapeLine}; ${faceLine}; ${materialLine}; ${groomLine})`
     : `${name}: guess build (regex DNA only) - the sheet read landed nothing usable`;
 }

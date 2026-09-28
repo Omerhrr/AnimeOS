@@ -2037,12 +2037,201 @@ def sculpt_hair(scn, bpy, head, hair_mat, style, hair_f, height_f):
     return {"parts": parts, "verts": verts}
 
 
-def build_designed_figure(bpy, scn, dna, mats):
+# ── THE HAIR IS GROOMED (iteration 85, Layer A deeper): the measured
+#    cast gap survived the palette AND the silhouette AND the sculpt
+#    AND the grade AND the performance because the HAIR still read as
+#    solid helmet masses - lofted volumes with tapered tips, but no
+#    strand DETAIL and no sheet-directed DIRECTION. The groom profile
+#    (mirrored from src/lib/blender/groom.ts - one law, two runtimes)
+#    compiles the sheet read's own silhouette sentence into a bounded
+#    direction (sweep / flow / flyaway / taper; the style prior sets
+#    the base), and the worker grows guide-fitted THIN STRANDS along
+#    per-style guide spines - seeded law (fnv1a + mulberry32, the
+#    same DNA always grooms the same hair) - with the LOD law owning
+#    the detail: close framings carry the full pass, wide framings
+#    keep the volumes (strands nobody can see are wasted frames). ──
+
+GROOM_BOUNDS = {
+    "sweep": (-1.0, 1.0), "flow": (0.0, 1.0), "flyaway": (0.0, 1.0), "taper": (0.5, 1.0),
+}
+
+GROOM_STYLE_PRIORS = {
+    "topknot": {"sweep": 0.45, "flow": 0.15, "flyaway": 0.15, "taper": 0.85},
+    "ponytail": {"sweep": 0.55, "flow": 0.3, "flyaway": 0.25, "taper": 0.85},
+    "braid": {"sweep": 0.35, "flow": 0.1, "flyaway": 0.1, "taper": 0.85},
+    "long": {"sweep": 0.1, "flow": 0.55, "flyaway": 0.35, "taper": 0.85},
+    "short": {"sweep": 0.2, "flow": 0.1, "flyaway": 0.2, "taper": 0.85},
+}
+
+GROOM_STRAND_BASE = 7    # thin strands per groomed guide, before the LOD factor
+GROOM_FLYAWAY_BASE = 5   # loose strands, riding the flyaway factor + the LOD
+
+GROOM_CLOSE_FRAMINGS = ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")
+GROOM_WIDE_FRAMINGS = ("WS", "WIDE", "ESTABLISHING", "OTS")
+
+
+def groom_strand_factor(shot_type):
+    """The LOD law (mirrors groomStrandFactor in groom.ts): the close
+    framings grow the FULL strand detail (1.0), the wide framings keep
+    a reduced pass (0.4), everything between a middle one (0.7)."""
+    st = str(shot_type or "").upper()
+    if st in GROOM_CLOSE_FRAMINGS:
+        return 1.0
+    if st in GROOM_WIDE_FRAMINGS:
+        return 0.4
+    return 0.7
+
+
+def groom_profile(dna):
+    """THE HAIR IS GROOMED (iteration 85): validate + clamp the groom
+    profile the sheet read compiled (adherence.ts -> groom.ts) - one
+    law, two runtimes. An adherent build always rides one; a missing
+    or partial profile fills from the STYLE PRIOR (clamped against
+    the same bounds the TS side clamps against) and the fields list
+    names only what the sheet read itself owns."""
+    raw = dna.get("groomProfile") if isinstance(dna, dict) else None
+    style = str(dna.get("hairStyle") or "short").strip().lower() if isinstance(dna, dict) else "short"
+    if style not in GROOM_STYLE_PRIORS:
+        style = "short"
+    factors = dict(GROOM_STYLE_PRIORS[style])
+    # every bounded factor exists, even when the prior predates it
+    for key, (lo, hi) in GROOM_BOUNDS.items():
+        factors.setdefault(key, 0.85 if key == "taper" else (lo + hi) / 2.0)
+    fields = []
+    if isinstance(raw, dict):
+        for key, (lo, hi) in GROOM_BOUNDS.items():
+            v = raw.get(key)
+            if isinstance(v, (int, float)) and math.isfinite(float(v)):
+                factors[key] = round(max(lo, min(hi, float(v))), 3)
+        fr = raw.get("fields")
+        fields = [str(f) for f in fr][:8] if isinstance(fr, list) else []
+    return {"factors": factors, "style": style, "fields": fields}
+
+
+def _groom_guides(style, height_f):
+    """The per-style guide spines (head-local, crown riding height_f):
+    the same bone structure the loft volumes hang from - strands fan
+    OFF these guides, they never float."""
+    dome = 0.235 * height_f
+    if style == "topknot":
+        return [
+            [(0.0, 0.01, dome * 0.92), (0.0, 0.02, dome + 0.055 * height_f), (0.015, 0.045, dome + 0.095 * height_f)],
+            [(0.0, 0.045, 0.22), (0.0, 0.07, 0.1), (0.0, 0.075, -0.08), (0.0, 0.065, -0.24)],
+        ]
+    if style == "ponytail":
+        return [
+            [(0.0, -0.05, 0.2 * height_f), (0.0, 0.03, dome * 0.94), (0.0, 0.062, 0.16 * height_f), (0.0, 0.075, 0.04)],
+            [(0.0, 0.09, 0.0), (0.015, 0.105, -0.16), (-0.012, 0.1, -0.34), (0.0, 0.07, -0.5)],
+        ]
+    if style == "braid":
+        return [
+            [(0.0, 0.06, 0.16), (0.0, 0.075, 0.0), (0.0, 0.078, -0.16)],
+            [(0.0, 0.078, -0.2), (0.0, 0.074, -0.34), (0.0, 0.065, -0.46)],
+        ]
+    if style == "long":
+        return [
+            [(0.06, -0.03, 0.17), (0.082, -0.04, -0.02), (0.08, -0.035, -0.22), (0.07, -0.028, -0.4)],
+            [(-0.06, -0.03, 0.17), (-0.082, -0.04, -0.02), (-0.08, -0.035, -0.22), (-0.07, -0.028, -0.4)],
+            [(0.0, 0.06, 0.2), (0.0, 0.072, 0.0), (0.0, 0.076, -0.2), (0.0, 0.068, -0.42)],
+        ]
+    return [  # short
+        [(0.0, -0.02, 0.21 * height_f), (0.0, 0.03, dome * 0.9), (0.0, 0.055, 0.1)],
+        [(0.0, 0.055, 0.06), (0.0, 0.07, -0.04), (0.0, 0.074, -0.13)],
+    ]
+
+
+def _guide_point(pts, t):
+    """Linear interpolation along a guide spine (t 0..1 across the
+    control points - cheap, deterministic, good enough for strands)."""
+    if t <= 0:
+        return pts[0]
+    if t >= 1:
+        return pts[-1]
+    seg = t * (len(pts) - 1)
+    i = min(len(pts) - 2, int(seg))
+    k = seg - i
+    a, b = pts[i], pts[i + 1]
+    return (a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k)
+
+
+def groom_strands(scn, bpy, head, hair_mat, style, hair_f, height_f, gp, strand_f):
+    """THE HAIR IS GROOMED (iteration 85): grow guide-fitted thin
+    strands + flyaways off the style's guide spines, riding the
+    silhouette's hair factor and the crown's height_f exactly like
+    the volumes; the direction rides the profile (sweep pulls the
+    free ends back, flow waves them, flyaway looses strands off the
+    dome, taper thins them out); the LOD factor scales the pass.
+    Deterministic: fnv1a + mulberry32 seeds per strand - the same
+    DNA always grooms the same hair. Returns the evidence."""
+    f = gp["factors"]
+    guides = _groom_guides(style, height_f)
+    per_guide = max(1, int(round(GROOM_STRAND_BASE * strand_f)))
+    n_fly = int(round(GROOM_FLYAWAY_BASE * f["flyaway"] * strand_f))
+    lod = "full" if strand_f >= 0.99 else ("reduced" if strand_f >= 0.55 else "wide")
+    count = 0
+    fly_built = 0
+    verts = 0
+
+    def add(obj):
+        nonlocal count, verts
+        if obj is None:
+            return
+        obj.parent = head
+        obj.location = (0.0, 0.0, 0.0)
+        count += 1
+        verts += len(obj.data.vertices)
+
+    for gi, guide in enumerate(guides):
+        pts = [(x, y, (0.05 + (z - 0.05) * hair_f) if z < 0.05 else z) for (x, y, z) in guide]
+        for si in range(per_guide):
+            rng = mulberry32(fnv1a(f"groom|{style}|{gi}|{si}"))
+            lat = (rng() - 0.5) * 0.055 * (1.0 + f["flow"])
+            along = rng() * 0.3
+            rad = (0.0055 + 0.0045 * (1.0 - f["taper"])) * hair_f
+            phase = rng() * math.tau
+            rings = []
+            n_r = 4
+            for ri in range(n_r):
+                t = along + (1.0 - along) * ri / (n_r - 1)
+                base = _guide_point(pts, t)
+                sweep_off = f["sweep"] * 0.09 * (t ** 1.5)
+                wave = math.sin(t * math.pi * (1.5 + 2.0 * f["flow"]) + phase) * 0.02 * f["flow"] * t
+                r = 0.0 if ri == n_r - 1 else rad * (1.0 - 0.55 * t)
+                rings.append({"c": (base[0] + lat + wave, base[1] + sweep_off, base[2] + wave * 0.6), "r": r})
+            add(loft_strand(scn, bpy, f"GroomStrand{gi}_{si}", hair_mat, rings))
+    for si in range(n_fly):
+        rng = mulberry32(fnv1a(f"groomfly|{style}|{si}"))
+        a = rng() * math.tau
+        rr = 0.07 + rng() * 0.035
+        sx, sz = math.cos(a) * rr, 0.16 + rng() * 0.07 * height_f
+        base_z = max(0.05, sz * hair_f if sz < 0.05 else sz)
+        phase = rng() * math.tau
+        rings = []
+        n_r = 4
+        for ri in range(n_r):
+            t = ri / (n_r - 1)
+            drop = -0.05 - 0.13 * t * (0.5 + f["flow"])
+            wave = math.sin(t * math.pi * 2.0 + phase) * 0.014 * (0.4 + f["flow"])
+            r = 0.0 if ri == n_r - 1 else 0.0035 * (1.0 - 0.4 * t)
+            rings.append({"c": (sx * (1.0 + 0.4 * t) + wave, 0.02 + rng() * 0.01, base_z + drop * (0.8 + 0.2 * hair_f)), "r": r})
+        add(loft_strand(scn, bpy, f"GroomFly{si}", hair_mat, rings))
+        fly_built += 1
+    blob = json.dumps({"factors": f, "style": style, "lod": lod, "strands": count}, sort_keys=True).encode("utf-8")
+    return {
+        "strands": count, "flyaways": fly_built, "verts": verts, "lod": lod,
+        "factors": f, "fields": gp["fields"], "style": style,
+        "hash": hashlib.sha256(blob).hexdigest()[:16],
+    }
+
+
+def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     """The DESIGNED character (v4.0): stylized proportions, layered
     robes with a flowing skirt and wide sleeves, hairstyle per DNA,
     a weapon per DNA, all hanging on the SAME joint hierarchy as the
     v3.2 stand-in - so apply_pose, the face rig, lip-sync and the
-    camera framing math work unchanged."""
+    camera framing math work unchanged. strand_f: the groom LOD
+    factor (iteration 85) - close framings carry the full strand
+    pass, wide framings a reduced one."""
     robe_mat = mats["robe"]
     accent_mat = mats["accent"]
     skin_mat = mats["skin"]
@@ -2222,6 +2411,11 @@ def build_designed_figure(bpy, scn, dna, mats):
     #    sphere masses did ──
     style = str(dna.get("hairStyle") or "short")
     hair_evidence = sculpt_hair(scn, bpy, head, hair_mat, style, hair_f, height_f)
+    # ── THE HAIR IS GROOMED (iteration 85): guide-fitted strands grow
+    #    off the style's guides with the sheet-directed direction
+    #    riding, scaled by the framing's LOD factor ──
+    gp = groom_profile(dna)
+    groom_evidence = groom_strands(scn, bpy, head, hair_mat, str(style), hair_f, height_f, gp, strand_f)
 
     # ── arms: robe sleeves + skin forearms + v3.2 hands (the shoulder
     #    span and the sleeve drop ride the silhouette factors) ──
@@ -2365,6 +2559,11 @@ def build_designed_figure(bpy, scn, dna, mats):
         # their values with the clip every frame; a rig without them
         # (the stand-in, an asset load) simply skips the mesh half
         "exprKeys": expr_keys,
+        # THE HAIR IS GROOMED (iteration 85): the strand detail's
+        # evidence - the strands grown, the flyaways, the LOD the
+        # framing earned, the clamped factors and the deterministic
+        # hash (always present: the groom rides every styled build)
+        "groom": groom_evidence,
         # THE SILHOUETTE SHAPES THE MESH: the applied shaping evidence -
         # the clamped factors, the traits that actually moved, and the
         # trait names the sheet's own silhouette sentence described
@@ -3228,7 +3427,11 @@ def worker_run(job_file):
             if figure is not None:
                 state["figureSource"] = f"asset:{hero.get('name', 'cast')}"
             else:
-                figure = build_designed_figure(bpy, scn, hero, hero_mats)
+                # THE HAIR IS GROOMED (iteration 85): the framing owns
+                # the strand pass - close framings carry the full
+                # groom, wide framings keep the volumes
+                figure = build_designed_figure(bpy, scn, hero, hero_mats,
+                                               strand_f=groom_strand_factor(str(shot.get("shotType") or "")))
                 state["figureSource"] = "procedural:v4.0-designed"
             state["rig"] = {
                 "version": "v4.1" if state.get("figureSource", "").startswith("asset") else "v4.0-designed",
@@ -3260,6 +3463,11 @@ def worker_run(job_file):
             # built it)
             eclip = expression_clip(shot)
             state["rig"]["expression"] = expression_evidence(eclip, duration_sec) if eclip else None
+            # THE HAIR IS GROOMED (iteration 85): the strand detail's
+            # evidence rides the state too (strands, flyaways, the LOD
+            # the framing earned, the clamped factors, the hash)
+            if isinstance(figure, dict) and figure.get("groom"):
+                state["rig"]["groom"] = figure["groom"]
 
             # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
             #    canonical model sheet is COLOR LAW over the DNA defaults
@@ -3324,7 +3532,8 @@ def worker_run(job_file):
                         "blade": hero_mats["blade"],
                         "boots": graded_mat(bpy, "cloth", "BootsMatB", "#241a12", other_mprof),
                     }
-                    other_rig = build_designed_figure(bpy, scn, other, other_mats)
+                    other_rig = build_designed_figure(bpy, scn, other, other_mats,
+                                                      strand_f=groom_strand_factor(str(shot.get("shotType") or "")))
                     state["secondFigureSource"] = "procedural:v4.0-designed"
                     # the second figure's shaping rides the state too
                     if isinstance(other_rig, dict) and other_rig.get("silhouette"):
@@ -3334,6 +3543,9 @@ def worker_run(job_file):
                         state["secondFigureSculpt"] = other_rig["sculpt"]
                     # the second figure's material grade rides the state too
                     state["secondFigureMaterials"] = materials_evidence(other_mprof)
+                    # the second figure's groom rides the state too
+                    if isinstance(other_rig, dict) and other_rig.get("groom"):
+                        state["secondFigureGroom"] = other_rig["groom"]
                 else:
                     state["secondFigureSource"] = f"asset:{other.get('name', 'cast')}"
                 other_rig["root"].location = (0.6, 1.7, 0.0)

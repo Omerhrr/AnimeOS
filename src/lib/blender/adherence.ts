@@ -54,6 +54,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import type { CharacterDesignDna, HairStyle, WeaponType, Build } from "@/lib/animation/design";
+import { parseGroomProfile, groomProfileLine, type GroomProfile } from "@/lib/blender/groom";
 
 export interface SheetDnaRead {
   sheetUrl: string; // the sheet this read came from (the staleness key)
@@ -523,7 +524,7 @@ export async function readSheetDna(
 export function adherentDna(
   base: CharacterDesignDna,
   read: SheetDnaRead | null,
-): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape; faceShape?: FaceShape; faceProfile?: FaceProfile; materialProfile?: MaterialProfile } {
+): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape; faceShape?: FaceShape; faceProfile?: FaceProfile; materialProfile?: MaterialProfile; groomProfile?: GroomProfile } {
   if (!read) return { ...base, sheetFields: [], conformFactor: GUESS_CONFORM_FACTOR };
   const sheetFields: string[] = [];
   const pick = <T>(sheetVal: T | null | undefined, guessVal: T, field: string): T => {
@@ -562,6 +563,12 @@ export function adherentDna(
     // plastic again - a read that landed no colors keeps the neutral
     // grade, honestly named in the profile's fields).
     materialProfile: parseMaterialProfile(read.skinTone, read.robeColor, read.hairColor),
+    // THE HAIR IS GROOMED: the read's own silhouette sentence directs
+    // the hair's groom through a bounded profile (an adherent build
+    // always rides one - the style prior sets the base, the note's
+    // words push the traits; a guess build keeps the volumes with no
+    // profile on the wire at all).
+    groomProfile: parseGroomProfile(read.silhouette, read.hairStyle ?? base.hairStyle),
   };
 }
 
@@ -571,5 +578,6 @@ export function adherenceLine(name: string, merged: ReturnType<typeof adherentDn
   const shape = merged.silhouetteShape ? `; ${silhouetteShapeLine(merged.silhouetteShape)}` : "";
   const face = merged.faceProfile ? `; ${faceProfileLine(merged.faceProfile)}` : "";
   const materials = merged.materialProfile ? `; ${materialProfileLine(merged.materialProfile)}` : "";
-  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape}${face}${materials})`;
+  const groom = merged.groomProfile ? `; ${groomProfileLine(merged.groomProfile)}` : "";
+  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape}${face}${materials}${groom})`;
 }
