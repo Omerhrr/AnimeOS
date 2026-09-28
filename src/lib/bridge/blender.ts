@@ -280,6 +280,24 @@ interface CharacterDesignDnaWire {
     eyeScale: number;
     fields?: string[];
   };
+  // iteration 83 THE SURFACE IS GRADED, NOT PAINTED: the sheet read's
+  // own measured hexes compiled into a bounded material profile - the
+  // worker grades the SURFACE with it (skin: subsurface + roughness
+  // breakup + warm zones + fresnel rim; cloth: gradient ramp + sheen
+  // + weave; hair: the tinted glint). An adherent build always rides
+  // one; a payload without one keeps the neutral grade (the flat
+  // plastic mannequin was a pipeline defect, not a sheet trait).
+  materialProfile?: {
+    skinSss: number;
+    skinRough: number;
+    skinWarmth: number;
+    rim: number;
+    clothRamp: number;
+    clothSheen: number;
+    clothWeave: number;
+    hairRough: number;
+    fields?: string[];
+  };
   // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
   // measured into a palette and planned into bounded material pulls
   // (iteration 80: every detected cast member carries their own)

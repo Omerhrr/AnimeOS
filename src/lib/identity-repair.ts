@@ -27,7 +27,7 @@
 
 import { db } from "@/lib/db";
 import { castIdentityMeasurement, scoreRenderIdentity, type CastIdentityMeasurement, type IdentitySource } from "@/lib/identity";
-import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine } from "@/lib/blender/adherence";
+import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
 import { reanchorCharacter } from "@/lib/reanchor";
 import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
 
@@ -310,7 +310,8 @@ export async function runIdentityRepairPass(
  * THE SILHOUETTE SHAPES THE MESH: the shaping the sheet's own
  * silhouette sentence compiles into rides the line when it applies;
  * THE FACE IS SCULPTED, NOT ASSEMBLED: the face family's bounded
- * profile rides it too. */
+ * profile rides it too; THE SURFACE IS GRADED, NOT PAINTED: the
+ * material grade compiled from the read's own hexes rides with them. */
 function adherenceLineFromRead(name: string, read: { hairStyle: unknown; hairColor: unknown; robeColor: unknown; robeAccent: unknown; skinTone: unknown; weaponType: unknown; build: unknown; beard: unknown; silhouette: unknown; faceShape?: unknown }): string {
   const owned: string[] = [];
   if (read.hairStyle !== null) owned.push("hairStyle");
@@ -326,7 +327,9 @@ function adherenceLineFromRead(name: string, read: { hairStyle: unknown; hairCol
   const shapeLine = silhouetteShapeLine(shape);
   const face = parseFaceProfile(typeof read.faceShape === "string" ? read.faceShape : null, typeof read.build === "string" ? read.build : null);
   const faceLine = faceProfileLine(face);
+  const materials = parseMaterialProfile(typeof read.skinTone === "string" ? read.skinTone : null, typeof read.robeColor === "string" ? read.robeColor : null, typeof read.hairColor === "string" ? read.hairColor : null);
+  const materialLine = materialProfileLine(materials);
   return owned.length > 0
-    ? `${name}: sheet-adherent build (${owned.join(", ")} from the sheet read; palette pull 0.75; ${shapeLine}; ${faceLine})`
+    ? `${name}: sheet-adherent build (${owned.join(", ")} from the sheet read; palette pull 0.75; ${shapeLine}; ${faceLine}; ${materialLine})`
     : `${name}: guess build (regex DNA only) - the sheet read landed nothing usable`;
 }

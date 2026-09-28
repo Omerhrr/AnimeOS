@@ -1228,6 +1228,334 @@ def face_profile(dna):
     }
 
 
+# ── THE SURFACE IS GRADED, NOT PAINTED (iteration 83, Frontier 1
+#    deeper): the measured cast gap survived the palette AND the
+#    silhouette AND the sculpt because the SURFACE was still flat -
+#    one Principled BSDF, one base color, one roughness scalar - and
+#    the vision model's own re-score notes named it ("low-poly 3D
+#    mannequin", a MATERIAL gap, not a geometry one). Every material
+#    is now a layered surface: skin carries subsurface (the soft
+#    terminator), roughness breakup (the micro noise), warm zones
+#    (the cheeks/forehead push) and a fresnel rim (the painted edge
+#    light); cloth carries the gradient ramp (shadow/high derived
+#    from the SAME dye), the fabric sheen and the weave bump; hair
+#    carries the tinted glint. One law, two runtimes: the profile is
+#    compiled from the sheet read's own hexes in adherence.ts and
+#    re-clamped here against the same bounds. The surface is ALWAYS
+#    graded now - a payload without a profile keeps the neutral
+#    grade, honestly named (the flat plastic was a pipeline defect,
+#    not a sheet trait). ──
+
+MATERIAL_BOUNDS = {
+    "skinSss": (0.6, 1.4), "skinRough": (0.35, 0.65), "skinWarmth": (0.0, 0.3),
+    "rim": (0.0, 0.35), "clothRamp": (0.0, 0.5), "clothSheen": (0.0, 0.6),
+    "clothWeave": (0.0, 0.5), "hairRough": (0.2, 0.5),
+}
+
+MATERIAL_NEUTRAL = {
+    "skinSss": 1.0, "skinRough": 0.45, "skinWarmth": 0.15, "rim": 0.2,
+    "clothRamp": 0.25, "clothSheen": 0.35, "clothWeave": 0.25, "hairRough": 0.3,
+}
+
+
+def material_profile(dna):
+    """THE SURFACE IS GRADED, NOT PAINTED (iteration 83): validate +
+    clamp the material profile the sheet read compiled (adherence.ts)
+    - one law, two runtimes. The surface is ALWAYS graded: a missing,
+    wild or partial profile fills from the neutral grade (clamped
+    against the same bounds the TS side clamps against) and the fields
+    list names only what the sheet read itself owns."""
+    raw = dna.get("materialProfile") if isinstance(dna, dict) else None
+    factors = dict(MATERIAL_NEUTRAL)
+    fields = []
+    if isinstance(raw, dict):
+        for key, (lo, hi) in MATERIAL_BOUNDS.items():
+            v = raw.get(key)
+            if isinstance(v, (int, float)) and math.isfinite(float(v)):
+                factors[key] = round(max(lo, min(hi, float(v))), 4)
+        fr = raw.get("fields")
+        fields = [str(f) for f in fr][:8] if isinstance(fr, list) else []
+    return {"factors": factors, "fields": fields}
+
+
+def _graded_factors(prof):
+    """The clamped factors dict a graded tree builds from (the neutral
+    grade when the profile is not the shape the validator returns)."""
+    if isinstance(prof, dict):
+        f = prof.get("factors")
+        if isinstance(f, dict):
+            return {k: (float(f[k]) if isinstance(f.get(k), (int, float)) and math.isfinite(float(f[k])) else MATERIAL_NEUTRAL[k]) for k in MATERIAL_NEUTRAL}
+    return dict(MATERIAL_NEUTRAL)
+
+
+def _grade_common(mat):
+    """Reset a material to a clean two-node tree and return (nt, bsdf,
+    output). Every graded tree rebuilds from scratch so a regrade
+    (the palette law re-setting the dye) cannot leave stale nodes."""
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    out.location = (900, 0)
+    b = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    b.location = (560, 0)
+    nt.links.new(b.outputs[0], out.inputs[0])
+    return nt, b, out
+
+
+def _lift(color, amount):
+    """Mix a linear color toward white (the rim highlight end)."""
+    return tuple(min(1.0, c + (1.0 - c) * amount) for c in color)
+
+
+def _grade_skin_tree(mat, color_hex, prof):
+    """THE SURFACE IS GRADED (iteration 83): the skin tree - ONE dye
+    (the sheet's own skinTone) pushed through subsurface, roughness
+    breakup, warm zones and a fresnel rim. Rebuilds from scratch, so
+    the same dye always lands the same tree."""
+    f = _graded_factors(prof)
+    nt, b, _out = _grade_common(mat)
+    base = hex_to_rgb(color_hex)
+    r, g, bl = base
+    b.inputs["Base Color"].default_value = (*base, 1.0)
+    if "Subsurface Weight" in b.inputs:
+        b.inputs["Subsurface Weight"].default_value = 0.14
+        b.inputs["Subsurface Radius"].default_value = (0.016 * f["skinSss"], 0.006, 0.003)
+    if "Sheen Weight" in b.inputs:
+        b.inputs["Sheen Weight"].default_value = 0.12
+    if "Specular IOR Level" in b.inputs:
+        b.inputs["Specular IOR Level"].default_value = 0.35
+    # 1. roughness breakup: fine two-tone noise bracketing the base
+    n_rough = nt.nodes.new("ShaderNodeTexNoise")
+    n_rough.location = (-560, -280)
+    n_rough.inputs["Scale"].default_value = 38.0
+    n_rough.inputs["Detail"].default_value = 6.0
+    r_ramp = nt.nodes.new("ShaderNodeValToRGB")
+    r_ramp.location = (-340, -280)
+    e0, e1 = r_ramp.color_ramp.elements[0], r_ramp.color_ramp.elements[1]
+    e0.position, e1.position = 0.38, 0.68
+    lo = max(0.08, f["skinRough"] - 0.08)
+    hi = min(0.92, f["skinRough"] + 0.07)
+    e0.color, e1.color = (lo, lo, lo, 1.0), (hi, hi, hi, 1.0)
+    nt.links.new(n_rough.outputs["Fac"], r_ramp.inputs["Fac"])
+    nt.links.new(r_ramp.outputs["Color"], b.inputs["Roughness"])
+    # 2. warm zones: coarse noise pushes the dye toward the warm end
+    n_zone = nt.nodes.new("ShaderNodeTexNoise")
+    n_zone.location = (-560, 80)
+    n_zone.inputs["Scale"].default_value = 5.5
+    n_zone.inputs["Detail"].default_value = 3.0
+    z_ramp = nt.nodes.new("ShaderNodeValToRGB")
+    z_ramp.location = (-340, 80)
+    z_ramp.color_ramp.elements[0].position = 0.42
+    z_ramp.color_ramp.elements[1].position = 0.72
+    z_mul = nt.nodes.new("ShaderNodeMath")
+    z_mul.location = (-340, -60)
+    z_mul.operation = "MULTIPLY"
+    z_mul.inputs[1].default_value = f["skinWarmth"]
+    z_mix = nt.nodes.new("ShaderNodeMixRGB")
+    z_mix.location = (-100, 120)
+    z_mix.blend_type = "MIX"
+    warm = (min(1.0, r * 1.12 + 0.02), g * 0.97, max(0.0, bl - 0.02))
+    z_mix.inputs["Color1"].default_value = (*base, 1.0)
+    z_mix.inputs["Color2"].default_value = (*warm, 1.0)
+    nt.links.new(n_zone.outputs["Fac"], z_ramp.inputs["Fac"])
+    nt.links.new(z_ramp.outputs["Color"], z_mul.inputs[0])
+    nt.links.new(z_mul.outputs[0], z_mix.inputs["Fac"])
+    # 3. fresnel rim: the grazing angle lifts toward the lightened dye
+    lw = nt.nodes.new("ShaderNodeLayerWeight")
+    lw.location = (-560, 420)
+    lw.inputs["Blend"].default_value = 0.72
+    rim_mul = nt.nodes.new("ShaderNodeMath")
+    rim_mul.location = (-340, 420)
+    rim_mul.operation = "MULTIPLY"
+    rim_mul.inputs[1].default_value = f["rim"]
+    r_mix = nt.nodes.new("ShaderNodeMixRGB")
+    r_mix.location = (240, 120)
+    r_mix.blend_type = "MIX"
+    lift = _lift(base, 0.45)
+    r_mix.inputs["Color2"].default_value = (*lift, 1.0)
+    nt.links.new(lw.outputs["Fresnel"], rim_mul.inputs[0])
+    nt.links.new(rim_mul.outputs[0], r_mix.inputs["Fac"])
+    nt.links.new(z_mix.outputs[0], r_mix.inputs["Color1"])
+    nt.links.new(r_mix.outputs[0], b.inputs["Base Color"])
+    mat["animeosKind"] = "skin"
+    mat["animeosBaseHex"] = str(color_hex)
+    mat["animeosProfile"] = json.dumps(prof, sort_keys=True)
+
+
+def _grade_cloth_tree(mat, color_hex, prof):
+    """THE SURFACE IS GRADED (iteration 83): the cloth tree - the dye
+    ramped into shadow/high ends (the painted gradient), the fabric
+    sheen, the weave bump and the fold-rim lift. The robe, the accent
+    and the boots all build from this one tree."""
+    f = _graded_factors(prof)
+    nt, b, _out = _grade_common(mat)
+    base = hex_to_rgb(color_hex)
+    ramp = f["clothRamp"]
+    shadow = tuple(c * (1.0 - ramp * 0.55) for c in base)
+    high = _lift(base, ramp * 0.4)
+    b.inputs["Roughness"].default_value = 0.82
+    if "Sheen Weight" in b.inputs:
+        b.inputs["Sheen Weight"].default_value = f["clothSheen"]
+        b.inputs["Sheen Tint"].default_value = (*_lift(base, 0.3), 1.0)
+    # 1. the ramp: medium-scale mottle mixes shadow..high (one dye)
+    n_mottle = nt.nodes.new("ShaderNodeTexNoise")
+    n_mottle.location = (-560, 80)
+    n_mottle.inputs["Scale"].default_value = 8.5
+    n_mottle.inputs["Detail"].default_value = 4.0
+    m_ramp = nt.nodes.new("ShaderNodeValToRGB")
+    m_ramp.location = (-340, 80)
+    m_ramp.color_ramp.elements[0].position = 0.34
+    m_ramp.color_ramp.elements[1].position = 0.7
+    m_mix = nt.nodes.new("ShaderNodeMixRGB")
+    m_mix.location = (-100, 120)
+    m_mix.blend_type = "MIX"
+    m_mix.inputs["Color1"].default_value = (*shadow, 1.0)
+    m_mix.inputs["Color2"].default_value = (*high, 1.0)
+    nt.links.new(n_mottle.outputs["Fac"], m_ramp.inputs["Fac"])
+    nt.links.new(m_ramp.outputs["Color"], m_mix.inputs["Fac"])
+    nt.links.new(m_mix.outputs[0], b.inputs["Base Color"])
+    # 2. the fold rim: fresnel lifts the mottled dye toward its high end
+    lw = nt.nodes.new("ShaderNodeLayerWeight")
+    lw.location = (-560, 420)
+    lw.inputs["Blend"].default_value = 0.7
+    rim_mul = nt.nodes.new("ShaderNodeMath")
+    rim_mul.location = (-340, 420)
+    rim_mul.operation = "MULTIPLY"
+    rim_mul.inputs[1].default_value = f["rim"] * 0.9
+    r_mix = nt.nodes.new("ShaderNodeMixRGB")
+    r_mix.location = (240, 120)
+    r_mix.blend_type = "MIX"
+    r_mix.inputs["Color2"].default_value = (*high, 1.0)
+    nt.links.new(lw.outputs["Fresnel"], rim_mul.inputs[0])
+    nt.links.new(rim_mul.outputs[0], r_mix.inputs["Fac"])
+    nt.links.new(m_mix.outputs[0], r_mix.inputs["Color1"])
+    nt.links.new(r_mix.outputs[0], b.inputs["Base Color"])
+    # 3. the weave: a tight noise bump (the fabric is not glass)
+    n_weave = nt.nodes.new("ShaderNodeTexNoise")
+    n_weave.location = (-100, -320)
+    n_weave.inputs["Scale"].default_value = 90.0
+    n_weave.inputs["Detail"].default_value = 3.0
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.location = (240, -320)
+    bump.inputs["Strength"].default_value = f["clothWeave"] * 0.35
+    bump.inputs["Distance"].default_value = 0.002
+    nt.links.new(n_weave.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    mat["animeosKind"] = "cloth"
+    mat["animeosBaseHex"] = str(color_hex)
+    mat["animeosProfile"] = json.dumps(prof, sort_keys=True)
+
+
+def _grade_hair_tree(mat, color_hex, prof):
+    """THE SURFACE IS GRADED (iteration 83): the hair tree - the tinted
+    glint (sheen tinted toward the lifted dye), a tight roughness
+    breakup and a half-strength rim. Black hair keeps a tighter glint
+    (the profile's hairRough carries the sheet's own dye decision)."""
+    f = _graded_factors(prof)
+    nt, b, _out = _grade_common(mat)
+    base = hex_to_rgb(color_hex)
+    b.inputs["Base Color"].default_value = (*base, 1.0)
+    b.inputs["Roughness"].default_value = f["hairRough"]
+    if "Sheen Weight" in b.inputs:
+        b.inputs["Sheen Weight"].default_value = 0.25
+        b.inputs["Sheen Tint"].default_value = (*_lift(base, 0.5), 1.0)
+    # 1. glint breakup: medium noise brackets the dye's roughness
+    n_rough = nt.nodes.new("ShaderNodeTexNoise")
+    n_rough.location = (-560, -280)
+    n_rough.inputs["Scale"].default_value = 24.0
+    n_rough.inputs["Detail"].default_value = 4.0
+    r_ramp = nt.nodes.new("ShaderNodeValToRGB")
+    r_ramp.location = (-340, -280)
+    e0, e1 = r_ramp.color_ramp.elements[0], r_ramp.color_ramp.elements[1]
+    e0.position, e1.position = 0.4, 0.66
+    lo = max(0.08, f["hairRough"] - 0.06)
+    hi = min(0.7, f["hairRough"] + 0.08)
+    e0.color, e1.color = (lo, lo, lo, 1.0), (hi, hi, hi, 1.0)
+    nt.links.new(n_rough.outputs["Fac"], r_ramp.inputs["Fac"])
+    nt.links.new(r_ramp.outputs["Color"], b.inputs["Roughness"])
+    # 2. the rim, half strength (hair catches the edge light softly)
+    lw = nt.nodes.new("ShaderNodeLayerWeight")
+    lw.location = (-560, 300)
+    lw.inputs["Blend"].default_value = 0.75
+    rim_mul = nt.nodes.new("ShaderNodeMath")
+    rim_mul.location = (-340, 300)
+    rim_mul.operation = "MULTIPLY"
+    rim_mul.inputs[1].default_value = f["rim"] * 0.5
+    r_mix = nt.nodes.new("ShaderNodeMixRGB")
+    r_mix.location = (240, 120)
+    r_mix.blend_type = "MIX"
+    lift = _lift(base, 0.5)
+    r_mix.inputs["Color1"].default_value = (*base, 1.0)
+    r_mix.inputs["Color2"].default_value = (*lift, 1.0)
+    nt.links.new(lw.outputs["Fresnel"], rim_mul.inputs[0])
+    nt.links.new(rim_mul.outputs[0], r_mix.inputs["Fac"])
+    nt.links.new(r_mix.outputs[0], b.inputs["Base Color"])
+    mat["animeosKind"] = "hair"
+    mat["animeosBaseHex"] = str(color_hex)
+    mat["animeosProfile"] = json.dumps(prof, sort_keys=True)
+
+
+def graded_mat(bpy, kind, name, color_hex, prof):
+    """Build ONE graded material of the named kind (skin / cloth /
+    hair) from its dye and the profile."""
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    if kind == "skin":
+        _grade_skin_tree(mat, color_hex, prof)
+    elif kind == "hair":
+        _grade_hair_tree(mat, color_hex, prof)
+    else:
+        _grade_cloth_tree(mat, color_hex, prof)
+    return mat
+
+
+def regrade_material(mat, new_hex):
+    """THE SHEET DRESSES THE RENDER meets THE SURFACE IS GRADED: a
+    graded material's DYE is re-set (the ramp's shadow/high ends, the
+    warm zones and the rim lift all derive from the same dye, so the
+    tree rebuilds from the new hex); a legacy flat material recolors
+    its Principled Base Color exactly as before. Returns True when the
+    color landed, False when the material cannot take it (named in the
+    conformance's skipped rows)."""
+    kind = mat.get("animeosKind") if isinstance(mat.get("animeosKind"), str) else None
+    prof = None
+    raw_prof = mat.get("animeosProfile")
+    if isinstance(raw_prof, str):
+        try:
+            parsed = json.loads(raw_prof)
+            if isinstance(parsed, dict):
+                prof = parsed
+        except Exception:  # noqa: BLE001
+            prof = None
+    if kind in ("skin", "cloth", "hair") and prof is not None:
+        mat.use_nodes = True
+        if kind == "skin":
+            _grade_skin_tree(mat, new_hex, prof)
+        elif kind == "hair":
+            _grade_hair_tree(mat, new_hex, prof)
+        else:
+            _grade_cloth_tree(mat, new_hex, prof)
+        return True
+    b = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
+    if b is None:
+        return False
+    b.inputs["Base Color"].default_value = (*hex_to_rgb(new_hex), 1.0)
+    return True
+
+
+def materials_evidence(mprof):
+    """The state's material evidence: the clamped factors, the fields
+    the sheet read owns, and the deterministic hash over the factors
+    (the same profile lands the same grade, hash-proven)."""
+    blob = json.dumps(mprof["factors"], sort_keys=True).encode("utf-8")
+    return {
+        "profile": mprof["factors"],
+        "fields": mprof["fields"],
+        "hash": hashlib.sha256(blob).hexdigest()[:16],
+    }
+
+
 def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f):
     """THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head is
     a real sculpted mesh - an icosphere whose vertices are displaced
@@ -2627,15 +2955,20 @@ def worker_run(job_file):
         state["scriptMtime"] = os.path.getmtime(__file__)
         state["speech"] = {"lines": int((shot.get("speech") or {}).get("lines", 0) or 0), "visemes": len(speech_visemes)} if speech_visemes else None
         if hero:
-            # the hero's energy color leads the scene's emissives
+            # THE SURFACE IS GRADED, NOT PAINTED (iteration 83): every
+            # material is a layered surface built from its dye - the
+            # sheet read's own hexes grade the likeness (an adherent
+            # build rides its compiled profile; a payload without one
+            # keeps the neutral grade, honestly named)
+            mprof = material_profile(hero)
             energy_hex = hero.get("bladeColor") or "#5eead4"
             hero_mats = {
-                "robe": principled_mat(bpy, "RobeMat", hero.get("robeColor", "#2f6d63"), 0.82),
-                "accent": principled_mat(bpy, "AccentMat", hero.get("robeAccent", "#a8842c"), 0.7),
-                "skin": principled_mat(bpy, "SkinMat", hero.get("skinTone", "#d9b48f"), 0.5),
-                "hair": principled_mat(bpy, "HairMat", hero.get("hairColor", "#16161d"), 0.35),
+                "robe": graded_mat(bpy, "cloth", "RobeMat", hero.get("robeColor", "#2f6d63"), mprof),
+                "accent": graded_mat(bpy, "cloth", "AccentMat", hero.get("robeAccent", "#a8842c"), mprof),
+                "skin": graded_mat(bpy, "skin", "SkinMat", hero.get("skinTone", "#d9b48f"), mprof),
+                "hair": graded_mat(bpy, "hair", "HairMat", hero.get("hairColor", "#16161d"), mprof),
                 "blade": emission_mat(bpy, "BladeMat", energy_hex, 2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0),
-                "boots": principled_mat(bpy, "BootsMat", "#241a12", 0.8),
+                "boots": graded_mat(bpy, "cloth", "BootsMat", "#241a12", mprof),
             }
             # v4.1: the library asset IS the designed character when one
             # exists - built once at design time, loaded here with the
@@ -2663,6 +2996,10 @@ def worker_run(job_file):
             # the sculpted hair parts, the vertex count)
             if isinstance(figure, dict) and figure.get("sculpt"):
                 state["rig"]["sculpt"] = figure["sculpt"]
+            # THE SURFACE IS GRADED, NOT PAINTED: the material grade's
+            # evidence rides the state too (the clamped profile, the
+            # fields the sheet read owns, the deterministic hash)
+            state["rig"]["materials"] = materials_evidence(mprof)
 
             # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
             #    canonical model sheet is COLOR LAW over the DNA defaults
@@ -2688,12 +3025,13 @@ def worker_run(job_file):
                     if mat is None:
                         skipped.append({"mat": mat_name, "skipped": "no such material on the stage"})
                         continue
-                    b = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
-                    if b is None:
+                    # THE SURFACE IS GRADED (iteration 83): a graded
+                    # material's DYE re-sets (the whole tree rebuilds
+                    # from the new hex - one law, one dye); a legacy
+                    # flat material recolors its Base Color as before.
+                    if not regrade_material(mat, str(row.get("to") or "#000000")):
                         skipped.append({"mat": mat_name, "skipped": "no principled node"})
                         continue
-                    r, g, bl = hex_to_rgb(str(row.get("to") or "#000000"))
-                    b.inputs["Base Color"].default_value = (r, g, bl, 1.0)
                     if row.get("skipped"):
                         skipped.append({"mat": mat_name, "skipped": str(row.get("skipped"))})
                     else:
@@ -2717,13 +3055,14 @@ def worker_run(job_file):
                 other = cast[1]
                 other_rig = try_load_cast_asset(asset_cast[1] if len(asset_cast) > 1 else None)
                 if other_rig is None:
+                    other_mprof = material_profile(other)
                     other_mats = {
-                        "robe": principled_mat(bpy, "RobeMatB", other.get("robeColor", "#4a5560"), 0.82),
-                        "accent": principled_mat(bpy, "AccentMatB", other.get("robeAccent", "#a8842c"), 0.7),
-                        "skin": principled_mat(bpy, "SkinMatB", other.get("skinTone", "#d9b48f"), 0.5),
-                        "hair": principled_mat(bpy, "HairMatB", other.get("hairColor", "#16161d"), 0.35),
+                        "robe": graded_mat(bpy, "cloth", "RobeMatB", other.get("robeColor", "#4a5560"), other_mprof),
+                        "accent": graded_mat(bpy, "cloth", "AccentMatB", other.get("robeAccent", "#a8842c"), other_mprof),
+                        "skin": graded_mat(bpy, "skin", "SkinMatB", other.get("skinTone", "#d9b48f"), other_mprof),
+                        "hair": graded_mat(bpy, "hair", "HairMatB", other.get("hairColor", "#16161d"), other_mprof),
                         "blade": hero_mats["blade"],
-                        "boots": principled_mat(bpy, "BootsMatB", "#241a12", 0.8),
+                        "boots": graded_mat(bpy, "cloth", "BootsMatB", "#241a12", other_mprof),
                     }
                     other_rig = build_designed_figure(bpy, scn, other, other_mats)
                     state["secondFigureSource"] = "procedural:v4.0-designed"
@@ -2733,6 +3072,8 @@ def worker_run(job_file):
                     # the second figure's head sculpt rides the state too
                     if isinstance(other_rig, dict) and other_rig.get("sculpt"):
                         state["secondFigureSculpt"] = other_rig["sculpt"]
+                    # the second figure's material grade rides the state too
+                    state["secondFigureMaterials"] = materials_evidence(other_mprof)
                 else:
                     state["secondFigureSource"] = f"asset:{other.get('name', 'cast')}"
                 other_rig["root"].location = (0.6, 1.7, 0.0)

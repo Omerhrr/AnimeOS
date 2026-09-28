@@ -39,6 +39,15 @@
  *    the read's faceShape field modulates the sculpt through a
  *    bounded face profile. A sheet that names no face shape keeps
  *    the neutral sculpt (the donghua default face), honestly named.
+ *  - THE SURFACE IS GRADED, NOT PAINTED (iteration 83): every
+ *    material is a layered surface - skin carries subsurface,
+ *    roughness breakup, warm zones and a fresnel rim; cloth carries
+ *    the gradient ramp, the sheen and the weave; hair carries the
+ *    tinted glint - compiled from the read's OWN measured hexes
+ *    (skinTone / robeColor / hairColor) into a bounded material
+ *    profile. The flat base color reads as plastic: a palette on a
+ *    mannequin is still a mannequin, so the surface answers the
+ *    sheet the way the mesh does.
  */
 
 import ZAI from "z-ai-web-dev-sdk";
@@ -267,6 +276,128 @@ export function faceProfileLine(prof: FaceProfile): string {
   return `sculpted: ${prof.fields[0]} (${nums}; named by the sheet)`;
 }
 
+// ── THE SURFACE IS GRADED, NOT PAINTED (iteration 83, Frontier 1 deeper) ──
+//
+// The measured cast gap survived the palette AND the silhouette AND
+// the sculpt because the SURFACE was still flat: one Principled BSDF,
+// one base color, one roughness scalar - the vision model's own re-
+// score notes named it ("low-poly 3D mannequin", a MATERIAL gap, not
+// a geometry one). The surface is now graded: skin is layered
+// (subsurface + roughness breakup + warm zones + fresnel rim), cloth
+// is ramped (shadow/high derived from the same dye + sheen + weave),
+// hair carries the tinted glint. The profile compiles from the
+// sheet read's own measured hexes - the SAME law that owns the mesh
+// owns the dye. The bounds are tight on purpose: a material hint
+// grades the likeness, it never redesigns it.
+
+export interface MaterialProfile {
+  skinSss: number; // subsurface radius scale, 0.6..1.4
+  skinRough: number; // base skin roughness, 0.35..0.65
+  skinWarmth: number; // warm-zone color push, 0..0.3
+  rim: number; // fresnel rim lift (skin + cloth), 0..0.35
+  clothRamp: number; // shadow/high contrast from the dye, 0..0.5
+  clothSheen: number; // fabric edge sheen, 0..0.6
+  clothWeave: number; // procedural weave bump, 0..0.5
+  hairRough: number; // hair roughness, 0.2..0.5
+  fields: string[]; // the hexes the sheet read itself owns
+}
+
+/** The bounds the worker re-clamps against (one law, two runtimes). */
+export const MATERIAL_PROFILE_BOUNDS: Record<keyof Omit<MaterialProfile, "fields">, [number, number]> = {
+  skinSss: [0.6, 1.4],
+  skinRough: [0.35, 0.65],
+  skinWarmth: [0, 0.3],
+  rim: [0, 0.35],
+  clothRamp: [0, 0.5],
+  clothSheen: [0, 0.6],
+  clothWeave: [0, 0.5],
+  hairRough: [0.2, 0.5],
+};
+
+/** The neutral grade: the default surface a sheetless build keeps
+ * (the head is always sculpted, the surface is always graded - the
+ * flat plastic mannequin was a pipeline defect, not a sheet trait). */
+export const MATERIAL_NEUTRAL: Omit<MaterialProfile, "fields"> = {
+  skinSss: 1.0,
+  skinRough: 0.45,
+  skinWarmth: 0.15,
+  rim: 0.2,
+  clothRamp: 0.25,
+  clothSheen: 0.35,
+  clothWeave: 0.25,
+  hairRough: 0.3,
+};
+
+function hexToRgb01(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [
+    parseInt(h.slice(0, 2), 16) / 255,
+    parseInt(h.slice(2, 4), 16) / 255,
+    parseInt(h.slice(4, 6), 16) / 255,
+  ];
+}
+
+function hexLum(hex: string): number {
+  const [r, g, b] = hexToRgb01(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function hexSat(hex: string): number {
+  const [r, g, b] = hexToRgb01(hex);
+  return Math.max(r, g, b) - Math.min(r, g, b);
+}
+
+function hexWarm(hex: string): boolean {
+  const [r, , b] = hexToRgb01(hex);
+  return r > b + 0.06;
+}
+
+function clampMat(key: keyof Omit<MaterialProfile, "fields">, v: number): number {
+  const [lo, hi] = MATERIAL_PROFILE_BOUNDS[key];
+  return Math.round(Math.min(hi, Math.max(lo, v)) * 1000) / 1000;
+}
+
+/**
+ * THE SURFACE IS GRADED, NOT PAINTED (pure): compile the read's own
+ * measured hexes into a bounded material profile the worker grades
+ * the materials with. Lighter skin scatters more visibly (bigger sss
+ * radius); a warm skin tone pushes the zones harder; a dark robe
+ * needs more shadow/high separation to read; dark hair keeps a
+ * tighter glint. `fields` names ONLY the hexes the read itself owns
+ * - a read that landed no colors keeps the neutral grade with an
+ * honest empty list. Deterministic: the same hexes always land the
+ * same profile. Every factor lands inside the bounds.
+ */
+export function parseMaterialProfile(skinTone: string | null | undefined, robeColor: string | null | undefined, hairColor: string | null | undefined): MaterialProfile {
+  const prof: MaterialProfile = { ...MATERIAL_NEUTRAL, fields: [] };
+  if (typeof skinTone === "string" && HEX_RE.test(skinTone.trim())) {
+    prof.fields.push("skinTone");
+    const L = hexLum(skinTone.trim());
+    prof.skinSss = clampMat("skinSss", L >= 0.68 ? 1.3 : L >= 0.45 ? 1.05 : 0.8);
+    prof.skinRough = clampMat("skinRough", hexWarm(skinTone.trim()) ? 0.48 : 0.42);
+    prof.skinWarmth = clampMat("skinWarmth", hexWarm(skinTone.trim()) ? 0.22 : 0.12);
+  }
+  if (typeof robeColor === "string" && HEX_RE.test(robeColor.trim())) {
+    prof.fields.push("robeColor");
+    const L = hexLum(robeColor.trim());
+    const S = hexSat(robeColor.trim());
+    prof.clothRamp = clampMat("clothRamp", L < 0.25 ? 0.4 : S > 0.3 ? 0.32 : 0.24);
+    prof.clothSheen = clampMat("clothSheen", S > 0.3 ? 0.45 : 0.35);
+  }
+  if (typeof hairColor === "string" && HEX_RE.test(hairColor.trim())) {
+    prof.fields.push("hairColor");
+    prof.hairRough = clampMat("hairRough", hexLum(hairColor.trim()) < 0.2 ? 0.26 : 0.34);
+  }
+  return prof;
+}
+
+/** The material profile as one ledger line (the repair pass reports it). */
+export function materialProfileLine(prof: MaterialProfile): string {
+  if (prof.fields.length === 0) return "graded: neutral materials (the sheet read landed no colors)";
+  const nums = `skin sss ${prof.skinSss.toFixed(2)} rough ${prof.skinRough.toFixed(2)} rim ${prof.rim.toFixed(2)}; cloth ramp ${prof.clothRamp.toFixed(2)} sheen ${prof.clothSheen.toFixed(2)}`;
+  return `graded: ${nums} (named by the sheet: ${prof.fields.join(", ")})`;
+}
+
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 function hexOrNull(v: unknown): string | null {
@@ -392,7 +523,7 @@ export async function readSheetDna(
 export function adherentDna(
   base: CharacterDesignDna,
   read: SheetDnaRead | null,
-): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape; faceShape?: FaceShape; faceProfile?: FaceProfile } {
+): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape; faceShape?: FaceShape; faceProfile?: FaceProfile; materialProfile?: MaterialProfile } {
   if (!read) return { ...base, sheetFields: [], conformFactor: GUESS_CONFORM_FACTOR };
   const sheetFields: string[] = [];
   const pick = <T>(sheetVal: T | null | undefined, guessVal: T, field: string): T => {
@@ -425,6 +556,12 @@ export function adherentDna(
     // the neutral sculpt, honestly named in the profile's fields.
     ...(faceShape ? { faceShape } : {}),
     faceProfile: parseFaceProfile(faceShape, read.build ?? base.build),
+    // THE SURFACE IS GRADED, NOT PAINTED: the read's own measured
+    // hexes grade the materials through a bounded profile (an
+    // adherent build always rides one; the surface is never flat
+    // plastic again - a read that landed no colors keeps the neutral
+    // grade, honestly named in the profile's fields).
+    materialProfile: parseMaterialProfile(read.skinTone, read.robeColor, read.hairColor),
   };
 }
 
@@ -433,5 +570,6 @@ export function adherenceLine(name: string, merged: ReturnType<typeof adherentDn
   if (merged.sheetFields.length === 0) return `${name}: guess build (regex DNA only) - the sheet read landed nothing usable`;
   const shape = merged.silhouetteShape ? `; ${silhouetteShapeLine(merged.silhouetteShape)}` : "";
   const face = merged.faceProfile ? `; ${faceProfileLine(merged.faceProfile)}` : "";
-  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape}${face})`;
+  const materials = merged.materialProfile ? `; ${materialProfileLine(merged.materialProfile)}` : "";
+  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape}${face}${materials})`;
 }
