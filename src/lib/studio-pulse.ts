@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { canonHealthData } from "@/lib/canon-health";
 import { scheduleHealthData } from "@/lib/schedule-health";
 import { universeReRenderQueue } from "@/lib/universe-facts";
-import { IDENTITY_REPAINT_THRESHOLD, AFFINITY_WATCH_THRESHOLD, identityDriftData } from "@/lib/identity";
+import { IDENTITY_REPAINT_THRESHOLD, IDENTITY_RENDER_THRESHOLD, identityThresholdFor, AFFINITY_WATCH_THRESHOLD, identityDriftData } from "@/lib/identity";
 
 // ─────────────────────────────────────────────────────────────
 // STUDIO PULSE - one honest readout of the whole studio's health
@@ -47,10 +47,15 @@ export async function studioPulse(projectId: string): Promise<StudioPulse> {
     : `canon score ${(d.score * 100).toFixed(0)}% ${d.band} (${d.verifiedFacts}/${d.activeFacts} active facts audited, ${d.violatedFacts} violated); last 14d: ${d.recent.held} held / ${d.recent.broken} broken`;
 
   const avgWorst = identityRows.length > 0 ? identityRows.reduce((a, r) => a + r.worst, 0) / identityRows.length : null;
-  const belowBar = identityRows.filter((r) => r.worst < IDENTITY_REPAINT_THRESHOLD).length;
+  // THE BAR IS MEASURED (iteration 78): the bar is the SOURCE's bar -
+  // panels at the 60% repaint line, shipping renders at the 70% bar
+  const panelRows = identityRows.filter((r) => r.source !== "RENDER");
+  const renderRows = identityRows.filter((r) => r.source === "RENDER");
+  const belowBar = identityRows.filter((r) => r.worst < identityThresholdFor(r.source === "RENDER" ? "RENDER" : "PANEL")).length;
+  const renderBelow = renderRows.filter((r) => r.worst < IDENTITY_RENDER_THRESHOLD).length;
   const identityLine = identityRows.length === 0
     ? "identity: no panel vision-scored yet"
-    : `identity: ${identityRows.length} panel(s) scored, avg worst ${(avgWorst! * 100).toFixed(0)}%, ${belowBar} below the ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% bar`;
+    : `identity: ${identityRows.length} scored (${panelRows.length} panel(s) at the ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% bar${renderRows.length ? `, ${renderRows.length} shipping render(s) at the ${(IDENTITY_RENDER_THRESHOLD * 100).toFixed(0)}% bar, ${renderBelow} below` : ""}), avg worst ${(avgWorst! * 100).toFixed(0)}%, ${belowBar} below their bar`;
   const affinityWorst = embeddings[0]?.worst ?? null;
   const affinityLine = embeddings.length === 0
     ? "no affinity pass yet (provider-free, instant)"

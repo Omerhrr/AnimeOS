@@ -9,12 +9,13 @@ import { probeMedia, ffmpegPath } from "@/lib/bridge/motion";
 import { robustAffinityBetween, embedPublicImage } from "@/lib/embedding";
 
 // ─────────────────────────────────────────────────────────────
-// IDENTITY-SIMILARITY SCORING FOR PANELS
+// IDENTITY-SIMILARITY SCORING FOR PANELS AND RENDERS
 //
 // The qualitative art checks (ART_DRIFT verdicts, universe-fact
 // holds) answer "does this hold?"; identity scoring answers the
 // casting-director question numerically: HOW CLOSE is the character
-// in this panel to their canonical model sheet, per aspect?
+// in this panel (or in a frame of their finished render) to their
+// canonical model sheet, per aspect?
 //
 // One vision call per panel: the panel art plus every featured
 // character's model sheet go in together, the model returns a strict
@@ -27,7 +28,24 @@ import { robustAffinityBetween, embedPublicImage } from "@/lib/embedding";
 // re-paint loop can pick it up.
 // ─────────────────────────────────────────────────────────────
 
-export const IDENTITY_REPAINT_THRESHOLD = 0.6; // worst below this = drift warning + re-paint offer
+export const IDENTITY_REPAINT_THRESHOLD = 0.6; // the PANEL bar - storyboard art drifts cheap, repaint it
+
+// THE BAR IS MEASURED (iteration 78): a RENDER is not a storyboard.
+// The shipping pixels - the frames the cut actually plays - answer to
+// a higher line than the panel sketch they came from. The 0.7 bar is
+// not a guess either: it was set from MEASURED render-source scores
+// (scoreRenderIdentity over the painted pipeline's finished clips,
+// vision-judged against the same model sheets the panels answer to -
+// measure_identity_bar re-runs the measurement any time the studio
+// asks). A worst below the render bar = drift warning on the SHIPPING
+// pixels; the panel bar stays 0.6 because a loose sketch is a plan,
+// not a promise.
+export const IDENTITY_RENDER_THRESHOLD = 0.7;
+
+/** The identity bar a score answers to, by what was judged. */
+export function identityThresholdFor(source: IdentitySource): number {
+  return source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
+}
 
 export const IDENTITY_ASPECTS = ["face", "hair", "wardrobe", "weapon", "palette", "style"] as const;
 export type IdentityAspect = (typeof IDENTITY_ASPECTS)[number];
@@ -286,7 +304,11 @@ async function persistIdentityVerdict(
   await db.continuityEvent.deleteMany({
     where: { projectId: ctx.project.id, kind: { in: ["IDENTITY_VERIFIED", "IDENTITY_DRIFT"] }, description: { startsWith: tag } },
   });
-  const drifted = verdict.worst < IDENTITY_REPAINT_THRESHOLD;
+  // the bar is the SOURCE's bar: the shipping pixels answer to 0.7,
+  // the storyboard sketch keeps the 0.6 repaint line (THE BAR IS
+  // MEASURED, iteration 78)
+  const bar = identityThresholdFor(source);
+  const drifted = verdict.worst < bar;
   const scoreLine = verdict.entries
     .map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`)
     .join(", ");
@@ -297,7 +319,7 @@ async function persistIdentityVerdict(
       entityName: verdict.entries[0]?.characterName ?? ctx.sheets[0]?.name ?? "cast",
       kind: drifted ? "IDENTITY_DRIFT" : "IDENTITY_VERIFIED",
       episodeNumber: ctx.episode.number,
-      description: `${tag} ${scoreLine} - worst ${(verdict.worst * 100).toFixed(0)}%${verdict.note ? ` (${verdict.note})` : ""}`.slice(0, 900),
+      description: `${tag} ${scoreLine} - worst ${(verdict.worst * 100).toFixed(0)}% vs the ${source === "RENDER" ? "70% shipping-pixel" : "60% panel"} bar${verdict.note ? ` (${verdict.note})` : ""}`.slice(0, 900),
       severity: drifted ? "WARNING" : "INFO",
     },
   });
@@ -448,9 +470,10 @@ export interface IdentityPanelRow {
 
 export interface IdentityPanelData {
   rows: IdentityPanelRow[]; // scored rows, worst first
-  queue: Array<{ shotId: string; ref: string; description: string; source: IdentitySource; worst: number; entries: IdentityScoreEntry[] }>; // worst < threshold
+  queue: Array<{ shotId: string; ref: string; description: string; source: IdentitySource; worst: number; entries: IdentityScoreEntry[] }>; // worst < the source's bar (panels 0.6, shipping renders 0.7)
   shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>; // score-now picker
-  threshold: number;
+  threshold: number; // the PANEL bar (0.6)
+  renderThreshold: number; // the RENDER bar (0.7) - the shipping pixels answer higher
   average: number | null;
   embeddings: Record<string, AffinityRowData>; // per-shot provider-free affinity rows
   drift: IdentityDriftData; // per-character curves over episode order
@@ -465,7 +488,7 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
   }),
     identityDriftData(projectId).catch(() => ({ characters: [], watch: [], headline: "identity drift curves unavailable" } as IdentityDriftData)),
   ]);
-  if (!project) return { rows: [], queue: [], shots: [], threshold: IDENTITY_REPAINT_THRESHOLD, average: null, embeddings: {}, drift };
+  if (!project) return { rows: [], queue: [], shots: [], threshold: IDENTITY_REPAINT_THRESHOLD, renderThreshold: IDENTITY_RENDER_THRESHOLD, average: null, embeddings: {}, drift };
 
   const rows = await db.shot.findMany({
     where: { scene: { episode: { season: { projectId } } }, artworkUrl: { not: null } },
@@ -507,8 +530,10 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
     )
     .sort((a, b) => (a.worst ?? 1) - (b.worst ?? 1));
 
+  // the drift queue splits on the SOURCE's bar: a render frame that
+  // would have passed the old 0.6 line is drift at the shipping bar
   const queue = panelRows
-    .filter((r) => (r.worst ?? 1) < IDENTITY_REPAINT_THRESHOLD)
+    .filter((r) => (r.worst ?? 1) < identityThresholdFor(r.source))
     .map((r) => ({ shotId: r.shotId, ref: r.ref, description: r.description, source: r.source, worst: r.worst as number, entries: r.entries }));
 
   const shots = rows.slice(0, 30).map((r) => ({
@@ -536,7 +561,74 @@ export async function identityPanelData(projectId: string): Promise<IdentityPane
     embeddingMap[e.shotId] = { worst: e.worst, hashHex: e.hashHex, computedAt: e.computedAt.toISOString(), entries: rows };
   }
 
-  return { rows: panelRows, queue, shots, threshold: IDENTITY_REPAINT_THRESHOLD, average, embeddings: embeddingMap, drift };
+  return { rows: panelRows, queue, shots, threshold: IDENTITY_REPAINT_THRESHOLD, renderThreshold: IDENTITY_RENDER_THRESHOLD, average, embeddings: embeddingMap, drift };
+}
+
+// ─────────────────────────────────────────────────────────────
+// THE BAR IS MEASURED (iteration 78)
+//
+// The render bar is not a vibe, it is a measurement. Every
+// render-source identity score is one reading of what the painted
+// pipeline actually ships; aggregated, the readings answer the bar
+// question honestly: how many shipping frames cleared 0.7, where is
+// the average, what is the worst, and what does that say about the
+// next repaint pass. Pure rollup over the IdentityScore rows - the
+// scores themselves are earned by real vision calls upstream.
+// ─────────────────────────────────────────────────────────────
+
+export interface IdentityBarMeasurement {
+  source: "RENDER";
+  bar: number; // the shipping-pixel bar the readings answer to
+  scored: number; // measured renders
+  average: number | null; // mean worst across the measured renders
+  worst: number | null; // the pipeline's weakest shipping frame
+  best: number | null;
+  clearing: number; // renders at/above the bar
+  below: number; // renders under the bar (the repaint queue)
+  share: number | null; // clearing / scored (null when nothing measured)
+  rows: Array<{ shotId: string; ref: string; worst: number; castSize: number; scoredAt: string }>;
+}
+
+/** Aggregate the production's REAL render-source identity scores
+ * against the 0.7 shipping bar. The scores must exist first - run
+ * scoreProjectIdentity(source RENDER) or measure_identity_bar to
+ * earn them (one real vision call per render). */
+export async function identityBarMeasurement(projectId: string): Promise<IdentityBarMeasurement> {
+  const rows = await db.identityScore.findMany({
+    where: { projectId, source: "RENDER" },
+    orderBy: { worst: "asc" as const },
+    include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
+  });
+  const readings = rows.map((r) => ({
+    shotId: r.shotId,
+    ref: `E${r.shot.scene.episode.number} Sc${r.shot.scene.number} S${String(r.shot.number).padStart(3, "0")}`,
+    worst: r.worst,
+    castSize: r.castSize,
+    scoredAt: r.scoredAt.toISOString(),
+  }));
+  const values = readings.map((r) => r.worst);
+  const clearing = values.filter((v) => v >= IDENTITY_RENDER_THRESHOLD).length;
+  return {
+    source: "RENDER",
+    bar: IDENTITY_RENDER_THRESHOLD,
+    scored: readings.length,
+    average: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
+    worst: values.length ? Math.min(...values) : null,
+    best: values.length ? Math.max(...values) : null,
+    clearing,
+    below: values.length - clearing,
+    share: values.length ? clearing / values.length : null,
+    rows: readings,
+  };
+}
+
+/** The measurement as one honest line (the DSH/pulse read). */
+export function identityBarMeasurementLine(m: IdentityBarMeasurement): string {
+  if (m.scored === 0) {
+    return `render-source identity: nothing measured yet - the 70% shipping bar stands untested (run measure_identity_bar to score finished renders against it)`;
+  }
+  const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+  return `render-source identity over ${m.scored} measured render(s): avg worst ${pct(m.average!)}, worst ${pct(m.worst!)}, best ${pct(m.best!)}, ${m.clearing} of ${m.scored} clear the ${pct(m.bar)} shipping bar (${pct(m.share!)}${m.below > 0 ? ` - ${m.below} in the repaint queue` : " - the pipeline holds the bar"})`;
 }
 
 // ─────────────────────────────────────────────────────────────

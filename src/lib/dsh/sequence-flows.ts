@@ -75,6 +75,16 @@ export interface SequenceFlowSlot {
    * trunk and face volumes answer the beats with. Per-shot like the
    * cloth call; absent = the full probed response. */
   flesh?: number | null;
+  /** The slot's CHAINED PERFORMANCE (iteration 78 - the sentence calls
+   * the motion): a CHOREOGRAPHY source name the stamped shot PERFORMS
+   * (a saved choreography preset, a built-in - The Combo / The Draw
+   * Storm / The Rising Fang - or, the point of the chain, a LEARNED
+   * MOTION FLOW whose verified timing re-performs on every shot the
+   * slot stamps). Validated at design time against the choreography
+   * registry; applied through the same flow-aware path
+   * set_shot_choreography uses, so applied records grow and the
+   * flow's verified evidence rides along. */
+  motion?: string | null;
 }
 
 export interface SequenceFlowSpec {
@@ -94,6 +104,7 @@ export interface SequenceOutcome {
   moveClashes: number;
   fxBound: number;
   physBound: number;
+  motionChained: number; // slots that chained a choreography/motion performance onto their shot (iteration 78)
   rendersQueued: number;
   verified: boolean; // the sentence landed whole: every slot stamped a real shot
   at: string; // ISO timestamp

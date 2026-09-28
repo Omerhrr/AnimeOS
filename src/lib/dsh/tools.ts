@@ -9,7 +9,7 @@ import { startRepaintRun } from "@/lib/universe-repaint";
 import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
 import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan, listPlanTemplates } from "@/lib/dsh/plan-templates";
-import { IDENTITY_REPAINT_THRESHOLD, scoreProjectIdentity, scoreShotIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD, identityDriftData } from "@/lib/identity";
+import { IDENTITY_REPAINT_THRESHOLD, IDENTITY_RENDER_THRESHOLD, identityThresholdFor, scoreProjectIdentity, scoreShotIdentity, scoreRenderIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD, identityDriftData, identityBarMeasurement, identityBarMeasurementLine } from "@/lib/identity";
 import { reanchorByName, REANCHOR_DEFAULT_RESCORE, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
@@ -345,11 +345,12 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "score_panel_identity",
-    description: "Identity-similarity scoring for a panel: a vision model scores how closely the panel art matches EACH featured character's canonical model sheet (0..1 per character, plus face/hair/wardrobe/weapon/palette/style aspects). Persists on the shot, lands an IDENTITY_VERIFIED or IDENTITY_DRIFT continuity event, and a worst score below the drift threshold earns a re-paint offer. Without args, scores the WORST already-scored panel (or the newest art-bearing panel when nothing is scored yet); pass limit to batch a few.",
+    description: "Identity-similarity scoring for a panel OR a shipping render: a vision model scores how closely the judged pixels match EACH featured character's canonical model sheet (0..1 per character, plus face/hair/wardrobe/weapon/palette/style aspects). source 'panel' (default) judges the storyboard art against the 60% panel bar; source 'render' judges a frame of the shot's FINISHED CLIP against the 70% shipping-pixel bar - the bar the cut actually answers to (THE BAR IS MEASURED). Persists on the shot under its source, lands an IDENTITY_VERIFIED or IDENTITY_DRIFT continuity event, and a worst score below the source's bar earns a re-paint (panel) or re-render (shipping pixels) offer. Without args, scores the WORST already-scored panel (or the newest art-bearing panel when nothing is scored yet); pass limit to batch a few.",
     args: {
       sceneNumber: "number (optional, defaults to latest scene)",
       shotNumber: "number (optional, defaults to shot 1)",
-      limit: "number 1-8 (optional - batch-score that many panels worst-first instead of one)",
+      source: "string (optional - 'panel' default | 'render': judge a frame of the finished clip at the 70% shipping bar)",
+      limit: "number 1-8 (optional - batch-score that many worst-first instead of one)",
     },
   },
   {
@@ -571,7 +572,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "design_sequence",
-    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair, optional fx / physics program names (a design_fx / design_physics preset, a built-in like The Slash / The Clash, or an inline programs array - the world answers on the right shots), an optional WIND call (a number 0..1 drives the slot's grammar's every beat, or an array keyed per beat with null keeping the grammar's own gust and 0 a stillness call - the robes and hair ride what the sentence calls), an optional CLOTH call (one number 0..1 for the whole shot - scales the cloth solver's ANSWER, the per-shot intensity the fabric answers at, 0 stills the solver), an optional FLESH call (one number 0..1 - scales the soft-body solver's lag the same way) and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar, air call, solver calls AND world programs are validated at design time - a typo never reaches a shoot. Apply one across a scene (or the whole episode) with direct_sequence.",
+    description: "Design a NAMED SEQUENCE PROGRAM - the show's cutting language at sequence scale: an ordered chain of 2..12 shot slots, each slot a NAMED GRAMMAR (a design_grammar preset or a built-in like The Reveal / The Standoff / The Assault) plus optional poseStart/poseEnd for the shot's global pair, optional fx / physics program names (a design_fx / design_physics preset, a built-in like The Slash / The Clash, or an inline programs array - the world answers on the right shots), an optional WIND call (a number 0..1 drives the slot's grammar's every beat, or an array keyed per beat with null keeping the grammar's own gust and 0 a stillness call - the robes and hair ride what the sentence calls), an optional CLOTH call (one number 0..1 for the whole shot - scales the cloth solver's ANSWER, the per-shot intensity the fabric answers at, 0 stills the solver), an optional FLESH call (one number 0..1 - scales the soft-body solver's lag the same way), an optional MOTION call (a choreography preset, a built-in like The Combo, or a LEARNED MOTION FLOW - the stamped shot PERFORMS it; a learned flow chains its verified timing into the sentence, so the whole sequence re-performs end to end) and a note. A program is the director's sentence over many shots: open on a reveal, hold the standoff, break into the assault, withdraw. Every slot's grammar, air call, solver calls, world programs AND chained performances are validated at design time - a typo never reaches a shoot. Apply one across a scene (or the whole episode) with direct_sequence.",
     args: {
       name: "string - the sequence program name (e.g. 'Raid on the Fortress')",
       description: "string (optional) - what this program is for",
@@ -580,13 +581,13 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "direct_sequence",
-    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, a slot's WIND call rides its grammar's beats (the robes and hair answer the air the sentence calls), and a slot's CLOTH and FLESH calls (one number 0..1 each) set the shot's solver intensities - the whole clip's cloth and soft bodies answer at the directed answers. scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. THE STUDIO REMEMBERS ITS SENTENCES: with no program and no slots, pass register:'<register>' (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) to direct from the register's best-proven LEARNED SEQUENCE FLOW (adopted with learn_sequence_flow) - every application grows the flow's measured record, and the consult itself names the verified programs no flow carries yet (a proven sentence should not wait to be remembered). The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, solver calls the fabric and the flesh answer, the fx/physics bindings. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
+    description: "DIRECT A FULL SEQUENCE with named grammars: apply a NAMED SEQUENCE PROGRAM (a design_sequence preset) or an inline slot array across a scene's shots IN ORDER - shot i receives slot i's grammar (compiled onto the shot exactly like set_shot_grammar), optional per-slot poses set the shot's global pair, a slot naming fx / physics programs stamps them the same way set_shot_fx / set_shot_physics do, a slot's WIND call rides its grammar's beats (the robes and hair answer the air the sentence calls), a slot's CLOTH and FLESH calls (one number 0..1 each) set the shot's solver intensities, and a slot's MOTION call CHAINS A PERFORMANCE onto the stamped shot (a choreography preset, a built-in, or a LEARNED MOTION FLOW - the shot performs the verified keys instead of sliding; the whole verified sentence re-performs end to end, camera, world AND body). scope:'scene' (the default) directs one scene; scope:'episode' cuts the WHOLE EPISODE in story order - the slots allocate across every scene's shots, scene by scene, and the flow read names the scene of every cut. THE STUDIO REMEMBERS ITS SENTENCES: with no program and no slots, pass register:'<register>' (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) to direct from the register's best-proven LEARNED SEQUENCE FLOW (adopted with learn_sequence_flow) - every application grows the flow's measured record, and the consult itself names the verified programs no flow carries yet (a proven sentence should not wait to be remembered). The flow reads back whole: the beat chain per shot, cuts that land on the same move both sides, pose changes across cuts (the cloth whips on each), wind beats the robes ride, solver calls the fabric and the flesh answer, the fx/physics bindings, the chained performances. Shots beyond the plan stay untouched and are reported; with render:true every directed shot queues a render job so the whole sequence plays.",
     args: {
       sceneNumber: "number (scene scope, defaults to latest scene)",
       scope: "scene | episode (default scene - episode allocates the slots across every scene of the episode in story order)",
       episodeNumber: "number (episode scope, defaults to the latest episode with shots)",
       program: "string - a design_sequence preset name (or omit and pass slots inline, or pass register to consult a learned flow)",
-      slots: "JSON array string (optional) - inline slots when no program is named: {grammar, poseStart?, poseEnd?, fx?, physics?, wind?, cloth?, flesh?}",
+      slots: "JSON array string (optional) - inline slots when no program is named: {grammar, poseStart?, poseEnd?, fx?, physics?, wind?, cloth?, flesh?, motion?}",
       register: "string (optional) - with no program and no slots: consult the register's best-proven learned sequence flow (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE)",
       render: "boolean (optional, default false) - queue a render job for every directed shot",
       mode: "PREVIEW | FINAL (default PREVIEW, only with render)",
@@ -594,7 +595,7 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "learn_sequence_flow",
-    description: "ADOPT A VERIFIED SEQUENCE as the production's named flow for a dramatic REGISTER (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) - the studio remembers its sentences the way it remembers verified retopo budgets: the program's design-time-validated slots become the flow's sentence (each slot's air call and solver call included), and every direct_sequence that drives the program (or the flow itself, via register:'<register>') grows the flow's MEASURED record - shots stamped, wind beats, solver calls, pose cuts, move clashes, world bindings, renders queued. A direction that lands whole (every slot stamped a real shot) verifies; one whose flow read raises no blocking note (zero move clashes) on top of that earns the flow a clear and rises in the consult ranking. A flow that never landed whole is never consulted. The record is honest: an outcome is appended whatever it measured, and the consult names the programs that verified but were never adopted.",
+    description: "ADOPT A VERIFIED SEQUENCE as the production's named flow for a dramatic REGISTER (BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE) - the studio remembers its sentences the way it remembers verified retopo budgets: the program's design-time-validated slots become the flow's sentence (each slot's air call, solver call AND chained performance included), and every direct_sequence that drives the program (or the flow itself, via register:'<register>') grows the flow's MEASURED record - shots stamped, wind beats, solver calls, pose cuts, move clashes, world bindings, chained performances, renders queued. A direction that lands whole (every slot stamped a real shot) verifies; one whose flow read raises no blocking note (zero move clashes) on top of that earns the flow a clear and rises in the consult ranking. A flow that never landed whole is never consulted. The record is honest: an outcome is appended whatever it measured, and the consult names the programs that verified but were never adopted.",
     args: {
       name: "string - the flow's name (e.g. 'Raid grammar')",
       register: "string - BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE",
@@ -843,6 +844,13 @@ export const TOOL_DEFS: ToolDef[] = [
       register: "string - the dramatic register the flow serves: BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE",
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
+    },
+  },
+  {
+    name: "measure_identity_bar",
+    description: "THE BAR IS MEASURED: score the production's SHIPPING PIXELS against the 70% identity bar and read the measurement honestly. Renders - the frames the cut actually plays - answer to a HIGHER bar (70%) than the storyboard panels they came from (60%), and the bar is not a guess: this tool walks the production's finished renders, runs the REAL vision identity score on each (a frame from the clip judged against the featured cast's model sheets, source RENDER), then aggregates the measured readings against the bar - how many renders cleared 70%, where the average and the worst sit, which shots earned a repaint slot. Without limit it only reads back the existing measurement; pass limit N to first score up to N unmeasured/known-bad renders (each a real vision call). A reading below the bar lands an IDENTITY_DRIFT event on the shipping pixels - the re-render loop (render_fix or a re-render) clears it, then measure again to confirm.",
+    args: {
+      limit: "number (optional - first score up to N finished renders with real vision calls; default 0 = read the existing measurement only)",
     },
   },
   {
@@ -2272,16 +2280,25 @@ async function executeToolInner(
       }
 
       case "score_panel_identity": {
+        // THE BAR IS MEASURED: the source picks what is judged and which
+        // bar answers - panels at the 60% repaint line, shipping render
+        // frames at the 70% bar the cut answers to.
+        const sourceArg = String(args.source ?? "panel").trim().toLowerCase() === "render" ? "RENDER" : "PANEL";
+        const barFor = identityThresholdFor(sourceArg);
+        const barName = sourceArg === "RENDER" ? `${Math.round(IDENTITY_RENDER_THRESHOLD * 100)}% shipping-pixel` : `${Math.round(IDENTITY_REPAINT_THRESHOLD * 100)}% panel`;
         // batch mode: worst existing scores first, then never-scored panels
         if (args.limit !== undefined && args.limit !== null && String(args.limit) !== "") {
           const limit = Number(args.limit);
-          const result = await scoreProjectIdentity(projectId, Number.isFinite(limit) ? limit : 4);
+          const result = await scoreProjectIdentity(projectId, Number.isFinite(limit) ? limit : 4, sourceArg);
           if (result.scored.length === 0 && result.errors.length === 0) {
-            return { status: "ERROR", result: "No art-bearing panel with an anchored (sheeted) cast to score - generate panel art and model sheets first." };
+            return { status: "ERROR", result: sourceArg === "RENDER"
+              ? "No finished render with an anchored (sheeted) cast to score - render the shots first (render_shot), then measure again."
+              : "No art-bearing panel with an anchored (sheeted) cast to score - generate panel art and model sheets first." };
           }
           const lines = result.scored.map((s) => `${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%`);
           const errLines = result.errors.map((e) => `${e.ref}: ${e.error}`);
-          return { status: "OK", result: `Identity pass scored ${result.scored.length} panel(s), worst-first:\n${lines.join("\n")}${errLines.length ? `\nSkipped:\n${errLines.join("\n")}` : ""}\nA worst below ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% lands an IDENTITY_DRIFT event and earns a re-paint offer (generate_panel_art), then score again to confirm the fix.` };
+          const offer = sourceArg === "RENDER" ? "re-render offer (render_shot / render_fix)" : "re-paint offer (generate_panel_art)";
+          return { status: "OK", result: `Identity pass scored ${result.scored.length} ${sourceArg === "RENDER" ? "render(s)" : "panel(s)"}, worst-first:\n${lines.join("\n")}${errLines.length ? `\nSkipped:\n${errLines.join("\n")}` : ""}\nA worst below the ${barName} bar lands an IDENTITY_DRIFT event and earns a ${offer}, then score again to confirm the fix.` };
         }
         let shotId: string | null = null;
         if (args.sceneNumber || args.shotNumber) {
@@ -2307,7 +2324,7 @@ async function executeToolInner(
             shotId = newest.id;
           }
         }
-        const result = await scoreShotIdentity(shotId);
+        const result = sourceArg === "RENDER" ? await scoreRenderIdentity(shotId) : await scoreShotIdentity(shotId);
         if (!result.ok) return { status: "ERROR", result: `Identity scoring failed: ${result.error}` };
         const s = result.scored;
         const aspect = s.verdict.entries[0];
@@ -2319,8 +2336,11 @@ async function executeToolInner(
         const affLine = aff?.ok
           ? ` Provider-free affinity: ${aff.scored.verdict.entries.map(describeAffinity).join("; ")}${aff.scored.verdict.worst < AFFINITY_WATCH_THRESHOLD ? " - WATCH: far from the sheet, check this panel" : ""} (tripwire only: the vision score stays the authority).`
           : "";
-        const drifted = s.verdict.worst < IDENTITY_REPAINT_THRESHOLD;
-        return { status: "OK", result: `Identity score for ${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%${s.verdict.note ? ` (${s.verdict.note})` : ""}.${aspectLine}${affLine} ${drifted ? `That is below the ${(IDENTITY_REPAINT_THRESHOLD * 100).toFixed(0)}% identity bar - the panel earned an IDENTITY_DRIFT event and a re-paint offer: regenerate the panel (generate_panel_art) and score again to confirm.` : "An IDENTITY_VERIFIED event recorded the panel."}` };
+        const drifted = s.verdict.worst < barFor;
+        const offer = sourceArg === "RENDER"
+          ? `the shipping pixels earned an IDENTITY_DRIFT event and a re-render offer: fix the pixels (render_fix or re-render) and score again to confirm`
+          : `the panel earned an IDENTITY_DRIFT event and a re-paint offer: regenerate the panel (generate_panel_art) and score again to confirm`;
+        return { status: "OK", result: `Identity score for ${s.ref} (${sourceArg.toLowerCase()} source): ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%${s.verdict.note ? ` (${s.verdict.note})` : ""}.${aspectLine}${affLine} ${drifted ? `That is below the ${barName} identity bar - ${offer}.` : "An IDENTITY_VERIFIED event recorded the panel."}` };
       }
 
       case "reanchor_character": {
@@ -2838,7 +2858,7 @@ async function executeToolInner(
         }
         if (rawSlots.length < 2) return { status: "ERROR", result: "a sequence program needs at least 2 slots - a single directed shot belongs in set_shot_grammar" };
         if (rawSlots.length > 12) return { status: "ERROR", result: "a sequence program carries at most 12 slots - longer than that is an episode, not a program" };
-        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null; wind?: Array<number | null> | number | null; cloth?: number | null; flesh?: number | null }> = [];
+        const slots: Array<{ grammar: string; poseStart: string | null; poseEnd: string | null; fx: string | null; physics: string | null; note: string | null; wind?: Array<number | null> | number | null; cloth?: number | null; flesh?: number | null; motion?: string | null }> = [];
         for (let i = 0; i < rawSlots.length; i++) {
           const s = rawSlots[i] as Record<string, unknown>;
           const grammar = String(s?.grammar ?? "").trim();
@@ -2871,6 +2891,26 @@ async function executeToolInner(
           // per-shot answer, one solver up from the cloth
           const fleshParsed = compileSlotFlesh(s?.flesh, `slot ${i + 1} (${grammar})`);
           if (!fleshParsed.ok) return { status: "ERROR", result: fleshParsed.error };
+          // the slot's CHAINED PERFORMANCE (iteration 78 - the sentence
+          // calls the motion): the slot may name a choreography source
+          // (saved preset, built-in, or a LEARNED MOTION FLOW) the
+          // stamped shot performs - design-time validated like every
+          // other call, so a typo never reaches a shoot
+          const motionName = s?.motion ? String(s.motion).trim() : "";
+          if (motionName) {
+            const motionResolved = await resolveChoreoSource(projectId, motionName);
+            if (!motionResolved) {
+              const flows = rankMotionFlows(await db.motionFlow.findMany({ where: { projectId } }));
+              const registry = [
+                ...BUILT_IN_CHOREO.map((b) => `'${b.name}' (built-in)`),
+                ...((await db.designPreset.findMany({ where: { projectId, kind: "CHOREOGRAPHY" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+                ...flows.map((f) => `'${f.name}' (learned flow, ${f.register.toLowerCase()}, x${f.applied}/${f.verified}v)`),
+              ];
+              return { status: "ERROR", result: `slot ${i + 1}: no choreography named '${motionName}' to chain. Registry: ${registry.join(", ")} - design one (design_choreography), learn one from a verified render (learn_motion_flow), or drop the motion call.` };
+            }
+            const motionCompiled = compileChoreo(motionResolved.specRaw, `slot ${i + 1} motion (${motionResolved.sourceName})`);
+            if (!motionCompiled.ok) return { status: "ERROR", result: `slot ${i + 1} motion (${motionName}): ${motionCompiled.error}` };
+          }
           // design-time validation for the world programs too: a slot may
           // bind FX and PHYSICS by name (saved preset, built-in or inline)
           // so the sequence sentence directs the WORLD, not just the lens
@@ -2910,6 +2950,7 @@ async function executeToolInner(
             ...(windParsed.wind !== null ? { wind: windParsed.wind } : {}),
             ...(clothParsed.cloth !== null ? { cloth: clothParsed.cloth } : {}),
             ...(fleshParsed.flesh !== null ? { flesh: fleshParsed.flesh } : {}),
+            ...(motionName ? { motion: motionName } : {}),
           });
         }
         const description = String(args.description ?? "").trim() || null;
@@ -2921,8 +2962,8 @@ async function executeToolInner(
           update: { spec: JSON.stringify({ description, slots }), ...(existed ? { outcomes: "[]" } : {}) },
         });
         await landDesignEvent(projectId, `Sequence program '${name}' ${existed ? "updated" : "designed"} (${slots.length} slots: ${slots.map((s) => s.grammar).join(" -> ")})`, { presetId: preset.id });
-        const slotShape = slots.map((s, i) => `${i + 1}. ${s.grammar}${s.wind !== undefined && s.wind !== null ? ` +${formatSlotWind(s.wind)}` : ""}${s.cloth !== undefined && s.cloth !== null ? ` +${formatSlotCloth(s.cloth)}` : ""}${s.flesh !== undefined && s.flesh !== null ? ` +${formatSlotFlesh(s.flesh)}` : ""}${s.fx ? ` +fx ${s.fx}` : ""}${s.physics ? ` +physics ${s.physics}` : ""}`).join(", ");
-        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slotShape}.${hadRecord ? " (the measured record resets - a redesigned sentence is a new sentence)" : ""} Apply it across a scene (or scope:'episode' across the whole episode in story order) with direct_sequence program:'${name}' - shot i receives slot i's grammar, slot-named fx and physics ride the same shots, a slot's wind call rides its grammar's beats, a slot's cloth and flesh calls set the shot's solver intensities, and the whole flow reads back cut by cut.` };
+        const slotShape = slots.map((s, i) => `${i + 1}. ${s.grammar}${s.wind !== undefined && s.wind !== null ? ` +${formatSlotWind(s.wind)}` : ""}${s.cloth !== undefined && s.cloth !== null ? ` +${formatSlotCloth(s.cloth)}` : ""}${s.flesh !== undefined && s.flesh !== null ? ` +${formatSlotFlesh(s.flesh)}` : ""}${s.fx ? ` +fx ${s.fx}` : ""}${s.physics ? ` +physics ${s.physics}` : ""}${s.motion ? ` +motion '${s.motion}'` : ""}`).join(", ");
+        return { status: "OK", result: `SEQUENCE program '${name}' ${existed ? "updated" : "registered"}: ${slots.length} slots - ${slotShape}.${hadRecord ? " (the measured record resets - a redesigned sentence is a new sentence)" : ""} Apply it across a scene (or scope:'episode' across the whole episode in story order) with direct_sequence program:'${name}' - shot i receives slot i's grammar, slot-named fx and physics ride the same shots, a slot's wind call rides its grammar's beats, a slot's cloth and flesh calls set the shot's solver intensities, and a slot's motion call CHAINS a performance onto the shot (a learned flow re-performs its verified timing). The whole flow reads back cut by cut.` };
       }
 
       case "direct_sequence": {
@@ -2988,7 +3029,7 @@ async function executeToolInner(
         // array next, and with NEITHER the register consult (iteration
         // 63): the studio starts from the sentence that verified, not
         // from a fresh guess
-        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown; wind?: unknown; cloth?: unknown; flesh?: unknown }> = [];
+        let slotList: Array<{ grammar?: unknown; poseStart?: unknown; poseEnd?: unknown; fx?: unknown; physics?: unknown; note?: unknown; wind?: unknown; cloth?: unknown; flesh?: unknown; motion?: unknown }> = [];
         let sourceName = "";
         let consultFlow: { register: string; name: string } | null = null;
         const programName = String(args.program ?? "").trim();
@@ -3056,6 +3097,8 @@ async function executeToolInner(
         let moveClashes = 0;
         let fxBound = 0;
         let physBound = 0;
+        let motionChained = 0;
+        const chainedFlows = new Set<string>();
         let lastEndPose: string | null = null;
         let lastLastMove: string | null = null;
         for (let i = 0; i < directed; i++) {
@@ -3088,7 +3131,7 @@ async function executeToolInner(
           const fleshShape = formatSlotFlesh(fleshParsed.flesh);
           const poseStart = slot?.poseStart ? String(slot.poseStart) : null;
           const poseEnd = slot?.poseEnd ? String(slot.poseEnd) : null;
-          const data: { grammar: string; poseStart?: string; poseEnd?: string; fx?: string; physics?: string; cloth?: number | null; flesh?: number | null } = { grammar: serializeGrammar(compiled.spec) };
+          const data: { grammar: string; poseStart?: string; poseEnd?: string; fx?: string; physics?: string; cloth?: number | null; flesh?: number | null; choreo?: string } = { grammar: serializeGrammar(compiled.spec) };
           if (poseStart) data.poseStart = poseStart;
           if (poseEnd) data.poseEnd = poseEnd;
           data.cloth = clothParsed.cloth;   // null clears - the sentence owns the staging
@@ -3115,6 +3158,29 @@ async function executeToolInner(
             physShape = physCompiled.spec.programs.map((p) => p.kind).join("+");
             physBound += 1;
           }
+          // THE SENTENCE CALLS THE PERFORMANCE (iteration 78): a slot's
+          // motion call chains a CHOREOGRAPHY onto the stamped shot -
+          // resolved through the same registry set_shot_choreography
+          // consults (saved preset -> built-in -> LEARNED MOTION FLOW),
+          // compiled exactly like it, and stored with the same flow
+          // marker, so a chained learned flow's applied record grows and
+          // every later passing review still verifies its timing
+          const motionName = slot?.motion ? String(slot.motion).trim() : "";
+          let motionShape = "";
+          if (motionName) {
+            const motionResolved = await resolveChoreoSource(projectId, motionName);
+            if (!motionResolved) return { status: "ERROR", result: `slot ${i + 1}: no choreography named '${motionName}' to chain - it validated at design time and is gone now; redesign the sentence (design_sequence).` };
+            const motionCompiled = compileChoreo(motionResolved.specRaw, `slot ${i + 1} motion (${motionResolved.sourceName})`);
+            if (!motionCompiled.ok) return { status: "ERROR", result: `slot ${i + 1} motion (${motionName}): ${motionCompiled.error}` };
+            const chainedPerf = { ...motionCompiled.spec, name: motionResolved.perfName, ...(motionResolved.flowName ? { flow: motionResolved.flowName } : {}) };
+            data.choreo = JSON.stringify(chainedPerf);
+            motionShape = motionCompiled.spec.keys.map((k) => `${k.pose.toLowerCase()}@${k.at}:${k.kind}`).join(">");
+            motionChained += 1;
+            if (motionResolved.flowName) {
+              chainedFlows.add(motionResolved.flowName);
+              await db.motionFlow.update({ where: { projectId_name: { projectId, name: motionResolved.flowName } }, data: { applied: { increment: 1 } } });
+            }
+          }
           await db.shot.update({ where: { id: flat[i].id }, data });
           windBeats += compiled.spec.beats.filter((b) => (b.wind ?? 0) > 0).length;
           if (clothParsed.cloth !== null) clothCalls += 1;
@@ -3126,7 +3192,7 @@ async function executeToolInner(
           if (lastEndPose && startPose && startPose !== lastEndPose) poseCuts += 1;
           lastEndPose = normalizePose(poseEnd ?? compiled.spec.beats[compiled.spec.beats.length - 1].poseEnd ?? "") || lastEndPose;
           lastLastMove = lastMove;
-          const world = fxName || physName || airShape || clothShape || fleshShape ? ` [${[airShape, clothShape, fleshShape, fxName ? `fx: ${fxShape}` : "", physName ? `physics: ${physShape}` : ""].filter(Boolean).join(" | ")}]` : "";
+          const world = fxName || physName || airShape || clothShape || fleshShape || motionShape ? ` [${[airShape, clothShape, fleshShape, motionShape ? `performing ${motionShape}` : "", fxName ? `fx: ${fxShape}` : "", physName ? `physics: ${physShape}` : ""].filter(Boolean).join(" | ")}]` : "";
           flow.push(`${flat[i].label} <- ${grammarName} (${compiled.spec.beats.map((b) => b.move).join(">")})${world}`);
         }
         const jobIds: string[] = [];
@@ -3148,6 +3214,7 @@ async function executeToolInner(
         if (clothCalls > 0) reads.push(`${clothCalls} cloth call(s) - the cloth answers at the directed intensity on those shots`);
         if (fleshCalls > 0) reads.push(`${fleshCalls} flesh call(s) - the soft bodies lag at the directed intensity on those shots`);
         if (fxBound > 0 || physBound > 0) reads.push(`${fxBound} fx + ${physBound} physics binding(s) - the world answers on those shots`);
+        if (motionChained > 0) reads.push(`${motionChained} chained performance(s)${chainedFlows.size ? ` (${Array.from(chainedFlows).map((n) => `'${n}'`).join(", ")})` : ""} - those shots PERFORM their keys, and a chained learned flow's timing is the timing that verified`);
         if (untouched > 0) reads.push(`${untouched} shot(s) beyond the plan left untouched`);
         if (unused > 0) reads.push(`${unused} slot(s) had no shot to direct`);
         // THE MEMORY GROWS FROM WHAT THE RUN MEASURED (iteration 63):
@@ -3170,12 +3237,13 @@ async function executeToolInner(
           moveClashes,
           fxBound,
           physBound,
+          motionChained,
           rendersQueued: jobIds.length,
           verified: unused === 0 && directed > 0,
         };
         const memoryLines: string[] = [];
         const memoryLine = (row: { name: string; register: string; runs: number; clears: number }) =>
-          `learned flow '${row.name}' (${row.register}) recorded the run: ${row.runs} run(s), ${row.clears} clear(s) - ${outcome.verified ? "the sentence landed whole" : "the sentence did NOT land whole (see the flow read)"}${outcome.verified && moveClashes === 0 ? ", the clean read earns the clear" : ""}`;
+          `learned flow '${row.name}' (${row.register}) recorded the run: ${row.runs} run(s), ${row.clears} clear(s) - ${outcome.verified ? "the sentence landed whole" : "the sentence did NOT land whole (see the flow read)"}${outcome.verified && moveClashes === 0 ? ", the clean read earns the clear" : ""}${motionChained > 0 ? `, ${motionChained} shot(s) chained their performances through it` : ""}`;
         if (consultFlow) {
           const row = await recordSequenceOutcome(projectId, consultFlow.register, consultFlow.name, outcome);
           if (row) memoryLines.push(memoryLine(row));
@@ -3583,6 +3651,35 @@ async function executeToolInner(
         }
         await landDesignEvent(projectId, `Learned motion flow '${flowNameArg}' (${registerArg.toLowerCase()}) from ${sourceRef}: ${poseFrom.toLowerCase()} -> ${poseTo.toLowerCase()} - ${gate.reason}`, { shotId: shot.id });
         return { status: "OK", result: `THE MOTION IS LEARNED: '${flowNameArg}' (${registerArg.toLowerCase()}) now remembers the verified performance from ${sourceRef} - ${poseFrom.toLowerCase()} -> ${poseTo.toLowerCase()}, ${keys.length} key(s), adopted because ${gate.reason}. Apply it to any shot with set_shot_choreography choreo:'${flowNameArg}' - every application grows its record, and every passing review of a flow-carrying shot verifies it again. ${existing ? `The flow existed and was re-learned from fresher evidence (${existing.applied} applications kept).` : "A verified performance nobody names is a lesson the studio re-pays for every fight."}` };
+      }
+
+      case "measure_identity_bar": {
+        // THE BAR IS MEASURED: optionally earn fresh render-source
+        // readings (real vision calls over finished clips), then read
+        // the aggregation against the 70% shipping bar honestly.
+        const m = await identityBarMeasurement(projectId);
+        const fresh: string[] = [];
+        const failed: string[] = [];
+        const limitArg = Number(args.limit ?? 0);
+        if (Number.isFinite(limitArg) && limitArg > 0) {
+          const scored = await scoreProjectIdentity(projectId, Math.min(8, Math.round(limitArg)), "RENDER");
+          for (const s of scored.scored) {
+            fresh.push(`${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%`);
+          }
+          for (const e of scored.errors) failed.push(`${e.ref}: ${e.error}`);
+        }
+        const after = fresh.length > 0 ? await identityBarMeasurement(projectId) : m;
+        const lines = [
+          identityBarMeasurementLine(after),
+          ...(fresh.length ? [`Freshly measured (${fresh.length}):\n${fresh.join("\n")}`] : []),
+          ...(failed.length ? [`Skipped (honest misses):\n${failed.join("\n")}`] : []),
+        ];
+        const verdictTail = after.scored === 0
+          ? ` Score finished renders first: queue renders (render_shot), then measure_identity_bar limit:'<N>' - each reading is a real vision call over the shipping pixels.`
+          : after.share !== null && after.share >= 0.5
+            ? ` The painted pipeline holds the bar more often than not - the ${after.below} below-bar render(s) earn the re-render loop (render_fix or re-render), then measure again.`
+            : ` Most shipping frames sit under the bar - the re-render loop and the identity re-anchor (regenerate the drifting sheets) are the honest next moves, then measure again.`;
+        return { status: "OK", result: `IDENTITY BAR MEASURED (shipping pixels, bar ${Math.round(after.bar * 100)}%):\n${lines.join("\n")}.${verdictTail}` };
       }
 
       case "review_render": {
@@ -4835,6 +4932,45 @@ async function resolveGrammarSource(projectId: string, grammarArg: string): Prom
   const builtin = findBuiltInGrammar(grammarArg);
   if (builtin) return { beatsRaw: JSON.stringify(builtin.beats), sourceName: `built-in '${builtin.name}'` };
   if (grammarArg.startsWith("[")) return { beatsRaw: grammarArg, sourceName: "inline beats" };
+  return null;
+}
+
+/** Resolve a NAMED CHOREOGRAPHY source for the sequence slots'
+ * chained performances (iteration 78 - the sentence calls the
+ * motion): saved CHOREOGRAPHY preset -> built-in -> learned motion
+ * flow. Null when nothing carries the name. The flow-aware half
+ * mirrors set_shot_choreography's own resolution so a chained LEARNED
+ * FLOW stores the same `flow` marker on the shot's choreo column -
+ * the applied record grows and the verified evidence rides along.
+ * (No inline branch here: a sequence slot carries a NAME, validated
+ * at design time - an inline program belongs in
+ * set_shot_choreography.) */
+async function resolveChoreoSource(projectId: string, choreoArg: string): Promise<{ specRaw: unknown; sourceName: string; flowName?: string; perfName: string } | null> {
+  const savedCh = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "CHOREOGRAPHY", name: choreoArg } } });
+  if (savedCh) {
+    try {
+      const parsed = JSON.parse(savedCh.spec || "null") as unknown;
+      const perfName = (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as { name?: unknown }).name === "string" && (parsed as { name: string }).name.trim())
+        ? (parsed as { name: string }).name.trim()
+        : choreoArg;
+      return { specRaw: parsed, sourceName: `preset '${choreoArg}'`, perfName };
+    } catch {
+      return null; // a corrupt preset resolves to nothing - the refusal names it
+    }
+  }
+  const builtin = BUILT_IN_CHOREO.find((b) => b.name?.toLowerCase() === choreoArg.toLowerCase());
+  if (builtin) {
+    return { specRaw: builtin, sourceName: `built-in '${builtin.name}'`, perfName: builtin.name! };
+  }
+  const learnedFlow = await db.motionFlow.findUnique({ where: { projectId_name: { projectId, name: choreoArg } } });
+  if (learnedFlow) {
+    try {
+      const parsed = JSON.parse(learnedFlow.spec || "null") as unknown;
+      return { specRaw: parsed, sourceName: `learned flow '${learnedFlow.name}' (${learnedFlow.register.toLowerCase()}, ${learnedFlow.applied} applied / ${learnedFlow.verified} verified, from ${learnedFlow.sourceRef})`, flowName: learnedFlow.name, perfName: learnedFlow.name };
+    } catch {
+      return null; // a corrupt flow resolves to nothing - the refusal names it
+    }
+  }
   return null;
 }
 

@@ -238,6 +238,7 @@ interface IdentityData {
   queue: Array<{ shotId: string; ref: string; description: string; source?: "PANEL" | "RENDER"; worst: number; entries: IdentityEntry[] }>;
   shots: Array<{ shotId: string; ref: string; description: string; hasArt: boolean }>;
   threshold: number;
+  renderThreshold?: number;
   average: number | null;
   embeddings: Record<string, { worst: number; hashHex: string; computedAt: string; entries: Array<{ characterName: string; palette: number; structure: number; blockStructure?: number; blockPalette?: number; combined: number; note: string }> }>;
   drift: { characters: CharacterDriftUi[]; watch: CharacterDriftUi[]; headline: string };
@@ -305,7 +306,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
     },
     enabled: Boolean(projectId),
   });
-  const data = dataQ.data ?? { rows: [], queue: [], shots: [], threshold: 0.6, average: null, embeddings: {}, drift: { characters: [], watch: [], headline: "no identity drift curves yet" } };
+  const data = dataQ.data ?? { rows: [], queue: [], shots: [], threshold: 0.6, renderThreshold: 0.7, average: null, embeddings: {}, drift: { characters: [], watch: [], headline: "no identity drift curves yet" } };
 
   async function affinityPass() {
     setAffinityRunning(true);
@@ -453,11 +454,14 @@ function IdentityPanel({ projectId }: { projectId: string }) {
 
       {data.average != null && (
         <div className="flex flex-wrap gap-2 text-[10px]">
-          <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">{data.rows.length} panel(s) scored</span>
+          <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">{data.rows.length} scored</span>
           <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">avg worst {(data.average * 100).toFixed(0)}%</span>
-          <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">identity bar {(data.threshold * 100).toFixed(0)}%</span>
+          <span className="px-2 py-1 rounded-md border border-white/10 bg-white/5 text-muted-foreground tabular-nums">panel bar {(data.threshold * 100).toFixed(0)}%</span>
+          {data.renderThreshold != null && (
+            <span className="px-2 py-1 rounded-md border border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-200 tabular-nums" title="THE BAR IS MEASURED: the shipping pixels answer higher than the storyboard - a render frame below this line earns a re-render, not just a re-paint">shipping bar {(data.renderThreshold * 100).toFixed(0)}%</span>
+          )}
           {data.queue.length > 0 ? (
-            <span className="px-2 py-1 rounded-md border border-rose-400/25 bg-rose-400/10 text-rose-200 tabular-nums">{data.queue.length} below the bar</span>
+            <span className="px-2 py-1 rounded-md border border-rose-400/25 bg-rose-400/10 text-rose-200 tabular-nums">{data.queue.length} below their bar</span>
           ) : (
             <span className="px-2 py-1 rounded-md border border-emerald-400/25 bg-emerald-400/10 text-emerald-200">identity clean</span>
           )}
@@ -466,7 +470,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
 
       {data.queue.length > 0 && (
         <div className="space-y-1.5">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-rose-300/90">Re-paint queue (worst identity first)</div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-rose-300/90">Re-paint queue (worst identity first, each against its own source's bar)</div>
           {data.queue.map((row) => (
             <div key={row.shotId} className="rounded-lg border border-rose-400/20 bg-rose-400/[0.04] px-3 py-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -506,7 +510,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className={cn(
                     "text-[10px] font-mono tabular-nums",
-                    (row.worst ?? 1) < data.threshold ? "text-rose-300" : "text-emerald-300"
+                    (row.worst ?? 1) < (row.source === "RENDER" ? (data.renderThreshold ?? data.threshold) : data.threshold) ? "text-rose-300" : "text-emerald-300"
                   )}>worst {pct(row.worst)}</span>
                   <button
                     onClick={() => void scoreOne(row.shotId, row.source === "RENDER" ? "render" : "panel")}
@@ -525,7 +529,7 @@ function IdentityPanel({ projectId }: { projectId: string }) {
                     title={Object.entries(e.aspects).map(([k, v]) => `${k} ${((v as number) * 100).toFixed(0)}%`).join(" · ") || e.note}
                     className={cn(
                       "px-1.5 py-0.5 rounded border text-[9px] tabular-nums",
-                      e.similarity < data.threshold ? "border-rose-400/30 text-rose-200 bg-rose-400/10" : "border-emerald-400/30 text-emerald-200 bg-emerald-400/10"
+                      e.similarity < (row.source === "RENDER" ? (data.renderThreshold ?? data.threshold) : data.threshold) ? "border-rose-400/30 text-rose-200 bg-rose-400/10" : "border-emerald-400/30 text-emerald-200 bg-emerald-400/10"
                     )}
                   >
                     {e.characterName} {pct(e.similarity)}
