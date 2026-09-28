@@ -612,6 +612,17 @@ export interface ProjectSummary {
   onCrew?: boolean;
 }
 
+export interface EpisodeCutMix {
+  target: number;
+  buses: Record<string, number>;
+  ducked: boolean;
+  lufsRaw: number | null;
+  gainDb: number;
+  lufsFinal: number | null;
+  measured: boolean;
+  stems: string[];
+}
+
 export interface EpisodeCutResult {
   url: string;
   file: string;
@@ -625,6 +636,7 @@ export interface EpisodeCutResult {
   renderedNow: number;
   warnings: string[];
   audioKinds: Record<string, number>;
+  mix: EpisodeCutMix | null;
 }
 
 export interface CharacterDesignDnaView {

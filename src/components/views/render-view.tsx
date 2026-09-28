@@ -639,6 +639,11 @@ function EpisodeCutCard({ project }: { project: StudioProject }) {
             <span>· {(cut.durationMs / 1000).toFixed(1)}s</span>
             <span>· {cut.shotCount} shot{cut.shotCount === 1 ? "" : "s"}</span>
             <span>· {cut.cueCount} stem cue{cut.cueCount === 1 ? "" : "s"}</span>
+            {cut.mix && (
+              <span className="text-sky-300">
+                · mix {cut.mix.measured && cut.mix.lufsFinal !== null ? `${cut.mix.lufsFinal.toFixed(1)} LUFS` : "unmeasured"} · {cut.mix.ducked ? "voice-ducked" : "no duck"} · {cut.mix.stems.length} stem{cut.mix.stems.length === 1 ? "" : "s"}
+              </span>
+            )}
             {cut.renderedNow > 0 && <span className="text-amber-300">· {cut.renderedNow} rendered inline</span>}
             <a href={cut.manifestFile} target="_blank" rel="noreferrer" className="hover:underline">manifest</a>
           </div>

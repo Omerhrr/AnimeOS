@@ -12,7 +12,16 @@
 //      noise bursts, BGM are detuned sine pads, AMBIENCE are
 //      lowpassed noise beds - the same synthesis DNA as the
 //      browser CuePlayer/stem renderer, now running offline.
-//   4. Master video and the stem mix are MUXED into a single
+//   4. THE MIX IS GRADED (iteration 76): the cues land on KIND BUSES
+//      (VOICE / SFX / BGM / AMBIENCE) under a fixed bus-gain law, the
+//      BGM bus DUCKS under the voice bus (a real sidechain compressor -
+//      the dialogue-duck every broadcast mix carries), the raw master is
+//      MEASURED (EBU R128 integrated loudness through ebur128), an
+//      explicit clamped gain walks it to the -16 LUFS target under an
+//      honest limiter ceiling, and the FINAL number is measured again -
+//      evidence recorded, never guessed. Each bus stem persists beside
+//      the cut as its own WAV so the delivery side can remix.
+//   5. Master video and the graded mix are MUXED into a single
 //      h264+aac mp4 with a JSON sidecar manifest.
 // ─────────────────────────────────────────────────────────────
 
@@ -113,7 +122,7 @@ function runFfmpeg(args: string[], timeoutMs = 300_000): Promise<{ ok: boolean; 
       stdio: ["ignore", "ignore", "pipe"],
     });
     let err = "";
-    child.stderr.on("data", (c: Buffer) => { err = (err + c.toString()).slice(-800); });
+    child.stderr.on("data", (c: Buffer) => { err = (err + c.toString()).slice(-4000); });
     const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* already gone */ } }, timeoutMs);
     child.on("error", (e) => { clearTimeout(timer); resolve({ ok: false, error: String(e) }); });
     child.on("exit", (code) => {
@@ -121,6 +130,32 @@ function runFfmpeg(args: string[], timeoutMs = 300_000): Promise<{ ok: boolean; 
       resolve(code === 0 ? { ok: true } : { ok: false, error: err || `ffmpeg exited ${code}` });
     });
   });
+}
+
+/** stderr-CAPTURING runner - the loudness measure reads ebur128's summary off stderr. */
+function runFfmpegCapture(args: string[], timeoutMs = 120_000): Promise<{ ok: boolean; error?: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn("ffmpeg", ["-y", "-hide_banner", "-nostats", ...args], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let err = "";
+    child.stderr.on("data", (c: Buffer) => { err = (err + c.toString()).slice(-16000); });
+    const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* already gone */ } }, timeoutMs);
+    child.on("error", (e) => { clearTimeout(timer); resolve({ ok: false, error: String(e), stderr: err }); });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code === 0 ? { ok: true, stderr: err } : { ok: false, error: err.slice(-800) || `ffmpeg exited ${code}`, stderr: err });
+    });
+  });
+}
+
+/** MEASURE the integrated loudness of a WAV (EBU R128 through ebur128). The last summary wins. */
+export async function measureLufs(file: string): Promise<number | null> {
+  const r = await runFfmpegCapture(["-i", file, "-af", "ebur128=peak=true", "-f", "null", "-"]);
+  if (!r.ok) return null;
+  const matches = [...r.stderr.matchAll(/I:\s+(-?\d+(?:\.\d+)?)\s+LUFS/g)];
+  const last = matches[matches.length - 1];
+  return last ? parseFloat(last[1]) : null;
 }
 
 /** Deterministic hash matching the browser labelHash DNA. */
@@ -138,6 +173,39 @@ function publicFile(url: string, allowedPrefix: string): string | null {
   if (!clean.startsWith(allowedPrefix) || clean.includes("..")) return null;
   const abs = path.join(process.cwd(), "public", clean.replace(/^\//, ""));
   return fs.existsSync(abs) ? abs : null;
+}
+
+// ── the mix bus law (iteration 76) ──────────────────────────
+//
+// A professional mix is BALANCED BY LAW, not by cue volume alone:
+// every cue lands on its kind's bus, each bus carries a fixed gain
+// (the voice speaks, the score supports, the room breathes), the
+// score ducks under the voice, and the master is measured to a
+// loudness target. The numbers below are the law - the same cue
+// sheet always lands the same mix.
+
+export const MIX_BUS_GAIN: Record<string, number> = {
+  VOICE: 1.0,
+  SFX: 0.9,
+  BGM: 0.55,
+  AMBIENCE: 0.4,
+};
+
+export const MIX_BUS_ORDER = ["VOICE", "SFX", "BGM", "AMBIENCE"] as const;
+
+/** Streaming loudness target (EBU R128 integrated, LUFS). */
+export const MIX_TARGET_LUFS = -16;
+/** The normalization gain is clamped - a broken bed is not fixed by +40 dB. */
+export const MIX_GAIN_LIMIT_DB = 12;
+/** The master's honest ceiling (linear). level=disabled: a ceiling, not a make-up gain. */
+export const MIX_CEILING = 0.89;
+/** The dialogue-duck law: the BGM bus compresses under the VOICE sidechain. */
+export const MIX_DUCK = "sidechaincompress=threshold=0.04:ratio=6:attack=12:release=320";
+
+/** The clamped loudness normalization gain for a measured mix (pure, unit-checkable). */
+export function mixGainDb(lufs: number, target: number = MIX_TARGET_LUFS, limit: number = MIX_GAIN_LIMIT_DB): number {
+  const raw = target - lufs;
+  return Math.round(Math.max(-limit, Math.min(limit, raw)) * 10) / 10;
 }
 
 // ── audio graph construction ─────────────────────────────────
@@ -188,6 +256,18 @@ function cueFilterAndInput(cue: CutCueSlot, index: number): { input: string[]; c
 
 // ── the builder ──────────────────────────────────────────────
 
+export interface CutMixInfo {
+  target: number;
+  buses: Record<string, number>;
+  ducked: boolean;
+  stems: string[];
+  mixFile: string | null;
+  lufsRaw: number | null;
+  gainDb: number;
+  lufsFinal: number | null;
+  measured: boolean;
+}
+
 export interface CutBuildResult {
   url: string;
   file: string;
@@ -201,6 +281,7 @@ export interface CutBuildResult {
   renderedNow: number;
   warnings: string[];
   audioKinds: Record<string, number>;
+  mix: CutMixInfo | null;
 }
 
 export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINAL"): Promise<CutBuildResult> {
@@ -310,7 +391,9 @@ export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINA
   const stamp = new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 14);
   const slug = `${slugify(episode.season.project.title)}-ep${String(episode.number).padStart(2, "0")}-${stamp}`;
   const masterPath = path.join(cutsDir, `.master-${slug}.mp4`);
-  const mixPath = path.join(cutsDir, `.mix-${slug}.wav`);
+  // the graded mix is a DELIVERABLE now (it persists beside the cut);
+  // the bus stems land next to it, the raw pre-normalization master stays hidden
+  const mixPath = path.join(cutsDir, `${slug}.mix.wav`);
   const outPath = path.join(cutsDir, `${slug}.mp4`);
 
   // 1. normalize + concat the clips
@@ -329,43 +412,144 @@ export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINA
   const master = await runFfmpeg([...videoInputs, "-filter_complex", videoFilter, "-map", "[vout]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p", "-movflags", "+faststart", masterPath]);
   if (!master.ok) throw new Error(`clip assembly failed: ${master.error}`);
 
-  // 2. server-side stem mix
+  // 2. THE MIX IS GRADED: cues land on KIND BUSES under the gain law,
+  //    the score ducks under the voice (a real sidechain), and the
+  //    master is MEASURED to the loudness target - evidence, not vibes.
   let audioOk = false;
   let audioError: string | undefined;
+  const mix: CutMixInfo = {
+    target: MIX_TARGET_LUFS,
+    buses: {},
+    ducked: false,
+    stems: [],
+    mixFile: null,
+    lufsRaw: null,
+    gainDb: 0,
+    lufsFinal: null,
+    measured: false,
+  };
+  const totalSec = (plan.totalMs / 1000).toFixed(3);
   if (plan.cues.length > 0) {
-    const inputs: string[] = [];
-    const chains: string[] = [];
-    let idx = 0;
     const capped = plan.cues.slice(0, 80);
     if (plan.cues.length > 80) warnings.push(`${plan.cues.length - 80} cues beyond the 80-cue cap were skipped`);
+
+    // per-cue synth chains, grouped onto their kind's bus
+    const inputs: string[] = [];
+    const byKind = new Map<string, string[]>();
+    let idx = 0;
     for (const cue of capped) {
       const built = cueFilterAndInput(cue, idx);
       if (!built) continue;
       inputs.push(...built.input);
-      chains.push(built.chain);
+      const list = byKind.get(cue.kind) ?? [];
+      list.push(built.chain);
+      byKind.set(cue.kind, list);
       idx += 1;
     }
-    if (idx > 0) {
-      const mixIn = Array.from({ length: idx }, (_, i) => `[c${i}]`).join("");
-      // apad to the CUT TIMELINE (not the longest cue): amix stops at the
-      // last cue's end, and the mux's -shortest would then trim real
-      // rendered footage off the tail of every episode
-      const filter = `${chains.join(";")};${mixIn}amix=inputs=${idx}:normalize=0:duration=longest,volume=0.9,alimiter=limit=0.89,aformat=sample_rates=44100:channel_layouts=mono,apad=whole_dur=${(plan.totalMs / 1000).toFixed(3)}[aout]`;
-      const mix = await runFfmpeg([...inputs, "-filter_complex", filter, "-map", "[aout]", "-c:a", "pcm_s16le", "-ar", "44100", "-ac", "1", mixPath]);
-      audioOk = mix.ok;
-      if (!mix.ok) audioError = mix.error;
+
+    const present = MIX_BUS_ORDER.filter((k) => byKind.has(k));
+    const voicePresent = present.includes("VOICE");
+    const bgmPresent = present.includes("BGM");
+    if (idx > 0 && present.length > 0) {
+      // bus stems persist beside the cut; the raw pre-normalization master is an intermediate
+      const stemFile: Record<string, string> = {};
+      for (const k of present) stemFile[k] = path.join(cutsDir, `${slug}.${k.toLowerCase()}.wav`);
+      const rawPath = path.join(cutsDir, `.rawmix-${slug}.wav`);
+
+      // assemble each bus: sum its cues, apply the BUS GAIN LAW, resample,
+      // pad to the cut timeline (the -shortest mux would otherwise trim real
+      // footage off the tail), then split for the stem + master feeds
+      const g: string[] = [];
+      for (const k of present) {
+        const chains = byKind.get(k) as string[];
+        const body = chains.length === 1
+          ? `${chains[0].replace(/\[[^\]]+\]$/, "")},`
+          : `${chains.join(";")};${chains.map((s) => s.match(/\[[^\]]+\]$/)?.[0] ?? "").join("")}amix=inputs=${chains.length}:normalize=0:duration=longest,`;
+        g.push(`${body}volume=${MIX_BUS_GAIN[k]},aresample=44100,aformat=sample_rates=44100:channel_layouts=mono,apad=whole_dur=${totalSec}[bus${k}]`);
+      }
+      if (voicePresent) g.push("[busVOICE]asplit=3[vStem][vMix][vKey]");
+      if (bgmPresent) {
+        if (voicePresent) {
+          // THE DIALOGUE DUCK: the score compresses under the voice sidechain
+          g.push(`[busBGM][vKey]${MIX_DUCK}[bgmD]`);
+          g.push("[bgmD]asplit=2[bStem][bMix]");
+        } else {
+          g.push("[busBGM]asplit=2[bStem][bMix]");
+        }
+      }
+      if (present.includes("SFX")) g.push("[busSFX]asplit=2[sStem][sMix]");
+      if (present.includes("AMBIENCE")) g.push("[busAMBIENCE]asplit=2[aStem][aMix]");
+
+      // the master sums the mix feeds (every bus already padded to the timeline)
+      const feeds = [
+        voicePresent ? "[vMix]" : null,
+        present.includes("SFX") ? "[sMix]" : null,
+        bgmPresent ? "[bMix]" : null,
+        present.includes("AMBIENCE") ? "[aMix]" : null,
+      ].filter(Boolean) as string[];
+      g.push(
+        feeds.length === 1
+          ? `${feeds[0]}anull[rawMaster]`
+          : `${feeds.join("")}amix=inputs=${feeds.length}:normalize=0:duration=longest,apad=whole_dur=${totalSec}[rawMaster]`,
+      );
+
+      const outputs: Array<{ label: string; file: string }> = [];
+      if (voicePresent) outputs.push({ label: "[vStem]", file: stemFile.VOICE });
+      if (present.includes("SFX")) outputs.push({ label: "[sStem]", file: stemFile.SFX });
+      if (bgmPresent) outputs.push({ label: "[bStem]", file: stemFile.BGM });
+      if (present.includes("AMBIENCE")) outputs.push({ label: "[aStem]", file: stemFile.AMBIENCE });
+      outputs.push({ label: "[rawMaster]", file: rawPath });
+      const outArgs = outputs.flatMap((o) => ["-map", o.label, "-c:a", "pcm_s16le", "-ar", "44100", "-ac", "1", o.file]);
+
+      const built = await runFfmpeg([...inputs, "-filter_complex", g.join(";"), ...outArgs]);
+      if (built.ok) {
+        mix.buses = Object.fromEntries(present.map((k) => [k, MIX_BUS_GAIN[k]]));
+        mix.ducked = voicePresent && bgmPresent;
+        // MEASURE the raw master, walk it to the target with a CLAMPED gain,
+        // ceiling it honestly, then MEASURE again - the numbers land in the manifest
+        const lufsRaw = await measureLufs(rawPath);
+        mix.lufsRaw = lufsRaw;
+        mix.gainDb = lufsRaw === null ? 0 : mixGainDb(lufsRaw);
+        const norm = await runFfmpeg([
+          "-i", rawPath,
+          "-af", `volume=${mix.gainDb}dB,alimiter=limit=${MIX_CEILING}:level=disabled,aformat=sample_rates=44100:channel_layouts=mono`,
+          "-c:a", "pcm_s16le", mixPath,
+        ]);
+        if (norm.ok) {
+          mix.mixFile = `/renders/cuts/${slug}.mix.wav`;
+          mix.lufsFinal = await measureLufs(mixPath);
+          mix.measured = lufsRaw !== null && mix.lufsFinal !== null;
+          for (const k of present) mix.stems.push(`/renders/cuts/${slug}.${k.toLowerCase()}.wav`);
+          audioOk = true;
+        } else {
+          audioError = norm.error;
+        }
+      } else {
+        audioError = built.error;
+      }
+      fs.rmSync(rawPath, { force: true });
+      if (!audioOk) {
+        // a mix that did not land leaves no stem lies behind
+        for (const f of Object.values(stemFile)) fs.rmSync(f, { force: true });
+        mix.stems = [];
+        mix.buses = {};
+        mix.ducked = false;
+      }
     }
   }
+  // the silence fallback is an intermediate, never a deliverable - a cut
+  // without a graded mix does not get to wear a graded-mix file name
+  const silencePath = path.join(cutsDir, `.silence-${slug}.wav`);
   if (!audioOk) {
-    if (audioError) warnings.push(`stem mix fell back to silence: ${audioError.slice(0, 160)}`);
-    const silent = await runFfmpeg(["-f", "lavfi", "-i", `anullsrc=r=44100:cl=mono`, "-t", (plan.totalMs / 1000).toFixed(3), "-c:a", "pcm_s16le", mixPath]);
+    if (audioError) warnings.push(`stem mix fell back to silence: ${audioError.slice(-1200)}`);
+    const silent = await runFfmpeg(["-f", "lavfi", "-i", `anullsrc=r=44100:cl=mono`, "-t", (plan.totalMs / 1000).toFixed(3), "-c:a", "pcm_s16le", silencePath]);
     if (!silent.ok) throw new Error(`even the silent track failed: ${silent.error}`);
   }
 
   // 3. mux
   const mux = await runFfmpeg([
     "-i", masterPath,
-    "-i", mixPath,
+    "-i", audioOk ? mixPath : silencePath,
     "-map", "0:v:0", "-map", "1:a:0",
     "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
     "-shortest",
@@ -373,7 +557,7 @@ export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINA
     outPath,
   ]);
   fs.unlinkSync(masterPath);
-  fs.unlinkSync(mixPath);
+  if (!audioOk && fs.existsSync(silencePath)) fs.unlinkSync(silencePath);
   if (!mux.ok) throw new Error(`mux failed: ${mux.error}`);
 
   const probe = await probeMedia(outPath);
@@ -403,6 +587,18 @@ export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINA
       kinds: audioKinds,
       synthesized: plan.cues.filter((c) => !c.voicePath && c.kind === "VOICE").length,
       realTakes: plan.cues.filter((c) => c.voicePath).length,
+      mix: audioOk && plan.cues.length > 0
+        ? {
+            target: mix.target,
+            buses: mix.buses,
+            ducked: mix.ducked,
+            lufsRaw: mix.lufsRaw,
+            gainDb: mix.gainDb,
+            lufsFinal: mix.lufsFinal,
+            measured: mix.measured,
+            stems: mix.stems,
+          }
+        : null,
     },
     warnings,
   };
@@ -413,8 +609,8 @@ export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINA
       projectId: episode.season.project.id,
       actor: "USER",
       type: "RENDER",
-      summary: `Episode cut muxed - EP${String(episode.number).padStart(2, "0")} ${plan.slots.length} shot clip(s), ${plan.cues.length} cue(s), ${(probe?.durationSec ?? 0).toFixed(1)}s${renderedNow ? ` (${renderedNow} rendered inline)` : ""}`,
-      payload: JSON.stringify({ url: `/renders/cuts/${file}`, mode, shots: plan.slots.length, cues: plan.cues.length }),
+      summary: `Episode cut muxed - EP${String(episode.number).padStart(2, "0")} ${plan.slots.length} shot clip(s), ${plan.cues.length} cue(s), ${(probe?.durationSec ?? 0).toFixed(1)}s${mix.measured ? `, mix graded ${mix.lufsFinal?.toFixed(1)} LUFS (target ${MIX_TARGET_LUFS})` : ""}${renderedNow ? ` (${renderedNow} rendered inline)` : ""}`,
+      payload: JSON.stringify({ url: `/renders/cuts/${file}`, mode, shots: plan.slots.length, cues: plan.cues.length, mix: mix.measured ? { lufsFinal: mix.lufsFinal, ducked: mix.ducked, stems: mix.stems.length } : null }),
     },
   });
 
@@ -431,6 +627,7 @@ export async function buildEpisodeCut(episodeId: string, mode: "PREVIEW" | "FINA
     renderedNow,
     warnings,
     audioKinds,
+    mix: audioOk && plan.cues.length > 0 ? mix : null,
   };
 }
 
