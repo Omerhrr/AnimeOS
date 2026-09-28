@@ -31,12 +31,18 @@ async function main() {
 
   // the work order rides the CLI so each member fits the 10-minute
   // foreground cap (background processes die with the launching shell):
-  //   npx tsx scripts/run-repair-immortal.ts [members] [shotsPerMember] [reanchor]
+  //   npx tsx scripts/run-repair-immortal.ts [members] [shotsPerMember] [reanchor] [nameFilter]
   const members = Number(process.argv[2] ?? 2) || 2;
   const shotsPerMember = Number(process.argv[3] ?? 3) || 3;
   const reanchor = process.argv[4] !== "false";
-  console.log(`the loop rides the sculpt: members=${members} shotsPerMember=${shotsPerMember} reanchor=${reanchor}\n`);
-  const res = await executeTool(project.id, "identity_repair_pass", { members, shotsPerMember, reanchor }, { id: owner.id, name: owner.name, role: owner.role });
+  const nameFilter = process.argv[5] ?? "";
+  console.log(`the loop rides the sculpt: members=${members} shotsPerMember=${shotsPerMember} reanchor=${reanchor}${nameFilter ? ` nameFilter=${nameFilter}` : ""}\n`);
+  const res = await executeTool(project.id, "identity_repair_pass", {
+    members,
+    shotsPerMember,
+    reanchor,
+    ...(nameFilter ? { nameFilter } : {}),
+  }, { id: owner.id, name: owner.name, role: owner.role });
   console.log(`TOOL ${res.status}:\n${res.result}\n`);
 
   const after = await castIdentityMeasurement(project.id, "RENDER");

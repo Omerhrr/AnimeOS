@@ -21,6 +21,7 @@ import {
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
 import { adherentDna, sheetDnaFresh } from "@/lib/blender/adherence";
+import { parseExpressionClip } from "@/lib/blender/expressions";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
 import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
@@ -300,6 +301,12 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),
+        // iteration 84 THE FACE PERFORMS THE BEAT: the expression clip
+        // the shot's own drama compiles rides every DESIGNED render -
+        // the worker blends the face rig and drives the head's shape
+        // keys through the attack/hold/release curve (the legacy
+        // stand-in paths never receive one and stay pose-driven)
+        ...(cast.length > 0 ? { expression: parseExpressionClip(shot.description, shot.poseStart, shot.poseEnd) } : {}),
         ...(cast.length > 0 ? { cast } : {}),
       },
       scene: {

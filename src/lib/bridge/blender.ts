@@ -346,6 +346,18 @@ export interface BridgeJobPayload {
       impact?: { at: number; frames: number; punch: number; flash: number } | null;
       smear?: { at: number; frames: number; amount: number } | null;
     } | null;
+    // iteration 84 THE FACE PERFORMS THE BEAT: the expression clip the
+    // shot's own drama compiles (description verbs, pose staging) - the
+    // worker blends the face rig channels with it and drives the four
+    // head-mesh shape keys (browKnit/cheekRaise/mouthCorner/jawOpen)
+    // through the attack/hold/release curve. Absent = the face stays
+    // pose-channel-driven exactly as previous iterations built it.
+    expression?: {
+      emotion: string;
+      intensity: number;
+      attackMs: number;
+      releaseMs: number;
+    } | null;
   };
   scene: { number: number; title: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number; environment?: EnvironmentDesignDnaWire };
   // ASSET LIBRARY (v4.1): paths to accepted .blend assets for this

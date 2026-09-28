@@ -188,14 +188,18 @@ function memberSnapshot(m: CastIdentityMeasurement, characterId: string) {
  */
 export async function runIdentityRepairPass(
   projectId: string,
-  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean },
+  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string },
 ): Promise<RepairPassResult> {
   const memberLimit = Math.max(1, Math.min(REPAIR_MAX_MEMBERS, Math.round(Number(opts?.members ?? 2) || 2)));
   const shotLimit = Math.max(1, Math.min(REPAIR_MAX_SHOTS_PER_MEMBER, Math.round(Number(opts?.shotsPerMember ?? 1) || 1)));
   const reanchor = opts?.reanchor !== false;
+  const nameFilter = (opts?.nameFilter ?? "").trim().toLowerCase();
 
   const before = await castIdentityMeasurement(projectId, "RENDER");
-  const belowMembers = before.members.filter((m) => m.standing === "BELOW").slice(0, memberLimit);
+  const belowMembers = before.members
+    .filter((m) => m.standing === "BELOW")
+    .filter((m) => !nameFilter || m.name.toLowerCase().includes(nameFilter))
+    .slice(0, memberLimit);
 
   const rows: RepairMemberRow[] = [];
   for (const member of belowMembers) {

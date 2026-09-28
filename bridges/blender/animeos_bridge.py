@@ -974,7 +974,7 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
     }
 
 
-def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None):
+def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None, expr=None):
     """Pose the stand-in for this frame: eased interpolation between the
     shot's start/end poses, plus a procedural walk cycle when either
     endpoint is WALK (stride swing on hips/shoulders, counter-swing on
@@ -990,7 +990,14 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None):
     v3.3 LIP-SYNC: on a speaking closeup `speech` carries the sampled
     viseme shape for this frame ({o, w, r}); the mouth then performs
     the line (the pose's mouth channel stays as a floor for shouts)
-    and widens/purses with the vowels."""
+    and widens/purses with the vowels.
+
+    v84 THE FACE PERFORMS THE BEAT: `expr` carries the blended
+    expression weights at this frame ({brow, squint, mouthFloor, knit,
+    cheek, corner, jaw}) - the brow/eye/mouth channels compose with it
+    additively/multiplicatively BEFORE the rig writes them, and the
+    head's four shape keys take the mesh weights. expr=None keeps the
+    face exactly pose-driven (the legacy paths)."""
     (root_x, root_y, spine_a, head_a, r_arm, r_elb, l_arm, l_elb, r_leg, r_knee, l_leg, l_knee) = lerp_pose(pose_start, pose_end, t)
     (brow, eye, mouth, grip_r, grip_l, point_r, point_l) = lerp_face(pose_start, pose_end, t)
     walking = "WALK" in (normalize_pose(pose_start), normalize_pose(pose_end))
@@ -1027,6 +1034,16 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None):
     # slow sinus drift keeps the brows alive on holds
     brow += math.sin(t_sec * math.pi * 2.0 * 0.9) * 1.5
     eye = blink_openness(t_sec, eye)
+    # ── THE FACE PERFORMS THE BEAT (v84): the expression composes
+    # with the pose channels BEFORE the rig writes them - the brow
+    # delta rides additively (14 deg per library unit), the squint
+    # lowers the lids multiplicatively, the mouth floor lifts the
+    # openness (speech still wins the mouth - the line is being
+    # spoken), and the four shape keys take the mesh weights
+    if isinstance(expr, dict):
+        brow = clamp(brow + 14.0 * float(expr.get("brow", 0.0)), -45.0, 45.0)
+        eye = eye * (1.0 - 0.55 * clamp(float(expr.get("squint", 0.0)), 0.0, 1.0))
+        mouth = max(mouth, float(expr.get("mouthFloor", 0.0)))
     figure["browL"].rotation_euler = (0.0, math.radians(brow), 0.0)
     figure["browR"].rotation_euler = (0.0, math.radians(-brow), 0.0)
     es = eye_scale(eye)
@@ -1043,6 +1060,17 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None):
         figure["mouth"].scale = (sx, 1.0, mouth_scale(mouth))
     else:
         figure["mouth"].scale = (1.0, 1.0, mouth_scale(mouth))
+
+    # ── THE FACE PERFORMS THE BEAT (v84): the mesh half - the head's
+    # four shape keys take the blended weights (the corner key is
+    # signed: + lifts the smile, - drops the frown). A rig without
+    # the keys (the stand-in, an asset load) skips honestly.
+    if isinstance(expr, dict):
+        keys = figure.get("exprKeys") or {}
+        for name, weight in (("browKnit", "knit"), ("cheekRaise", "cheek"), ("mouthCorner", "corner"), ("jawOpen", "jaw")):
+            kb = keys.get(name)
+            if kb is not None:
+                kb.value = clamp(float(expr.get(weight, 0.0)), float(kb.slider_min), float(kb.slider_max))
 
     # ── hand rig (v3.2): grip curls the fingers, point straightens the
     # index, the thumb half-curls with the grip
@@ -1556,6 +1584,218 @@ def materials_evidence(mprof):
     }
 
 
+# ── THE FACE PERFORMS THE BEAT (iteration 84, Layer A deeper): the
+#    measured cast gap survived the palette AND the silhouette AND
+#    the sculpt AND the grade because the FACE never performed - one
+#    neutral mask from the first frame to the last, and the vision
+#    model's own notes kept reading the proxy as a mannequin. The
+#    expression library (mirrored from src/lib/blender/expressions.ts
+#    - one law, two runtimes) blends the face rig channels and drives
+#    FOUR head-mesh shape keys through an attack/hold/release curve.
+#    The clip compiles from the SHOT'S OWN DRAMA on the TS side; the
+#    worker validates + clamps it here against the same bounds. ──
+
+EXPRESSION_BOUNDS = {
+    "brow": (-1.0, 1.0), "squint": (0.0, 1.0), "mouthFloor": (0.0, 1.0),
+    "knit": (0.0, 1.0), "cheek": (0.0, 1.0), "corner": (-1.0, 1.0),
+    "jaw": (0.0, 1.0),
+}
+
+EXPRESSION_CALM = {
+    "brow": 0.0, "squint": 0.06, "mouthFloor": 0.0,
+    "knit": 0.0, "cheek": 0.1, "corner": 0.08, "jaw": 0.0,
+}
+
+EXPRESSION_LIBRARY = {
+    "calm":     dict(EXPRESSION_CALM),
+    "alert":    {"brow": 0.35, "squint": 0.0, "mouthFloor": 0.05, "knit": 0.0, "cheek": 0.08, "corner": 0.0, "jaw": 0.05},
+    "resolve":  {"brow": -0.3, "squint": 0.3, "mouthFloor": 0.1, "knit": 0.35, "cheek": 0.05, "corner": -0.12, "jaw": 0.05},
+    "anger":    {"brow": -0.7, "squint": 0.45, "mouthFloor": 0.25, "knit": 0.7, "cheek": 0.0, "corner": -0.5, "jaw": 0.12},
+    "grief":    {"brow": 0.45, "squint": 0.35, "mouthFloor": 0.1, "knit": 0.3, "cheek": 0.0, "corner": -0.55, "jaw": 0.05},
+    "joy":      {"brow": 0.1, "squint": 0.3, "mouthFloor": 0.2, "knit": 0.0, "cheek": 0.6, "corner": 0.7, "jaw": 0.1},
+    "fear":     {"brow": 0.55, "squint": 0.0, "mouthFloor": 0.15, "knit": 0.15, "cheek": 0.0, "corner": -0.3, "jaw": 0.25},
+    "surprise": {"brow": 0.8, "squint": 0.0, "mouthFloor": 0.3, "knit": 0.0, "cheek": 0.1, "corner": 0.05, "jaw": 0.35},
+}
+
+EXPRESSION_TIMING_BOUNDS = {"attackMs": (120, 800), "releaseMs": (200, 1200)}
+EXPRESSION_SHAPES = ("browKnit", "cheekRaise", "mouthCorner", "jawOpen")
+
+
+def expression_clip(shot):
+    """THE FACE PERFORMS THE BEAT (iteration 84): validate + clamp the
+    expression clip the TS drama compiler sent (one law, two runtimes)
+    - pure, bounded, honest. A wild, missing or unknown-emotion clip
+    degrades to None and the face stays pose-channel-driven exactly as
+    previous iterations built it; a valid clip carries every channel
+    clamped against the same bounds the TS side clamps against."""
+    raw = shot.get("expression") if isinstance(shot, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    emotion = raw.get("emotion")
+    if not (isinstance(emotion, str) and emotion.strip().lower() in EXPRESSION_LIBRARY):
+        return None
+    emotion = emotion.strip().lower()
+
+    def num(key, default):
+        v = raw.get(key)
+        return float(v) if isinstance(v, (int, float)) and math.isfinite(float(v)) else float(default)
+
+    intensity = num("intensity", 0.6)
+    if intensity != intensity:  # NaN guard
+        intensity = 0.6
+    intensity = round(max(0.0, min(1.0, intensity)), 3)
+    a_lo, a_hi = EXPRESSION_TIMING_BOUNDS["attackMs"]
+    r_lo, r_hi = EXPRESSION_TIMING_BOUNDS["releaseMs"]
+    attack = int(max(a_lo, min(a_hi, round(num("attackMs", 240)))))
+    release = int(max(r_lo, min(r_hi, round(num("releaseMs", 480)))))
+    return {"emotion": emotion, "intensity": intensity, "attackMs": attack, "releaseMs": release}
+
+
+def _ease_in_out_cubic(t):
+    return 4 * t * t * t if t < 0.5 else 1 - ((-2 * t + 2) ** 3) / 2
+
+
+def expression_envelope(clip, t_sec, duration_sec):
+    """The performance envelope at t: ease into the emotion through
+    the attack, hold, ease back through the release. A clip whose
+    timing does not fit the beat eases over the first/last thirds."""
+    dur = max(0.1, float(duration_sec))
+    t = min(max(0.0, float(t_sec)), dur)
+    attack = clip["attackMs"] / 1000.0
+    release = clip["releaseMs"] / 1000.0
+    if attack + release >= dur:
+        third = dur / 3.0
+        if t < third:
+            return _ease_in_out_cubic(t / third)
+        if t > dur - third:
+            return _ease_in_out_cubic(max(0.0, (dur - t) / third))
+        return 1.0
+    if t < attack:
+        return _ease_in_out_cubic(t / attack)
+    if t > dur - release:
+        return _ease_in_out_cubic(max(0.0, (dur - t) / release))
+    return 1.0
+
+
+def expression_at(clip, t_sec, duration_sec):
+    """The blended weights at t (mirrors expressionAt in expressions.ts):
+    calm at envelope zero, the library pose scaled by intensity at
+    envelope one. Every channel lands inside the bounds."""
+    env = expression_envelope(clip, t_sec, duration_sec)
+    target = EXPRESSION_LIBRARY.get(clip["emotion"], EXPRESSION_CALM)
+    w = {}
+    for key, (lo, hi) in EXPRESSION_BOUNDS.items():
+        v = EXPRESSION_CALM[key] * (1.0 - env) + target[key] * clip["intensity"] * env
+        w[key] = round(max(lo, min(hi, v)), 3)
+    return w
+
+
+def expression_evidence(clip, duration_sec):
+    """The state's expression evidence: the clip, the shape keys it
+    drives, the blended weights at the pose-matched sample fractions
+    (22/40/62% - the same clock the identity re-score judges), and
+    the DETERMINISTIC hash (mirrors expressionHash in expressions.ts)."""
+    spec = f"84|{clip['emotion']}|{clip['intensity']:.3f}|{clip['attackMs']}|{clip['releaseMs']}|v1"
+    samples = []
+    for f in (0.22, 0.4, 0.62):
+        at = round(duration_sec * f, 3)
+        samples.append({"at": at, "weights": expression_at(clip, at, duration_sec)})
+    return {
+        "emotion": clip["emotion"],
+        "intensity": clip["intensity"],
+        "attackMs": clip["attackMs"],
+        "releaseMs": clip["releaseMs"],
+        "shapes": list(EXPRESSION_SHAPES),
+        "samples": samples,
+        "hash": hashlib.sha256(spec.encode("utf-8")).hexdigest()[:16],
+    }
+
+
+def sculpt_expression_keys(mesh):
+    """THE FACE PERFORMS THE BEAT (iteration 84): sculpt the four
+    expression shape keys onto the head mesh (mesh-local space, so
+    the object transform never matters): browKnit (the brow band
+    down + in), cheekRaise (the cheeks up + out), mouthCorner (the
+    corners up - a NEGATIVE value pulls them down), jawOpen (the
+    lower face drops). The basis keeps the sculpt's own positions,
+    so the faceHash and the vertex count stay exactly what iteration
+    82 proved them. Deterministic: the same sculpt always lands the
+    same keys. Returns {name: KeyBlock}."""
+    r = 0.115
+    keys = {}
+    try:
+        mesh.shape_key_add(name="Basis")
+    except Exception:  # noqa: BLE001
+        return keys
+    for name, deltas in (
+        ("browKnit", _expr_key_brow_knit),
+        ("cheekRaise", _expr_key_cheek_raise),
+        ("mouthCorner", _expr_key_mouth_corner),
+        ("jawOpen", _expr_key_jaw_open),
+    ):
+        kb = mesh.shape_key_add(name=name, from_mix=False)
+        base = mesh.data.vertices
+        for i, v in enumerate(base):
+            x, y, z = v.co.x / r, v.co.y / r, v.co.z / r  # unit-sphere space
+            dx, dy, dz = deltas(x, y, z)
+            kb.data[i].co = (v.co.x + dx * r, v.co.y + dy * r, v.co.z + dz * r)
+        kb.value = 0.0
+        if name == "mouthCorner":
+            kb.slider_min = -1.0
+            kb.slider_max = 1.0
+        keys[name] = kb
+    return keys
+
+
+def _expr_key_brow_knit(x, y, z):
+    """The knit: the brow band drops and pulls in (a scowl's bone
+    move - the brow OBJECTS frown too, the mesh follows the skin)."""
+    if not (0.30 < z < 0.62) or y >= -0.40:
+        return 0.0, 0.0, 0.0
+    band = 1.0 - abs((z - 0.47) / 0.16)
+    depth = max(0.0, min(1.0, (-y - 0.40) / 0.60))
+    fall = max(0.0, band) * depth
+    return 0.0, 0.020 * fall, -0.030 * fall
+
+
+def _expr_key_cheek_raise(x, y, z):
+    """The cheek raise: the mid-face sides lift and widen (the smile
+    and the squint both live here)."""
+    if not (-0.15 < z < 0.32) or y >= 0.05:
+        return 0.0, 0.0, 0.0
+    ax = abs(x)
+    if not (0.30 < ax < 0.90):
+        return 0.0, 0.0, 0.0
+    radial = max(0.0, 1.0 - abs((z - 0.06) / 0.24))
+    side = max(0.0, 1.0 - abs((ax - 0.60) / 0.30))
+    fall = radial * side
+    return (1.0 if x > 0 else -1.0) * 0.010 * fall, 0.0, 0.032 * fall
+
+
+def _expr_key_mouth_corner(x, y, z):
+    """The mouth corner pull (signed key): the corners lift for a
+    positive value and drop for a negative one - one shape carries
+    both the smile and the frown."""
+    if not (-0.78 < z < -0.42) or y >= -0.72:
+        return 0.0, 0.0, 0.0
+    ax = abs(x)
+    if ax >= 0.55:
+        return 0.0, 0.0, 0.0
+    corner = max(0.0, min(1.0, (ax - 0.10) / 0.35))
+    height = max(0.0, 1.0 - abs((z + 0.60) / 0.18))
+    fall = corner * height
+    return (1.0 if x > 0 else -1.0) * 0.007 * fall, 0.0, 0.045 * fall
+
+
+def _expr_key_jaw_open(x, y, z):
+    """The jaw drop: the whole lower face sinks (surprise, effort
+    shouts - the mouth OBJECT opens wider above it)."""
+    if z >= -0.45 or y >= -0.20:
+        return 0.0, 0.0, 0.0
+    fall = max(0.0, min(1.0, (-z - 0.45) / 0.50))
+    return 0.0, 0.0, -0.055 * fall
+
+
 def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f):
     """THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head is
     a real sculpted mesh - an icosphere whose vertices are displaced
@@ -1924,6 +2164,11 @@ def build_designed_figure(bpy, scn, dna, mats):
     #    is a sculpted mesh (jaw, chin, brow, cheeks, nose, dome,
     #    ears), never an assembled sphere ──
     hm = sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f)
+    # ── THE FACE PERFORMS THE BEAT (iteration 84): the four
+    #    expression shape keys ride the sculpted head (mesh-local;
+    #    the faceHash and the vertex count stay exactly what
+    #    iteration 82 proved) ──
+    expr_keys = sculpt_expression_keys(hm)
 
     # ── face (v3.2 rig, restyled): stylized eyes with readable irises;
     #    the eye SIZE rides the face profile's eyeScale ──
@@ -2115,6 +2360,11 @@ def build_designed_figure(bpy, scn, dna, mats):
         "rThumb": r_thumb, "lThumb": l_thumb,
         "blade": blade,
         "headMesh": hm,
+        # THE FACE PERFORMS THE BEAT (iteration 84): the head's four
+        # expression shape keys ({name: KeyBlock}) - apply_pose blends
+        # their values with the clip every frame; a rig without them
+        # (the stand-in, an asset load) simply skips the mesh half
+        "exprKeys": expr_keys,
         # THE SILHOUETTE SHAPES THE MESH: the applied shaping evidence -
         # the clamped factors, the traits that actually moved, and the
         # trait names the sheet's own silhouette sentence described
@@ -2949,6 +3199,7 @@ def worker_run(job_file):
                 "windBeats": sum(1 for b in grammar if b.get("wind")),
             }
         figure = None
+        eclip = None  # THE FACE PERFORMS THE BEAT: the hero's clip (None = pose-driven)
         speech_visemes = parse_speech(shot)
         state["posesRequested"] = [str(shot.get("poseStart")), str(shot.get("poseEnd"))]
         state["posesResolved"] = [pose_start, pose_end]
@@ -3000,6 +3251,15 @@ def worker_run(job_file):
             # evidence rides the state too (the clamped profile, the
             # fields the sheet read owns, the deterministic hash)
             state["rig"]["materials"] = materials_evidence(mprof)
+            # THE FACE PERFORMS THE BEAT (iteration 84): the shot's own
+            # expression clip rides the state too - the emotion, the
+            # timing, the shape keys it drives, the blended weights at
+            # the pose-matched sample fractions and the deterministic
+            # hash (a payload without a clip leaves it honestly None:
+            # the face stays pose-driven exactly as previous iterations
+            # built it)
+            eclip = expression_clip(shot)
+            state["rig"]["expression"] = expression_evidence(eclip, duration_sec) if eclip else None
 
             # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
             #    canonical model sheet is COLOR LAW over the DNA defaults
@@ -3491,7 +3751,8 @@ def worker_run(job_file):
             t_sec = (f - 1) / fps
             if figure:
                 apply_pose(figure, pose_s, pose_e, pose_t, t_sec,
-                           speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None)
+                           speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None,
+                           expr=expression_at(eclip, t_sec, duration_sec) if eclip else None)
                 if choreo_prog:
                     # the smear rides AFTER the pose call (the pose sets
                     # rotations; the smear stretches the limb on top)
