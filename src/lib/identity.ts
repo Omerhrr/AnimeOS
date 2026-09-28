@@ -984,3 +984,175 @@ export async function scoreProjectEmbeddings(projectId: string, limit = 8): Prom
   }
   return { scored, errors };
 }
+
+// ─────────────────────────────────────────────────────────────
+// THE CAST ANSWERS THE BAR (iteration 79)
+//
+// measure_identity_bar answers the PRODUCTION question ("how do the
+// shipping pixels measure against the 70% bar?"); the casting
+// director's question is per NAME: how does LIN YUE measure against
+// HER sheet? Every IdentityScore row already carries per-character
+// entries (each scored member's own similarity on that shot), so the
+// cast standing is a rollup over the same real vision readings: one
+// standing per member - CLEARING (every reading at/above the bar),
+// BELOW (any reading under it - named with its worst shot ref, the
+// re-render queue by name), UNTESTED (anchored, never measured), and
+// UNANCHORED (no model sheet - nothing to answer to yet). Pure
+// standing law + a loader, both exported for the E2E.
+// ─────────────────────────────────────────────────────────────
+
+export type CastStanding = "CLEARING" | "BELOW" | "UNTESTED" | "UNANCHORED";
+
+/** One member's measured reading on one shot: their own entry
+ * similarity plus the shot ref (the re-render target when low). */
+export interface CastReading {
+  worst: number; // the member's similarity on that shot
+  ref: string; // e.g. "E7 Sc12 S002"
+}
+
+export interface CastMemberStanding {
+  characterId: string;
+  name: string;
+  role: string | null;
+  anchored: boolean; // has a model sheet to answer to
+  readings: number;
+  average: number | null;
+  worst: number | null;
+  best: number | null;
+  clearing: number; // readings at/above the bar
+  below: number; // readings under the bar
+  worstRef: string | null; // the weakest reading's shot ref
+  standing: CastStanding;
+}
+
+export interface CastIdentityMeasurement {
+  source: IdentitySource;
+  bar: number;
+  members: CastMemberStanding[]; // work-ordered: BELOW first, then UNTESTED, UNANCHORED, CLEARING
+  cast: number;
+  anchored: number;
+  measured: number; // anchored members with >= 1 reading
+  clearing: number;
+  below: number;
+  untested: number;
+  unanchored: number;
+}
+
+/**
+ * The per-member standing law, pure: unanchored members cannot
+ * answer; anchored members with no readings are untested; any
+ * reading under the bar puts the member BELOW (the worst drives the
+ * standing - one drifted shipping frame is a work order); otherwise
+ * the member CLEARING. Pure - the E2E asserts it.
+ */
+export function castMemberStanding(input: {
+  characterId: string;
+  name: string;
+  role: string | null;
+  anchored: boolean;
+  readings: CastReading[];
+  bar: number;
+}): CastMemberStanding {
+  const { characterId, name, role, anchored, readings, bar } = input;
+  const values = readings.map((r) => r.worst);
+  const clearing = values.filter((v) => v >= bar).length;
+  const below = values.length - clearing;
+  let weakest: { worst: number; ref: string } | null = null;
+  for (const r of readings) {
+    if (!weakest || r.worst < weakest.worst) weakest = r;
+  }
+  const standing: CastStanding = !anchored
+    ? "UNANCHORED"
+    : readings.length === 0
+      ? "UNTESTED"
+      : below > 0
+        ? "BELOW"
+        : "CLEARING";
+  return {
+    characterId,
+    name,
+    role,
+    anchored,
+    readings: readings.length,
+    average: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
+    worst: values.length ? Math.min(...values) : null,
+    best: values.length ? Math.max(...values) : null,
+    clearing,
+    below,
+    worstRef: standing === "BELOW" && weakest ? weakest.ref : null,
+    standing,
+  };
+}
+
+function castStandingOrder(s: CastMemberStanding): number {
+  return s.standing === "BELOW" ? 0 : s.standing === "UNTESTED" ? 1 : s.standing === "UNANCHORED" ? 2 : 3;
+}
+
+/**
+ * Roll the production's REAL identity scores into per-member
+ * standings against the source's bar (RENDER 0.7 by default - the
+ * shipping bar the cast's renders answer to). The readings come from
+ * the persisted per-character entries, so the cast standing measures
+ * exactly what the vision model judged - no new calls here; run
+ * scoreProjectIdentity / measure_identity_bar / cast_identity_pass
+ * to earn readings first.
+ */
+export async function castIdentityMeasurement(projectId: string, source: IdentitySource = "RENDER"): Promise<CastIdentityMeasurement> {
+  const [project, scoreRows] = await Promise.all([
+    db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true, role: true, modelSheetUrl: true } } } }),
+    db.identityScore.findMany({
+      where: { projectId, source },
+      include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
+    }),
+  ]);
+  const bar = identityThresholdFor(source);
+  const members = (project?.characters ?? []).map((c) => {
+    const readings: CastReading[] = [];
+    for (const row of scoreRows) {
+      let entries: IdentityScoreEntry[] = [];
+      try {
+        const parsed = JSON.parse(row.scores);
+        if (Array.isArray(parsed)) entries = parsed as IdentityScoreEntry[];
+      } catch {
+        entries = [];
+      }
+      const mine = entries.find((e) => e.characterName === c.name);
+      if (mine) {
+        readings.push({
+          worst: mine.similarity,
+          ref: `E${row.shot.scene.episode.number} Sc${row.shot.scene.number} S${String(row.shot.number).padStart(3, "0")}`,
+        });
+      }
+    }
+    return castMemberStanding({ characterId: c.id, name: c.name, role: c.role, anchored: Boolean(c.modelSheetUrl), readings, bar });
+  }).sort((a, b) => castStandingOrder(a) - castStandingOrder(b) || (a.standing === "BELOW" ? (a.worst ?? 1) - (b.worst ?? 1) : a.name.localeCompare(b.name)));
+  const anchored = members.filter((m) => m.anchored).length;
+  const measured = members.filter((m) => m.readings > 0).length;
+  return {
+    source,
+    bar,
+    members,
+    cast: members.length,
+    anchored,
+    measured,
+    clearing: members.filter((m) => m.standing === "CLEARING").length,
+    below: members.filter((m) => m.standing === "BELOW").length,
+    untested: members.filter((m) => m.standing === "UNTESTED").length,
+    unanchored: members.filter((m) => m.standing === "UNANCHORED").length,
+  };
+}
+
+/** The cast standing as one honest line (the DSH/pulse read). */
+export function castIdentityLine(m: CastIdentityMeasurement): string {
+  const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+  if (m.cast === 0) return `cast identity (${m.source.toLowerCase()} source, bar ${pct(m.bar)}): no cast to answer - create the characters first`;
+  const parts = m.members.map((mem) => {
+    if (mem.standing === "UNANCHORED") return `${mem.name} - unanchored (no sheet to answer to - paint one with generate_model_sheet)`;
+    if (mem.standing === "UNTESTED") return `${mem.name} - anchored, untested (score their renders first)`;
+    const head = `${mem.name} - ${mem.readings} reading(s), avg ${pct(mem.average!)}, worst ${pct(mem.worst!)}`;
+    if (mem.standing === "BELOW") return `${head} at ${mem.worstRef} - BELOW the bar, the re-render loop owns it`;
+    return `${head} - CLEARS the ${pct(m.bar)} bar`;
+  });
+  const standing = `standing: ${m.anchored} anchored of ${m.cast}, ${m.measured} measured, ${m.clearing} clearing, ${m.below} below, ${m.untested} untested, ${m.unanchored} unanchored`;
+  return `cast identity (${m.source.toLowerCase()} source, bar ${pct(m.bar)}): ${parts.join(" | ")}. ${standing}`;
+}

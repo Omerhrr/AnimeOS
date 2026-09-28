@@ -119,7 +119,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry stands at 84 tools (the air call extends, it does not add)", toolCount === 85, `count=${toolCount}`);
+  check("A5 the registry stands at 84 tools (the air call extends, it does not add)", toolCount === 87, `count=${toolCount}`);
   check("A6 the direction patches the compiled beats BEFORE serializing", tools.includes("applySlotWind(compiled.spec.beats, windParsed.wind)") && tools.includes("const airShape = windTouched > 0"));
   check("A7 the design validates the air call at design time", tools.includes("compileSlotWind(s?.wind") && tools.includes("windFitsGrammar(windParsed.wind, compiled.spec.beats.length"));
 

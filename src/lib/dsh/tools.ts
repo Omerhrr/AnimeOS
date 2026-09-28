@@ -9,7 +9,8 @@ import { startRepaintRun } from "@/lib/universe-repaint";
 import { isSpeakingCloseup } from "@/lib/animation/lipsync";
 import { createPlan, runPlanSteps, latestPlan, getPlan, setPlanStatus, parsePlanSteps } from "@/lib/dsh/plans";
 import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan, listPlanTemplates } from "@/lib/dsh/plan-templates";
-import { IDENTITY_REPAINT_THRESHOLD, IDENTITY_RENDER_THRESHOLD, identityThresholdFor, scoreProjectIdentity, scoreShotIdentity, scoreRenderIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD, identityDriftData, identityBarMeasurement, identityBarMeasurementLine } from "@/lib/identity";
+import { IDENTITY_REPAINT_THRESHOLD, IDENTITY_RENDER_THRESHOLD, identityThresholdFor, scoreProjectIdentity, scoreShotIdentity, scoreRenderIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD, identityDriftData, identityBarMeasurement, identityBarMeasurementLine, castIdentityMeasurement, castIdentityLine } from "@/lib/identity";
+import { parseBattleArc, allocateBattleShots, battleLegLabel } from "@/lib/dsh/battles";
 import { reanchorByName, REANCHOR_DEFAULT_RESCORE, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
@@ -851,6 +852,24 @@ export const TOOL_DEFS: ToolDef[] = [
     description: "THE BAR IS MEASURED: score the production's SHIPPING PIXELS against the 70% identity bar and read the measurement honestly. Renders - the frames the cut actually plays - answer to a HIGHER bar (70%) than the storyboard panels they came from (60%), and the bar is not a guess: this tool walks the production's finished renders, runs the REAL vision identity score on each (a frame from the clip judged against the featured cast's model sheets, source RENDER), then aggregates the measured readings against the bar - how many renders cleared 70%, where the average and the worst sit, which shots earned a repaint slot. Without limit it only reads back the existing measurement; pass limit N to first score up to N unmeasured/known-bad renders (each a real vision call). A reading below the bar lands an IDENTITY_DRIFT event on the shipping pixels - the re-render loop (render_fix or a re-render) clears it, then measure again to confirm.",
     args: {
       limit: "number (optional - first score up to N finished renders with real vision calls; default 0 = read the existing measurement only)",
+    },
+  },
+  {
+    name: "cast_identity_pass",
+    description: "THE CAST ANSWERS THE BAR: read every cast member's REAL identity standing against the shipping bar, BY NAME. measure_identity_bar answers the production question; the casting director's question is per member - how does Lin Yue measure against HER sheet? This pass rolls the production's real per-character vision readings (each IdentityScore row carries every scored member's own similarity) into one standing per member: CLEARING (every reading at/above the bar), BELOW (any reading under it, named with its worst shot ref - the re-render queue by name), UNTESTED (anchored but never measured), UNANCHORED (no model sheet - nothing to answer to yet). Pass scoreFirst N to first score up to N unmeasured/known-bad renders with real vision calls (same law as measure_identity_bar). The below members are a work order: re-render (render_fix / render_shot) or re-anchor their drifting sheets, then pass again; the unanchored members cannot answer at all until generate_model_sheet paints their sheet.",
+    args: {
+      scoreFirst: "number (optional - first score up to N finished renders with real vision calls; default 0 = read the standing only)",
+      source: "render | panel (optional - default render: the shipping pixels answer the 70% bar; panel reads the 60% storyboard line)",
+    },
+  },
+  {
+    name: "stage_battle",
+    description: "THE BATTLE IS STAGED: point the learned chain at an EPISODE-SCALE battle. One sentence (direct_sequence) directs a scene; a battle spans the episode - clash, pursuit, aftermath. Pass an arc of registers (arc:'BATTLE > PURSUIT > RESOLVE', 2-5 legs, no consecutive repeats); every leg consults the register's best-proven learned SEQUENCE flow (the consult law - a battle staged from guesses is not the chain), the episode's shots are allocated across the legs by each sentence's own weight (a leg with more slots carries more of the fight), and EVERY leg pre-flights before a single shot is stamped (a battle that fails at leg 3 must not leave legs 1-2 half-staged). Each stamped shot receives its slot's grammar, air, solver calls, fx, physics and CHAINED PERFORMANCE exactly as direct_sequence obeys - a slot's motion call still re-performs a learned motion flow's verified timing, and the whole battle reads back leg by leg. The legs land their measured outcomes on the flows' ledgers (a leg that could not perform its whole sentence does not verify). render:true queues a render per directed shot.",
+    args: {
+      arc: "string - the battle arc, e.g. 'BATTLE > PURSUIT > RESOLVE' (2-5 register legs)",
+      episodeNumber: "number (optional - defaults to the latest episode with shots)",
+      render: "boolean (optional - queue a render per directed shot)",
+      mode: "PREVIEW | FINAL (optional - default PREVIEW)",
     },
   },
   {
@@ -3306,6 +3325,268 @@ async function executeToolInner(
         return { status: "OK", result: `SEQUENCE FLOW '${flow.name}' remembered for ${register.toLowerCase()} direction: ${slots.length} slot(s) - ${slots.map((s) => s.grammar).join(" -> ")} (learned from program '${programName}'). Consult it with direct_sequence register:'${register}' (no program, no slots - the register's best-proven flow starts the sentence); every direction the flow drives grows its measured record, a run that lands whole with a clean read earns the clear, and the context's learned sequence flows line carries the standing.` };
       }
 
+      case "stage_battle": {
+        // THE BATTLE IS STAGED (iteration 79): the chain at episode
+        // scale. An arc of registers; every leg consults the
+        // register's best-proven learned flow; the episode's shots
+        // allocated by sentence weight; EVERY leg pre-flights before
+        // a single shot is stamped.
+        const arcParsed = parseBattleArc(args.arc);
+        if (!arcParsed.ok) return { status: "ERROR", result: arcParsed.error };
+        const arc = arcParsed.registers;
+        const eps = await db.episode.findMany({
+          where: { season: { projectId } },
+          orderBy: [{ season: { number: "asc" } }, { number: "desc" }],
+          include: {
+            scenes: {
+              where: { shots: { some: {} } },
+              orderBy: { number: "asc" },
+              include: { shots: { orderBy: { number: "asc" } } },
+            },
+          },
+        });
+        let ep: (typeof eps)[number] | null = null;
+        if (args.episodeNumber !== undefined && args.episodeNumber !== null) {
+          const want = Number(args.episodeNumber);
+          ep = eps.find((e) => e.number === want && e.scenes.length > 0) ?? null;
+          if (!ep) {
+            const withShots = eps.filter((e) => e.scenes.length > 0).map((e) => `Ep${e.number}`);
+            return { status: "ERROR", result: withShots.length
+              ? `No episode ${want} with shots. Episodes with shots: ${withShots.join(", ")}.`
+              : "No episode with shots exists yet - break down a scene first (create_episode / create_scene / create_shot)." };
+          }
+        } else {
+          ep = eps.find((e) => e.scenes.length > 0) ?? null;
+          if (!ep) return { status: "ERROR", result: "No episode with shots exists yet - break down a scene first (create_episode / create_scene / create_shot)." };
+        }
+        const flat: Array<{ id: string; number: number; sceneNumber: number; label: string }> = [];
+        for (const s of ep.scenes) {
+          for (const sh of s.shots) {
+            flat.push({ id: sh.id, number: sh.number, sceneNumber: s.number, label: `Sc${s.number} S${String(sh.number).padStart(3, "0")}` });
+          }
+        }
+        if (flat.length < arc.length) {
+          return { status: "ERROR", result: `Episode ${ep.number} stages ${flat.length} shot(s) but the arc has ${arc.length} legs - every leg needs at least one shot; break the scenes down further (create_shot) or shorten the arc.` };
+        }
+        // THE CONSULT LAW: every leg starts from the register's
+        // best-proven learned flow - the battle stages only what
+        // verified
+        interface BattleLeg { register: string; flow: NonNullable<Awaited<ReturnType<typeof bestSequenceFlow>>>; }
+        const legs: BattleLeg[] = [];
+        const legReads: string[] = [];
+        let missingLeg: { index: number; register: string } | null = null;
+        for (let i = 0; i < arc.length; i++) {
+          const flow = await bestSequenceFlow(projectId, arc[i]);
+          if (!flow) {
+            if (!missingLeg) missingLeg = { index: i + 1, register: arc[i] };
+            legReads.push(`${i + 1}. ${arc[i]} - no proven flow`);
+          } else {
+            legs.push({ register: arc[i], flow });
+            legReads.push(`${i + 1}. ${battleLegLabel(arc[i], flow.name, 0, flow.runs, flow.clears)}`);
+          }
+        }
+        if (missingLeg) {
+          const known = (await db.sequenceFlow.findMany({ where: { projectId }, select: { register: true, name: true } }))
+            .map((r) => `${r.register}:'${r.name}'`);
+          return { status: "ERROR", result: `THE CHAIN STAGES ONLY WHAT VERIFIED - no proven learned sequence flow for leg ${missingLeg.index} (${missingLeg.register}). The arc: ${legReads.join(" | ")}. Learned flows: ${known.join(", ") || "(none)"}. learn_sequence_flow register:'${missingLeg.register}' program:'<a verified SEQUENCE program>' name:'<name>' grows the memory, then stage the battle again.` };
+        }
+        // THE ALLOCATION: the legs' sentence weights split the
+        // episode's shots (a leg with more slots carries more of the
+        // fight); leg L stamps flat[offset..offset+alloc)
+        const alloc = allocateBattleShots(flat.length, legs.map((l) => Math.max(1, l.flow.spec.slots.length)));
+        // THE PRE-FLIGHT: compile EVERY leg's slots (cycling across
+        // its allocated shots) before a single shot is stamped - a
+        // battle that fails at leg 3 must not leave legs 1-2
+        // half-staged
+        type StampedData = { grammar: string; poseStart?: string; poseEnd?: string; fx?: string; physics?: string; cloth?: number | null; flesh?: number | null; choreo?: string };
+        interface CompiledSlot { data: StampedData; airShape: string; clothShape: string; fleshShape: string; motionShape: string; beatMoves: string[]; poseStart: string | null; poseEnd: string | null; firstMove: string; lastMove: string; windTouched: number; clothCalled: boolean; fleshCalled: boolean; fxBound: boolean; physBound: boolean; motionChained: boolean; motionFlowName: string | null; }
+        const compiled: Array<Array<CompiledSlot>> = [];
+        for (let leg = 0; leg < legs.length; leg++) {
+          const legSlots = legs[leg].flow.spec.slots;
+          const need = Math.min(alloc[leg], legSlots.length); // a cycled stamp reuses its slot's compile
+          const legCompiled: Array<CompiledSlot> = [];
+          for (let j = 0; j < need; j++) {
+            const slot = legSlots[j];
+            const label = `leg ${leg + 1} (${legs[leg].register}) slot ${j + 1}`;
+            const grammarName = String(slot?.grammar ?? "").trim();
+            if (!grammarName) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: grammar is required - every slot directs with a named grammar. Fix the sentence (design_sequence) and stage again.` };
+            const resolved = await resolveGrammarSource(projectId, grammarName);
+            if (!resolved) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: no grammar named '${grammarName}'. Fix the sentence (design_sequence) and stage again.` };
+            const compiledGrammar = compileGrammarSpec({ name: `battle-${ep.number}-leg${leg + 1}-slot${j + 1}`, beats: resolved.beatsRaw });
+            if (!compiledGrammar.ok) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label} (${grammarName}): ${compiledGrammar.error}. Fix the sentence (design_sequence) and stage again.` };
+            const windParsed = compileSlotWind(slot?.wind, label);
+            if (!windParsed.ok) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: ${windParsed.error}. Fix the sentence (design_sequence) and stage again.` };
+            const windFit = windFitsGrammar(windParsed.wind, compiledGrammar.spec.beats.length, label);
+            if (windFit) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: ${windFit}. Fix the sentence (design_sequence) and stage again.` };
+            const windTouched = applySlotWind(compiledGrammar.spec.beats, windParsed.wind);
+            const clothParsed = compileSlotCloth(slot?.cloth, label);
+            if (!clothParsed.ok) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: ${clothParsed.error}. Fix the sentence (design_sequence) and stage again.` };
+            const fleshParsed = compileSlotFlesh(slot?.flesh, label);
+            if (!fleshParsed.ok) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: ${fleshParsed.error}. Fix the sentence (design_sequence) and stage again.` };
+            const data: StampedData = { grammar: serializeGrammar(compiledGrammar.spec) };
+            if (slot?.poseStart) data.poseStart = String(slot.poseStart);
+            if (slot?.poseEnd) data.poseEnd = String(slot.poseEnd);
+            data.cloth = clothParsed.cloth;
+            data.flesh = fleshParsed.flesh;
+            const fxName = slot?.fx ? String(slot.fx).trim() : "";
+            if (fxName) {
+              const fxResolved = await resolveFxSource(projectId, fxName);
+              if (!fxResolved) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: no fx program named '${fxName}'. Fix the sentence (design_sequence) and stage again.` };
+              const fxCompiled = compileFxSpec({ name: `battle-${ep.number}-leg${leg + 1}-slot${j + 1}-fx`, programs: fxResolved.programsRaw });
+              if (!fxCompiled.ok) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label} fx (${fxName}): ${fxCompiled.error}. Fix the sentence (design_sequence) and stage again.` };
+              data.fx = serializeFx(fxCompiled.spec);
+            }
+            const physName = slot?.physics ? String(slot.physics).trim() : "";
+            if (physName) {
+              const physResolved = await resolvePhysicsSource(projectId, physName);
+              if (!physResolved) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: no physics program named '${physName}'. Fix the sentence (design_sequence) and stage again.` };
+              const physCompiled = compilePhysicsSpec({ name: `battle-${ep.number}-leg${leg + 1}-slot${j + 1}-physics`, programs: physResolved.programsRaw });
+              if (!physCompiled.ok) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label} physics (${physName}): ${physCompiled.error}. Fix the sentence (design_sequence) and stage again.` };
+              data.physics = serializePhysics(physCompiled.spec);
+            }
+            const motionName = slot?.motion ? String(slot.motion).trim() : "";
+            let motionShape = "";
+            let motionFlowName: string | null = null;
+            if (motionName) {
+              const motionResolved = await resolveChoreoSource(projectId, motionName);
+              if (!motionResolved) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label}: no choreography named '${motionName}' to chain - it validated when the flow was learned and is gone now; re-learn or redesign the sentence (design_sequence).` };
+              const motionCompiled = compileChoreo(motionResolved.specRaw, `${label} motion (${motionResolved.sourceName})`);
+              if (!motionCompiled.ok) return { status: "ERROR", result: `THE BATTLE PRE-FLIGHT FAILED - nothing was staged: ${label} motion (${motionName}): ${motionCompiled.error}. Fix the sentence (design_sequence) and stage again.` };
+              const chainedPerf = { ...motionCompiled.spec, name: motionResolved.perfName, ...(motionResolved.flowName ? { flow: motionResolved.flowName } : {}) };
+              data.choreo = JSON.stringify(chainedPerf);
+              motionShape = motionCompiled.spec.keys.map((k) => `${k.pose.toLowerCase()}@${k.at}:${k.kind}`).join(">");
+              motionFlowName = motionResolved.flowName ?? null;
+            }
+            legCompiled.push({
+              data,
+              airShape: windTouched > 0 && windParsed.wind !== null ? formatSlotWind(windParsed.wind) : "",
+              clothShape: formatSlotCloth(clothParsed.cloth),
+              fleshShape: formatSlotFlesh(fleshParsed.flesh),
+              motionShape,
+              beatMoves: compiledGrammar.spec.beats.map((b) => b.move),
+              poseStart: slot?.poseStart ? String(slot.poseStart) : null,
+              poseEnd: slot?.poseEnd ? String(slot.poseEnd) : null,
+              firstMove: compiledGrammar.spec.beats[0].move,
+              lastMove: compiledGrammar.spec.beats[compiledGrammar.spec.beats.length - 1].move,
+              windTouched,
+              clothCalled: clothParsed.cloth !== null,
+              fleshCalled: fleshParsed.flesh !== null,
+              fxBound: Boolean(fxName),
+              physBound: Boolean(physName),
+              motionChained: Boolean(motionName),
+              motionFlowName,
+            });
+          }
+          compiled.push(legCompiled);
+        }
+        // THE STAMP: walk the arc, each leg stamps its allocated shots
+        // in story order, slots cycling when the leg is longer than its
+        // sentence - one continuous performance, the chain state
+        // carried across the legs
+        let windBeats = 0;
+        let clothCalls = 0;
+        let fleshCalls = 0;
+        let poseCuts = 0;
+        let moveClashes = 0;
+        let fxBound = 0;
+        let physBound = 0;
+        let motionChained = 0;
+        const chainedFlows = new Set<string>();
+        let lastEndPose: string | null = null;
+        let lastLastMove: string | null = null;
+        let cursor = 0;
+        const legLines: string[] = [];
+        const legOutcomes: Array<{ leg: BattleLeg; directed: number; unused: number; windBeats: number; clothCalls: number; fleshCalls: number; poseCuts: number; moveClashes: number; fxBound: number; physBound: number; motionChained: number }> = [];
+        for (let leg = 0; leg < legs.length; leg++) {
+          const legSlots = legs[leg].flow.spec.slots.length;
+          const take = alloc[leg];
+          const legFlow: string[] = [];
+          const per = { windBeats: 0, clothCalls: 0, fleshCalls: 0, poseCuts: 0, moveClashes: 0, fxBound: 0, physBound: 0, motionChained: 0 };
+          const poseCutsBefore = poseCuts;
+          const moveClashesBefore = moveClashes;
+          for (let j = 0; j < take; j++) {
+            const shot = flat[cursor + j];
+            const c = compiled[leg][j % compiled[leg].length];
+            await db.shot.update({ where: { id: shot.id }, data: c.data });
+            windBeats += c.windTouched > 0 ? 1 : 0;
+            clothCalls += c.clothCalled ? 1 : 0;
+            fleshCalls += c.fleshCalled ? 1 : 0;
+            fxBound += c.fxBound ? 1 : 0;
+            physBound += c.physBound ? 1 : 0;
+            motionChained += c.motionChained ? 1 : 0;
+            if (c.motionChained && c.motionFlowName) {
+              chainedFlows.add(c.motionFlowName);
+              await db.motionFlow.update({ where: { projectId_name: { projectId, name: c.motionFlowName } }, data: { applied: { increment: 1 } } });
+            }
+            const startPose = normalizePose(c.poseStart ?? "");
+            if (lastEndPose && startPose && startPose !== lastEndPose) poseCuts += 1;
+            if (lastLastMove && lastLastMove === c.firstMove) moveClashes += 1;
+            lastEndPose = normalizePose(c.poseEnd ?? "") || lastEndPose;
+            lastLastMove = c.lastMove;
+            const world = c.airShape || c.clothShape || c.fleshShape || c.motionShape || c.fxBound || c.physBound ? ` [${[c.airShape, c.clothShape, c.fleshShape, c.motionShape ? `performing ${c.motionShape}` : "", c.data.fx ? "fx bound" : "", c.data.physics ? "physics bound" : ""].filter(Boolean).join(" | ")}]` : "";
+            legFlow.push(`${shot.label} <- ${String(legs[leg].flow.spec.slots[j % legSlots]?.grammar ?? "")} (${c.beatMoves.join(">")})${world}`);
+            per.windBeats += c.windTouched > 0 ? 1 : 0;
+            per.clothCalls += c.clothCalled ? 1 : 0;
+            per.fleshCalls += c.fleshCalled ? 1 : 0;
+            per.fxBound += c.fxBound ? 1 : 0;
+            per.physBound += c.physBound ? 1 : 0;
+            per.motionChained += c.motionChained ? 1 : 0;
+          }
+          cursor += take;
+          const unused = Math.max(0, legSlots - take);
+          legOutcomes.push({ leg: legs[leg], directed: take, unused, windBeats: per.windBeats, clothCalls: per.clothCalls, fleshCalls: per.fleshCalls, poseCuts: poseCuts - poseCutsBefore, moveClashes: moveClashes - moveClashesBefore, fxBound: per.fxBound, physBound: per.physBound, motionChained: per.motionChained });
+          legLines.push(`leg ${leg + 1} ${battleLegLabel(legs[leg].register, legs[leg].flow.name, take, legs[leg].flow.runs, legs[leg].flow.clears)}:\n${legFlow.map((l) => `  ${l}`).join("\n")}${unused > 0 ? `\n  (${unused} slot(s) of the sentence had no shot to perform - the leg did not land whole)` : ""}`);
+        }
+        // renders (optional): one per directed shot, same path render_shot queues
+        const jobIds: string[] = [];
+        let mode: "PREVIEW" | "FINAL" = "PREVIEW";
+        if (args.render) {
+          mode = String(args.mode ?? "PREVIEW") === "FINAL" ? "FINAL" : "PREVIEW";
+          for (const sh of flat.slice(0, cursor)) {
+            const job = await createRenderJob(projectId, sh.id, mode);
+            jobIds.push(job.id.slice(-6));
+          }
+        }
+        // THE MEMORY: every leg's measured outcome lands on the flow
+        // that drove it - a leg that could not perform its whole
+        // sentence (shots < slots) does not verify
+        const memoryLines: string[] = [];
+        for (const lo of legOutcomes) {
+          const legOutcome = {
+            scope: `battle episode ${ep.number} (leg ${lo.leg.register})`,
+            program: null,
+            slots: lo.leg.flow.spec.slots.length,
+            directed: lo.directed,
+            untouched: 0,
+            unused: lo.unused,
+            windBeats: lo.windBeats,
+            clothCalls: lo.clothCalls,
+            fleshCalls: lo.fleshCalls,
+            poseCuts: lo.poseCuts,
+            moveClashes: lo.moveClashes,
+            fxBound: lo.fxBound,
+            physBound: lo.physBound,
+            motionChained: lo.motionChained,
+            rendersQueued: 0,
+            verified: lo.unused === 0 && lo.directed > 0,
+          };
+          const row = await recordSequenceOutcome(projectId, lo.leg.register, lo.leg.flow.name, legOutcome);
+          if (row) memoryLines.push(`learned flow '${row.name}' (${row.register}) recorded its battle leg: ${row.runs} run(s), ${row.clears} clear(s) - ${lo.unused === 0 ? "the leg landed whole" : "the leg did NOT land whole (see the leg read)"}`);
+        }
+        await landDesignEvent(projectId, `Battle staged across episode ${ep.number} (${flat.length} shots): ${legs.map((l, i) => `${l.register} '${l.flow.name}' (${alloc[i]})`).join(" -> ")} - ${motionChained} chained performance(s)${chainedFlows.size ? ` (${Array.from(chainedFlows).map((n) => `'${n}'`).join(", ")})` : ""}`, { directed: cursor, renders: jobIds.length });
+        const reads: string[] = [];
+        if (moveClashes > 0) reads.push(`${moveClashes} cut(s) land on the same move both sides - consider alternating the blocking`);
+        if (poseCuts > 0) reads.push(`${poseCuts} pose change(s) across the battle's cuts (the cloth whips on each one)`);
+        if (windBeats > 0) reads.push(`${windBeats} wind beat(s) - the robes and hair ride those beats`);
+        if (clothCalls > 0) reads.push(`${clothCalls} cloth call(s) - the cloth answers at the directed intensity on those shots`);
+        if (fleshCalls > 0) reads.push(`${fleshCalls} flesh call(s) - the soft bodies lag at the directed intensity on those shots`);
+        if (fxBound > 0 || physBound > 0) reads.push(`${fxBound} fx + ${physBound} physics binding(s) - the world answers on those shots`);
+        if (motionChained > 0) reads.push(`${motionChained} chained performance(s)${chainedFlows.size ? ` (${Array.from(chainedFlows).map((n) => `'${n}'`).join(", ")})` : ""} - those shots PERFORM their keys, and a chained learned flow's timing is the timing that verified`);
+        const untouched = flat.length - cursor;
+        if (untouched > 0) reads.push(`${untouched} shot(s) beyond the arc left untouched`);
+        return { status: "OK", result: `BATTLE STAGED across episode ${ep.number} (${flat.length} shot(s), arc ${arc.join(" > ")}, coverage ${cursor}/${flat.length}):\n${legLines.join("\n")}${reads.length ? `\nFlow read: ${reads.join("; ")}.` : ""}${memoryLines.length ? `\nMemory: ${memoryLines.join("; ")}.` : ""}${jobIds.length ? `\n${jobIds.length} ${mode} render job(s) queued (${jobIds.join(", ")}) - the previews play each leg's beats with the chain riding them.` : ` Queue renders with render:true (or render_shot per shot) - previz first, FINAL for the shipping pass.`}` };
+      }
+
       case "design_fx": {
         const compiled = compileFxSpec({ name: String(args.name ?? ""), programs: args.programs });
         if (!compiled.ok) return { status: "ERROR", result: compiled.error };
@@ -3680,6 +3961,38 @@ async function executeToolInner(
             ? ` The painted pipeline holds the bar more often than not - the ${after.below} below-bar render(s) earn the re-render loop (render_fix or re-render), then measure again.`
             : ` Most shipping frames sit under the bar - the re-render loop and the identity re-anchor (regenerate the drifting sheets) are the honest next moves, then measure again.`;
         return { status: "OK", result: `IDENTITY BAR MEASURED (shipping pixels, bar ${Math.round(after.bar * 100)}%):\n${lines.join("\n")}.${verdictTail}` };
+      }
+
+      case "cast_identity_pass": {
+        // THE CAST ANSWERS THE BAR: optionally earn fresh readings
+        // (same law as measure_identity_bar's limit), then read the
+        // per-member standing against the source's bar.
+        const source = String(args.source ?? "render").trim().toLowerCase() === "panel" ? "PANEL" : "RENDER";
+        const scoreFirst = Number(args.scoreFirst ?? 0);
+        const fresh: string[] = [];
+        const failed: string[] = [];
+        if (Number.isFinite(scoreFirst) && scoreFirst > 0) {
+          const scored = await scoreProjectIdentity(projectId, Math.min(8, Math.round(scoreFirst)), source);
+          for (const s of scored.scored) {
+            fresh.push(`${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%`);
+          }
+          for (const e of scored.errors) failed.push(`${e.ref}: ${e.error}`);
+        }
+        const m = await castIdentityMeasurement(projectId, source);
+        const tail =
+          m.cast === 0
+            ? " Create the cast first (create_character), paint their sheets, render their shots, then pass again."
+            : m.unanchored > 0 && m.below === 0 && m.untested === 0
+              ? ` The unanchored member(s) cannot answer the bar yet - generate_model_sheet paints their sheet, then pass again.`
+              : m.below > 0
+                ? ` The below members are the re-render queue by name: re-render their worst shots (render_fix / render_shot) or re-anchor their drifting sheets, then pass again - the standing is the work order.`
+                : m.untested > 0
+                  ? ` No member sits below the bar - score the untested members' renders (cast_identity_pass scoreFirst:'<N>') before calling the cast sheet-conformant.`
+                  : ` Every anchored member measured and cleared the bar - the cast is sheet-conformant at the ${Math.round(m.bar * 100)}% line.`;
+        return {
+          status: "OK",
+          result: `CAST IDENTITY PASS (${source.toLowerCase()} source, bar ${Math.round(m.bar * 100)}%):\n${castIdentityLine(m)}.${fresh.length ? `\nFreshly measured (${fresh.length}):\n${fresh.join("\n")}` : ""}${failed.length ? `\nSkipped (honest misses):\n${failed.join("\n")}` : ""}${tail}`,
+        };
       }
 
       case "review_render": {

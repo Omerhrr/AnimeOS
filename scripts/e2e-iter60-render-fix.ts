@@ -147,7 +147,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A14 the registry stands at 84 tools (iter63 joined) (render_fix closes the loop, learn_retopo_flow adopts the craft)", toolCount === 85, `count=${toolCount}`);
+  check("A14 the registry stands at 84 tools (iter63 joined) (render_fix closes the loop, learn_retopo_flow adopts the craft)", toolCount === 87, `count=${toolCount}`);
   check("A15 render_fix teaches the loop (the way design_fix re-audits assets, but on the shot)", tools.includes("THE FIX RETURNS TO THE PIXELS: run the RENDER-FIX LOOP") && tools.includes("the FRESH attempt's pixel review be the judge"));
   check("A16 learn_retopo_flow teaches adoption (a verified run nobody names is a lesson the studio re-pays for)", tools.includes("THE STUDIO REMEMBERS ITS CRAFT: save a LEARNED RETOPO FLOW") && tools.includes("a verified run that nobody names is a lesson the studio re-pays for every build"));
   check("A17 blender_retopo carries the flow arg (the outcome grows the flow's record)", tools.includes("flow: \"string (optional - a learned retopo flow's name"));

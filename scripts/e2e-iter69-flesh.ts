@@ -126,7 +126,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A11 the registry stands at 84 tools (the call rides the grammar pen)", toolCount === 85, `count=${toolCount}`);
+  check("A11 the registry stands at 84 tools (the call rides the grammar pen)", toolCount === 87, `count=${toolCount}`);
   check("A12 set_shot_grammar directs the flesh per shot", tools.includes("flesh: \"number 0..1 (optional) - the FLESH call") && tools.includes("compileSlotFlesh(args.flesh, \"flesh\")"));
   check("A13 the sentence carries both calls (design + direct)", tools.includes("compileSlotFlesh(s?.flesh") && tools.includes("compileSlotFlesh(slot?.flesh") && tools.includes("data.flesh = fleshParsed.flesh;   // null clears - the sentence owns the staging"));
 

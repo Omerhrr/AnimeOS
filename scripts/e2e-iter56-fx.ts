@@ -133,7 +133,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A16 the registry stands at 84 tools (iter63 joined) (design_fx 71, set_shot_fx 72; the pixel review joined in iter 59)", toolCount === 85, `count=${toolCount}`);
+  check("A16 the registry stands at 84 tools (iter63 joined) (design_fx 71, set_shot_fx 72; the pixel review joined in iter 59)", toolCount === 87, `count=${toolCount}`);
   check("A17 the fx resolution order is saved -> built-in -> inline", tools.includes("// resolve: saved FX preset -> built-in -> inline programs"));
   check("A18 set_shot_fx teaches the order of operations (lens first)", tools.includes("direct the lens first (set_shot_grammar) so the beats have something to answer"));
 
