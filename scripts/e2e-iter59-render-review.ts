@@ -134,7 +134,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A13 the registry stands at 84 tools (iter63 joined) (review_render judges the pixels)", toolCount === 87, `count=${toolCount}`);
+  check("A13 the registry stands at 84 tools (iter63 joined) (review_render judges the pixels)", toolCount === 88, `count=${toolCount}`);
   check("A14 review_render teaches the learned layer (local measure + vision read + honest provider)", tools.includes("JUDGE THE PIXELS") && tools.includes("vision+local | vision | local") && tools.includes("One review per render job"));
   check("A15 the tool refuses to review what does not exist", tools.includes("review what exists, not what is promised"));
   check("A16 the context carries the pixel standing", tools.includes("pixel: renderPixelContextLine(latestRenderReview)") && lib.includes("latest pixel review:"));

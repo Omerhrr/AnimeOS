@@ -116,6 +116,7 @@ interface CastMember {
   modelSheetPrompt: string | null;
   modelSheetUrl?: string | null;
   modelSheetAt?: Date | null;
+  sheetDna?: string | null; // cached sheet-DNA read (iteration 80) - staleness keyed on sheetUrl
   states: Array<{
     episodeNumber: number | null;
     clothing: string | null;

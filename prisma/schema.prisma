@@ -511,6 +511,7 @@ model Character {
   modelSheetUrl    String? // AI-generated character model sheet (served from /sheets/)
   modelSheetPrompt String? // Canonical visual-anchor prompt - reused in every panel art for consistency
   modelSheetAt     DateTime? // when the current sheet/anchor was generated - art-aware continuity staleness anchor
+  sheetDna         String? // JSON SheetDnaRead - the sheet's measured build DNA (hair/robe/weapon/build hexes), stale when sheetUrl moves (iteration 80)
   parentId         String? // derivative source character
   derivativeType   String? // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION
   // Per-artist voice casting: which roster artist speaks for this character

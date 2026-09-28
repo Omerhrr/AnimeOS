@@ -158,7 +158,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A4 the registry stands at 87 tools (the cast pass + the battle stage join)", toolCount === 87, `count=${toolCount}`);
+  check("A4 the registry stands at 87 tools (the cast pass + the battle stage join)", toolCount === 88, `count=${toolCount}`);
   check("A5 cast_identity_pass is a registry pen", tools.includes('name: "cast_identity_pass"'));
   check("A6 stage_battle is a registry pen", tools.includes('name: "stage_battle"'));
   check("A7 the battle pre-flights every leg before stamping", tools.includes("THE BATTLE PRE-FLIGHT FAILED - nothing was staged"));

@@ -20,6 +20,7 @@ import {
 } from "@/lib/bridge/blender";
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
+import { adherentDna, sheetDnaFresh } from "@/lib/blender/adherence";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
 import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
@@ -166,6 +167,13 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     // anchors, appearance notes, the active state's wardrobe/weapon,
     // the environment brief) into renderable DNA so the 3D worker
     // builds the DESIGNED characters and set, not anonymous stand-ins.
+    // THE DNA ADHERES TO THE SHEET (iteration 80): a character with a
+    // fresh cached sheet-DNA read (Character.sheetDna, filled by the
+    // repair pass / the sheet-read tool) compiles THROUGH that read -
+    // the sheet's measured hair style/colors/weapon/build win field by
+    // field over the regex guesses, so the proxy is BUILT from its
+    // sheet's own truth. A stale or absent read keeps the regex DNA
+    // honestly (the render path never makes a vision call itself).
     const episodeNumber = shot.scene.episode.number;
     const castRows = await db.character.findMany({ where: { projectId }, include: { states: true } });
     const detected = detectCast(castRows, shot.description).slice(0, 2);
@@ -173,7 +181,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         const st = [...c.states]
           .filter((s) => s.episodeNumber === null || s.episodeNumber <= episodeNumber)
           .sort((a, b) => (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1) || b.createdAt.getTime() - a.createdAt.getTime())[0];
-        return characterDesignDna({
+        const regex = characterDesignDna({
           name: c.name,
           role: c.role,
           appearance: c.appearance,
@@ -181,40 +189,46 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
           stateClothing: st?.clothing ?? null,
           stateWeapon: st?.weapon ?? null,
         });
+        return adherentDna(regex, sheetDnaFresh(c.sheetDna, c.modelSheetUrl));
       });
 
-    // THE SHEET DRESSES THE RENDER (v10.1): the hero's canonical model
-    // sheet is COLOR LAW over the DNA defaults - its pixels are measured
-    // into a palette (deterministic, the same bytes always land the same
-    // colors) and the figure's robe/accent/hair/boots pull a bounded
-    // 35% toward their nearest cluster before a single frame renders.
-    // A missing or unreadable sheet is honestly absent; a color already
-    // true to the sheet is skipped and named.
-    let sheetConformance: SheetConformance | null = null;
-    const heroRow = detected[0];
-    const heroDna = cast[0];
-    if (heroRow?.modelSheetUrl && heroDna) {
-      const sheetPath = path.join(process.cwd(), "public", heroRow.modelSheetUrl.split("?")[0]);
-      if (fs.existsSync(sheetPath)) {
-        try {
-          const palette = await extractSheetPalette(await fs.promises.readFile(sheetPath));
-          const rows = planSheetConformance(
-            { robe: heroDna.robeColor, accent: heroDna.robeAccent, hair: heroDna.hairColor, boots: BOOTS_DEFAULT },
-            palette,
-          );
-          sheetConformance = {
-            characterName: heroDna.name,
+    // THE SHEET DRESSES THE RENDER (v10.1) - now for EVERY detected cast
+    // member (iteration 80): each canonical sheet is measured into a
+    // palette and the figure's robe/accent/hair/boots pull toward their
+    // nearest cluster before a single frame renders. The pull is BOUNDED
+    // by the build's adherence: a sheet-DNA build pulls 0.75 (the read
+    // is already truth - close the remaining drift), a regex guess build
+    // keeps the gentle 0.35. A missing or unreadable sheet is honestly
+    // absent per member; a color already true to the sheet is skipped
+    // and named.
+    for (let i = 0; i < detected.length && i < cast.length; i++) {
+      const memberRow = detected[i];
+      const memberDna = cast[i];
+      if (!memberRow?.modelSheetUrl || !memberDna) continue;
+      const sheetPath = path.join(process.cwd(), "public", memberRow.modelSheetUrl.split("?")[0]);
+      if (!fs.existsSync(sheetPath)) continue;
+      try {
+        const palette = await extractSheetPalette(await fs.promises.readFile(sheetPath));
+        const rows = planSheetConformance(
+          { robe: memberDna.robeColor, accent: memberDna.robeAccent, hair: memberDna.hairColor, boots: BOOTS_DEFAULT },
+          palette,
+          memberDna.conformFactor,
+        );
+        cast[i] = {
+          ...memberDna,
+          sheetConformance: {
+            characterName: memberDna.name,
             palette,
             rows,
-            note: "the canonical sheet is color law over the DNA defaults - a bounded pull, recipe parameters untouched",
-          };
-        } catch {
-          sheetConformance = null;
-        }
+            note:
+              memberDna.conformFactor > 0.5
+                ? "the canonical sheet is color law over a sheet-adherent DNA - the repair pull closes the remaining drift"
+                : "the canonical sheet is color law over the DNA defaults - a bounded pull, recipe parameters untouched",
+          },
+        };
+      } catch {
+        // an unreadable sheet is honestly absent for this member
       }
-    }
-    if (sheetConformance && cast.length > 0) {
-      cast[0] = { ...cast[0], sheetConformance };
     }
     const env = shot.scene.environment
       ? environmentDna({

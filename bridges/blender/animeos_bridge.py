@@ -2290,49 +2290,52 @@ def worker_run(job_file):
                 "weapon": str(hero.get("weaponType") or "none"),
             }
 
-            # ── v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical
-            #    model sheet is COLOR LAW over the DNA defaults - the
-            #    payload's planned pulls recolor the named materials
-            #    (RobeMat/AccentMat/HairMat/BootsMat) whether the figure
-            #    was built procedurally or loaded as the designed asset
-            #    (the sheet is what identity is scored against; the
-            #    recipes' other parameters stay untouched). Skipped rows
-            #    are named honestly. ──
-            conf = None
+            # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
+            #    canonical model sheet is COLOR LAW over the DNA defaults
+            #    for EVERY detected cast member - the payload's planned
+            #    pulls recolor the named materials whether the figure was
+            #    built procedurally or loaded as the designed asset (the
+            #    hero's materials carry plain names, the second figure's
+            #    carry the B suffix: RobeMatB/AccentMatB/HairMatB/BootsMatB).
+            #    The recipes' other parameters stay untouched. Skipped
+            #    rows are named honestly in the per-member identity state. ──
             cast_p = shot.get("cast") or []
-            if isinstance(cast_p, list) and cast_p and isinstance(cast_p[0], dict):
-                conf = cast_p[0].get("sheetConformance")
-            if isinstance(conf, dict) and conf.get("rows"):
+            for cast_idx in range(min(len(cast_p), 2)):
+                conf = cast_p[cast_idx].get("sheetConformance") if isinstance(cast_p[cast_idx], dict) else None
+                if not (isinstance(conf, dict) and conf.get("rows")):
+                    continue
+                suffix = "" if cast_idx == 0 else "B"
                 applied, skipped = [], []
                 for row in conf["rows"]:
                     if not isinstance(row, dict):
                         continue
-                    mat = bpy.data.materials.get(str(row.get("mat") or ""))
+                    mat_name = str(row.get("mat") or "") + suffix
+                    mat = bpy.data.materials.get(mat_name)
                     if mat is None:
-                        skipped.append({"mat": row.get("mat"), "skipped": "no such material on the stage"})
+                        skipped.append({"mat": mat_name, "skipped": "no such material on the stage"})
                         continue
                     b = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
                     if b is None:
-                        skipped.append({"mat": row.get("mat"), "skipped": "no principled node"})
+                        skipped.append({"mat": mat_name, "skipped": "no principled node"})
                         continue
                     r, g, bl = hex_to_rgb(str(row.get("to") or "#000000"))
                     b.inputs["Base Color"].default_value = (r, g, bl, 1.0)
                     if row.get("skipped"):
-                        skipped.append({"mat": row.get("mat"), "skipped": str(row.get("skipped"))})
+                        skipped.append({"mat": mat_name, "skipped": str(row.get("skipped"))})
                     else:
                         applied.append({
-                            "mat": row.get("mat"),
+                            "mat": mat_name,
                             "from": row.get("from"),
                             "to": row.get("to"),
                             "delta": round(float(row.get("delta") or 0.0), 3),
                         })
                 if applied or skipped:
-                    state["identity"] = {
+                    state["identity" if cast_idx == 0 else "identityB"] = {
                         "sheet": conf.get("characterName"),
                         "palette": conf.get("palette") or [],
                         "conformed": applied,
                         "skipped": skipped,
-                        "law": "the sheet is color law over the DNA defaults; recipe parameters untouched",
+                        "law": conf.get("note") or "the sheet is color law over the DNA defaults; recipe parameters untouched",
                     }
             # a second detected character stands off across the set,
             # facing the hero (static stance - blocking depth)

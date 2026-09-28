@@ -12,6 +12,7 @@ import { EPISODE_TEMPLATE_IDS, instantiateEpisodePlan, listPlanTemplates } from 
 import { IDENTITY_REPAINT_THRESHOLD, IDENTITY_RENDER_THRESHOLD, identityThresholdFor, scoreProjectIdentity, scoreShotIdentity, scoreRenderIdentity, scoreShotEmbedding, describeAffinity, AFFINITY_WATCH_THRESHOLD, identityDriftData, identityBarMeasurement, identityBarMeasurementLine, castIdentityMeasurement, castIdentityLine } from "@/lib/identity";
 import { parseBattleArc, allocateBattleShots, battleLegLabel } from "@/lib/dsh/battles";
 import { reanchorByName, REANCHOR_DEFAULT_RESCORE, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
+import { runIdentityRepairPass, repairVerdictLine } from "@/lib/identity-repair";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
 } from "@/lib/scheduler";
@@ -860,6 +861,15 @@ export const TOOL_DEFS: ToolDef[] = [
     args: {
       scoreFirst: "number (optional - first score up to N finished renders with real vision calls; default 0 = read the standing only)",
       source: "render | panel (optional - default render: the shipping pixels answer the 70% bar; panel reads the 60% storyboard line)",
+    },
+  },
+  {
+    name: "identity_repair_pass",
+    description: "THE GAP IS REPAIRED: execute the standing's work order - the re-render + re-anchor loop over the cast's BELOW members, then re-measure. The cast pass names the below members with their worst shot refs; this loop works them: (a) each below member's canonical sheet is READ into build DNA by the vision model (hair style, exact hexes per material role, weapon, build - THE DNA ADHERES TO THE SHEET), then their worst named shots are RE-RENDERED over the real engine with the adherent DNA riding (the sheet's own truth builds the proxy; the palette pulls 0.75) and every re-render is RE-SCORED by the real vision channel against the same sheet; (b) a member the re-render could not lift has their canonical sheet RE-ANCHORED (regenerated from the current design text) and the shots re-scored against the NEW sheet. The ledger is honest per shot: before -> after with the verdict the pair earns (REPAIRED / IMPROVED / UNCHANGED / WORSE / UNSCORED), per member (REPAIRED / IMPROVED / STILL BELOW / UNSCORED), and the standing is read again when the loop ends - the gap that remains is named, never averaged away. This pass WAITS on its re-renders (bounded); run it when the studio can spend the minutes.",
+    args: {
+      members: "number (optional - how many below members to work, worst first; default 2, max 4)",
+      shotsPerMember: "number (optional - how many of each member's worst shots to re-render; default 1, max 3)",
+      reanchor: "boolean (optional - regenerate the sheet of a member the re-render could not lift; default true)",
     },
   },
   {
@@ -3992,6 +4002,40 @@ async function executeToolInner(
         return {
           status: "OK",
           result: `CAST IDENTITY PASS (${source.toLowerCase()} source, bar ${Math.round(m.bar * 100)}%):\n${castIdentityLine(m)}.${fresh.length ? `\nFreshly measured (${fresh.length}):\n${fresh.join("\n")}` : ""}${failed.length ? `\nSkipped (honest misses):\n${failed.join("\n")}` : ""}${tail}`,
+        };
+      }
+
+      case "identity_repair_pass": {
+        // THE GAP IS REPAIRED: the standing's work order executes here -
+        // sheet DNA read (vision), re-render over the real engine,
+        // re-score (real vision), re-anchor the members the re-render
+        // could not lift, then the standing again. Honest ledger.
+        const res = await runIdentityRepairPass(projectId, {
+          members: Number(args.members ?? 2),
+          shotsPerMember: Number(args.shotsPerMember ?? 1),
+          reanchor: args.reanchor !== false,
+        });
+        if (res.members.length === 0) {
+          const m = await castIdentityMeasurement(projectId, "RENDER");
+          return { status: "OK", result: `IDENTITY REPAIR PASS: nothing to repair - no member sits BELOW the ${Math.round(res.bar * 100)}% bar. ${castIdentityLine(m)}` };
+        }
+        const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+        const lines = res.members.map((mem) => {
+          const shotLines = mem.shots.length
+            ? mem.shots.map((s) => `    ${s.ref}: ${pct(s.before)} -> ${s.after === null ? "unscored" : pct(s.after)} - ${s.verdict}${s.error ? ` (${s.error})` : ""}`).join("\n")
+            : "    (no named below shot found - the readings moved before the loop reached them)";
+          return `  ${mem.name}: ${repairVerdictLine(mem.verdict)}\n${shotLines}\n    dna: ${mem.dna.line}${mem.reanchored ? "\n    re-anchored: the canonical sheet was regenerated mid-loop, the shots re-scored against the new sheet" : ""}${mem.reanchorError ? `\n    re-anchor FAILED: ${mem.reanchorError}` : ""}\n    standing after: ${mem.after.standing}${mem.after.worst !== null ? ` (worst ${pct(mem.after.worst)})` : ""}`;
+        });
+        return {
+          status: "OK",
+          result: [
+            `IDENTITY REPAIR PASS (shipping bar ${Math.round(res.bar * 100)}%):`,
+            ...lines,
+            `standing: ${res.before.below} below -> ${res.after.below} below, ${res.before.clearing} -> ${res.after.clearing} clearing (${res.after.measured} measured).`,
+            res.after.below === 0
+              ? " The named gap is closed - pass the cast again to confirm the standing."
+              : ` ${res.after.below} member(s) still below - the loop can run again (the standing is the work order), or widen shotsPerMember.`,
+          ].join("\n"),
         };
       }
 

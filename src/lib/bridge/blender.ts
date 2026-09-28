@@ -247,8 +247,14 @@ interface CharacterDesignDnaWire {
   bladeColor: string;
   build: string;
   beard?: boolean;
+  // iteration 80 THE DNA ADHERES TO THE SHEET: the build's adherence
+  // evidence - which fields the sheet read owns, and the palette pull
+  // the conformance answered to (0.75 adherent / 0.35 guess)
+  sheetFields?: string[];
+  conformFactor?: number;
   // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
   // measured into a palette and planned into bounded material pulls
+  // (iteration 80: every detected cast member carries their own)
   sheetConformance?: {
     characterName: string;
     palette: string[];
