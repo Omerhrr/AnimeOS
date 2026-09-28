@@ -188,11 +188,16 @@ async function prepareIdentityContext(
   return { ok: true as const, episode, project, sheets, artData, shotRef };
 }
 
-function buildIdentityPrompt(sheets: Array<{ name: string }>): string {
+function buildIdentityPrompt(sheets: Array<{ name: string }>, filmstripFrames?: number): string {
   const manifest = sheets.map((s, i) => `Image ${i + 2}: canonical model sheet for ${s.name}`).join(", ");
+  // THE SCORE MATCHES THE POSE (iteration 81): a RENDER artifact is a
+  // filmstrip of the clip - the model judges the pose-matched frame.
+  const artifact = filmstripFrames && filmstripFrames > 1
+    ? `Image 1 is a filmstrip of ${filmstripFrames} frames from the same finished shot, left to right in time order. Judge the character's identity in the frame whose POSE most closely matches the canonical sheet's pose (a model sheet is a neutral standing turnaround); score THAT frame and name it in the note as 'pose frame <index> of ${filmstripFrames}'.`
+    : "Image 1 is a story panel.";
   return [
     "You are a casting director for an animation production checking character identity.",
-    `Image 1 is a story panel. ${manifest}.`,
+    `${artifact} ${manifest}.`,
     "For EACH named character, judge how closely the panel's depiction matches their canonical sheet and score similarity from 0 to 1, plus a score per aspect: face, hair, wardrobe, weapon, palette, style (0 to 1 each, only when the aspect is visible - omit aspects that cannot be judged).",
     "Reply with STRICT JSON only, no markdown fences:",
     '{"note": "one sentence about the panel", "characters": [{"name": "<sheet name>", "similarity": 0.0, "aspects": {"face": 0.0, "hair": 0.0}, "note": "what matches or drifted"}]}',
@@ -216,7 +221,16 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
   if (source === "RENDER" && poster === null) {
     return { ok: false, error: "This shot has no finished render to score yet - render it first" };
   }
-  const ctx = await prepareIdentityContext(shot, poster ? { imageData: poster.dataUrl, error: "" } : undefined);
+  // THE SCORE MATCHES THE POSE (iteration 81): the RENDER artifact is a
+  // FILMSTRIP of the clip when it can be built (up to three frames,
+  // temporal order) - the vision model judges the frame whose pose
+  // matches the sheet's turnaround, not whatever the 40% mark parked
+  // on. A strip that cannot be built degrades to the single poster and
+  // the stored note names which artifact was judged.
+  const strip = poster ? await extractRenderPosterFilmstrip(poster.clipAbs, poster.jobId) : null;
+  const artData = strip ? strip.dataUrl : poster!.dataUrl;
+  const poseNote: string | null = strip ? `pose-matched over ${strip.frames} frames` : poster ? "single frame (40% mark)" : null;
+  const ctx = await prepareIdentityContext(shot, poster ? { imageData: artData, error: "" } : undefined);
   if (!ctx.ok) return ctx;
 
   let raw = "";
@@ -227,7 +241,7 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
         {
           role: "user",
           content: [
-            { type: "text", text: buildIdentityPrompt(ctx.sheets) },
+            { type: "text", text: buildIdentityPrompt(ctx.sheets, strip?.frames) },
             { type: "image_url", image_url: { url: ctx.artData } },
             ...ctx.sheets.map((s) => ({ type: "image_url" as const, image_url: { url: s.data } })),
           ],
@@ -239,7 +253,7 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "identity scoring failed" };
   }
-  return persistIdentityVerdict(shot, ctx, raw, source);
+  return persistIdentityVerdict(shot, ctx, raw, source, poseNote ?? undefined);
 }
 
 /**
@@ -273,9 +287,13 @@ async function persistIdentityVerdict(
   ctx: { ok: true; episode: { number: number }; project: { id: string }; sheets: Array<{ name: string }>; shotRef: string },
   raw: string,
   source: IdentitySource = "PANEL",
+  poseNote?: string, // THE SCORE MATCHES THE POSE: which artifact was judged
 ): Promise<{ ok: true; scored: IdentityScoredShot } | { ok: false; error: string }> {
   const verdict = parseIdentityVerdict(raw, ctx.sheets.map((s) => s.name));
   if (!verdict) return { ok: false, error: `vision model returned unparsable verdict: ${raw.slice(0, 120)}` };
+  // the stored note names the artifact the model judged (pose-matched
+  // filmstrip vs the single poster) before the model's own words
+  const storedNote = poseNote ? `${poseNote}; ${verdict.note}`.slice(0, 400) : verdict.note;
 
   const scoredAt = new Date();
   await db.identityScore.upsert({
@@ -287,14 +305,14 @@ async function persistIdentityVerdict(
       scores: JSON.stringify(verdict.entries),
       worst: verdict.worst,
       castSize: verdict.entries.length,
-      note: verdict.note,
+      note: storedNote,
       scoredAt,
     },
     update: {
       scores: JSON.stringify(verdict.entries),
       worst: verdict.worst,
       castSize: verdict.entries.length,
-      note: verdict.note,
+      note: storedNote,
       scoredAt,
     },
   });
@@ -319,7 +337,7 @@ async function persistIdentityVerdict(
       entityName: verdict.entries[0]?.characterName ?? ctx.sheets[0]?.name ?? "cast",
       kind: drifted ? "IDENTITY_DRIFT" : "IDENTITY_VERIFIED",
       episodeNumber: ctx.episode.number,
-      description: `${tag} ${scoreLine} - worst ${(verdict.worst * 100).toFixed(0)}% vs the ${source === "RENDER" ? "70% shipping-pixel" : "60% panel"} bar${verdict.note ? ` (${verdict.note})` : ""}`.slice(0, 900),
+      description: `${tag} ${scoreLine} - worst ${(verdict.worst * 100).toFixed(0)}% vs the ${source === "RENDER" ? "70% shipping-pixel" : "60% panel"} bar${poseNote || verdict.note ? ` (${[poseNote, verdict.note].filter(Boolean).join("; ")})` : ""}`.slice(0, 900),
       severity: drifted ? "WARNING" : "INFO",
     },
   });
@@ -374,9 +392,93 @@ export async function extractRenderPoster(clipAbsPath: string, jobId: string): P
 interface RenderPoster {
   dataUrl: string;
   jobId: string;
+  clipAbs: string;
 }
 
-/** The latest finished clip for a shot, as a poster data URL. */
+// ── THE SCORE MATCHES THE POSE (iteration 81, Frontier 1 deeper) ──
+//
+// A model sheet is a NEUTRAL TURNAROUND; a shot is a performance.
+// Scoring one arbitrary frame (40% in) judges whatever pose the clip
+// happened to park on - a mid-strike frame scored against a standing
+// sheet measures the POSE, not the character, and the measured cast
+// gap carried some of that noise. The re-score path now hands the
+// vision model a FILMSTRIP of the clip (up to three frames, temporal
+// order) and the pose-matching law: judge the frame whose pose most
+// closely matches the sheet's canonical pose, and say which one.
+// Pure law here, ffmpeg out there, honest degradation everywhere:
+// a clip too short for a strip or a failed montage falls back to the
+// single poster and the stored note says which artifact was judged.
+
+export const POSE_FRAME_COUNT = 3;
+
+/**
+ * Pure: the filmstrip's sample timestamps. Clips long enough for a
+ * strip sample at the 22% / 40% / 62% marks (fade-in past, tail
+ * before); a clip too short for three distinct samples degrades to
+ * ONE frame at the 40% mark. Deterministic - the same duration always
+ * lands the same timestamps.
+ */
+export function poseSampleTimestamps(durationSec: number): number[] {
+  const dur = Math.max(0.5, Number.isFinite(Number(durationSec)) ? Number(durationSec) : 0.5);
+  if (dur < 1.2) return [Math.min(dur * 0.4, Math.max(0.1, dur - 0.1))];
+  const raw = [0.22, 0.4, 0.62].map((f) => Math.min(dur - 0.1, Math.max(0.1, dur * f)));
+  const out: number[] = [];
+  for (const t of raw) {
+    if (!out.some((x) => Math.abs(x - t) < 0.05)) out.push(Math.round(t * 100) / 100);
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * Extract up to POSE_FRAME_COUNT frames from the finished clip and
+ * hstack them into ONE filmstrip JPEG (left to right in time order).
+ * One frame degrades to that frame alone; a failed montage returns
+ * null (the caller falls back to the single poster, honestly named).
+ * The strip is cached per job id beside the poster.
+ */
+export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: string): Promise<{ dataUrl: string; frames: number } | null> {
+  try {
+    if (!fs.existsSync(clipAbsPath)) return null;
+    // the same honest binary resolution the single poster uses (the
+    // detect cache may be cold - PATH carries the fallback)
+    const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+    const postersDir = path.join(process.cwd(), "public", "renders", "posters");
+    fs.mkdirSync(postersDir, { recursive: true });
+    const probe = await probeMedia(clipAbsPath);
+    const stamps = poseSampleTimestamps(probe?.durationSec ?? 0);
+    if (stamps.length <= 1) return null;
+    const frames: string[] = [];
+    for (let i = 0; i < stamps.length; i++) {
+      const f = path.join(postersDir, `${jobId}.strip${i}.jpg`);
+      const ok = await new Promise<boolean>((resolve) => {
+        const child = spawn(ff, ["-y", "-ss", stamps[i].toFixed(2), "-i", clipAbsPath, "-frames:v", "1", "-q:v", "3", f], {
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        child.on("close", (code) => resolve(code === 0));
+        child.on("error", () => resolve(false));
+      });
+      if (ok && fs.existsSync(f) && fs.statSync(f).size > 0) frames.push(f);
+      else return null; // a partial strip is a lie - degrade to the poster
+    }
+    const out = path.join(postersDir, `${jobId}.strip.jpg`);
+    const inputs = frames.flatMap((f) => ["-i", f]);
+    const ok = await new Promise<boolean>((resolve) => {
+      const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `hstack=inputs=${frames.length}`, "-q:v", "3", out], {
+        stdio: ["ignore", "ignore", "ignore"],
+      });
+      child.on("close", (code) => resolve(code === 0));
+      child.on("error", () => resolve(false));
+    });
+    if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
+    const b64 = fs.readFileSync(out).toString("base64");
+    return { dataUrl: `data:image/jpeg;base64,${b64}`, frames: frames.length };
+  } catch {
+    return null;
+  }
+}
+
+/** The latest finished clip for a shot, as a poster data URL (plus the
+ * clip path so the pose-matched path can build its filmstrip). */
 async function renderPosterForShot(shotId: string): Promise<RenderPoster | null> {
   const job = await db.renderJob.findFirst({
     where: { shotId, outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
@@ -385,7 +487,7 @@ async function renderPosterForShot(shotId: string): Promise<RenderPoster | null>
   if (!job?.outputUrl) return null;
   const clipAbs = path.join(process.cwd(), "public", job.outputUrl.split("?")[0].replace(/^\//, ""));
   const dataUrl = await extractRenderPoster(clipAbs, job.id);
-  return dataUrl ? { dataUrl, jobId: job.id } : null;
+  return dataUrl ? { dataUrl, jobId: job.id, clipAbs } : null;
 }
 
 /**

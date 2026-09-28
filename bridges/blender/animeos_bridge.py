@@ -1151,6 +1151,35 @@ def prim(scn, op, **kw):
     return fresh[-1] if fresh else bpy.context.active_object
 
 
+def silhouette_shape(dna):
+    """THE SILHOUETTE SHAPES THE MESH (iteration 81): validate + clamp
+    the shaping profile the sheet read compiled (adherence.ts) - pure,
+    bounded, honest. A wild, missing or neutral field degrades to 1.0
+    (the builder's default outline); a DNA dict with no profile at all
+    (a guess build, an old payload) returns None and the figure stays
+    exactly as previous iterations built it. The worker re-clamps
+    against the same bounds - one law, two runtimes."""
+    raw = dna.get("silhouetteShape")
+    if not isinstance(raw, dict):
+        return None
+    bounds = {
+        "height": (0.92, 1.12), "shoulders": (0.82, 1.25), "torso": (0.85, 1.2),
+        "sleeves": (0.9, 1.35), "skirt": (0.9, 1.3), "hair": (0.75, 1.5),
+    }
+    factors, named = {}, []
+    for key, (lo, hi) in bounds.items():
+        v = raw.get(key)
+        if isinstance(v, (int, float)) and math.isfinite(float(v)):
+            factors[key] = round(max(lo, min(hi, float(v))), 3)
+            if abs(factors[key] - 1.0) > 0.001:
+                named.append(key)
+        else:
+            factors[key] = 1.0
+    fields_raw = raw.get("fields")
+    fields = [str(f) for f in fields_raw][:8] if isinstance(fields_raw, list) else []
+    return {"factors": factors, "named": named, "fields": fields}
+
+
 def build_designed_figure(bpy, scn, dna, mats):
     """The DESIGNED character (v4.0): stylized proportions, layered
     robes with a flowing skirt and wide sleeves, hairstyle per DNA,
@@ -1167,6 +1196,25 @@ def build_designed_figure(bpy, scn, dna, mats):
     lean = dna.get("build") == "lean"
     sturdy = dna.get("build") == "sturdy"
     width = 0.85 if lean else (1.18 if sturdy else 1.0)
+
+    # ── THE SILHOUETTE SHAPES THE MESH (iteration 81): the sheet read's
+    #    silhouette sentence rides the DNA as a bounded shaping profile
+    #    and the outline matches the sheet, not just the palette. Mesh
+    #    only - the joint anchors stay exactly where the framing math
+    #    and the v3.x rig contract expect them, so apply_pose, lip-sync
+    #    and SHOT_FRAMING work unchanged. A guess build (no profile)
+    #    keeps the previous outline factor for factor. ──
+    shape = silhouette_shape(dna)
+
+    def sf(key):
+        return shape["factors"][key] if shape else 1.0
+
+    shoulder_w = width * sf("shoulders")   # shoulder span + sleeve tops
+    torso_w = width * sf("torso")          # torso/chest/hips bulk
+    sleeve_f = sf("sleeves")               # sleeve length + flare
+    skirt_f = sf("skirt")                  # skirt drop + flare
+    hair_f = sf("hair")                    # hair mass
+    height_f = sf("height")                # crown presence (head/neck)
 
     def empty(name, parent, loc):
         e = bpy.data.objects.new(name, None)
@@ -1203,17 +1251,17 @@ def build_designed_figure(bpy, scn, dna, mats):
     pelvis = empty("Pelvis", root, (0.0, 0.0, 1.02))
 
     # hips block (under the robe) + torso
-    sphere("HipsMesh", pelvis, (0.0, 0.0, 0.02), 0.13, robe_mat, scale=(1.05 * width, 0.8, 0.75))
-    torso = capsule("TorsoMesh", pelvis, (0.0, 0.0, 0.22), 0.115 * width, 0.36, robe_mat)
+    sphere("HipsMesh", pelvis, (0.0, 0.0, 0.02), 0.13, robe_mat, scale=(1.05 * torso_w, 0.8, 0.75))
+    torso = capsule("TorsoMesh", pelvis, (0.0, 0.0, 0.22), 0.115 * torso_w, 0.36, robe_mat)
     torso.scale = (1.0, 0.72, 1.0)
     # upper-chest wrap: slightly wider robe shell
-    sphere("ChestMesh", pelvis, (0.0, 0.0, 0.4), 0.13, robe_mat, scale=(1.12 * width, 0.78, 0.95))
+    sphere("ChestMesh", pelvis, (0.0, 0.0, 0.4), 0.13, robe_mat, scale=(1.12 * torso_w, 0.78, 0.95))
 
     spine = empty("Spine", pelvis, (0.0, 0.0, 0.45))
     head = empty("Head", spine, (0.0, 0.0, 0.28))
 
     # sash: the accent-color waist band over the robe
-    sash = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=16, radius=0.135 * width, depth=0.09, location=(0, 0, 0), )
+    sash = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=16, radius=0.135 * torso_w, depth=0.09, location=(0, 0, 0), )
     sash.name = "SashMesh"
     sash.data.materials.append(accent_mat)
     bpy.ops.object.shade_smooth()
@@ -1235,18 +1283,21 @@ def build_designed_figure(bpy, scn, dna, mats):
         px, py = math.cos(a) * 0.09, math.sin(a) * 0.09
         panel = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
         panel.name = f"SkirtPanel{i}"
-        panel.scale = (0.07 * width, 0.009, 0.19)
+        # the skirt drop rides the silhouette's skirt factor: the panel
+        # grows DOWN from the same waist line (the center follows the
+        # half-height so the top edge stays pinned at -0.005)
+        panel.scale = (0.07 * width * (0.5 + 0.5 * skirt_f), 0.009, 0.19 * skirt_f)
         panel.rotation_euler = (math.sin(a) * 0.1, -math.cos(a) * 0.1, a)
         panel.data.materials.append(robe_mat)
         panel.parent = pelvis
-        panel.location = (px * 1.3, py * 1.3, -0.1)
+        panel.location = (px * 1.3, py * 1.3, -0.005 - 0.095 * skirt_f)
 
     # neck + head (skin) - head mesh stays at spine-local z .12*? keep
     # the stand-in's world anchor: head empty +0.28, mesh center +0.12
     # neck: a high robe collar (accent) so the chin never floats over
     # a pale gap - donghua robes close at the throat
-    capsule("NeckMesh", spine, (0.0, 0.0, 0.17), 0.036, 0.22, accent_mat)
-    hm = sphere("HeadMesh", head, (0.0, 0.0, 0.12), 0.115, skin_mat, scale=(0.92, 0.98, 1.05))
+    capsule("NeckMesh", spine, (0.0, 0.0, 0.17), 0.036, 0.22 * height_f, accent_mat)
+    hm = sphere("HeadMesh", head, (0.0, 0.0, 0.12), 0.115, skin_mat, scale=(0.92, 0.98, 1.05 * height_f))
 
     # ── face (v3.2 rig, restyled): stylized eyes with readable irises ──
     eye_mat = emission_mat(bpy, "EyeMat", "#cfe8ff", 2.4)
@@ -1292,35 +1343,37 @@ def build_designed_figure(bpy, scn, dna, mats):
         sphere("BeardLip", head, (0.0, -0.104, 0.075), 0.018, beard_mat, scale=(1.1, 0.7, 0.9))
 
     # ── hair: cap + fringe + back mass + style piece (the cap hugs
-    #    the skull - a bigger sphere swallows the face) ──
+    #    the skull - a bigger sphere swallows the face); the back and
+    #    style masses ride the silhouette's hair factor ──
     style = str(dna.get("hairStyle") or "short")
-    sphere("HairCap", head, (0.0, 0.01, 0.16), 0.118, hair_mat, scale=(1.0, 1.02, 0.8))
+    sphere("HairCap", head, (0.0, 0.01, 0.16), 0.118, hair_mat, scale=(1.0, 1.02, 0.8 * height_f))
     # a THIN crown band - a deep fringe hangs onto the eyes and reads
     # as a permanent scowl
     sphere("HairFringe", head, (0.0, -0.05, 0.205), 0.075, hair_mat, scale=(1.03, 0.4, 0.3))
-    sphere("HairBack", head, (0.0, 0.055, 0.03), 0.09, hair_mat, scale=(1.02, 0.68, 1.3))
+    sphere("HairBack", head, (0.0, 0.055, 0.03), 0.09, hair_mat, scale=(1.02, 0.68, 1.3 * hair_f))
     if style == "topknot":
         sphere("HairKnot", head, (0.0, 0.01, 0.265), 0.036, hair_mat, scale=(1.0, 1.0, 1.15))
     elif style == "ponytail":
         for i, (dz, dy, r) in enumerate(((-0.02, 0.09, 0.030), (-0.14, 0.115, 0.024), (-0.25, 0.1, 0.017))):
-            sphere(f"HairTail{i}", head, (0.0, dy, dz + 0.16), r, hair_mat)
+            sphere(f"HairTail{i}", head, (0.0, dy, dz + 0.16), r * hair_f, hair_mat)
     elif style == "braid":
         for i in range(5):
             t = i / 4.0
-            sphere(f"HairBraid{i}", head, (0.0, 0.075 + 0.01 * math.sin(i * 2.1), 0.12 - t * 0.3), 0.016 - 0.002 * i, hair_mat)
+            sphere(f"HairBraid{i}", head, (0.0, 0.075 + 0.01 * math.sin(i * 2.1), 0.12 - t * 0.3), (0.016 - 0.002 * i) * hair_f, hair_mat)
     elif style == "long":
-        sphere("HairLong", head, (0.0, 0.062, -0.06), 0.085, hair_mat, scale=(1.0, 0.55, 2.4))
+        sphere("HairLong", head, (0.0, 0.062, -0.06), 0.085, hair_mat, scale=(1.0, 0.55, 2.4 * hair_f))
 
-    # ── arms: robe sleeves + skin forearms + v3.2 hands ──
+    # ── arms: robe sleeves + skin forearms + v3.2 hands (the shoulder
+    #    span and the sleeve drop ride the silhouette factors) ──
     def arm(side_sign, prefix):
-        sh = empty(prefix + "Shoulder", spine, (side_sign * 0.24 * width, 0.0, 0.18))
+        sh = empty(prefix + "Shoulder", spine, (side_sign * 0.24 * shoulder_w, 0.0, 0.18))
         # sleeve: wider cone over the upper arm (cloth, in robe color)
-        sl = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=16, radius1=0.085 * width, radius2=0.05 * width, depth=0.3, location=(0, 0, 0), )
+        sl = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=16, radius1=0.085 * shoulder_w, radius2=0.05 * shoulder_w, depth=0.3 * sleeve_f, location=(0, 0, 0), )
         sl.name = prefix + "Sleeve"
         sl.data.materials.append(robe_mat)
         bpy.ops.object.shade_smooth()
         sl.parent = sh
-        sl.location = (0.0, 0.0, -0.15)
+        sl.location = (0.0, 0.0, -0.15 * sleeve_f)
         capsule(prefix + "UpperArm", sh, (0.0, 0.0, -0.14), 0.038, 0.28, robe_mat)
         elb = empty(prefix + "Elbow", sh, (0.0, 0.0, -0.28))
         capsule(prefix + "Forearm", elb, (0.0, 0.0, -0.12), 0.03, 0.22, skin_mat)
@@ -1447,6 +1500,15 @@ def build_designed_figure(bpy, scn, dna, mats):
         "rThumb": r_thumb, "lThumb": l_thumb,
         "blade": blade,
         "headMesh": hm,
+        # THE SILHOUETTE SHAPES THE MESH: the applied shaping evidence -
+        # the clamped factors, the traits that actually moved, and the
+        # trait names the sheet's own silhouette sentence described
+        # (None when the DNA carried no profile - a guess build).
+        "silhouette": {
+            "factors": shape["factors"],
+            "applied": shape["named"],
+            "namedBySheet": shape["fields"],
+        } if shape else None,
     }
 
 
@@ -2289,6 +2351,10 @@ def worker_run(job_file):
                 "hairStyle": str(hero.get("hairStyle") or "short"),
                 "weapon": str(hero.get("weaponType") or "none"),
             }
+            # THE SILHOUETTE SHAPES THE MESH: the build's applied shaping
+            # evidence rides the render state (a guess build reports none)
+            if isinstance(figure, dict) and figure.get("silhouette"):
+                state["rig"]["silhouette"] = figure["silhouette"]
 
             # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
             #    canonical model sheet is COLOR LAW over the DNA defaults
@@ -2353,6 +2419,9 @@ def worker_run(job_file):
                     }
                     other_rig = build_designed_figure(bpy, scn, other, other_mats)
                     state["secondFigureSource"] = "procedural:v4.0-designed"
+                    # the second figure's shaping rides the state too
+                    if isinstance(other_rig, dict) and other_rig.get("silhouette"):
+                        state["secondFigureSilhouette"] = other_rig["silhouette"]
                 else:
                     state["secondFigureSource"] = f"asset:{other.get('name', 'cast')}"
                 other_rig["root"].location = (0.6, 1.7, 0.0)

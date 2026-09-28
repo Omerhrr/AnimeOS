@@ -252,6 +252,19 @@ interface CharacterDesignDnaWire {
   // the conformance answered to (0.75 adherent / 0.35 guess)
   sheetFields?: string[];
   conformFactor?: number;
+  // iteration 81 THE SILHOUETTE SHAPES THE MESH: the sheet read's own
+  // silhouette sentence compiled into a bounded shaping profile - the
+  // worker sculpts the figure's mesh with it (mesh only, the rig
+  // anchors stay). Absent on a guess build = the neutral figure.
+  silhouetteShape?: {
+    height: number;
+    shoulders: number;
+    torso: number;
+    sleeves: number;
+    skirt: number;
+    hair: number;
+    fields?: string[];
+  };
   // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
   // measured into a palette and planned into bounded material pulls
   // (iteration 80: every detected cast member carries their own)

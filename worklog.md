@@ -1418,3 +1418,23 @@ Stage Summary:
 - The proxy is BUILT from its sheet's measured DNA (hair style, exact hexes, weapon, build) instead of regex guesses, and every detected cast member (not just the hero) is dressed by their own sheet
 - Real measured movement on the Immortal Path cast: 0% -> 5% / 0% -> 15%; the 70% bar remains the frontier for the next loop pass (widen shotsPerMember, or keep deepening adherence)
 - Commit: Iteration 80, pushed to GitHub main
+
+## Iteration 81 - THE SILHOUETTE SHAPES THE MESH + THE SCORE MATCHES THE POSE
+
+Date: 2026-09-28
+
+Work Log:
+- Frontier 1 deepened on both halves of the measured cast gap (the user's directive: run the loop again at shotsPerMember: 3 and deepen adherence further - silhouette-aware mesh shaping / pose-matched scoring)
+- Silhouette-aware mesh shaping: parseSilhouetteShape in src/lib/blender/adherence.ts compiles the sheet read's own silhouette sentence into a bounded profile (height 0.92..1.12, shoulders 0.82..1.25, torso 0.85..1.2, sleeves 0.9..1.35, skirt 0.9..1.3, hair 0.75..1.5); the build field sets the prior, the note's words push the traits (incl. regex forms: "long black hair", "wide-sleeved", "voluminous"), fields names only what the sheet described; the profile rides adherentDna -> CharacterDesignDnaWire.silhouetteShape
+- Worker: silhouette_shape() validates + re-clamps (one law, two runtimes); build_designed_figure sculpts MESH ONLY (shoulder span + sleeve tops via shoulder_w, torso/hips bulk via torso_w, sleeve drop, skirt panels growing DOWN from the pinned waist line, hair back/style mass, crown height via head/neck) - rig anchors untouched, framing math + v3.x rig contract intact; the rig returns the applied-shaping evidence and the worker state reports it (rig.silhouette for the hero, secondFigureSilhouette for member B)
+- Pose-matched scoring: poseSampleTimestamps (pure: 22/40/62% samples, sub-1.2s clips degrade to one stamp), extractRenderPosterFilmstrip (ffmpeg frames + hstack, honest null on any failure), buildIdentityPrompt filmstrip law (judge the frame whose pose matches the sheet's turnaround, name it), persistIdentityVerdict poseNote (stored note = "pose-matched over N frames; <model note>" vs "single frame (40% mark)")
+- Doctrine: rule 56 (THE SILHOUETTE SHAPES THE MESH, THE SCORE MATCHES THE POSE) + two curriculum lines; identity_repair_pass description names the deepening; the repair ledger line carries the shaping (silhouetteShapeLine)
+- E2E scripts/e2e-iter81-shape.ts ALL GREEN (68 checks) over the real runtime; Blender silhouette smoke ALL GREEN over the real 5.2.2 worker (wild factors clamped, second figure's shaping, guess build reports none)
+- THE REAL LOOP re-ran on Immortal Path at shotsPerMember: 3 with the deepened adherence riding (scripts/run-repair-immortal.ts): Lin Yue S002 25% -> 35% IMPROVED, Wei S004 15% -> 20% IMPROVED, Lin Yue S003 honestly WORSE (0%) and named; both sheets re-anchored mid-loop; both members still BELOW the 70% bar
+- Fixed three stale frozen assertions (pre-existing, proven absent at iter80 HEAD): iter66 (per-member render path + worker suffix law + missing tmp mkdir), iter68 (chained-performance clause), iter78 F4 (now accepts the honest cleared branch)
+- Gates: src tsc clean, eslint clean; regression iter65/66/67/68/69/71/73/74/76/77/78/79/80 ALL GREEN
+
+Stage Summary:
+- The proxy's OUTLINE now matches the sheet, not just its palette: the sheet read's silhouette sentence sculpts the mesh (bounded, clamped both runtimes, anchors fixed), and the re-score judges a pose-matched filmstrip instead of an arbitrary frame
+- Real measured movement: Lin Yue avg 15% -> 18%, Wei 15% -> 20%; one shot honestly worse; both still BELOW the 70% bar - the remaining gap is a modeling-fidelity gap (the vision model reads the proxy as mannequin-like), which names the next Frontier 1 slice: sculpted likeness (a real character mesh from the sheet, not primitives)
+- The loop is proven at the widened work order (3 shots/member); re-running it is now a one-line tool call, and every pass leaves a named ledger

@@ -1,8 +1,10 @@
-// Iteration 80 LIVE RUN: the repair loop over the Immortal Path cast's
-// named BELOW members (the standing is the work order), then the
-// re-measure. Driven in-process over the real runtime: REAL sheet-DNA
-// vision reads, REAL re-renders over the engine, REAL re-scores, REAL
-// re-anchors where the re-render cannot lift.
+// THE REPAIR LOOP, ITERATION 81: the loop runs again over Immortal
+// Path's named BELOW members with shotsPerMember: 3 (the widened work
+// order) and the deepened adherence riding - the sheet read's
+// silhouette sentence SHAPES THE MESH the re-renders build, and every
+// re-score judges a POSE-MATCHED filmstrip of the clip. REAL sheet-DNA
+// vision reads, REAL re-renders over the engine, REAL pose-matched
+// re-scores, REAL re-anchors where the re-render cannot lift.
 // Run: npx tsx scripts/run-repair-immortal.ts
 
 import { db } from "../src/lib/db";
@@ -27,7 +29,7 @@ async function main() {
     return;
   }
 
-  const res = await executeTool(project.id, "identity_repair_pass", { members: 2, shotsPerMember: 1, reanchor: true }, { id: owner.id, name: owner.name, role: owner.role });
+  const res = await executeTool(project.id, "identity_repair_pass", { members: 2, shotsPerMember: 3, reanchor: true }, { id: owner.id, name: owner.name, role: owner.role });
   console.log(`TOOL ${res.status}:\n${res.result}\n`);
 
   const after = await castIdentityMeasurement(project.id, "RENDER");

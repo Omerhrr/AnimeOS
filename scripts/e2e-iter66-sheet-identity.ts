@@ -141,16 +141,18 @@ async function main() {
   check("A4 the graded roles are robe, accent, hair and boots (skin and blade untouched)", sp.includes('mat: "RobeMat"') && sp.includes('mat: "AccentMat"') && sp.includes('mat: "HairMat"') && sp.includes('mat: "BootsMat"') && !sp.includes('"SkinMat"'), sp.includes("SkinMat") ? "SkinMat appears" : "clean");
 
   const render = readFileSync("src/lib/engine/render.ts", "utf8");
-  check("A5 the render reads the hero's sheet before the payload", render.includes("THE SHEET DRESSES THE RENDER") && render.includes("extractSheetPalette") && render.includes("heroRow?.modelSheetUrl"));
-  check("A6 an unreadable sheet is honestly absent (never silently applied)", render.includes("sheetConformance = null;") && render.includes("honestly absent"));
-  check("A7 only the hero's entry carries the plan", render.includes("cast[0] = { ...cast[0], sheetConformance }"));
+  // bumped at iteration 80: the render path dresses EVERY detected cast
+  // member from their own sheet (the per-member loop), not just the hero
+  check("A5 the render reads EVERY member's sheet before the payload", render.includes("THE SHEET DRESSES THE RENDER") && render.includes("extractSheetPalette") && render.includes("memberRow?.modelSheetUrl"));
+  check("A6 an unreadable sheet is honestly absent (never silently applied)", render.includes("an unreadable sheet is honestly absent"));
+  check("A7 every detected member carries their own plan (iteration 80)", render.includes("for (let i = 0; i < detected.length && i < cast.length; i++)") && render.includes("cast[i] = {"));
 
   const bridgeType = readFileSync("src/lib/bridge/blender.ts", "utf8");
   check("A8 the wire type carries the conformance", bridgeType.includes("sheetConformance?:"));
 
   const bridge = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
-  check("A9 the worker dresses the NAMED materials from the plan", bridge.includes("THE SHEET DRESSES THE RENDER") && bridge.includes(`bpy.data.materials.get(str(row.get("mat") or "")`) && bridge.includes('"Base Color"].default_value = (r, g, bl, 1.0)'));
-  check("A10 the state reports the conformance honestly (applied, skipped, palette, law)", bridge.includes('state["identity"] = {') && bridge.includes('"conformed": applied') && bridge.includes('"skipped": skipped') && bridge.includes("recipe parameters untouched"));
+  check("A9 the worker dresses the NAMED materials from the plan", bridge.includes("THE SHEET DRESSES THE RENDER") && bridge.includes('mat_name = str(row.get("mat") or "") + suffix') && bridge.includes('bpy.data.materials.get(mat_name)') && bridge.includes('"Base Color"].default_value = (r, g, bl, 1.0)'));
+  check("A10 the state reports the conformance honestly (per member, applied, skipped)", bridge.includes('state["identity" if cast_idx == 0 else "identityB"] = {') && bridge.includes('"conformed": applied') && bridge.includes('"skipped": skipped'));
   check("A11 FINAL renders read like a room (real bounces; PREVIEW stays flat)", bridge.includes("the FINAL frame reads like a room") && bridge.includes("scn.cycles.diffuse_bounces = 2") && bridge.includes('state["render"] = {"samples"'));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
@@ -159,6 +161,7 @@ async function main() {
 
   // ───────────────────── B. the pure math ─────────────────────
   const tmpSheet = path.join(process.cwd(), "tmp", `e2e66-sheet-${Date.now()}.png`);
+  fs.mkdirSync(path.dirname(tmpSheet), { recursive: true });
   await craftSheet(tmpSheet);
   const palette = await extractSheetPalette(await fs.promises.readFile(tmpSheet));
   check("B1 the planted bands measure back as the palette", palette.length >= 3 && palette.some((p) => hexDist(p, "#c020c0") < 0.09) && palette.some((p) => hexDist(p, "#c0c020") < 0.09), JSON.stringify(palette));

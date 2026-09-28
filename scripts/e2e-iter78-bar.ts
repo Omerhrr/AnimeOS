@@ -319,7 +319,10 @@ async function main() {
   const readBack = await T("measure_identity_bar", {});
   check("F3 the read-back carries the measured distribution", readBack.status === "OK" && readBack.result.includes("render-source identity over"), readBack.result.slice(0, 200));
   const scoreRenderTool = await T("score_panel_identity", { sceneNumber: scene.number, shotNumber: 1, source: "render" });
-  check("F4 score_panel_identity scores the shipping pixels at the 70% bar", scoreRenderTool.status === "OK" && scoreRenderTool.result.includes("render source") && scoreRenderTool.result.includes("shipping-pixel"), scoreRenderTool.result.slice(0, 220));
+  // both honest outcomes accepted: the drift branch names the shipping-pixel
+  // bar, the cleared branch lands IDENTITY_VERIFIED (iteration 81's
+  // pose-matched strip lifted the same lab pixels above the bar)
+  check("F4 score_panel_identity scores the shipping pixels at the 70% bar", scoreRenderTool.status === "OK" && scoreRenderTool.result.includes("render source") && (scoreRenderTool.result.includes("shipping-pixel") || scoreRenderTool.result.includes("IDENTITY_VERIFIED")), scoreRenderTool.result.slice(0, 220));
 
   // ───────────────────── G. cleanup ─────────────────────
   await cleanupLab(labId);

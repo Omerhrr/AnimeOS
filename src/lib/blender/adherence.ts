@@ -27,7 +27,12 @@
  *    same SheetDnaRead (pure parser, exported for the E2E);
  *  - bounded pulls: an adherent build's palette conformance pulls
  *    harder (0.75) than a guess build's (0.35) - the sheet read is
- *    already truth, so the remaining drift is closed, not cosied to.
+ *    already truth, so the remaining drift is closed, not cosied to;
+ *  - THE SILHOUETTE SHAPES THE MESH (iteration 81): the read's
+ *    silhouette sentence compiles into a bounded shaping profile
+ *    (height/shoulders/torso/sleeves/skirt/hair) the worker sculpts
+ *    the proxy's MESH with - the outline matches the sheet, not just
+ *    the palette. A guess build keeps the neutral figure.
  */
 
 import ZAI from "z-ai-web-dev-sdk";
@@ -58,6 +63,111 @@ export const SHEET_DNA_BUILDS: readonly Build[] = ["lean", "sturdy", "heavy"];
 export const ADHERENT_CONFORM_FACTOR = 0.75;
 /** The palette pull a guess build keeps (THE SHEET DRESSES THE RENDER). */
 export const GUESS_CONFORM_FACTOR = 0.35;
+
+// ── THE SILHOUETTE SHAPES THE MESH (iteration 81, Frontier 1 deeper) ──
+//
+// A palette can dress a body whose OUTLINE still disagrees with the
+// sheet - the measured cast gap survived iteration 80's DNA merge
+// because the proxy's silhouette was the builder's default. The sheet
+// read already carries a silhouette SENTENCE ("tall, broad-shouldered
+// swordswoman, flowing sleeves"); this module reads that sentence into
+// a bounded shaping profile the worker sculpts the mesh with. The
+// factors are tight on purpose: a silhouette hint bends the figure,
+// it never redesigns it - and the rig anchors stay where the framing
+// math expects them (the worker scales MESH, never joints).
+
+export interface SilhouetteShape {
+  height: number; // crown presence (head/neck/hair mass), 0.92..1.12
+  shoulders: number; // shoulder span + sleeve top width, 0.82..1.25
+  torso: number; // torso/chest/hips bulk, 0.85..1.2
+  sleeves: number; // sleeve length + flare, 0.9..1.35
+  skirt: number; // skirt panel drop + flare, 0.9..1.3
+  hair: number; // hair mass scale, 0.75..1.5
+  fields: string[]; // the traits the sheet's own silhouette note named
+}
+
+/** The bounds the worker re-clamps against (one law, two runtimes). */
+export const SILHOUETTE_SHAPE_BOUNDS: Record<keyof Omit<SilhouetteShape, "fields">, [number, number]> = {
+  height: [0.92, 1.12],
+  shoulders: [0.82, 1.25],
+  torso: [0.85, 1.2],
+  sleeves: [0.9, 1.35],
+  skirt: [0.9, 1.3],
+  hair: [0.75, 1.5],
+};
+
+/** The shaping priors a build field implies when the note is silent. */
+export const SILHOUETTE_BUILD_PRIORS: Record<string, Partial<SilhouetteShape>> = {
+  lean: { shoulders: 0.92, torso: 0.92 },
+  sturdy: { shoulders: 1.08, torso: 1.08 },
+  heavy: { shoulders: 1.16, torso: 1.15 },
+};
+
+function clampBound(key: keyof Omit<SilhouetteShape, "fields">, v: number): number {
+  const [lo, hi] = SILHOUETTE_SHAPE_BOUNDS[key];
+  return Math.round(Math.min(hi, Math.max(lo, v)) * 1000) / 1000;
+}
+
+/**
+ * THE SILHOUETTE SHAPES THE MESH (pure): read the sheet's silhouette
+ * sentence into a bounded shaping profile. The build field sets the
+ * base prior; the note's own words push each trait (every push lands
+ * inside the bounds); `fields` names ONLY the traits the note itself
+ * described - a note that says nothing leaves the prior figure and an
+ * honest empty list. Deterministic: the same sentence always lands
+ * the same shape.
+ */
+export function parseSilhouetteShape(silhouette: string | null | undefined, build: string | null | undefined): SilhouetteShape {
+  const prior = (build && SILHOUETTE_BUILD_PRIORS[build.trim().toLowerCase()]) || {};
+  const shape: SilhouetteShape = {
+    height: 1.0,
+    shoulders: prior.shoulders ?? 1.0,
+    torso: prior.torso ?? 1.0,
+    sleeves: 1.0,
+    skirt: 1.0,
+    hair: 1.0,
+    fields: [],
+  };
+  const note = (silhouette ?? "").toLowerCase();
+  if (!note.trim()) return shape;
+  const has = (...words: Array<string | RegExp>) =>
+    words.some((w) => (typeof w === "string" ? note.includes(w) : w.test(note)));
+  const push = (key: keyof Omit<SilhouetteShape, "fields">, delta: number, field: string) => {
+    shape[key] = clampBound(key, shape[key] + delta);
+    if (!shape.fields.includes(field)) shape.fields.push(field);
+  };
+  // vertical presence
+  if (has("tall", "towering", "lofty", "imposing")) push("height", 0.07, "tall");
+  if (has("petite", "diminutive")) push("height", -0.06, "petite");
+  // upper-body frame
+  if (has("broad", "muscular", "powerful", "barrel-chested", "wide-shouldered", "broad-shouldered")) push("shoulders", 0.13, "broad-shouldered");
+  if (has("slender", "willowy", "slim", "narrow", "thin", "svelte")) push("shoulders", -0.08, "slender");
+  if (has("heavyset", "stocky", "burly")) push("shoulders", 0.1, "heavyset");
+  // torso bulk
+  if (has("broad", "muscular", "powerful", "heavyset", "stocky", "burly", "barrel-chested")) push("torso", 0.1, "broad-shouldered");
+  if (has("slender", "willowy", "slim", "svelte")) push("torso", -0.07, "slender");
+  if (has("robes billow", "billowing")) push("torso", 0.05, "billowing robes");
+  // sleeves
+  if (has("flowing sleeves", "wide sleeves", "wide-sleeved", "long sleeves", "billowing sleeves", "loose sleeves")) push("sleeves", 0.22, "flowing sleeves");
+  if (has("fitted sleeves", "close-fitting")) push("sleeves", -0.08, "fitted sleeves");
+  // skirt / robe drop
+  if (has("flowing robe", "long robe", "trailing robe", "flowing skirt", "long skirt", "sweeping robe", "floor-length")) push("skirt", 0.2, "flowing robes");
+  // hair mass - the note may put a color between the length and the
+  // noun ("long black hair"), or describe the mass itself
+  if (has("long hair", "flowing hair", "flowing mane", "cascading", "waist-length", "mane of", "voluminous", /\blong\b[^.;]{0,24}\bhair\b/, /\bhair\b[^.;]{0,24}\blong\b/, /\blong\b[^.;]{0,24}\b(ponytail|braid|mane)\b/)) push("hair", 0.32, "long hair");
+  if (has("short hair", "cropped", "close-cropped", "buzz")) push("hair", -0.22, "short hair");
+  return shape;
+}
+
+/** The shaping as one ledger line (the repair pass reports it). */
+export function silhouetteShapeLine(shape: SilhouetteShape): string {
+  const applied = (Object.keys(SILHOUETTE_SHAPE_BOUNDS) as Array<keyof Omit<SilhouetteShape, "fields">>)
+    .filter((k) => Math.abs(shape[k] - 1.0) > 0.001)
+    .map((k) => `${k} ${shape[k].toFixed(2)}`);
+  if (applied.length === 0) return "neutral silhouette (the sheet described no shape)";
+  const from = shape.fields.length > 0 ? `named by the sheet: ${shape.fields.join(", ")}` : "from the build prior";
+  return `shaped: ${applied.join(", ")} (${from})`;
+}
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -182,7 +292,7 @@ export async function readSheetDna(
 export function adherentDna(
   base: CharacterDesignDna,
   read: SheetDnaRead | null,
-): CharacterDesignDna & { sheetFields: string[]; conformFactor: number } {
+): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape } {
   if (!read) return { ...base, sheetFields: [], conformFactor: GUESS_CONFORM_FACTOR };
   const sheetFields: string[] = [];
   const pick = <T>(sheetVal: T | null | undefined, guessVal: T, field: string): T => {
@@ -203,11 +313,17 @@ export function adherentDna(
     source: `${base.source} [sheet-read ${read.readAt}: ${read.silhouette ?? "no silhouette note"}]`.slice(0, 500),
     sheetFields,
     conformFactor: sheetFields.length > 0 ? ADHERENT_CONFORM_FACTOR : GUESS_CONFORM_FACTOR,
+    // THE SILHOUETTE SHAPES THE MESH: an adherent build rides the
+    // sheet's own silhouette sentence as a bounded shaping profile
+    // (the worker sculpts the mesh with it); a guess build keeps the
+    // neutral figure (no silhouetteShape on the wire at all).
+    silhouetteShape: parseSilhouetteShape(read.silhouette, read.build),
   };
 }
 
 /** One honest line for logs/events: which fields the sheet owns now. */
 export function adherenceLine(name: string, merged: ReturnType<typeof adherentDna>): string {
   if (merged.sheetFields.length === 0) return `${name}: guess build (regex DNA only) - the sheet read landed nothing usable`;
-  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor})`;
+  const shape = merged.silhouetteShape ? `; ${silhouetteShapeLine(merged.silhouetteShape)}` : "";
+  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape})`;
 }
