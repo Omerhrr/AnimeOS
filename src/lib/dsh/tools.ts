@@ -40,6 +40,7 @@ import { compileGrammarSpec, serializeGrammar, BUILT_IN_GRAMMARS, GRAMMAR_MOVES,
 import { compileFxSpec, serializeFx, BUILT_IN_FX, FX_KINDS, findBuiltInFx } from "@/lib/animation/fx";
 import { compilePhysicsSpec, serializePhysics, BUILT_IN_PHYSICS, PHYSICS_KINDS, findBuiltInPhysics } from "@/lib/animation/physics";
 import { compileChoreo, BUILT_IN_CHOREO } from "@/lib/animation/choreography";
+import { motionFlowAdoptionGate, flowNameFromChoreo, isMotionRegister, rankMotionFlows, motionFlowsContextLine, MOTION_REGISTERS } from "@/lib/animation/motionflows";
 import { reviewRenderJob, renderPixelContextLine, RENDER_ISSUE_KINDS } from "@/lib/engine/render-review";
 import { fixRenderIssues } from "@/lib/engine/render-fix";
 import { proposeRedirection } from "@/lib/engine/render-redirection";
@@ -832,6 +833,16 @@ export const TOOL_DEFS: ToolDef[] = [
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       choreo: "string - a design_choreography preset name, a built-in name (The Combo | The Draw Storm | The Rising Fang), or an inline JSON program; empty string clears",
+    },
+  },
+  {
+    name: "learn_motion_flow",
+    description: "THE MOTION IS LEARNED: adopt a shot's VERIFIED keyed performance as a NAMED MOTION FLOW - the production's memory of how a pose transition is performed for a dramatic register. The shot must carry a choreography program (design_choreography + set_shot_choreography) and its render must have VERIFIED: a pixel review that PASSED its bar (review_render), or a human's APPROVED/FINAL on the shot. The flow keeps the exact keys, impact and smear that verified, its poseFrom -> poseTo transition and its adopted-from evidence. From then on set_shot_choreography choreo:'<flow name>' re-performs the verified timing on any shot, every application grows the flow's applied record, and every passing review of a flow-carrying shot grows its verified record. A verified performance that nobody names is a lesson the studio re-pays for every fight.",
+    args: {
+      name: "string - the flow's name (how it is applied later, e.g. 'Temple Gate Combo')",
+      register: "string - the dramatic register the flow serves: BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE",
+      sceneNumber: "number (defaults to latest scene)",
+      shotNumber: "number (defaults to shot 1)",
     },
   },
   {
@@ -3434,11 +3445,12 @@ async function executeToolInner(
           await landDesignEvent(projectId, `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} (back to the two-pose slide)`, { shotId: shot.id });
           return { status: "OK", result: `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} - the body slides between its start/end poses again.` };
         }
-        // resolve: saved choreography preset -> built-in -> inline program
+        // resolve: saved choreography preset -> built-in -> learned motion flow -> inline program
         const savedCh = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "CHOREOGRAPHY", name: chArg } } });
         let specRaw: unknown;
         let chSource: string;
         let builtinName: string | undefined;
+        let flowName: string | undefined;
         if (savedCh) {
           try {
             specRaw = JSON.parse(savedCh.spec || "null");
@@ -3452,27 +3464,125 @@ async function executeToolInner(
             specRaw = builtin;
             chSource = `built-in '${builtin.name}'`;
             builtinName = builtin.name;
-          } else if (chArg.startsWith("{")) {
-            specRaw = chArg;
-            chSource = "inline program";
           } else {
-            const registry = [
-              ...BUILT_IN_CHOREO.map((b) => `'${b.name}' (built-in)`),
-              ...((await db.designPreset.findMany({ where: { projectId, kind: "CHOREOGRAPHY" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
-            ];
-            return { status: "ERROR", result: `No choreography named '${chArg}'. Registry: ${registry.join(", ")} - or pass an inline JSON program like {"keys":[{"at":0,"pose":"STANCE","kind":"hold"},{"at":0.42,"pose":"SLASH","kind":"strike"},{"at":1,"pose":"STANCE","kind":"follow"}],"impact":{"at":0.42,"frames":3,"punch":2.5,"flash":0.8}}.` };
+            const learnedFlow = await db.motionFlow.findUnique({ where: { projectId_name: { projectId, name: chArg } } });
+            if (learnedFlow) {
+              try {
+                specRaw = JSON.parse(learnedFlow.spec || "null");
+                chSource = `learned flow '${learnedFlow.name}' (${learnedFlow.register.toLowerCase()}, ${learnedFlow.applied} applied / ${learnedFlow.verified} verified, from ${learnedFlow.sourceRef})`;
+                flowName = learnedFlow.name;
+              } catch {
+                return { status: "ERROR", result: `Learned motion flow '${chArg}' is corrupt - re-learn it from its verified shot with learn_motion_flow.` };
+              }
+            } else if (chArg.startsWith("{")) {
+              try {
+                specRaw = JSON.parse(chArg);
+              } catch {
+                return { status: "ERROR", result: "The inline choreography program is not valid JSON - pass {\"keys\":[{\"at\":0,\"pose\":\"STANCE\",\"kind\":\"hold\"},{\"at\":1,\"pose\":\"SLASH\",\"kind\":\"strike\"}],\"impact\":{...},\"smear\":{...}}." };
+              }
+              chSource = "inline program";
+            } else {
+              const flows = rankMotionFlows(await db.motionFlow.findMany({ where: { projectId } }));
+              const registry = [
+                ...BUILT_IN_CHOREO.map((b) => `'${b.name}' (built-in)`),
+                ...((await db.designPreset.findMany({ where: { projectId, kind: "CHOREOGRAPHY" }, select: { name: true } })).map((r) => `'${r.name}' (saved)`)),
+                ...flows.map((f) => `'${f.name}' (learned flow, ${f.register.toLowerCase()}, x${f.applied}/${f.verified}v)`),
+              ];
+              return { status: "ERROR", result: `No choreography named '${chArg}'. Registry: ${registry.join(", ")} - or pass an inline JSON program like {"keys":[{"at":0,"pose":"STANCE","kind":"hold"},{"at":0.42,"pose":"SLASH","kind":"strike"},{"at":1,"pose":"STANCE","kind":"follow"}],"impact":{"at":0.42,"frames":3,"punch":2.5,"flash":0.8}}.` };
+            }
           }
         }
         const compiledCh = compileChoreo(specRaw, chSource);
         if (!compiledCh.ok) return { status: "ERROR", result: `${chSource} does not compile: ${compiledCh.error}` };
         const perfName = (specRaw !== null && typeof specRaw === "object" && !Array.isArray(specRaw) && typeof (specRaw as { name?: unknown }).name === "string" && (specRaw as { name: string }).name.trim())
           ? (specRaw as { name: string }).name.trim()
-          : (savedCh ? chArg : builtinName);
-        const perf = { ...compiledCh.spec, name: perfName };
+          : (savedCh ? chArg : builtinName || flowName);
+        const perf = { ...compiledCh.spec, name: perfName, ...(flowName ? { flow: flowName } : {}) };
         await db.shot.update({ where: { id: shot.id }, data: { choreo: JSON.stringify(perf) } });
+        if (flowName) {
+          await db.motionFlow.update({
+            where: { projectId_name: { projectId, name: flowName } },
+            data: { applied: { increment: 1 } },
+          });
+        }
         const chShape = compiledCh.spec.keys.map((k) => `${k.pose.toLowerCase()}@${k.at}:${k.kind}`).join(" -> ");
         await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} performs from ${chSource}: ${chShape}`, { shotId: shot.id, choreo: chSource });
         return { status: "OK", result: `THE BODY PERFORMS on Shot ${String(shot.number).padStart(3, "0")} with ${chSource}: ${chShape}${compiledCh.spec.impact ? ", the impact frame flares a real light and punches the camera" : ""}${compiledCh.spec.smear ? ", the striking limb smears on the fastest frames" : ""}. The next render_shot of this shot performs the keys instead of the two-pose slide - the keys own the body, the camera grammar still owns the lens, and the cloth, flesh and physics still answer the performing body. Direct the lens first (set_shot_grammar) so the performance has a frame worth cutting to.` };
+      }
+
+      case "learn_motion_flow": {
+        // THE MOTION IS LEARNED: adopt the shot's verified keyed
+        // performance as a named flow the whole production consults.
+        const flowNameArg = String(args.name ?? "").trim();
+        if (!flowNameArg) return { status: "ERROR", result: "Name the flow - learn_motion_flow name:'<name>' register:'<register>'." };
+        const registerArg = String(args.register ?? "").trim().toUpperCase();
+        if (!isMotionRegister(registerArg)) {
+          return { status: "ERROR", result: `register must be one of ${MOTION_REGISTERS.join(" | ")} - the dramatic register the flow serves.` };
+        }
+        let scene: Awaited<ReturnType<typeof latestScene>> = null;
+        if (args.sceneNumber) {
+          const scenes = await db.scene.findMany({
+            where: { episode: { season: { projectId } }, number: Number(args.sceneNumber) },
+            orderBy: { createdAt: "desc" },
+          });
+          scene = scenes[0] ?? null;
+        }
+        if (!scene) scene = await latestScene(projectId);
+        if (!scene) return { status: "ERROR", result: "No scene exists - break down an episode first (create_episode / the breakdown tools)." };
+        const shot = await db.shot.findFirst({
+          where: { sceneId: scene.id, number: args.shotNumber ? Number(args.shotNumber) : 1 },
+        });
+        if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
+        if (!shot.choreo) {
+          return { status: "ERROR", result: `Shot ${String(shot.number).padStart(3, "0")} carries no choreography program - a flow is a KEYED performance. Key it first (design_choreography + set_shot_choreography), render it, verify it, then learn from it.` };
+        }
+        let storedProgram: unknown;
+        try {
+          storedProgram = JSON.parse(shot.choreo);
+        } catch {
+          return { status: "ERROR", result: `Shot ${String(shot.number).padStart(3, "0")}'s choreography is corrupt - re-apply it (set_shot_choreography) before learning from it.` };
+        }
+        const compiledFlow = compileChoreo(storedProgram, `shot ${scene.number}/${shot.number}`);
+        if (!compiledFlow.ok) {
+          return { status: "ERROR", result: `The shot's choreography does not compile (${compiledFlow.error}) - fix the program before learning from it.` };
+        }
+        const keys = compiledFlow.spec.keys;
+        const poseFrom = keys[0].pose;
+        const poseTo = keys[keys.length - 1].pose;
+        // THE ADOPTION LAW: the render must have VERIFIED - a passing
+        // pixel review or a human's APPROVED/FINAL.
+        const latestFinished = await db.renderJob.findFirst({
+          where: { projectId, shotId: shot.id, outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
+          orderBy: { createdAt: "desc" },
+        });
+        const review = latestFinished
+          ? await db.renderReview.findFirst({ where: { renderJobId: latestFinished.id }, orderBy: { createdAt: "desc" } })
+          : null;
+        const gate = motionFlowAdoptionGate(
+          { status: shot.status, choreo: shot.choreo },
+          review ? { state: review.state, overall: review.overall, bar: review.bar } : null,
+        );
+        if (!gate.ok) {
+          return { status: "ERROR", result: `The motion did not verify, so it cannot be learned: ${gate.reason}. A flow remembers only what the pixels proved.` };
+        }
+        const sourceRef = `Sc${scene.number} Sh${String(shot.number).padStart(3, "0")}`;
+        const specJson = JSON.stringify({ keys: compiledFlow.spec.keys, impact: compiledFlow.spec.impact, smear: compiledFlow.spec.smear });
+        const existing = await db.motionFlow.findUnique({ where: { projectId_name: { projectId, name: flowNameArg } } });
+        if (existing) {
+          await db.motionFlow.update({
+            where: { projectId_name: { projectId, name: flowNameArg } },
+            data: { register: registerArg, spec: specJson, poseFrom, poseTo, sourceShotId: shot.id, sourceRef, adoptedFrom: gate.reason },
+          });
+        } else {
+          await db.motionFlow.create({
+            data: {
+              projectId, register: registerArg, name: flowNameArg, spec: specJson,
+              poseFrom, poseTo, sourceShotId: shot.id, sourceRef, adoptedFrom: gate.reason,
+            },
+          });
+        }
+        await landDesignEvent(projectId, `Learned motion flow '${flowNameArg}' (${registerArg.toLowerCase()}) from ${sourceRef}: ${poseFrom.toLowerCase()} -> ${poseTo.toLowerCase()} - ${gate.reason}`, { shotId: shot.id });
+        return { status: "OK", result: `THE MOTION IS LEARNED: '${flowNameArg}' (${registerArg.toLowerCase()}) now remembers the verified performance from ${sourceRef} - ${poseFrom.toLowerCase()} -> ${poseTo.toLowerCase()}, ${keys.length} key(s), adopted because ${gate.reason}. Apply it to any shot with set_shot_choreography choreo:'${flowNameArg}' - every application grows its record, and every passing review of a flow-carrying shot verifies it again. ${existing ? `The flow existed and was re-learned from fresher evidence (${existing.applied} applications kept).` : "A verified performance nobody names is a lesson the studio re-pays for every fight."}` };
       }
 
       case "review_render": {
@@ -3506,6 +3616,19 @@ async function executeToolInner(
         const res = await reviewRenderJob(job.id);
         if (!res.ok) return { status: "ERROR", result: `The pixel review could not run: ${res.error}` };
         const v = res.review.verdict;
+        // THE MOTION IS LEARNED (the verification half): a PASSED review
+        // of a flow-carrying shot verifies the flow's timing again.
+        if (res.review.state === "PASSED" && job.shotId) {
+          const reviewedShot = await db.shot.findUnique({ where: { id: job.shotId }, select: { choreo: true, number: true } });
+          const carriedFlow = flowNameFromChoreo(reviewedShot?.choreo ?? null);
+          if (carriedFlow) {
+            const flowRow = await db.motionFlow.findUnique({ where: { projectId_name: { projectId, name: carriedFlow } } });
+            if (flowRow) {
+              await db.motionFlow.update({ where: { projectId_name: { projectId, name: carriedFlow } }, data: { verified: { increment: 1 } } });
+              await landDesignEvent(projectId, `Motion flow '${carriedFlow}' verified again - ${res.review.targetRef} PASSED at ${res.review.overall !== null ? `${Math.round(res.review.overall * 100)}%` : "bar"} (x${flowRow.verified + 1}v/${flowRow.applied}a)`, { renderJobId: job.id });
+            }
+          }
+        }
         const crit = v ? Object.entries(v.criteria).filter(([, x]) => typeof x === "number").map(([k, x]) => `${k} ${(x as number).toFixed(2)}`).join(", ") : "";
         const m = v?.metrics;
         const measured = m ? `measured: lumaMean ${m.lumaMean}, lumaStd ${m.lumaStd}, satMean ${m.satMean}, near-black ${(m.darkFrac * 100).toFixed(1)}%, clipped-white ${(m.brightFrac * 100).toFixed(1)}%` : "";
@@ -4751,7 +4874,7 @@ function designContextLine(
 }
 
 export async function buildCompactContext(projectId: string) {
-  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows, learnedSculptPlans, learnedSequenceFlows, unadoptedSequencePrograms] = await Promise.all([
+  const [project, canon, scheduleHealth, drift, savedTemplates, latestDigestEvent, latestPublishEvent, gateHeldCount, openCommentCount, openComments, openDesignIssues, latestDesignReview, latestRenderReview, learnedRetopoFlows, learnedSculptPlans, learnedSequenceFlows, learnedMotionFlows, unadoptedSequencePrograms] = await Promise.all([
     db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -4816,6 +4939,8 @@ export async function buildCompactContext(projectId: string) {
     listSculptPlans(projectId).catch(() => []),
     // The learned sequence flows (Iteration 63): the sentences the studio remembers.
     listSequenceFlows(projectId).catch(() => []),
+    // The learned motion flows (Iteration 77): the performances the studio remembers.
+    db.motionFlow.findMany({ where: { projectId }, orderBy: { updatedAt: "desc" as const } }).catch(() => []),
     // The verified-but-unadopted programs (Iteration 64): the sentences the consult proposes.
     unadoptedVerifiedPrograms(projectId).catch(() => []),
   ]);
@@ -4933,6 +5058,7 @@ export async function buildCompactContext(projectId: string) {
     retopoFlows: retopoFlowsContextLine(learnedRetopoFlows),
     sculptPlans: sculptPlansContextLine(learnedSculptPlans),
     sequenceFlows: sequenceFlowsContextLine(learnedSequenceFlows),
+    motionFlows: motionFlowsContextLine(learnedMotionFlows.map((f) => ({ name: f.name, register: f.register, poseFrom: f.poseFrom, poseTo: f.poseTo, verified: f.verified, applied: f.applied }))),
     sequenceAdoptions: sequenceAdoptionSuggestionsLine(unadoptedSequencePrograms),
   };
 }

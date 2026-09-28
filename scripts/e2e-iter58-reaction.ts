@@ -146,7 +146,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A20 the registry stands at 80 tools (iter63 joined) (the body law rides the physics pair; the pixel review joined in iter 59)", toolCount === 80, `count=${toolCount}`);
+  check("A20 the registry stands at 84 tools (iter63 joined) (the body law rides the physics pair; the pixel review joined in iter 59)", toolCount === 84, `count=${toolCount}`);
   check("A21 design_physics teaches the REACTION kind (merge + cloth whip)", tools.includes("REACTION (THE BODY ANSWERS THE WORLD") && tools.includes("multiple REACTION programs merge into one body law"));
   check("A22 set_shot_physics names The Recoil and the stagger", tools.includes("The Shove, The Recoil") && tools.includes("a REACTION staggers the FIGURE itself"));
 

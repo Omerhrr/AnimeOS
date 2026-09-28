@@ -143,7 +143,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A15 the registry stands at 83 tools (the solver extends the render, it adds no tool)", toolCount === 83, `count=${toolCount}`);
+  check("A15 the registry stands at 84 tools (the solver extends the render, it adds no tool)", toolCount === 84, `count=${toolCount}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A16 the curriculum grew THE CLOTH IS SOLVED", prompts.includes("- THE CLOTH IS SOLVED") && prompts.includes("a robe that answers nothing is a costume"));

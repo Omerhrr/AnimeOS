@@ -62,6 +62,7 @@ model Project {
   retopoFlows      RetopoFlow[]
   sculptPlans      SculptPlan[]
   sequenceFlows    SequenceFlow[]
+  motionFlows      MotionFlow[]
   assetExports     AssetExport[]
   comments         Comment[]
   memberships      ProjectMembership[]
@@ -744,6 +745,33 @@ model SequenceFlow {
 
   @@unique([projectId, register, name])
   @@index([projectId, register])
+}
+
+// LEARNED MOTION FLOW (iteration 77): a verified render's KEYED
+// performance adopted as the production's named memory of how a pose
+// transition is performed for a dramatic register. The spec is the
+// compiled choreography program (keys/impact/smear) that verified;
+// applied counts the shots re-performing it, verified counts the
+// passing reviews that confirmed the timing again.
+model MotionFlow {
+  id           String   @id @default(cuid())
+  projectId    String
+  register     String // BATTLE | PURSUIT | REVEAL | STANDOFF | RITUAL | INTRIGUE | RESOLVE
+  name         String // the flow's name - how DSH applies it (set_shot_choreography choreo:'<name>')
+  spec         String // compiled choreo JSON {keys, impact?, smear?} - the timing that verified
+  poseFrom     String // the transition's start pose (the first key's pose)
+  poseTo       String // the transition's end pose (the last key's pose)
+  sourceShotId String? // the shot whose verified render taught it
+  sourceRef    String   // e.g. "Sc1 Sh003" - where the lesson came from
+  adoptedFrom  String   // the evidence that verified it: "review PASSED at N%" or "shot APPROVED"
+  applied      Int      @default(0) // shots re-performing the flow
+  verified     Int      @default(0) // passing pixel reviews of flow-carrying shots
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@index([projectId])
 }
 
 model RetopoFlow {
