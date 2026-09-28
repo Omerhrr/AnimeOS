@@ -33,6 +33,12 @@
  *    (height/shoulders/torso/sleeves/skirt/hair) the worker sculpts
  *    the proxy's MESH with - the outline matches the sheet, not just
  *    the palette. A guess build keeps the neutral figure.
+ *  - THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head is
+ *    a real sculpted mesh (jaw taper, chin, brow ridge, cheekbones,
+ *    nose wedge, skull dome, ears) - never an assembled sphere - and
+ *    the read's faceShape field modulates the sculpt through a
+ *    bounded face profile. A sheet that names no face shape keeps
+ *    the neutral sculpt (the donghua default face), honestly named.
  */
 
 import ZAI from "z-ai-web-dev-sdk";
@@ -53,11 +59,27 @@ export interface SheetDnaRead {
   build: Build | null;
   beard: boolean | null;
   silhouette: string | null; // one sentence: silhouette + signature props
+  faceShape: FaceShape | null; // THE FACE IS SCULPTED: the read's face family
 }
 
 export const SHEET_DNA_HAIR_STYLES: readonly HairStyle[] = ["topknot", "ponytail", "braid", "long", "short"];
 export const SHEET_DNA_WEAPON_TYPES: readonly WeaponType[] = ["sword", "spear", "staff", "none"];
 export const SHEET_DNA_BUILDS: readonly Build[] = ["lean", "sturdy", "heavy"];
+export const SHEET_DNA_FACE_SHAPES: readonly FaceShape[] = ["oval", "round", "angular"];
+
+export type FaceShape = "oval" | "round" | "angular";
+
+// ── THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82, Frontier 1 deeper) ──
+//
+// The measured cast gap survived the palette AND the silhouette
+// because the head itself was an assembled sphere: box brows on a
+// ball reads MANNEQUIN, and no palette fixes a mannequin. The head is
+// now a real sculpted mesh, and the sheet read's faceShape field
+// modulates the sculpt through a bounded profile - the same one-law-
+// two-runtimes pattern as the silhouette. The bounds are tight on
+// purpose: a face hint sculpts the likeness, it never redesigns it,
+// and the eye/face rig anchors stay where the v3.x contract expects
+// them (the worker sculpts MESH, never the rig empties).
 
 /** The palette pull an ADHERENT build answers to (the repair law). */
 export const ADHERENT_CONFORM_FACTOR = 0.75;
@@ -169,6 +191,82 @@ export function silhouetteShapeLine(shape: SilhouetteShape): string {
   return `shaped: ${applied.join(", ")} (${from})`;
 }
 
+/** The face profile the sculpt answers to (all factors bounded). */
+export interface FaceProfile {
+  jawTaper: number; // jaw width kept toward the chin, 0.55..0.9
+  chinFwd: number; // chin forward push, 0..0.05
+  browFwd: number; // brow ridge forward push, 0..0.03
+  cheekOut: number; // cheekbone outward push, 0..0.045
+  noseLen: number; // nose wedge length factor, 0.7..1.4
+  eyeScale: number; // eye scale, 0.85..1.25
+  fields: string[]; // what the sheet's own read described
+}
+
+/** The bounds the worker re-clamps against (one law, two runtimes). */
+export const FACE_PROFILE_BOUNDS: Record<keyof Omit<FaceProfile, "fields">, [number, number]> = {
+  jawTaper: [0.55, 0.9],
+  chinFwd: [0, 0.05],
+  browFwd: [0, 0.03],
+  cheekOut: [0, 0.045],
+  noseLen: [0.7, 1.4],
+  eyeScale: [0.85, 1.25],
+};
+
+/** The sculpt priors a faceShape field implies (the donghua families).
+ * oval is the NEUTRAL sculpt - the default face a sheetless build keeps. */
+export const FACE_SHAPE_PRIORS: Record<FaceShape, Omit<FaceProfile, "fields">> = {
+  oval: { jawTaper: 0.74, chinFwd: 0.028, browFwd: 0.014, cheekOut: 0.022, noseLen: 1.0, eyeScale: 1.05 },
+  round: { jawTaper: 0.84, chinFwd: 0.016, browFwd: 0.008, cheekOut: 0.034, noseLen: 0.86, eyeScale: 1.14 },
+  angular: { jawTaper: 0.64, chinFwd: 0.042, browFwd: 0.024, cheekOut: 0.014, noseLen: 1.12, eyeScale: 0.96 },
+};
+
+function clampFace(key: keyof Omit<FaceProfile, "fields">, v: number): number {
+  const [lo, hi] = FACE_PROFILE_BOUNDS[key];
+  return Math.round(Math.min(hi, Math.max(lo, v)) * 1000) / 1000;
+}
+
+/**
+ * THE FACE IS SCULPTED, NOT ASSEMBLED (pure): compile the read's
+ * faceShape (plus the build's nudge) into a bounded face profile the
+ * worker sculpts the head mesh with. The head is ALWAYS sculpted - a
+ * sheet that names no face shape keeps the neutral (oval) sculpt with
+ * an honest empty fields list; a named shape sets its prior; the
+ * build nudges the jaw. Deterministic: the same inputs land the same
+ * profile. Every factor lands inside the bounds.
+ */
+export function parseFaceProfile(faceShape: string | null | undefined, build: string | null | undefined): FaceProfile {
+  const named = typeof faceShape === "string" && (SHEET_DNA_FACE_SHAPES as readonly string[]).includes(faceShape.trim().toLowerCase());
+  const prior = FACE_SHAPE_PRIORS[named ? (faceShape!.trim().toLowerCase() as FaceShape) : "oval"];
+  const fields: string[] = [];
+  if (named) fields.push(`${faceShape!.trim().toLowerCase()} face`);
+  const prof: FaceProfile = {
+    jawTaper: prior.jawTaper,
+    chinFwd: prior.chinFwd,
+    browFwd: prior.browFwd,
+    cheekOut: prior.cheekOut,
+    noseLen: prior.noseLen,
+    eyeScale: prior.eyeScale,
+    fields,
+  };
+  const b = (build ?? "").trim().toLowerCase();
+  if (b === "lean") {
+    prof.jawTaper = clampFace("jawTaper", prof.jawTaper - 0.03);
+    if (named) fields.push("lean jaw");
+  } else if (b === "heavy") {
+    prof.jawTaper = clampFace("jawTaper", prof.jawTaper + 0.04);
+    prof.cheekOut = clampFace("cheekOut", prof.cheekOut + 0.006);
+    if (named) fields.push("heavy jaw");
+  }
+  return prof;
+}
+
+/** The face profile as one ledger line (the repair pass reports it). */
+export function faceProfileLine(prof: FaceProfile): string {
+  if (prof.fields.length === 0) return "sculpted: neutral face (the sheet named no face shape)";
+  const nums = `jaw ${prof.jawTaper.toFixed(2)}, chin ${prof.chinFwd.toFixed(3)}, brow ${prof.browFwd.toFixed(3)}, eye ${prof.eyeScale.toFixed(2)}`;
+  return `sculpted: ${prof.fields[0]} (${nums}; named by the sheet)`;
+}
+
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 function hexOrNull(v: unknown): string | null {
@@ -198,6 +296,7 @@ export function parseSheetDna(raw: string, sheetUrl: string): SheetDnaRead | nul
     return null;
   }
   const beardRaw = body.beard;
+  const faceRaw = body.faceShape;
   return {
     sheetUrl,
     readAt: new Date().toISOString(),
@@ -211,6 +310,7 @@ export function parseSheetDna(raw: string, sheetUrl: string): SheetDnaRead | nul
     build: enumOrNull<Build>(body.build, SHEET_DNA_BUILDS),
     beard: typeof beardRaw === "boolean" ? beardRaw : null,
     silhouette: typeof body.silhouette === "string" && body.silhouette.trim() ? body.silhouette.trim().slice(0, 200) : null,
+    faceShape: enumOrNull<FaceShape>(faceRaw, SHEET_DNA_FACE_SHAPES),
   };
 }
 
@@ -219,8 +319,8 @@ export function sheetDnaPrompt(name: string): string {
   return [
     `You are a character designer reading the canonical model sheet of ${name} to extract build DNA for a 3D proxy figure.`,
     "Image 1 is the model sheet (a turnaround of the character).",
-    'Read it into STRICT JSON only, no markdown fences: {"hairStyle": "topknot|ponytail|braid|long|short", "hairColor": "#rrggbb", "robeColor": "#rrggbb", "robeAccent": "#rrggbb", "bootsColor": "#rrggbb", "skinTone": "#rrggbb", "weaponType": "sword|spear|staff|none", "build": "lean|sturdy|heavy", "beard": true, "silhouette": "one sentence on the silhouette and signature props"}',
-    "Sample every color as an exact hex from the sheet's pixels. Use null for any field the sheet does not show clearly. weaponType none means no weapon visible.",
+    'Read it into STRICT JSON only, no markdown fences: {"hairStyle": "topknot|ponytail|braid|long|short", "hairColor": "#rrggbb", "robeColor": "#rrggbb", "robeAccent": "#rrggbb", "bootsColor": "#rrggbb", "skinTone": "#rrggbb", "weaponType": "sword|spear|staff|none", "build": "lean|sturdy|heavy", "beard": true, "faceShape": "oval|round|angular", "silhouette": "one sentence on the silhouette and signature props"}',
+    "Sample every color as an exact hex from the sheet's pixels. Use null for any field the sheet does not show clearly. weaponType none means no weapon visible. faceShape is the face family the sheet draws (oval / round / angular) - judge the jaw line, cheekbones and chin.",
   ].join("\n");
 }
 
@@ -292,7 +392,7 @@ export async function readSheetDna(
 export function adherentDna(
   base: CharacterDesignDna,
   read: SheetDnaRead | null,
-): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape } {
+): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape; faceShape?: FaceShape; faceProfile?: FaceProfile } {
   if (!read) return { ...base, sheetFields: [], conformFactor: GUESS_CONFORM_FACTOR };
   const sheetFields: string[] = [];
   const pick = <T>(sheetVal: T | null | undefined, guessVal: T, field: string): T => {
@@ -300,6 +400,7 @@ export function adherentDna(
     sheetFields.push(field);
     return sheetVal;
   };
+  const faceShape = read.faceShape ?? null;
   return {
     ...base,
     hairStyle: pick(read.hairStyle, base.hairStyle, "hairStyle"),
@@ -318,6 +419,12 @@ export function adherentDna(
     // (the worker sculpts the mesh with it); a guess build keeps the
     // neutral figure (no silhouetteShape on the wire at all).
     silhouetteShape: parseSilhouetteShape(read.silhouette, read.build),
+    // THE FACE IS SCULPTED, NOT ASSEMBLED: the read's face family
+    // modulates the head sculpt through a bounded profile. The head
+    // is always sculpted now - a read that names no face shape keeps
+    // the neutral sculpt, honestly named in the profile's fields.
+    ...(faceShape ? { faceShape } : {}),
+    faceProfile: parseFaceProfile(faceShape, read.build ?? base.build),
   };
 }
 
@@ -325,5 +432,6 @@ export function adherentDna(
 export function adherenceLine(name: string, merged: ReturnType<typeof adherentDna>): string {
   if (merged.sheetFields.length === 0) return `${name}: guess build (regex DNA only) - the sheet read landed nothing usable`;
   const shape = merged.silhouetteShape ? `; ${silhouetteShapeLine(merged.silhouetteShape)}` : "";
-  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape})`;
+  const face = merged.faceProfile ? `; ${faceProfileLine(merged.faceProfile)}` : "";
+  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape}${face})`;
 }

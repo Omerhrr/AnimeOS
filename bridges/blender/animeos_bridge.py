@@ -107,6 +107,7 @@
 
 import argparse
 import base64
+import hashlib
 import json
 import math
 import os
@@ -1180,6 +1181,294 @@ def silhouette_shape(dna):
     return {"factors": factors, "named": named, "fields": fields}
 
 
+# ── THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82, Frontier 1
+#    deeper): the measured cast gap survived the palette AND the
+#    silhouette because the head itself was an assembled sphere - box
+#    brows on a ball reads MANNEQUIN, and no palette fixes a
+#    mannequin. The head is now a real sculpted mesh, and the sheet
+#    read's faceShape field modulates the sculpt through a bounded
+#    face profile (the same one-law-two-runtimes pattern as the
+#    silhouette). Mesh only: the rig anchors stay. ──
+
+FACE_BOUNDS = {
+    "jawTaper": (0.55, 0.9), "chinFwd": (0.0, 0.05), "browFwd": (0.0, 0.03),
+    "cheekOut": (0.0, 0.045), "noseLen": (0.7, 1.4), "eyeScale": (0.85, 1.25),
+}
+
+FACE_PRIORS = {
+    "oval":    {"jawTaper": 0.74, "chinFwd": 0.028, "browFwd": 0.014, "cheekOut": 0.022, "noseLen": 1.0,  "eyeScale": 1.05},
+    "round":   {"jawTaper": 0.84, "chinFwd": 0.016, "browFwd": 0.008, "cheekOut": 0.034, "noseLen": 0.86, "eyeScale": 1.14},
+    "angular": {"jawTaper": 0.64, "chinFwd": 0.042, "browFwd": 0.024, "cheekOut": 0.014, "noseLen": 1.12, "eyeScale": 0.96},
+}
+
+
+def face_profile(dna):
+    """THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): validate +
+    clamp the face profile the sheet read compiled (adherence.ts) -
+    one law, two runtimes. The head is ALWAYS sculpted: a missing or
+    unknown faceShape keeps the neutral (oval) sculpt honestly named;
+    a compiled profile on the wire wins field by field (clamped
+    against the same bounds the TS side clamps against)."""
+    raw = dna.get("faceProfile") if isinstance(dna, dict) else None
+    shape_name = dna.get("faceShape") if isinstance(dna, dict) else None
+    named = isinstance(shape_name, str) and shape_name.strip().lower() in FACE_PRIORS
+    key = shape_name.strip().lower() if named else "oval"
+    factors = dict(FACE_PRIORS[key])
+    if isinstance(raw, dict):
+        for bkey, (lo, hi) in FACE_BOUNDS.items():
+            v = raw.get(bkey)
+            if isinstance(v, (int, float)) and math.isfinite(float(v)):
+                factors[bkey] = round(max(lo, min(hi, float(v))), 4)
+    fields_raw = raw.get("fields") if isinstance(raw, dict) else None
+    fields = [str(f) for f in fields_raw][:8] if isinstance(fields_raw, list) else []
+    return {
+        "factors": factors,
+        "faceShape": key if named else None,
+        "fields": fields,
+    }
+
+
+def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f):
+    """THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head is
+    a real sculpted mesh - an icosphere whose vertices are displaced
+    by deterministic bounded laws (jaw taper, chin, brow ridge, eye
+    sockets, cheekbones, the nose wedge, the skull dome, ears) - never
+    an assembled sphere again. Mesh only: the head EMPTY stays where
+    the v3.x rig contract expects it and the face features (eyes,
+    brows, mouth) keep their anchors, so the face rig, lip-sync and
+    the framing math work unchanged. Deterministic: the same profile
+    always lands the same mesh (the same vertex count, the same
+    positions - the smoke test hashes them)."""
+    r = 0.115
+    # subdivisions=4 under Blender 5.2.2 -> 642 verts / 1280 faces: the
+    # resolution the face laws need (jaw, nose wedge, brow band); the
+    # v3.x contract only ever asked for MESH, never a vertex count
+    mesh = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=4, radius=r, location=(0, 0, 0))
+    mesh.name = "HeadMesh"
+    mesh.data.materials.append(skin_mat)
+    smooth(mesh)
+    f = prof["factors"]
+    jt = f["jawTaper"]; cf = f["chinFwd"]; bf = f["browFwd"]
+    co = f["cheekOut"]; nl = f["noseLen"]
+    for v in mesh.data.vertices:
+        x, y, z = v.co.x / r, v.co.y / r, v.co.z / r  # unit-sphere space
+        nx, ny, nz = x, y, z
+        # 1. jaw taper: below the cheek line the face narrows to the chin
+        if z < 0.1:
+            t = max(0.0, min(1.0, (0.1 - z) / 0.9))
+            taper = 1.0 - (1.0 - jt) * (t ** 1.35)
+            nx = x * taper
+        # 2. chin: the lowest front band pushes forward and settles down
+        if z < -0.55 and y < 0.2:
+            t = max(0.0, min(1.0, (-0.55 - z) / 0.45))
+            ny = y - cf * t * t
+            nz = z - 0.012 * t
+        # 3. brow ridge: a band above the eyes pushes forward
+        if 0.34 < z < 0.60 and y < -0.55:
+            band = 1.0 - abs((z - 0.47) / 0.13)
+            if band > 0.0:
+                ny = ny - bf * band
+        # 4. eye sockets: a subtle inset under the brow band
+        if 0.15 < z < 0.40 and y < -0.8 and 0.25 < abs(x) < 0.62:
+            ny = ny + 0.010
+        # 5. cheekbones: outward at the mid-face sides
+        if -0.25 < z < 0.30 and y < 0.0 and abs(nx) > 0.45:
+            t = max(0.0, min(1.0, (abs(nx) - 0.45) / 0.55))
+            fall = max(0.0, 1.0 - abs(z - 0.02) / 0.6)
+            nx = nx * (1.0 + co * t * fall)
+        # 6. nose: the front-centre wedge, bridge to tip
+        if y < -0.86 and abs(x) < 0.30 and -0.30 < z < 0.22:
+            fall = (1.0 - abs(x) / 0.30) * max(0.0, 1.0 - abs((z + 0.02) / 0.30))
+            if fall > 0.0:
+                ny = ny - (0.028 + 0.02 * nl) * fall
+        # 7. occiput: the back of the skull gains its dome
+        if y > 0.35:
+            ny = ny * 1.055
+        # 8. ears: side bumps at ear height
+        if abs(x) > 0.82 and -0.12 < z < 0.26 and -0.15 < y < 0.35:
+            nx = nx * 1.10
+        v.co.x = nx * r
+        v.co.y = ny * r
+        v.co.z = nz * r
+    mesh.parent = head
+    mesh.location = (0.0, 0.0, 0.12)
+    mesh.scale = (0.92, 0.98, 1.05 * height_f)
+    return mesh
+
+
+def loft_strand(scn, bpy, name, mat, rings, tip_last=True):
+    """SCULPTED HAIR (iteration 82): a real strand/volume mesh built
+    ring by ring along a spine - radius per ring, the last ring
+    collapsed to a point (a tapered tip reads as hair; a sphere reads
+    as a ball). Deterministic per ring list; the base is capped with a
+    fan. rings: dicts with c=(x,y,z), r=radius, optional sx/sy squashes."""
+    SEG = 10
+    verts, faces = [], []
+    n = len(rings)
+    if n < 2:
+        return None
+    for ri, ring in enumerate(rings):
+        cx, cy, cz = ring["c"]
+        rad = ring["r"]
+        sx = ring.get("sx", 1.0)
+        sy = ring.get("sy", 1.0)
+        if tip_last and ri == n - 1:
+            verts.append((cx, cy, cz))
+            continue
+        for si in range(SEG):
+            a = si * (math.tau / SEG)
+            verts.append((cx + math.cos(a) * rad * sx, cy + math.sin(a) * rad * sy, cz))
+    for ri in range(n - 1):
+        a0 = ri * SEG
+        b0 = (ri + 1) * SEG
+        if tip_last and ri + 1 == n - 1:
+            tip = b0
+            for si in range(SEG):
+                faces.append((a0 + si, a0 + (si + 1) % SEG, tip))
+            break
+        for si in range(SEG):
+            faces.append((a0 + si, a0 + (si + 1) % SEG, b0 + (si + 1) % SEG, b0 + si))
+    base_center = len(verts)
+    c0 = rings[0]["c"]
+    verts.append((c0[0], c0[1], c0[2]))
+    for si in range(SEG):
+        faces.append((base_center, (si + 1) % SEG, si))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.update()
+    for p in me.polygons:
+        p.use_smooth = True
+    obj = bpy.data.objects.new(name, me)
+    scn.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    return obj
+
+
+def _rings(spine, hair_f):
+    """Scale a spine spec [(x, y, z, r, sx, sy), ...] by the hair mass
+    factor: radii ride hair_f, the drop below the skull rides it too."""
+    out = []
+    for i, (x, y, z, rad, sx, sy) in enumerate(spine):
+        if i > 0 and z < 0.05:
+            z = 0.05 + (z - 0.05) * hair_f
+        out.append({"c": (x, y, z), "r": rad * hair_f, "sx": sx, "sy": sy})
+    return out
+
+
+def sculpt_hair(scn, bpy, head, hair_mat, style, hair_f, height_f):
+    """SCULPTED HAIR (iteration 82): the sphere hair masses become
+    lofted strands and volumes per style - a cap that hugs the skull,
+    a fringe wedge, and style pieces with tapered tips (topknot bun +
+    tail, ponytail sweep + flowing tail, interlocked braid lobes, long
+    curtain + side locks). All masses ride the silhouette's hair
+    factor and the crown rides height_f, exactly as the sphere masses
+    did. Returns the evidence (part names, total verts)."""
+    parts = []
+    verts = 0
+    dome_top = 0.235 * height_f
+
+    def add(obj):
+        nonlocal verts
+        if obj is None:
+            return
+        obj.parent = head
+        obj.location = (0.0, 0.0, 0.0)
+        parts.append(obj.name)
+        verts += len(obj.data.vertices)
+
+    # the cap every style shares: a dome hugging the skull (a bigger
+    # sphere swallowed the face - the loft hugs instead)
+    cap = loft_strand(scn, bpy, "HairCap", hair_mat, _rings([
+        (0.0, 0.005, 0.02, 0.108, 1.0, 0.96),
+        (0.0, 0.005, 0.10, 0.116, 1.0, 0.98),
+        (0.0, 0.005, dome_top * 0.72, 0.112, 1.0, 0.98),
+        (0.0, 0.005, dome_top * 0.94, 0.082, 1.0, 1.0),
+        (0.0, 0.005, dome_top, 0.03, 1.0, 1.0),
+    ], hair_f))
+    add(cap)
+    # the fringe: a THIN wedge over the forehead (a deep fringe hangs
+    # onto the eyes and reads as a permanent scowl)
+    fringe = loft_strand(scn, bpy, "HairFringe", hair_mat, [
+        {"c": (0.0, -0.082, 0.208 * height_f), "r": 0.055, "sx": 1.45, "sy": 0.9},
+        {"c": (0.0, -0.098, 0.175 * height_f), "r": 0.032, "sx": 1.4, "sy": 0.85},
+        {"c": (0.0, -0.102, 0.148 * height_f), "r": 0.0},
+    ])
+    add(fringe)
+
+    if style == "topknot":
+        knot = loft_strand(scn, bpy, "HairKnot", hair_mat, [
+            {"c": (0.0, 0.01, dome_top * 0.98), "r": 0.024, "sx": 1.0, "sy": 1.0},
+            {"c": (0.0, 0.01, dome_top + 0.045 * height_f), "r": 0.034, "sx": 1.0, "sy": 1.0},
+            {"c": (0.0, 0.01, dome_top + 0.07 * height_f), "r": 0.02, "sx": 1.0, "sy": 1.0},
+            {"c": (0.0, 0.01, dome_top + 0.085 * height_f), "r": 0.0},
+        ])
+        add(knot)
+        tail = loft_strand(scn, bpy, "HairBack", hair_mat, _rings([
+            (0.0, 0.045, 0.24, 0.02, 1.0, 1.0),
+            (0.0, 0.07, 0.14, 0.019, 1.0, 1.0),
+            (0.0, 0.075, 0.02, 0.014, 1.0, 1.0),
+            (0.0, 0.07, -0.1, 0.0, 1.0, 1.0),
+        ], hair_f))
+        add(tail)
+    elif style == "ponytail":
+        sweep = loft_strand(scn, bpy, "HairSweep", hair_mat, [
+            {"c": (0.0, -0.07, 0.19 * height_f), "r": 0.07, "sx": 1.05, "sy": 0.9},
+            {"c": (0.0, 0.0, dome_top * 0.92), "r": 0.098, "sx": 1.0, "sy": 0.96},
+            {"c": (0.0, 0.058, 0.17 * height_f), "r": 0.082, "sx": 1.0, "sy": 0.94},
+            {"c": (0.0, 0.072, 0.03), "r": 0.052, "sx": 1.0, "sy": 0.9},
+            {"c": (0.0, 0.07, 0.0), "r": 0.0},
+        ])
+        add(sweep)
+        tail = loft_strand(scn, bpy, "HairTail", hair_mat, _rings([
+            (0.0, 0.09, 0.0, 0.032, 1.0, 1.0),
+            (0.02 * hair_f, 0.105, -0.14, 0.026, 1.0, 1.0),
+            (-0.015 * hair_f, 0.1, -0.28, 0.02, 1.0, 1.0),
+            (0.01 * hair_f, 0.085, -0.4, 0.014, 1.0, 1.0),
+            (0.0, 0.07, -0.5, 0.0, 1.0, 1.0),
+        ], hair_f))
+        add(tail)
+    elif style == "braid":
+        for i in range(6):
+            side = 1.0 if i % 2 == 0 else -1.0
+            z0 = 0.1 - i * 0.072
+            lobe = loft_strand(scn, bpy, f"HairBraid{i}", hair_mat, _rings([
+                (side * 0.02, 0.075, z0, 0.017, 1.0, 1.0),
+                (side * 0.016, 0.075, z0 - 0.05, 0.013, 1.0, 1.0),
+                (side * 0.012, 0.075, z0 - 0.085, 0.0, 1.0, 1.0),
+            ], hair_f))
+            add(lobe)
+        tie = loft_strand(scn, bpy, "HairBack", hair_mat, _rings([
+            (0.0, 0.075, -0.3, 0.02, 1.0, 0.55),
+            (0.0, 0.072, -0.38, 0.0, 1.0, 1.0),
+        ], hair_f))
+        add(tie)
+    elif style == "long":
+        curtain = loft_strand(scn, bpy, "HairBack", hair_mat, _rings([
+            (0.0, 0.055, 0.2, 0.09, 1.3, 0.95),
+            (0.0, 0.07, 0.0, 0.098, 1.35, 0.98),
+            (0.0, 0.075, -0.2, 0.088, 1.3, 1.0),
+            (0.0, 0.07, -0.4, 0.058, 1.2, 1.0),
+            (0.0, 0.065, -0.56, 0.0, 1.0, 1.0),
+        ], hair_f))
+        add(curtain)
+        for side, sname in ((1.0, "HairLockL"), (-1.0, "HairLockR")):
+            lock = loft_strand(scn, bpy, sname, hair_mat, _rings([
+                (side * 0.08, -0.05, 0.16, 0.03, 1.0, 1.0),
+                (side * 0.085, -0.045, -0.05, 0.026, 1.0, 1.0),
+                (side * 0.08, -0.04, -0.24, 0.02, 1.0, 1.0),
+                (side * 0.075, -0.03, -0.4, 0.0, 1.0, 1.0),
+            ], hair_f))
+            add(lock)
+    else:  # short
+        nape = loft_strand(scn, bpy, "HairBack", hair_mat, _rings([
+            (0.0, 0.06, 0.02, 0.05, 1.05, 0.95),
+            (0.0, 0.07, -0.06, 0.035, 1.0, 0.9),
+            (0.0, 0.075, -0.12, 0.0, 1.0, 1.0),
+        ], hair_f))
+        add(nape)
+    return {"parts": parts, "verts": verts}
+
+
 def build_designed_figure(bpy, scn, dna, mats):
     """The DESIGNED character (v4.0): stylized proportions, layered
     robes with a flowing skirt and wide sleeves, hairstyle per DNA,
@@ -1215,6 +1504,12 @@ def build_designed_figure(bpy, scn, dna, mats):
     skirt_f = sf("skirt")                  # skirt drop + flare
     hair_f = sf("hair")                    # hair mass
     height_f = sf("height")                # crown presence (head/neck)
+
+    # ── THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head
+    #    is a real sculpted mesh and the sheet read's faceShape family
+    #    modulates it through a bounded profile (mesh only - the rig
+    #    anchors stay). A guess build keeps the neutral sculpt. ──
+    prof = face_profile(dna)
 
     def empty(name, parent, loc):
         e = bpy.data.objects.new(name, None)
@@ -1297,18 +1592,23 @@ def build_designed_figure(bpy, scn, dna, mats):
     # neck: a high robe collar (accent) so the chin never floats over
     # a pale gap - donghua robes close at the throat
     capsule("NeckMesh", spine, (0.0, 0.0, 0.17), 0.036, 0.22 * height_f, accent_mat)
-    hm = sphere("HeadMesh", head, (0.0, 0.0, 0.12), 0.115, skin_mat, scale=(0.92, 0.98, 1.05 * height_f))
+    # ── THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head
+    #    is a sculpted mesh (jaw, chin, brow, cheeks, nose, dome,
+    #    ears), never an assembled sphere ──
+    hm = sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f)
 
-    # ── face (v3.2 rig, restyled): stylized eyes with readable irises ──
+    # ── face (v3.2 rig, restyled): stylized eyes with readable irises;
+    #    the eye SIZE rides the face profile's eyeScale ──
     eye_mat = emission_mat(bpy, "EyeMat", "#cfe8ff", 2.4)
     iris_mat = emission_mat(bpy, "IrisMat", dna.get("bladeColor", "#5eead4"), 4.5)
     feature_mat = principled_mat(bpy, "FeatureMat", "#141118", 0.85)
+    es = prof["factors"]["eyeScale"]
 
     def eye(side_sign, name):
         piv = empty(name, head, (side_sign * 0.046, -0.104, 0.148))
-        sphere(name + "Mesh", piv, (0, 0, 0), 0.016, eye_mat, scale=(1.0, 0.5, 1.2))
+        sphere(name + "Mesh", piv, (0, 0, 0), 0.016 * es, eye_mat, scale=(1.0, 0.5, 1.2))
         # the iris must POKE out past the white sphere or it never shows
-        sphere(name + "Iris", piv, (0, -0.011, 0), 0.008, iris_mat, scale=(1.0, 0.4, 1.4))
+        sphere(name + "Iris", piv, (0, -0.011, 0), 0.008 * es, iris_mat, scale=(1.0, 0.4, 1.4))
         return piv
 
     def brow(side_sign, name):
@@ -1342,26 +1642,13 @@ def build_designed_figure(bpy, scn, dna, mats):
         sphere("BeardJawR", head, (-0.052, -0.07, 0.03), 0.022, beard_mat, scale=(0.8, 0.7, 1.7))
         sphere("BeardLip", head, (0.0, -0.104, 0.075), 0.018, beard_mat, scale=(1.1, 0.7, 0.9))
 
-    # ── hair: cap + fringe + back mass + style piece (the cap hugs
-    #    the skull - a bigger sphere swallows the face); the back and
-    #    style masses ride the silhouette's hair factor ──
+    # ── hair: SCULPTED strands and volumes per style (iteration 82) -
+    #    a cap that hugs the skull, a thin fringe wedge, and style
+    #    pieces with tapered tips; the masses ride the silhouette's
+    #    hair factor and the crown rides height_f, exactly as the old
+    #    sphere masses did ──
     style = str(dna.get("hairStyle") or "short")
-    sphere("HairCap", head, (0.0, 0.01, 0.16), 0.118, hair_mat, scale=(1.0, 1.02, 0.8 * height_f))
-    # a THIN crown band - a deep fringe hangs onto the eyes and reads
-    # as a permanent scowl
-    sphere("HairFringe", head, (0.0, -0.05, 0.205), 0.075, hair_mat, scale=(1.03, 0.4, 0.3))
-    sphere("HairBack", head, (0.0, 0.055, 0.03), 0.09, hair_mat, scale=(1.02, 0.68, 1.3 * hair_f))
-    if style == "topknot":
-        sphere("HairKnot", head, (0.0, 0.01, 0.265), 0.036, hair_mat, scale=(1.0, 1.0, 1.15))
-    elif style == "ponytail":
-        for i, (dz, dy, r) in enumerate(((-0.02, 0.09, 0.030), (-0.14, 0.115, 0.024), (-0.25, 0.1, 0.017))):
-            sphere(f"HairTail{i}", head, (0.0, dy, dz + 0.16), r * hair_f, hair_mat)
-    elif style == "braid":
-        for i in range(5):
-            t = i / 4.0
-            sphere(f"HairBraid{i}", head, (0.0, 0.075 + 0.01 * math.sin(i * 2.1), 0.12 - t * 0.3), (0.016 - 0.002 * i) * hair_f, hair_mat)
-    elif style == "long":
-        sphere("HairLong", head, (0.0, 0.062, -0.06), 0.085, hair_mat, scale=(1.0, 0.55, 2.4 * hair_f))
+    hair_evidence = sculpt_hair(scn, bpy, head, hair_mat, style, hair_f, height_f)
 
     # ── arms: robe sleeves + skin forearms + v3.2 hands (the shoulder
     #    span and the sleeve drop ride the silhouette factors) ──
@@ -1509,6 +1796,22 @@ def build_designed_figure(bpy, scn, dna, mats):
             "applied": shape["named"],
             "namedBySheet": shape["fields"],
         } if shape else None,
+        # THE FACE IS SCULPTED, NOT ASSEMBLED: the applied face evidence
+        # - the family the sheet named (None = the neutral sculpt), the
+        # clamped factors, the sculpted hair parts and the vertex count
+        # the sculpt moved, plus the head mesh's DETERMINISTIC HASH
+        # (the same profile always lands the same sculpt; a different
+        # family lands a different mesh - the smoke test proves both).
+        "sculpt": {
+            "faceShape": prof["faceShape"],
+            "factors": prof["factors"],
+            "namedBySheet": prof["fields"],
+            "parts": hair_evidence["parts"],
+            "verts": hair_evidence["verts"] + len(hm.data.vertices),
+            "faceHash": hashlib.sha256(
+                "".join(f"{v.co.x:.5f},{v.co.y:.5f},{v.co.z:.5f};" for v in hm.data.vertices).encode("utf-8")
+            ).hexdigest()[:16],
+        },
     }
 
 
@@ -2355,6 +2658,11 @@ def worker_run(job_file):
             # evidence rides the render state (a guess build reports none)
             if isinstance(figure, dict) and figure.get("silhouette"):
                 state["rig"]["silhouette"] = figure["silhouette"]
+            # THE FACE IS SCULPTED, NOT ASSEMBLED: the head sculpt's
+            # applied evidence rides the state too (family, factors,
+            # the sculpted hair parts, the vertex count)
+            if isinstance(figure, dict) and figure.get("sculpt"):
+                state["rig"]["sculpt"] = figure["sculpt"]
 
             # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
             #    canonical model sheet is COLOR LAW over the DNA defaults
@@ -2422,6 +2730,9 @@ def worker_run(job_file):
                     # the second figure's shaping rides the state too
                     if isinstance(other_rig, dict) and other_rig.get("silhouette"):
                         state["secondFigureSilhouette"] = other_rig["silhouette"]
+                    # the second figure's head sculpt rides the state too
+                    if isinstance(other_rig, dict) and other_rig.get("sculpt"):
+                        state["secondFigureSculpt"] = other_rig["sculpt"]
                 else:
                     state["secondFigureSource"] = f"asset:{other.get('name', 'cast')}"
                 other_rig["root"].location = (0.6, 1.7, 0.0)

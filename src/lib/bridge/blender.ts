@@ -265,6 +265,21 @@ interface CharacterDesignDnaWire {
     hair: number;
     fields?: string[];
   };
+  // iteration 82 THE FACE IS SCULPTED, NOT ASSEMBLED: the sheet read's
+  // face family rides beside its compiled bounded face profile - the
+  // worker sculpts the HEAD MESH with it (jaw taper, chin, brow ridge,
+  // cheekbones, nose wedge, skull dome, ears). Absent faceShape = the
+  // neutral sculpt; the head is never an assembled sphere again.
+  faceShape?: string;
+  faceProfile?: {
+    jawTaper: number;
+    chinFwd: number;
+    browFwd: number;
+    cheekOut: number;
+    noseLen: number;
+    eyeScale: number;
+    fields?: string[];
+  };
   // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
   // measured into a palette and planned into bounded material pulls
   // (iteration 80: every detected cast member carries their own)

@@ -1,17 +1,20 @@
-// Iteration 81 E2E: THE SILHOUETTE SHAPES THE MESH + THE SCORE MATCHES
-// THE POSE. Proves, against the RUNNING studio, the REAL database, the
-// REAL render pipeline, the REAL vision channel and the REAL image
-// generator:
-//   A. source: the shaping parser (TS + worker), the wire, the pose law
-//   B. pure: parseSilhouetteShape laws, poseSampleTimestamps laws
+// Iteration 82 E2E: THE FACE IS SCULPTED, NOT ASSEMBLED. Proves,
+// against the RUNNING studio, the REAL database, the REAL render
+// pipeline, the REAL vision channel and the REAL image generator:
+//   A. source: the face-profile parser (TS + worker), the wire, the
+//      sculpted head/hair builder, the doctrine
+//   B. pure: parseFaceProfile laws (priors, nudges, clamps,
+//      determinism, the neutral-sculpt honesty), the parsed read's
+//      faceShape, the adherent merge's face profile
 //   C. accounts + throwaway production (a REAL generated sheet)
-//   D. THE REAL PATHS: the sheet-DNA vision read, the deterministic
-//      shaped build over the real engine (render-state evidence), the
-//      repair loop at shotsPerMember: 3 (three REAL re-renders + three
-//      pose-matched REAL re-scores with the filmstrip riding), the
-//      honest ledger, the IDENTITY_REPAIR event, the viewer gate
+//   D. THE REAL PATHS: the sheet-DNA vision read (faceShape asked),
+//      the deterministic SCULPTED build over the real engine (the
+//      render state names family/factors/parts/hash), the repair loop
+//      at shotsPerMember: 3 with the sculpt riding (three REAL
+//      re-renders + three pose-matched REAL re-scores), the honest
+//      ledger, the IDENTITY_REPAIR event, the viewer gate
 //   E. cleanup (exact rows + files)
-// Run: npx tsx scripts/e2e-iter81-shape.ts
+// Run: npx tsx scripts/e2e-iter82-sculpt.ts
 
 import { db } from "../src/lib/db";
 import { executeTool } from "../src/lib/dsh/tools";
@@ -19,22 +22,20 @@ import { createRenderJob, tickRenderJob } from "../src/lib/engine/render";
 import { scoreShotIdentityFromRaw, castIdentityMeasurement } from "../src/lib/identity";
 import {
   parseSheetDna, sheetDnaFresh, adherentDna, readSheetDna,
-  parseSilhouetteShape, silhouetteShapeLine, SILHOUETTE_SHAPE_BOUNDS,
+  parseFaceProfile, faceProfileLine, FACE_PROFILE_BOUNDS, FACE_SHAPE_PRIORS,
   type SheetDnaRead,
 } from "../src/lib/blender/adherence";
 import { characterDesignDna } from "../src/lib/animation/design";
-import { poseSampleTimestamps, POSE_FRAME_COUNT } from "../src/lib/identity";
-import {
-  runIdentityRepairPass, shotRepairVerdict,
-  REPAIR_MAX_SHOTS_PER_MEMBER,
-} from "../src/lib/identity-repair";
-import { execSync } from "node:child_process";
-import { readFileSync, existsSync, unlinkSync, mkdirSync } from "node:fs";
+import { shotRepairVerdict } from "../src/lib/identity-repair";
+import { readFileSync, existsSync, unlinkSync } from "node:fs";
 import path from "node:path";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
-const MARK = "iter81-shape";
-// the iter60 law: each phase fits the 10-minute foreground cap
+const MARK = "iter82-sculpt";
+// background processes die with the launching shell in this environment;
+// each phase must fit the 10-minute foreground cap (the iter60 law).
+// PHASE=a: source + pure + lab + the sculpted build. PHASE=b: the loop
+// + the honest ledger + cleanup. PHASE=all: everything (default).
 const PHASE = (process.env.PHASE ?? "all").toLowerCase();
 
 let failures = 0;
@@ -144,11 +145,8 @@ async function realRender(labId: string, shotId: string): Promise<{ ok: boolean;
   return { ok: !!ticked && ["REVIEW", "APPROVED"].includes(ticked.status) && !!ticked.outputUrl, jobId: job.id, status: `${ticked?.status} ${ticked?.stage ?? ""}` };
 }
 
-function noop() { void 0; }
-void noop;
-
 async function run() {
-  console.log(`== Iteration 81: the silhouette shapes the mesh + the score matches the pose (phase: ${PHASE}) ==\n`);
+  console.log(`== Iteration 82: the face is sculpted, not assembled (phase: ${PHASE}) ==\n`);
 
   let labId = "";
   let ownerUser = { id: "", name: "Lin Director", role: "OWNER" };
@@ -157,8 +155,7 @@ async function run() {
   const plantValues: Record<number, number> = { 1: 0.3, 2: 0.35, 3: 0.4 };
 
   if (PHASE === "b") {
-    // resume: the lab, its shots and the hero are already on disk (the
-    // iter60 law: each phase fits the 10-minute foreground cap)
+    // resume: the lab, its shots and the hero are already on disk
     const labRow = await db.project.findFirst({ where: { title: { contains: MARK } } });
     if (!labRow) throw new Error("phase b: the lab is missing - run PHASE=a first");
     labId = labRow.id;
@@ -169,86 +166,83 @@ async function run() {
     if (!sceneRow) throw new Error("phase b: the scene is missing");
     const shotRows = await db.shot.findMany({ where: { sceneId: sceneRow.id }, orderBy: { number: "asc" } });
     for (const s of shotRows) shots[s.number] = { id: s.id };
-    check("B21 phase b resumed over the standing lab (3 shots)", Object.keys(shots).length === 3);
+    check("B16 phase b resumed over the standing lab (3 shots)", Object.keys(shots).length === 3);
     const standingResume = await castIdentityMeasurement(labId, "RENDER");
-    check("B22 the planted below standing survived the phase boundary", standingResume.below === 1, JSON.stringify({ below: standingResume.below }));
+    check("B17 the planted below standing survived the phase boundary", standingResume.below === 1, JSON.stringify({ below: standingResume.below }));
   }
 
   if (PHASE !== "b") {
 
   // ───────────────────── A. source-level checks ─────────────────────
   const adhereSrc = readFileSync("src/lib/blender/adherence.ts", "utf8");
-  check("A1 the shaping parser exists with its bounds and line", adhereSrc.includes("export function parseSilhouetteShape") && adhereSrc.includes("export const SILHOUETTE_SHAPE_BOUNDS") && adhereSrc.includes("export function silhouetteShapeLine"));
-  check("A2 the adherent merge attaches the shaping", adhereSrc.includes("silhouetteShape: parseSilhouetteShape(read.silhouette, read.build)"));
-  check("A3 the bounds are the one law (height/shoulders/torso/sleeves/skirt/hair)", adhereSrc.includes("height: [0.92, 1.12]") && adhereSrc.includes("shoulders: [0.82, 1.25]") && adhereSrc.includes("torso: [0.85, 1.2]") && adhereSrc.includes("sleeves: [0.9, 1.35]") && adhereSrc.includes("skirt: [0.9, 1.3]") && adhereSrc.includes("hair: [0.75, 1.5]"));
+  check("A1 the face-profile parser exists with its bounds and line", adhereSrc.includes("export function parseFaceProfile") && adhereSrc.includes("export const FACE_PROFILE_BOUNDS") && adhereSrc.includes("export function faceProfileLine"));
+  check("A2 the bounds are the one law (jaw/chin/brow/cheek/nose/eye)", adhereSrc.includes('jawTaper: [0.55, 0.9]') && adhereSrc.includes('chinFwd: [0, 0.05]') && adhereSrc.includes('browFwd: [0, 0.03]') && adhereSrc.includes('cheekOut: [0, 0.045]') && adhereSrc.includes('noseLen: [0.7, 1.4]') && adhereSrc.includes('eyeScale: [0.85, 1.25]'));
+  check("A3 the sheet read carries the faceShape field", adhereSrc.includes("faceShape: FaceShape | null") && adhereSrc.includes('SHEET_DNA_FACE_SHAPES: readonly FaceShape[] = ["oval", "round", "angular"]'));
+  check("A4 the vision prompt asks the face family", adhereSrc.includes('"faceShape": "oval|round|angular"') && adhereSrc.includes("judge the jaw line"));
+  check("A5 the adherent merge rides the face profile", adhereSrc.includes("faceProfile: parseFaceProfile(faceShape, read.build ?? base.build)"));
 
   const wireSrc = readFileSync("src/lib/bridge/blender.ts", "utf8");
-  check("A4 the wire carries the shaping profile", wireSrc.includes("silhouetteShape?: {") && wireSrc.includes("THE SILHOUETTE SHAPES THE MESH"));
+  check("A6 the wire carries the face family + profile", wireSrc.includes("faceShape?: string;") && wireSrc.includes("faceProfile?: {") && wireSrc.includes("THE FACE IS SCULPTED, NOT ASSEMBLED"));
 
   const workerSrc = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
-  check("A5 the worker validates + clamps the profile (one law, two runtimes)", workerSrc.includes("def silhouette_shape(dna):") && workerSrc.includes('"height": (0.92, 1.12), "shoulders": (0.82, 1.25), "torso": (0.85, 1.2)') && workerSrc.includes("named.append(key)"));
-  check("A6 the worker sculpts the mesh and reports the evidence", workerSrc.includes('shoulder_w = width * sf("shoulders")') && workerSrc.includes("0.19 * skirt_f") && workerSrc.includes("hair_evidence = sculpt_hair(scn, bpy, head, hair_mat, style, hair_f, height_f)") && workerSrc.includes('"silhouette": {') && workerSrc.includes('"applied": shape["named"]'));
-
-  const identitySrc = readFileSync("src/lib/identity.ts", "utf8");
-  check("A7 the pose law exists (timestamps + filmstrip + count)", identitySrc.includes("export function poseSampleTimestamps") && identitySrc.includes("export async function extractRenderPosterFilmstrip") && identitySrc.includes("export const POSE_FRAME_COUNT = 3"));
-  check("A8 the re-score path rides the strip and names the artifact", identitySrc.includes("await extractRenderPosterFilmstrip(poster.clipAbs, poster.jobId)") && identitySrc.includes("pose-matched over") && identitySrc.includes("const storedNote = poseNote"));
+  check("A7 the worker validates + clamps the profile (one law, two runtimes)", workerSrc.includes("def face_profile(dna):") && workerSrc.includes('"jawTaper": (0.55, 0.9)') && workerSrc.includes("FACE_PRIORS["));
+  check("A8 the worker sculpts the head mesh (jaw/chin/brow/sockets/cheeks/nose/dome/ears)", workerSrc.includes("def sculpt_head_mesh(") && workerSrc.includes("# 1. jaw taper") && workerSrc.includes("# 6. nose") && workerSrc.includes("# 8. ears"));
+  check("A9 the hair is lofted strands (tapered tips, not spheres)", workerSrc.includes("def loft_strand(") && workerSrc.includes("def sculpt_hair(") && workerSrc.includes('"HairSweep"') && workerSrc.includes('"HairLockL"'));
+  check("A10 the sculpt evidence rides the rig + the state (hash included)", workerSrc.includes('"sculpt": {') && workerSrc.includes('"faceHash"') && workerSrc.includes('state["rig"]["sculpt"]') && workerSrc.includes('state["secondFigureSculpt"]'));
 
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A9 the registry stands at 88 tools (the deepening rides the loop)", toolCount === 88, `count=${toolCount}`);
-  check("A10 the repair pass names the deepening", tools.includes("SHAPES THE MESH the re-render builds") && tools.includes("POSE-MATCHED scoring"));
+  check("A11 the registry stands at 88 tools (the sculpt deepens, no new tool)", toolCount === 88, `count=${toolCount}`);
+  check("A12 the repair pass names the head sculpt", tools.includes("SCULPTS THE HEAD") && tools.includes("THE FACE IS SCULPTED, NOT ASSEMBLED"));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
-  check("A11 rule 56 teaches the deepening", prompts.includes("56. THE SILHOUETTE SHAPES THE MESH, THE SCORE MATCHES THE POSE"));
-  check("A12 the curriculum grew both lines", prompts.includes("- THE SILHOUETTE SHAPES THE MESH: an adherent proxy is SHAPED") && prompts.includes("- THE SCORE MATCHES THE POSE: a render re-score hands the vision model a FILMSTRIP"));
-  check("A13 rules stay sequential (56, no duplicates)", (prompts.match(/^56\. THE SILHOUETTE SHAPES THE MESH/gm) ?? []).length === 1);
+  check("A13 rule 57 teaches the sculpt", prompts.includes("57. THE FACE IS SCULPTED, NOT ASSEMBLED"));
+  check("A14 the curriculum grew the line", prompts.includes("- THE FACE IS SCULPTED, NOT ASSEMBLED: the proxy's head is a real sculpted mesh"));
+  check("A15 rules stay sequential (57, no duplicates)", (prompts.match(/^57\. THE FACE IS SCULPTED/gm) ?? []).length === 1);
 
   const repairSrc = readFileSync("src/lib/identity-repair.ts", "utf8");
-  check("A14 the repair ledger line names the shaping", repairSrc.includes("parseSilhouetteShape") && repairSrc.includes("silhouetteShapeLine(shape)"));
+  check("A16 the repair ledger line names the face profile", repairSrc.includes("parseFaceProfile") && repairSrc.includes("faceProfileLine(face)") && repairSrc.includes("faceShape"));
 
   // ───────────────────── B. pure checks ─────────────────────
-  const neutral = parseSilhouetteShape(null, null);
-  check("B1 no note, no build -> the neutral figure with honest fields", !!neutral && neutral.height === 1.0 && neutral.shoulders === 1.0 && neutral.torso === 1.0 && neutral.sleeves === 1.0 && neutral.skirt === 1.0 && neutral.hair === 1.0 && neutral.fields.length === 0);
-  const leanPrior = parseSilhouetteShape(null, "lean");
-  check("B2 the build field sets the prior when the note is silent", !!leanPrior && leanPrior.shoulders === 0.92 && leanPrior.torso === 0.92 && leanPrior.fields.length === 0);
-  const shaped = parseSilhouetteShape("A tall, broad-shouldered swordswoman with flowing sleeves and long black hair", "lean");
-  check("B3 the sheet's own silhouette sentence shapes the figure", !!shaped && shaped.height === 1.07 && shaped.shoulders === 1.05 && shaped.torso === 1.02 && shaped.sleeves === 1.22 && shaped.hair === 1.32, JSON.stringify(shaped));
-  check("B4 fields name ONLY the traits the note described", !!shaped && shaped.fields.length === 4 && shaped.fields.includes("tall") && shaped.fields.includes("broad-shouldered") && shaped.fields.includes("flowing sleeves") && shaped.fields.includes("long hair"));
-  const slender = parseSilhouetteShape("a slender willowy dancer, cropped hair", null);
-  check("B5 the negative traits shape too", !!slender && slender.shoulders === 0.92 && slender.torso === 0.93 && slender.hair === 0.78, JSON.stringify(slender));
-  const clamped = parseSilhouetteShape("broad-shouldered, heavyset, billowing robes", "heavy");
-  check("B6 a wild accumulation clamps at the bound, never redesigns", !!clamped && clamped.shoulders === 1.25 && clamped.torso === 1.2, JSON.stringify(clamped));
-  check("B7 the parser is deterministic (the same sentence, the same shape)", JSON.stringify(parseSilhouetteShape("tall and slender with flowing sleeves", "sturdy")) === JSON.stringify(parseSilhouetteShape("tall and slender with flowing sleeves", "sturdy")));
-  check("B8 every bound is ordered (lo < hi)", Object.entries(SILHOUETTE_SHAPE_BOUNDS).every(([, [lo, hi]]) => lo < hi));
-  const neutralLine = silhouetteShapeLine(neutral!);
-  const shapedLine = silhouetteShapeLine(shaped!);
-  check("B9 the line reads honestly (neutral vs shaped)", neutralLine.includes("neutral silhouette") && shapedLine.startsWith("shaped:") && shapedLine.includes("named by the sheet"), `${neutralLine} | ${shapedLine}`);
+  const neutral = parseFaceProfile(null, null);
+  check("B1 no faceShape -> the NEUTRAL sculpt with honest fields", !!neutral && neutral.jawTaper === 0.74 && neutral.eyeScale === 1.05 && neutral.fields.length === 0, JSON.stringify(neutral));
+  const angular = parseFaceProfile("angular", null);
+  check("B2 the angular prior sculpts sharper (jaw 0.64, brow 0.024, eye 0.96)", !!angular && angular.jawTaper === 0.64 && angular.chinFwd === 0.042 && angular.browFwd === 0.024 && angular.eyeScale === 0.96 && angular.fields.length === 1, JSON.stringify(angular));
+  const roundHeavy = parseFaceProfile("round", "heavy");
+  check("B3 the build nudges the jaw (heavy: 0.84 + 0.04, cheek lifted)", !!roundHeavy && roundHeavy.jawTaper === 0.88 && roundHeavy.cheekOut === 0.04 && roundHeavy.fields.length === 2, JSON.stringify(roundHeavy));
+  const clamped = parseFaceProfile("oval", "lean");
+  check("B4 every factor lands inside the bounds", Object.entries(FACE_PROFILE_BOUNDS).every(([k, [lo, hi]]) => (clamped as unknown as Record<string, number>)[k] >= lo && (clamped as unknown as Record<string, number>)[k] <= hi));
+  const garbage = parseFaceProfile("triangular", "sturdy");
+  check("B5 an unknown family degrades to the neutral sculpt, honestly", !!garbage && garbage.jawTaper === 0.74 && garbage.fields.length === 0, JSON.stringify(garbage));
+  check("B6 the parser is deterministic (the same inputs, the same profile)", JSON.stringify(parseFaceProfile("angular", "lean")) === JSON.stringify(parseFaceProfile("angular", "lean")));
+  check("B7 every prior sits inside the bounds", Object.values(FACE_SHAPE_PRIORS).every((p) => Object.entries(FACE_PROFILE_BOUNDS).every(([k, [lo, hi]]) => (p as unknown as Record<string, number>)[k] >= lo && (p as unknown as Record<string, number>)[k] <= hi)));
+  const neutralLine = faceProfileLine(neutral!);
+  const angularLine = faceProfileLine(angular!);
+  check("B8 the line reads honestly (neutral vs named)", neutralLine.includes("neutral face") && angularLine.startsWith("sculpted: angular face") && angularLine.includes("named by the sheet"), `${neutralLine} | ${angularLine}`);
+
+  const parsed = parseSheetDna(JSON.stringify({ hairStyle: "long", build: "lean", faceShape: "oval", silhouette: "flowing robes" }), "/sheets/x.png");
+  check("B9 a parsed read lands the faceShape family", !!parsed && parsed.faceShape === "oval", JSON.stringify(parsed));
+  const garbled = parseSheetDna(JSON.stringify({ faceShape: "heart-shaped" }), "/sheets/x.png");
+  check("B10 a garbled family lands null (the regex fills, never poisons)", !!garbled && garbled.faceShape === null);
 
   const regexDna = characterDesignDna({ name: "Bai Ling", role: "PROTAGONIST", appearance: "black hair, jade robe, lean build", modelSheetPrompt: null, stateClothing: null, stateWeapon: null });
-  const readShaped: SheetDnaRead = {
+  const readNamed: SheetDnaRead = {
     sheetUrl: "/sheets/x.png", readAt: new Date().toISOString(),
     hairStyle: "ponytail", hairColor: "#1b1b2a", robeColor: "#2f6d63", robeAccent: "#a8842c",
     bootsColor: "#241a12", skinTone: "#d9b48f", weaponType: "sword", build: "lean", beard: false,
     silhouette: "A tall, broad-shouldered swordswoman with flowing sleeves and long black hair",
-    faceShape: null,
+    faceShape: "angular",
   };
-  const merged = adherentDna(regexDna, readShaped);
-  check("B10 the adherent build rides the shaping profile", !!merged.silhouetteShape && merged.silhouetteShape.shoulders === 1.05 && merged.silhouetteShape.hair === 1.32 && merged.silhouetteShape.fields.length === 4);
+  const merged = adherentDna(regexDna, readNamed);
+  check("B11 the adherent build rides the face profile (angular through lean's nudge)", !!merged.faceProfile && merged.faceProfile.jawTaper === 0.61 && merged.faceShape === "angular" && merged.faceProfile.fields.includes("angular face") && merged.faceProfile.fields.includes("lean jaw"), JSON.stringify(merged.faceProfile));
+  check("B12 the silhouette shaping still rides beside it", !!merged.silhouetteShape && merged.silhouetteShape.shoulders === 1.05 && merged.silhouetteShape.hair === 1.32);
   const mergedGuess = adherentDna(regexDna, null);
-  check("B11 a guess build carries NO profile (the neutral figure)", mergedGuess.silhouetteShape === undefined && mergedGuess.conformFactor === 0.35);
-  const mergedParsed = adherentDna(regexDna, parseSheetDna(JSON.stringify({ build: "sturdy", silhouette: "tall, flowing robes" }), "/sheets/x.png"));
-  check("B12 a parsed read shapes through the same law", !!mergedParsed.silhouetteShape && mergedParsed.silhouetteShape.height === 1.07 && mergedParsed.silhouetteShape.skirt === 1.2 && mergedParsed.conformFactor === 0.75);
+  check("B13 a guess build carries no face (no faceShape, no profile)", mergedGuess.faceShape === undefined && mergedGuess.faceProfile === undefined && mergedGuess.conformFactor === 0.35);
+  const mergedNoFace = adherentDna(regexDna, { ...readNamed, faceShape: null });
+  check("B14 a read without a family keeps the NEUTRAL sculpt on the wire", !!mergedNoFace.faceProfile && mergedNoFace.faceProfile.jawTaper === 0.71 && mergedNoFace.faceShape === undefined && mergedNoFace.faceProfile.fields.length === 0, JSON.stringify(mergedNoFace.faceProfile));
 
-  check("B13 a 5s clip samples three stamps in range", JSON.stringify(poseSampleTimestamps(5)) === JSON.stringify([1.1, 2, 3.1]), JSON.stringify(poseSampleTimestamps(5)));
-  check("B14 a clip too short for a strip degrades to one stamp", poseSampleTimestamps(0.8).length === 1 && poseSampleTimestamps(1.0).length === 1 && poseSampleTimestamps(0.5).length === 1);
-  check("B15 the stamps stay inside the clip (never the last 0.1s)", poseSampleTimestamps(1.3).every((t) => t >= 0.1 && t <= 1.2) && poseSampleTimestamps(1.3).length === 3, JSON.stringify(poseSampleTimestamps(1.3)));
-  check("B16 NaN degrades to the minimum clip honestly", JSON.stringify(poseSampleTimestamps(Number.NaN)) === JSON.stringify([0.2]), JSON.stringify(poseSampleTimestamps(Number.NaN)));
-  check("B17 the pose law is deterministic", JSON.stringify(poseSampleTimestamps(7.3)) === JSON.stringify(poseSampleTimestamps(7.3)));
-  check("B18 the strip is bounded by POSE_FRAME_COUNT", POSE_FRAME_COUNT === 3 && poseSampleTimestamps(120).length <= POSE_FRAME_COUNT);
-
-  check("B19 the repair verdict law still reads honestly", shotRepairVerdict(0.35, 0.72, 0.7) === "REPAIRED" && shotRepairVerdict(0.35, 0.5, 0.7) === "IMPROVED" && shotRepairVerdict(0.35, null, 0.7) === "UNSCORED");
-  check("B20 the loop's shot knob still bounds at 3", REPAIR_MAX_SHOTS_PER_MEMBER === 3);
+  check("B15 the repair verdict law still reads honestly", shotRepairVerdict(0.35, 0.72, 0.7) === "REPAIRED" && shotRepairVerdict(0.35, 0.5, 0.7) === "IMPROVED" && shotRepairVerdict(0.35, null, 0.7) === "UNSCORED");
 
   // ───────────────────── C. accounts + throwaway production ─────────────────────
   for (const stale of await db.project.findMany({ where: { title: { contains: MARK } } })) {
@@ -265,14 +259,14 @@ async function run() {
   const viewerJar = await loginJar("reader@studio.dev", "viewing123");
   check("C4 the viewer's session reads live too", (await call(viewerJar, "/api/projects")).status === 200);
 
-  const created = await executeTool("throwaway", "create_project", { title: `Iter81 Shape Lab ${MARK}`, logline: "a throwaway production for the silhouette + pose proof", visualStyle: "DONGHUA" }, ownerUser);
+  const created = await executeTool("throwaway", "create_project", { title: `Iter82 Sculpt Lab ${MARK}`, logline: "a throwaway production for the sculpted-likeness proof", visualStyle: "DONGHUA" }, ownerUser);
   check("C5 the throwaway lab exists", created.status === "OK", created.result.slice(0, 120));
   const lab = await db.project.findFirst({ where: { title: { contains: MARK } } });
   if (!lab) throw new Error("throwaway project missing - cannot continue");
   const labId = lab.id;
   const T = (name: string, args: Record<string, unknown>) => executeTool(labId, name, args, ownerUser);
 
-  const ep = await T("create_episode", { title: "The Shaping Arc", count: 1 });
+  const ep = await T("create_episode", { title: "The Sculpted Arc", count: 1 });
   check("C6 the episode exists", ep.status === "OK", ep.result.slice(0, 120));
   let scene = await db.scene.findFirst({ where: { episode: { season: { projectId: labId } } } });
   if (!scene) {
@@ -300,52 +294,56 @@ async function run() {
 
   // ───────────────────── D. the real paths ─────────────────────
   // D-a THE SHEET IS READ: the REAL vision read over the real sheet PNG
+  // (the prompt now asks the face family too)
   const dnaRead = await readSheetDna(hero.id, { refresh: true });
   check("D1 the REAL sheet-DNA read lands over the real sheet", dnaRead.ok, "error" in dnaRead ? dnaRead.error.slice(0, 160) : "");
   if (dnaRead.ok) {
     const fields = [dnaRead.dna.hairStyle, dnaRead.dna.hairColor, dnaRead.dna.robeColor, dnaRead.dna.robeAccent, dnaRead.dna.bootsColor, dnaRead.dna.skinTone, dnaRead.dna.weaponType, dnaRead.dna.build].filter((v) => v !== null).length;
-    console.log(`   sheet DNA: fields=${fields}/8 silhouette=${JSON.stringify(dnaRead.dna.silhouette)}`);
+    console.log(`   sheet DNA: fields=${fields}/8 faceShape=${JSON.stringify(dnaRead.dna.faceShape)} silhouette=${JSON.stringify(dnaRead.dna.silhouette)}`);
   }
 
-  // D-b THE DETERMINISTIC SHAPED BUILD: a crafted read (staleness-keyed
-  // to the current sheet) plants a silhouette sentence with shape words;
-  // the render path compiles it through the cache (sheetDnaFresh, no
-  // refresh - the exact path every production render takes) and the
-  // worker sculpts the mesh with it.
+  // D-b THE DETERMINISTIC SCULPTED BUILD: a crafted read (staleness-
+  // keyed to the current sheet) plants an angular family; the render
+  // path compiles it through the cache (sheetDnaFresh, no refresh -
+  // the exact path every production render takes) and the worker
+  // SCULPTS the head mesh with it.
   const heroRow = await db.character.findUnique({ where: { id: hero.id } });
   if (!heroRow?.modelSheetUrl) throw new Error("hero sheet missing - cannot continue");
   const craftedRaw = JSON.stringify({
     hairStyle: "ponytail", hairColor: "#1B1B2A", robeColor: "#2F6D63", robeAccent: "#A8842C",
     bootsColor: "#241A12", skinTone: "#D9B48F", weaponType: "sword", build: "lean", beard: false,
+    faceShape: "angular",
     silhouette: "A tall, broad-shouldered swordswoman with flowing sleeves and long black hair",
   });
   const crafted = parseSheetDna(craftedRaw, heroRow.modelSheetUrl);
-  check("D2 the crafted read parses with the shaped silhouette", !!crafted && crafted.silhouette?.includes("flowing sleeves") === true);
-  let shaped1Job: { ok: boolean; jobId: string | null; status: string } | null = null;
+  check("D2 the crafted read parses with the named family", !!crafted && crafted.faceShape === "angular" && crafted.silhouette?.includes("flowing sleeves") === true);
+  let sculptJob: { ok: boolean; jobId: string | null; status: string } | null = null;
   if (crafted) {
     await db.character.update({ where: { id: hero.id }, data: { sheetDna: JSON.stringify(crafted) } });
     const cached = sheetDnaFresh((await db.character.findUnique({ where: { id: hero.id } }))?.sheetDna, heroRow.modelSheetUrl);
-    check("D3 the crafted read serves fresh from the cache (staleness keyed on the sheet)", !!cached && cached.silhouette === crafted.silhouette);
-    shaped1Job = await realRender(labId, shots[1].id);
-    const shaped1 = shaped1Job;
-    check("D4 the shaped build rendered over the real engine", shaped1.ok, shaped1.status.slice(0, 140));
-    if (shaped1.ok && shaped1.jobId) {
-      const statePath = path.join(process.cwd(), "public", "renders", `.job-${shaped1.jobId}.json`);
+    check("D3 the crafted read serves fresh from the cache (staleness keyed on the sheet)", !!cached && cached.faceShape === "angular");
+    sculptJob = await realRender(labId, shots[1].id);
+    check("D4 the sculpted build rendered over the real engine", sculptJob.ok, sculptJob.status.slice(0, 140));
+    if (sculptJob.ok && sculptJob.jobId) {
+      const statePath = path.join(process.cwd(), "public", "renders", `.job-${sculptJob.jobId}.json`);
       const state = JSON.parse(readFileSync(statePath, "utf8")) as {
-        figureSource?: string; rig?: { silhouette?: { factors: Record<string, number>; applied: string[]; namedBySheet: string[] } | null };
+        figureSource?: string;
+        rig?: {
+          silhouette?: { factors: Record<string, number> } | null;
+          sculpt?: { faceShape: string | null; factors: Record<string, number>; namedBySheet: string[]; parts: string[]; verts: number; faceHash: string } | null;
+        };
       };
       check("D5 the worker built the figure procedurally", state.figureSource === "procedural:v4.0-designed", String(state.figureSource));
-      const sil = state.rig?.silhouette;
-      check("D6 the render state names the applied shaping (mesh-only law)", !!sil && sil.factors.shoulders === 1.05 && sil.factors.sleeves === 1.22 && sil.factors.hair === 1.32 && sil.factors.height === 1.07, JSON.stringify(state.rig?.silhouette));
-      check("D7 the applied traits + the sheet's own words ride the state", !!sil && sil.applied.includes("shoulders") && sil.applied.includes("hair") && sil.namedBySheet.includes("flowing sleeves"), JSON.stringify(sil?.applied));
+      const sc = state.rig?.sculpt;
+      check("D6 the render state names the sculpted face (angular through the lean nudge)", !!sc && sc.faceShape === "angular" && sc.factors.jawTaper === 0.61 && sc.factors.eyeScale === 0.96, JSON.stringify(state.rig?.sculpt));
+      check("D7 the sculpted hair rides the evidence (cap, fringe, sweep, tail)", !!sc && sc.parts.includes("HairCap") && sc.parts.includes("HairFringe") && sc.parts.includes("HairSweep") && sc.parts.includes("HairTail"), JSON.stringify(sc?.parts));
+      check("D8 the sculpt moved real vertices and carries its deterministic hash", !!sc && sc.verts > 600 && typeof sc.faceHash === "string" && sc.faceHash.length === 16, JSON.stringify({ verts: sc?.verts, faceHash: sc?.faceHash }));
+      check("D9 the silhouette shaping rides beside the sculpt", !!state.rig?.silhouette && state.rig.silhouette.factors.shoulders === 1.05, JSON.stringify(state.rig?.silhouette));
     }
   }
 
   // D-c the named work order: three planted below readings on real rows
-  // (distinct values so the worst shot is named deterministically)
   const plantValues: Record<number, number> = { 1: 0.3, 2: 0.35, 3: 0.4 };
-  // a RENDER-source reading needs a finished clip to judge - the first
-  // three renders exist exactly for that (the loop then RE-renders)
   for (const n of [2, 3]) {
     const pre = await realRender(labId, shots[n].id);
     check(`D3b shot ${n}'s clip finished (the poster target exists)`, pre.ok, pre.status.slice(0, 120));
@@ -353,32 +351,28 @@ async function run() {
   for (const n of [1, 2, 3]) {
     const raw = JSON.stringify({ note: "planted: below the shipping bar", characters: [{ name: "Bai Ling", similarity: plantValues[n], aspects: { face: 0.4 }, note: "drifted badly" }] });
     const planted = await scoreShotIdentityFromRaw(shots[n].id, raw, "RENDER");
-    check(`D8 the planted below reading lands on shot ${n}`, planted.ok, "error" in planted ? planted.error : "");
+    check(`D10 the planted below reading lands on shot ${n}`, planted.ok, "error" in planted ? planted.error : "");
   }
   const standingBefore = await castIdentityMeasurement(labId, "RENDER");
-  check("D9 the standing names Bai Ling BELOW across three readings", standingBefore.below === 1 && standingBefore.members.find((m) => m.name === "Bai Ling")?.worstRef === "E1 Sc1 S001", JSON.stringify({ below: standingBefore.below }));
+  check("D11 the standing names Bai Ling BELOW across three readings", standingBefore.below === 1 && standingBefore.members.find((m) => m.name === "Bai Ling")?.worstRef === "E1 Sc1 S001", JSON.stringify({ below: standingBefore.below }));
   }
 
   if (PHASE !== "a") {
   // D-d THE LOOP at shotsPerMember: 3 (reanchor off: bounded, no regen)
   const T2 = (name: string, args: Record<string, unknown>) => executeTool(labId, name, args, ownerUser);
   const pass1 = await T2("identity_repair_pass", { members: 1, shotsPerMember: 3, reanchor: false });
-  check("D10 the repair pass runs the widened work order end to end", pass1.status === "OK" && pass1.result.includes("IDENTITY REPAIR PASS"), pass1.result.slice(0, 240));
-  check("D11 the ledger names all three shots with their befores", [1, 2, 3].every((n) => pass1.result.includes(`E1 Sc1 S00${n}`)) && (pass1.result.match(/% -> /g) ?? []).length === 3, pass1.result.slice(0, 700));
-  check("D12 the ledger verdicts stay inside the honest set", /(REPAIRED|IMPROVED|UNCHANGED|WORSE|UNSCORED)/.test(pass1.result), pass1.result.slice(0, 400));
-  check("D13 the ledger names the DNA the build rode (the shaping included)", pass1.result.includes("dna: Bai Ling: sheet-adherent build") && (pass1.result.includes("shaped:") || pass1.result.includes("neutral silhouette")), pass1.result.slice(0, 500));
-  check("D14 the standing is read again when the loop ends", /standing: 1 below -> \d below/.test(pass1.result), pass1.result.slice(-220));
+  check("D12 the repair pass runs the widened work order end to end", pass1.status === "OK" && pass1.result.includes("IDENTITY REPAIR PASS"), pass1.result.slice(0, 240));
+  check("D13 the ledger names all three shots with their befores", [1, 2, 3].every((n) => pass1.result.includes(`E1 Sc1 S00${n}`)) && (pass1.result.match(/% -> /g) ?? []).length === 3, pass1.result.slice(0, 700));
+  check("D14 the ledger verdicts stay inside the honest set", /(REPAIRED|IMPROVED|UNCHANGED|WORSE|UNSCORED)/.test(pass1.result), pass1.result.slice(0, 400));
+  check("D15 the ledger names the DNA the build rode (the face sculpt included)", pass1.result.includes("dna: Bai Ling: sheet-adherent build") && pass1.result.includes("sculpted:") && pass1.result.includes("angular face"), pass1.result.slice(0, 600));
+  check("D16 the standing is read again when the loop ends", /standing: 1 below -> \d below/.test(pass1.result), pass1.result.slice(-220));
 
   const repairEvent = await db.productionEvent.findFirst({ where: { projectId: labId, type: "IDENTITY_REPAIR" }, orderBy: { createdAt: "desc" } });
-  check("D15 the IDENTITY_REPAIR event lands with the ledger payload", !!repairEvent && repairEvent.summary.includes("Identity repair pass") && repairEvent.summary.includes("1 below"), repairEvent?.summary.slice(0, 180) ?? "missing");
+  check("D17 the IDENTITY_REPAIR event lands with the ledger payload", !!repairEvent && repairEvent.summary.includes("Identity repair pass") && repairEvent.summary.includes("1 below"), repairEvent?.summary.slice(0, 180) ?? "missing");
 
-  // the REAL re-renders: three fresh attempts finished on disk (plus
-  // the three pre-plant renders: six jobs total)
   const renderJobs = await db.renderJob.findMany({ where: { projectId: labId, outputUrl: { not: null } }, orderBy: { createdAt: "asc" } });
-  check("D16 the loop re-rendered all three shots over the real engine", renderJobs.length >= 6 && renderJobs.every((j) => existsSync(path.join(process.cwd(), "public", j.outputUrl!))), `jobs=${renderJobs.length}`);
+  check("D18 the loop re-rendered all three shots over the real engine", renderJobs.length >= 6 && renderJobs.every((j) => existsSync(path.join(process.cwd(), "public", j.outputUrl!))), `jobs=${renderJobs.length}`);
 
-  // the REAL pose-matched re-scores: the rows moved off the planted
-  // numbers AND the note names the filmstrip (2.5s clips -> 3 frames)
   let poseNotes = 0;
   let realScores = 0;
   for (const n of [1, 2, 3]) {
@@ -388,17 +382,15 @@ async function run() {
     if (mine !== null && mine !== plantValues[n]) realScores += 1;
     if (mine !== null) console.log(`   pose-matched re-score S00${n}: ${Math.round(plantValues[n] * 100)}% -> ${(mine * 100).toFixed(0)}% (${shotRepairVerdict(plantValues[n], mine, 0.7)}) note=${row?.note.slice(0, 90)}`);
   }
-  check("D17 every re-scored row names the pose-matched filmstrip", poseNotes === 3, `poseNotes=${poseNotes}`);
-  check("D18 the re-scores ran the real vision channel over the new pixels", realScores === 3, `realScores=${realScores}`);
+  check("D19 every re-scored row names the pose-matched filmstrip", poseNotes === 3, `poseNotes=${poseNotes}`);
+  check("D20 the re-scores ran the real vision channel over the new pixels", realScores === 3, `realScores=${realScores}`);
 
-  // the filmstrip files exist beside the posters (strip + frames)
   const stripJobs = renderJobs.slice(-3);
   const stripsOk = stripJobs.every((j) => existsSync(path.join(process.cwd(), "public", "renders", "posters", `${j.id}.strip.jpg`)) && existsSync(path.join(process.cwd(), "public", "renders", "posters", `${j.id}.strip0.jpg`)));
-  check("D19 the filmstrip artifacts persist per job (the strip + its frames)", stripsOk, stripJobs.map((j) => j.id.slice(-6)).join(","));
+  check("D21 the filmstrip artifacts persist per job (the strip + its frames)", stripsOk, stripJobs.map((j) => j.id.slice(-6)).join(","));
 
-  // the viewer's read-only law still holds while the loop runs the studio
   const viewerWrite = await call(viewerJar!, "/api/projects", { method: "POST", body: JSON.stringify({ title: "nope" }) });
-  check("D20 the viewer cannot write the studio (403)", viewerWrite.status === 403, `status=${viewerWrite.status}`);
+  check("D22 the viewer cannot write the studio (403)", viewerWrite.status === 403, `status=${viewerWrite.status}`);
 
   // ───────────────────── E. cleanup ─────────────────────
   await cleanupLab(labId);
@@ -406,7 +398,7 @@ async function run() {
   check("E1 the lab is gone exactly", leftovers.length === 0);
   }
 
-  console.log(`\n${failures === 0 ? "ALL GREEN" : `${failures} FAILURE(S)`} - iteration 81 (${PHASE})`);
+  console.log(`\n${failures === 0 ? "ALL GREEN" : `${failures} FAILURE(S)`} - iteration 82 (${PHASE})`);
   process.exit(failures === 0 ? 0 : 1);
 }
 

@@ -27,7 +27,7 @@
 
 import { db } from "@/lib/db";
 import { castIdentityMeasurement, scoreRenderIdentity, type CastIdentityMeasurement, type IdentitySource } from "@/lib/identity";
-import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine } from "@/lib/blender/adherence";
+import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine } from "@/lib/blender/adherence";
 import { reanchorCharacter } from "@/lib/reanchor";
 import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
 
@@ -308,8 +308,10 @@ export async function runIdentityRepairPass(
 
 /** The sheet read as one adherence line (read-shaped, for the ledger) -
  * THE SILHOUETTE SHAPES THE MESH: the shaping the sheet's own
- * silhouette sentence compiles into rides the line when it applies. */
-function adherenceLineFromRead(name: string, read: { hairStyle: unknown; hairColor: unknown; robeColor: unknown; robeAccent: unknown; skinTone: unknown; weaponType: unknown; build: unknown; beard: unknown; silhouette: unknown }): string {
+ * silhouette sentence compiles into rides the line when it applies;
+ * THE FACE IS SCULPTED, NOT ASSEMBLED: the face family's bounded
+ * profile rides it too. */
+function adherenceLineFromRead(name: string, read: { hairStyle: unknown; hairColor: unknown; robeColor: unknown; robeAccent: unknown; skinTone: unknown; weaponType: unknown; build: unknown; beard: unknown; silhouette: unknown; faceShape?: unknown }): string {
   const owned: string[] = [];
   if (read.hairStyle !== null) owned.push("hairStyle");
   if (read.hairColor !== null) owned.push("hairColor");
@@ -319,9 +321,12 @@ function adherenceLineFromRead(name: string, read: { hairStyle: unknown; hairCol
   if (read.weaponType !== null) owned.push("weaponType");
   if (read.build !== null) owned.push("build");
   if (read.beard !== null) owned.push("beard");
+  if (read.faceShape !== null && read.faceShape !== undefined) owned.push("faceShape");
   const shape = parseSilhouetteShape(typeof read.silhouette === "string" ? read.silhouette : null, typeof read.build === "string" ? read.build : null);
   const shapeLine = silhouetteShapeLine(shape);
+  const face = parseFaceProfile(typeof read.faceShape === "string" ? read.faceShape : null, typeof read.build === "string" ? read.build : null);
+  const faceLine = faceProfileLine(face);
   return owned.length > 0
-    ? `${name}: sheet-adherent build (${owned.join(", ")} from the sheet read; palette pull 0.75; ${shapeLine})`
+    ? `${name}: sheet-adherent build (${owned.join(", ")} from the sheet read; palette pull 0.75; ${shapeLine}; ${faceLine})`
     : `${name}: guess build (regex DNA only) - the sheet read landed nothing usable`;
 }
