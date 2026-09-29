@@ -2108,6 +2108,66 @@ def groom_profile(dna):
     return {"factors": factors, "style": style, "fields": fields}
 
 
+# ── iteration 86: THE FRAME IS FINISHED IN COMP ─────────────────────
+COMP_BOUNDS = {
+    "mist": (0.0, 1.0),
+    "chroma": (0.0, 1.0),
+    "vignette": (0.0, 1.0),
+    "speed": (0.0, 1.0),
+    "beams": (0.0, 1.0),
+    "grain": (0.0, 1.0),
+}
+# the house defaults (a quiet shot still leaves the compositor
+# finished) - mirrors COMP_BASE in comp.ts
+COMP_BASE = {"mist": 0.12, "chroma": 0.08, "vignette": 0.15, "speed": 0.04, "beams": 0.04, "grain": 0.3}
+# the four color scripts - mirrors COMP_LUTS in comp.ts bit-exactly
+# (neutral IS the iteration-73 donghua room grade; the mist tints are
+# DEPTH-FOG colors - dark, hue-shifted toward the script: fog toward
+# a bright pastel washes the whole frame pale and the figure ghosts)
+COMP_LUTS = {
+    "moonlight": {"lift": (0.97, 1.0, 1.05, 1.0), "gain": (0.94, 0.99, 1.1, 1.0), "sat": 1.0, "mistTint": (0.24, 0.29, 0.44, 1.0)},
+    "tribulation": {"lift": (1.0, 0.96, 1.03, 1.0), "gain": (1.08, 0.97, 1.0, 1.0), "sat": 1.12, "mistTint": (0.3, 0.24, 0.38, 1.0)},
+    "dawn": {"lift": (1.02, 0.99, 0.96, 1.0), "gain": (1.08, 1.02, 0.94, 1.0), "sat": 1.06, "mistTint": (0.55, 0.44, 0.34, 1.0)},
+    "neutral": {"lift": (0.98, 0.985, 1.02, 1.0), "gain": (1.03, 1.0, 0.965, 1.0), "sat": 1.06, "mistTint": (0.36, 0.4, 0.46, 1.0)},
+}
+
+
+def comp_profile(shot):
+    """THE FRAME IS FINISHED IN COMP (iteration 86): validate + clamp
+    the comp profile the shot's drama compiled (comp.ts -> the
+    payload's shot.comp) - one law, two runtimes. A payload without
+    one (the legacy stand-in paths) keeps the HOUSE DEFAULTS - a raw
+    frame was a pipeline defect, not a style; the fields list names
+    only what the shot itself owns; an unknown lut name degrades to
+    neutral."""
+    raw = shot.get("comp") if isinstance(shot, dict) else None
+    factors = dict(COMP_BASE)
+    named = False
+    if isinstance(raw, dict):
+        named = True
+        for key, (lo, hi) in COMP_BOUNDS.items():
+            v = raw.get(key)
+            if isinstance(v, (int, float)) and math.isfinite(float(v)):
+                factors[key] = round(max(lo, min(hi, float(v))), 3)
+    lut = str(raw.get("lut") or "neutral") if isinstance(raw, dict) else "neutral"
+    if lut not in COMP_LUTS:
+        lut = "neutral"
+    fields = []
+    if isinstance(raw, dict):
+        fr = raw.get("fields")
+        fields = [str(f) for f in fr][:8] if isinstance(fr, list) else []
+    return {"factors": factors, "lut": lut, "fields": fields, "named": named}
+
+
+def comp_hash(prof):
+    """The DETERMINISTIC comp hash - mirrors compHash in comp.ts
+    bit-exactly (sha256 over the bounded profile, first 16 hex)."""
+    f = prof["factors"]
+    key = "86|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{}|v1".format(
+        f["mist"], f["chroma"], f["vignette"], f["speed"], f["beams"], f["grain"], prof["lut"])
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
 def _groom_guides(style, height_f):
     """The per-style guide spines (head-local, crown riding height_f):
     the same bone structure the loft volumes hang from - strands fan
@@ -3198,6 +3258,360 @@ def _comp_set_sock(node, name, value):
     return False
 
 
+def _comp_out_sock(node, *names):
+    """The first output socket whose name matches (the 5.x nodes
+    renamed the classics - a Mix node outputs 'Result'); the first
+    socket when nothing matches (shape over name)."""
+    for n in names:
+        s = node.outputs.get(n)
+        if s is not None:
+            return s
+    return node.outputs[0]
+
+
+def _comp_in_sock(node, *names):
+    """The input-socket twin of _comp_out_sock."""
+    for n in names:
+        s = node.inputs.get(n)
+        if s is not None:
+            return s
+    return node.inputs[0]
+
+
+def _comp_rgba_in(node, name):
+    """The RGBA input socket by name - the Mix node carries A/B in
+    EVERY data type (a float A comes BEFORE the color A in the input
+    list), and a color link that lands on the float socket leaves the
+    color socket at its default gray - the mix outputs a FLAT CONSTANT
+    and the frame washes to it (the iter86 smoke caught the wash)."""
+    for s in node.inputs:
+        if s.name == name and s.type == "RGBA":
+            return s
+    return node.inputs[0]
+
+
+def _comp_rgba_out(node, name):
+    """The RGBA output socket by name (the Mix node outputs a Result
+    per data type - the color Result is the one the chain reads)."""
+    for s in node.outputs:
+        if s.name == name and s.type == "RGBA":
+            return s
+    return node.outputs[0]
+
+
+def _comp_rgba_set(node, name, value):
+    """Set the RGBA input socket's default BY TYPE - the Mix node's
+    shape-resolved set lands a 4-tuple on the VECTOR socket first (bpy
+    accepts the extra component) and the color socket keeps its gray
+    default - the wash the smoke caught."""
+    for s in node.inputs:
+        if s.name == name and s.type == "RGBA":
+            try:
+                s.default_value = value
+                return True
+            except Exception:
+                continue
+    return False
+
+
+def _comp_mix(tree, blend, fac):
+    """The 5.x mix: ShaderNodeMix in RGBA mode (the CompositorNodeMixRGB
+    family is GONE from the compositor). The node READS the VECTOR
+    Factor socket in RGBA mode (the float Factor link is ignored - the
+    5.2.2 quirk the layer bisect caught), so BOTH Factor sockets carry
+    the value. Returns (node, COLOR out_socket)."""
+    m = tree.nodes.new("ShaderNodeMix")
+    m.data_type = "RGBA"
+    try:
+        m.blend_type = blend
+    except Exception:
+        pass
+    for s in m.inputs:
+        if s.name == "Factor" and s.type == "VALUE":
+            try:
+                s.default_value = fac
+            except Exception:
+                pass
+        if s.name == "Factor" and s.type == "VECTOR":
+            try:
+                s.default_value = (fac, fac, fac)
+            except Exception:
+                pass
+    return m, _comp_rgba_out(m, "Result")
+
+
+def _comp_mix_factor(m, sock_out):
+    """Drive a Mix node's factor from a socket - linked into BOTH the
+    float and the vector Factor (the node reads the vector one)."""
+    for s in m.inputs:
+        if s.name == "Factor" and s.type in ("VALUE", "VECTOR"):
+            try:
+                m.id_data.links.new(sock_out, s)
+            except Exception:
+                pass
+
+
+def build_comp_graph(scn, prof, frames_total):
+    """THE FRAME IS FINISHED IN COMP (iteration 86): build the shot's
+    compositor graph from its own profile on BOTH modes - the preview
+    is the promise: what the measuring loop sees is what ships.
+
+    Chain (every layer defensive, the evidence names the truth):
+      RL.Image -> AO grounding -> depth mist -> speed streaks (VecBlur
+      over the Vector pass) -> bloom -> light shafts (Glare streaks) ->
+      chromatic edge (lens dispersion) -> animated grain (4D noise over
+      the frame clock) -> vignette -> LUT color script -> saturation ->
+      GroupOutput.
+
+    The AOV passes (mist / vector / ao) are enabled BEFORE the RLayers
+    node exists - the pass sockets appear at creation. Returns the
+    evidence dict (layers, skipped, aovs); the state reports it
+    honestly either way."""
+    import bpy  # the worker binds bpy inside worker_run; the direct half may not
+
+    landed, skipped, aovs = [], [], []
+    try:
+        try:
+            vl = scn.view_layers[0]
+            for attr, name in (("use_pass_mist", "mist"), ("use_pass_vector", "vector"), ("use_pass_ambient_occlusion", "ao")):
+                try:
+                    setattr(vl, attr, True)
+                    aovs.append(name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            w = scn.world or bpy.data.worlds.new("AnimeOSWorld")
+            scn.world = w
+            w.use_nodes = True
+            ms = getattr(w, "mist_settings", None)
+            if ms is not None:
+                ms.use_mist = True
+                # the mist lives BEHIND the figure: the CU camera sits 1-2
+                # units off the subject, so a 2.0 start fogs the CHARACTER
+                # (every identity re-score read a ghost) - the depth fog
+                # begins past the subject and owns the far ground only
+                ms.start = 6.0
+                ms.depth = 18.0
+                ms.falloff = "QUADRATIC"
+                try:
+                    ms.intensity = 1.0
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            scn.render.use_compositing = True
+        except Exception:
+            pass
+        # the CPU law: the GPU compositor needs a GL context, and this
+        # headless farm (and every render box like it) has none
+        try:
+            scn.render.compositor_device = "CPU"
+        except Exception:
+            pass
+        # 5.x: the scene's compositor is a CompositorNodeTree on
+        # compositing_node_group; 4.x kept Scene.node_tree. The old
+        # Composite output node is GONE in 5.x - the output is an
+        # interface socket + a NodeGroupOutput node.
+        tree = None
+        try:
+            tree = scn.compositing_node_group
+        except Exception:
+            tree = None
+        if tree is None:
+            try:
+                tree = scn.node_tree
+            except Exception:
+                tree = None
+        if tree is None:
+            tree = bpy.data.node_groups.new("AnimeOSComp", "CompositorNodeTree")
+            scn.compositing_node_group = tree
+        tree.nodes.clear()
+        try:
+            if not any(s.name == "Image" and s.in_out == "OUTPUT" for s in tree.interface.items_tree):
+                tree.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+        except Exception:
+            pass
+        rl = tree.nodes.new("CompositorNodeRLayers")
+        go = tree.nodes.new("NodeGroupOutput")
+        f = prof["factors"]
+        lut = COMP_LUTS[prof["lut"]]
+        cur = _comp_out_sock(rl, "Image")
+
+        # 1. AO grounding - the contact shadow the floating proxies miss
+        #    (the pass is BLURRED first: a 10-sample preview AO is splotch,
+        #    and splotch over the whole frame reads as decay, not shadow)
+        try:
+            ao = rl.outputs.get("Ambient Occlusion")
+            if ao is not None:
+                abl = tree.nodes.new("CompositorNodeBlur")
+                _comp_set_sock(abl, "Size", (10.0, 10.0, 0.0))
+                tree.links.new(ao, _comp_in_sock(abl, "Image"))
+                m, mo = _comp_mix(tree, "MULTIPLY", 0.18)
+                tree.links.new(cur, _comp_rgba_in(m, "A"))
+                tree.links.new(_comp_out_sock(abl, "Image"), _comp_rgba_in(m, "B"))
+                cur = mo
+                landed.append("ao")
+        except Exception:
+            skipped.append("ao")
+
+        # 2. depth mist - the Z read toward the color script's tint
+        #    (the Mix node is lerp(A, B, fac): A = the crisp frame at
+        #    fac 0 - the FIGURE - and B = the tint the far field fogs
+        #    toward; inverted, the subject wears the fog and the sky
+        #    keeps its depth - the wash the layer bisect caught)
+        try:
+            mist = rl.outputs.get("Mist")
+            if mist is not None:
+                mr = tree.nodes.new("ShaderNodeMapRange")
+                _comp_set_sock(mr, "To Max", round(0.15 + 0.65 * f["mist"], 3))
+                tree.links.new(mist, _comp_in_sock(mr, "Value"))
+                m, mo = _comp_mix(tree, "MIX", 1.0)
+                _comp_rgba_set(m, "B", lut["mistTint"])
+                tree.links.new(cur, _comp_rgba_in(m, "A"))
+                _comp_mix_factor(m, _comp_out_sock(mr, "Result"))
+                cur = mo
+                landed.append("mist")
+        except Exception:
+            skipped.append("mist")
+
+        # 3. speed streaks - the Vector pass over the action beats
+        if f["speed"] >= 0.2:
+            try:
+                vb = tree.nodes.new("CompositorNodeVecBlur")
+                _comp_set_sock(vb, "Samples", 4 + int(12 * f["speed"]))
+                _comp_set_sock(vb, "Shutter", round(0.15 + 0.4 * f["speed"], 3))
+                sp = rl.outputs.get("Vector")
+                if sp is not None:
+                    tree.links.new(sp, _comp_in_sock(vb, "Speed"))
+                tree.links.new(cur, _comp_in_sock(vb, "Image"))
+                cur = _comp_out_sock(vb, "Image")
+                landed.append("speed")
+            except Exception:
+                skipped.append("speed")
+
+        # 4. bloom - the energy blades and fx glow
+        try:
+            g = tree.nodes.new("CompositorNodeGlare")
+            _comp_set_sock(g, "Type", "Bloom")
+            _comp_set_sock(g, "Threshold", 1.0)
+            _comp_set_sock(g, "Size", 8.0)
+            _comp_set_sock(g, "Quality", "Medium")
+            tree.links.new(cur, _comp_in_sock(g, "Image"))
+            cur = _comp_out_sock(g, "Image")
+            landed.append("bloom")
+        except Exception:
+            skipped.append("bloom")
+
+        # 5. light shafts - the glare streaks over the bright sources
+        if f["beams"] >= 0.2:
+            try:
+                g2 = tree.nodes.new("CompositorNodeGlare")
+                if _comp_set_sock(g2, "Type", "Streaks"):
+                    _comp_set_sock(g2, "Threshold", 0.85)
+                    _comp_set_sock(g2, "Streaks", 6)
+                    _comp_set_sock(g2, "Streaks Angle", 0.4)
+                    _comp_set_sock(g2, "Fade", 0.82)
+                    _comp_set_sock(g2, "Size", 8.0)
+                    tree.links.new(cur, _comp_in_sock(g2, "Image"))
+                    cur = _comp_out_sock(g2, "Image")
+                    landed.append("beams")
+            except Exception:
+                skipped.append("beams")
+
+        # 6. chromatic edge - the lens dispersion at the frame border
+        try:
+            ld = tree.nodes.new("CompositorNodeLensdist")
+            _comp_set_sock(ld, "Dispersion", round(0.12 * f["chroma"], 3))
+            tree.links.new(cur, _comp_in_sock(ld, "Image"))
+            cur = _comp_out_sock(ld, "Image")
+            landed.append("chroma")
+        except Exception:
+            skipped.append("chroma")
+
+        # 7. grain - 4D noise over the frame clock (crawling, not a
+        #    dirty lens: the Time node slides the W slice per frame)
+        try:
+            nz = tree.nodes.new("ShaderNodeTexNoise")
+            try:
+                nz.noise_dimensions = "4D"
+            except Exception:
+                pass
+            _comp_set_sock(nz, "Scale", 900.0)
+            _comp_set_sock(nz, "Detail", 2.0)
+            mr2 = tree.nodes.new("ShaderNodeMapRange")
+            _comp_set_sock(mr2, "From Min", 0.35)
+            _comp_set_sock(mr2, "From Max", 0.65)
+            _comp_set_sock(mr2, "To Min", 0.4)
+            _comp_set_sock(mr2, "To Max", 0.6)
+            tree.links.new(_comp_out_sock(nz, "Factor"), _comp_in_sock(mr2, "Value"))
+            anim = False
+            try:
+                tm = tree.nodes.new("CompositorNodeTime")
+                _comp_set_sock(tm, "Start Frame", 1)
+                _comp_set_sock(tm, "End Frame", max(2, int(frames_total)))
+                mm = tree.nodes.new("ShaderNodeMath")
+                mm.operation = "MULTIPLY"
+                mm.inputs[1].default_value = 37.7
+                tree.links.new(_comp_out_sock(tm, "Factor"), mm.inputs[0])
+                tree.links.new(_comp_out_sock(mm, "Value"), _comp_in_sock(nz, "W"))
+                anim = str(getattr(nz, "noise_dimensions", "3D")) == "4D"
+            except Exception:
+                anim = False
+            m, mo = _comp_mix(tree, "OVERLAY", round(0.05 + 0.12 * f["grain"], 3))
+            tree.links.new(cur, _comp_rgba_in(m, "A"))
+            tree.links.new(_comp_out_sock(mr2, "Result"), _comp_rgba_in(m, "B"))
+            cur = mo
+            landed.append("grain(animated)" if anim else "grain(static)")
+        except Exception:
+            skipped.append("grain")
+
+        # 8. vignette - the edge falloff the close framing owns (the
+        #    mask multiplies DIRECTLY: white center keeps the figure,
+        #    dark edges fall off - inverted, it darkens the SUBJECT)
+        try:
+            em = tree.nodes.new("CompositorNodeEllipseMask")
+            _comp_set_sock(em, "Size", (0.72, 0.72, 0.0))
+            bl = tree.nodes.new("CompositorNodeBlur")
+            _comp_set_sock(bl, "Size", (18.0, 18.0, 0.0))
+            tree.links.new(_comp_out_sock(em, "Value"), _comp_in_sock(bl, "Image"))
+            m, mo = _comp_mix(tree, "MULTIPLY", round(0.6 * f["vignette"], 3))
+            tree.links.new(cur, _comp_rgba_in(m, "A"))
+            tree.links.new(_comp_out_sock(bl, "Image"), _comp_rgba_in(m, "B"))
+            cur = mo
+            landed.append("vignette")
+        except Exception:
+            skipped.append("vignette")
+
+        # 9. the color script - the shot's own LUT + its saturation
+        try:
+            cb = tree.nodes.new("CompositorNodeColorBalance")
+            for s in cb.inputs:
+                if s.name == "Lift" and s.type == "RGBA":
+                    s.default_value = lut["lift"]
+                if s.name == "Gain" and s.type == "RGBA":
+                    s.default_value = lut["gain"]
+            tree.links.new(cur, _comp_in_sock(cb, "Image"))
+            cur = _comp_out_sock(cb, "Image")
+            landed.append("lut")
+            hs = tree.nodes.new("CompositorNodeHueSat")
+            _comp_set_sock(hs, "Saturation", lut["sat"])
+            tree.links.new(cur, _comp_in_sock(hs, "Image"))
+            cur = _comp_out_sock(hs, "Image")
+            landed.append("saturation")
+        except Exception:
+            skipped.append("lut")
+
+        tree.links.new(cur, go.inputs[0])
+        if not landed:
+            landed = ["skipped: no compositor node landed"]
+    except Exception as exc:  # noqa: BLE001
+        landed = [f"skipped: {exc}"]
+    return {"layers": landed, "skipped": skipped, "aovs": aovs}
+
+
 def worker_run(job_file):
     import bpy
     import mathutils
@@ -3845,77 +4259,29 @@ def worker_run(job_file):
             scn.cycles.transparent_max_bounces = 0
         state["render"] = {"samples": 48 if mode == "FINAL" else 10, "bounces": 4 if mode == "FINAL" else 0}
 
-        # ── THE FINAL FRAME IS GRADED (iteration 73): a FINAL render
-        #    leaves the compositor with the post the raw frame was
-        #    missing - bloom (the energy blades and fx glow), the
-        #    donghua room grade (cool lift, warm gain, +6% saturation)
-        #    - deterministic fixed numbers, PREVIEW stays raw.
-        if mode == "FINAL":
-            landed = []
-            try:
-                try:
-                    scn.render.use_compositing = True
-                except Exception:
-                    pass
-                # the CPU law: the GPU compositor needs a GL context,
-                # and this headless farm (and every render box like it)
-                # has none - the CPU compositor renders the same graph
-                try:
-                    scn.render.compositor_device = "CPU"
-                except Exception:
-                    pass
-                # 5.x: the scene's compositor is a CompositorNodeTree on
-                # compositing_node_group; 4.x kept Scene.node_tree. The
-                # old Composite output node is GONE in 5.x - the output
-                # is an interface socket + a NodeGroupOutput node.
-                tree = None
-                try:
-                    tree = scn.compositing_node_group
-                except Exception:
-                    tree = None
-                if tree is None:
-                    try:
-                        tree = scn.node_tree
-                    except Exception:
-                        tree = None
-                if tree is None:
-                    tree = bpy.data.node_groups.new("AnimeOSGrade", "CompositorNodeTree")
-                    scn.compositing_node_group = tree
-                tree.nodes.clear()
-                try:
-                    if not any(s.name == "Image" and s.in_out == "OUTPUT" for s in tree.interface.items_tree):
-                        tree.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-                except Exception:
-                    pass
-                rl = tree.nodes.new("CompositorNodeRLayers")
-                go = tree.nodes.new("NodeGroupOutput")
-                cur = rl
-                try:
-                    g = tree.nodes.new("CompositorNodeGlare")
-                    if _comp_set_sock(g, "Type", "Bloom"):
-                        _comp_set_sock(g, "Threshold", 1.0)
-                        _comp_set_sock(g, "Size", 8.0)
-                        _comp_set_sock(g, "Quality", "Medium")
-                        tree.links.new(cur.outputs["Image"], g.inputs[0])
-                        cur = g
-                        landed.append("bloom")
-                except Exception:
-                    pass
-                try:
-                    cb = tree.nodes.new("CompositorNodeColorBalance")
-                    _comp_set_sock(cb, "Lift", (0.98, 0.985, 1.02, 1.0))
-                    _comp_set_sock(cb, "Gain", (1.03, 1.0, 0.965, 1.0))
-                    tree.links.new(cur.outputs["Image"], cb.inputs[0])
-                    cur = cb
-                    landed.append("grade")
-                except Exception:
-                    pass
-                tree.links.new(cur.outputs["Image"], go.inputs[0])
-                if not landed:
-                    landed = ["skipped: no compositor node landed"]
-            except Exception as exc:  # noqa: BLE001
-                landed = [f"skipped: {exc}"]
-            state["render"]["grade"] = landed
+        # ── THE FRAME IS FINISHED IN COMP (iteration 86): every mode
+        #    leaves the compositor finished - the shot's own drama
+        #    compiled the profile (comp.ts -> the payload's shot.comp;
+        #    a payload without one keeps the house defaults) and the
+        #    PREVIEW carries the SAME graph the FINAL ships: the
+        #    preview is the promise - what the measuring loop sees is
+        #    what ships (iteration 73's "PREVIEW stays raw" is
+        #    superseded by law: a comp the loop cannot measure is a
+        #    comp that never happened).
+        comp = comp_profile(shot)
+        comp_ev = build_comp_graph(scn, comp, frames_total)
+        state["render"]["comp"] = {
+            "mode": mode,
+            "source": "shot wire" if comp["named"] else "house defaults",
+            "profile": {**comp["factors"], "lut": comp["lut"]},
+            "fields": comp["fields"],
+            "hash": comp_hash(comp),
+            "layers": comp_ev["layers"],
+            "skipped": comp_ev["skipped"],
+            "aovs": comp_ev["aovs"],
+        }
+        # the legacy grade line (iteration 73's evidence) stays honest
+        state["render"]["grade"] = comp_ev["layers"]
 
         scn.render.resolution_x = out_w
         scn.render.resolution_y = out_h

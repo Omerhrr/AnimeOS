@@ -165,12 +165,12 @@ async function main() {
   const bridge = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
   check("A9 the FINAL grade resolves the 5.x node-group API", bridge.includes("compositing_node_group") && bridge.includes('"CompositorNodeTree"') && bridge.includes("NodeGroupOutput"));
   check("A10 the compositor runs on the CPU law", bridge.includes('compositor_device = "CPU"'));
-  check("A11 bloom + grade ride the graph through sockets", bridge.includes('"Bloom"') && bridge.includes("_comp_set_sock(g, \"Threshold\", 1.0)") && bridge.includes('_comp_set_sock(cb, "Lift", (0.98, 0.985, 1.02, 1.0))'));
-  check("A12 the state names the grade honestly", bridge.includes('state["render"]["grade"] = landed') && bridge.includes('"skipped: no compositor node landed"'));
-  check("A13 PREVIEW never grades", bridge.includes('if mode == "FINAL":\n            landed = []'));
+  check("A11 bloom + grade ride the graph through sockets", bridge.includes('"Bloom"') && bridge.includes("_comp_set_sock(g, \"Threshold\", 1.0)") && bridge.includes('"neutral": {"lift": (0.98, 0.985, 1.02, 1.0)'));
+  check("A12 the state names the comp honestly (the iteration-73 grade line lives inside it)", bridge.includes('state["render"]["comp"] = {') && bridge.includes('state["render"]["grade"] = comp_ev["layers"]') && bridge.includes('"skipped: no compositor node landed"'));
+  check("A13 the comp finishes BOTH modes now (the iteration-86 law: the preview is the promise)", bridge.includes("comp = comp_profile(shot)") && bridge.includes("comp_ev = build_comp_graph(scn, comp, frames_total)") && !bridge.includes('if mode == "FINAL":\n            landed = []'));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
-  check("A14 rule 48 teaches the paint + grade law", prompts.includes("48. THE SKIN IS PAINTED, THE FINAL FRAME IS GRADED") && prompts.includes("a grade on a PREVIEW is a lie"));
+  check("A14 rule 48 teaches the paint + grade law (re-pointed: the comp finishes BOTH modes now)", prompts.includes("48. THE SKIN IS PAINTED, THE FINAL FRAME IS GRADED") && prompts.includes("a raw frame on any mode is the defect"));
   check("A15 the curriculum grew the law line", prompts.includes("- THE SKIN IS PAINTED: a flat base color is a color, not a SURFACE"));
   check("A16 rules stay sequential (47 to 48, no duplicates)", (prompts.match(/^47\. THE FLESH REMEMBERS THE MOTION/gm) ?? []).length === 1 && (prompts.match(/^48\. THE SKIN IS PAINTED/gm) ?? []).length === 1);
 
@@ -251,14 +251,16 @@ async function main() {
   check("D12 the FINAL render reaches REVIEW with a clip", finalDone?.status === "REVIEW" && Boolean(finalDone.outputUrl) && isMp4(path.join(process.cwd(), "public", finalDone.outputUrl ?? "")), `${finalDone?.status} ${finalDone?.stage}`);
   const finalState = readState(finalJob.id);
   const finalGrade = (finalState?.render as { grade?: string[] } | undefined)?.grade;
-  check("D13 the render state names the grade (bloom + grade)", Array.isArray(finalGrade) && finalGrade.includes("bloom") && finalGrade.includes("grade"), JSON.stringify(finalGrade));
+  const finalComp = (finalState?.render as { comp?: { layers?: string[]; hash?: string; mode?: string } | undefined } | undefined)?.comp;
+  check("D13 the render state names the finished frame (the comp chain, bloom among the layers)", Array.isArray(finalGrade) && finalGrade.includes("bloom") && Array.isArray(finalComp?.layers) && finalComp!.layers!.includes("lut"), JSON.stringify(finalGrade));
 
   const previewJob = await createRenderJob(labId, shot2.id, "PREVIEW");
   await runRender(previewJob.id, 6 * 60_000);
   const previewDone = await db.renderJob.findUnique({ where: { id: previewJob.id } });
   check("D14 the PREVIEW control renders too", previewDone?.status === "REVIEW" && Boolean(previewDone.outputUrl), `${previewDone?.status}`);
   const previewState = readState(previewJob.id);
-  check("D15 the PREVIEW stays honestly raw (no grade key)", previewState !== null && previewState.render !== undefined && !("grade" in (previewState.render as object)), JSON.stringify((previewState?.render as object) ?? {}));
+  const previewComp = (previewState?.render as { comp?: { mode?: string; hash?: string; layers?: string[] } | undefined } | undefined)?.comp;
+  check("D15 the PREVIEW carries the SAME finished frame now (the iteration-86 law: the preview is the promise)", previewState !== null && previewState.render !== undefined && previewComp !== undefined && previewComp.mode === "PREVIEW" && typeof previewComp.hash === "string" && Array.isArray(previewComp.layers) && previewComp.layers.includes("bloom"), JSON.stringify((previewState?.render as object) ?? {}));
 
   // ───────────────────── E. cleanup ─────────────────────
   await cleanupLab(labId);

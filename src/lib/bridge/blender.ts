@@ -304,6 +304,8 @@ interface CharacterDesignDnaWire {
   // (LOD by framing: close framings carry the full pass). An adherent
   // build always rides one; a guess build keeps the volumes (no
   // profile on the wire at all).
+  // (comp rides the SHOT above - the frame is finished per shot, not
+  // per character.)
   groomProfile?: {
     sweep: number;
     flow: number;
@@ -338,6 +340,23 @@ export interface BridgeJobPayload {
   shot: {
     number: number; description: string; shotType: string; lens: string | null; movement: string | null;
     poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number;
+    // iteration 86 THE FRAME IS FINISHED IN COMP: the shot's own drama
+    // compiled into a bounded comp profile (depth mist, chroma,
+    // vignette, speed streaks, light shafts, grain) over a four-preset
+    // color script. The worker builds the compositor graph from it on
+    // BOTH modes - the preview is the promise: what the measuring loop
+    // sees is what ships. A payload without one keeps the house
+    // defaults (a raw frame was a pipeline defect, not a style).
+    comp?: {
+      mist: number;
+      chroma: number;
+      vignette: number;
+      speed: number;
+      beams: number;
+      grain: number;
+      lut: string;
+      fields?: string[];
+    };
     // LIP-SYNC: millisecond viseme program for speaking closeups
     // (SPEECH dialogue + CLOSEUP/EXTREME_CLOSEUP). The worker drives
     // the stand-in's mouth rig from it per frame.

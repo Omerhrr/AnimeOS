@@ -22,6 +22,7 @@ import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
 import { adherentDna, sheetDnaFresh } from "@/lib/blender/adherence";
 import { parseExpressionClip } from "@/lib/blender/expressions";
+import { parseCompProfile } from "@/lib/blender/comp";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
 import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
@@ -307,6 +308,22 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // keys through the attack/hold/release curve (the legacy
         // stand-in paths never receive one and stay pose-driven)
         ...(cast.length > 0 ? { expression: parseExpressionClip(shot.description, shot.poseStart, shot.poseEnd) } : {}),
+        // iteration 86 THE FRAME IS FINISHED IN COMP: the comp profile
+        // the shot's own drama compiles rides every DESIGNED render -
+        // the worker builds the compositor graph from it on BOTH modes
+        // (the preview is the promise: what the measuring loop sees is
+        // what ships). Legacy stand-in paths keep the house defaults.
+        ...(cast.length > 0
+          ? {
+              comp: parseCompProfile({
+                description: shot.description,
+                lighting: shot.lighting,
+                shotType: shot.shotType,
+                fogDensity: shot.scene.fogDensity,
+                lightningIntensity: shot.scene.lightningIntensity,
+              }),
+            }
+          : {}),
         ...(cast.length > 0 ? { cast } : {}),
       },
       scene: {
