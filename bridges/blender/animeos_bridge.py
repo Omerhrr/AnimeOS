@@ -111,6 +111,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -2069,6 +2070,170 @@ GROOM_FLYAWAY_BASE = 5   # loose strands, riding the flyaway factor + the LOD
 GROOM_CLOSE_FRAMINGS = ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")
 GROOM_WIDE_FRAMINGS = ("WS", "WIDE", "ESTABLISHING", "OTS")
 
+# ── iteration 89 THE HAIR SHADES LIKE HAIR (the deeper groom): the
+#    sheet's own hairColor hex derives a bounded hair-shade profile -
+#    the MELANIN concentration (the hex's luminance: dark dye = high),
+#    the PHEOMELANIN redness (the red surplus over the cool channels)
+#    and the roughness pair (dark hair glosses, pale hair dulls). The
+#    TRUE CURVE strands shade with the Principled Hair BSDF from this
+#    profile - the film-standard representation the hair BSDF was
+#    built for; the mesh cards keep the graded surface shader. One
+#    law, two runtimes: the worker re-clamps the same bounds. ──
+HAIR_SHADE_BOUNDS = {"melanin": (0.0, 1.0), "redness": (0.0, 1.0), "radial": (0.1, 0.7), "longitudinal": (0.1, 0.7)}
+HAIR_SHADE_BASE = {"melanin": 0.65, "redness": 0.12, "radial": 0.34, "longitudinal": 0.44}
+GROOM_CURVE_BASE = 24   # true curve strands per groomed guide at the full LOD
+GROOM_CURVE_MIN_LOD = 0.55   # wide framings keep the mesh cards only
+
+
+def _clamp3(v, lo, hi):
+    return round(max(lo, min(hi, float(v))), 3)
+
+
+def hair_shade(dna):
+    """Derive + clamp the hair shade from the wire's hairColor (one
+    law, two runtimes): a wire-carried profile re-clamps against the
+    same bounds hair-shade.ts clamps against; a missing/invalid hex
+    falls back to the derivation from the DNA's own hex; no hex at
+    all keeps the neutral mid-brown dye honestly."""
+    raw = dna.get("hairShade") if isinstance(dna, dict) else None
+    if isinstance(raw, dict):
+        factors = {}
+        for key, (lo, hi) in HAIR_SHADE_BOUNDS.items():
+            v = raw.get(key)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+                factors[key] = HAIR_SHADE_BASE[key]
+            else:
+                factors[key] = _clamp3(v, lo, hi)
+        fields = [str(f) for f in raw.get("fields") or [] if isinstance(f, str)]
+    else:
+        factors = dict(HAIR_SHADE_BASE)
+        fields = []
+        hex_txt = str(dna.get("hairColor") or "") if isinstance(dna, dict) else ""
+        m = re.match(r"^#?([0-9a-fA-F]{6})$", hex_txt.strip())
+        if m:
+            n = int(m.group(1), 16)
+            r, g, b = ((n >> 16) & 255) / 255.0, ((n >> 8) & 255) / 255.0, (n & 255) / 255.0
+            lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            factors["melanin"] = _clamp3(1.0 - lum * 1.15, *HAIR_SHADE_BOUNDS["melanin"])
+            factors["redness"] = _clamp3(max(0.0, (r - (g + b) / 2.0) / 0.5), *HAIR_SHADE_BOUNDS["redness"])
+            factors["radial"] = _clamp3(0.5 - 0.24 * factors["melanin"] + 0.08 * factors["redness"], *HAIR_SHADE_BOUNDS["radial"])
+            factors["longitudinal"] = _clamp3(0.52 - 0.18 * factors["melanin"] + 0.06 * factors["redness"], *HAIR_SHADE_BOUNDS["longitudinal"])
+            if factors["melanin"] > 0.72:
+                fields.append("dark dye")
+            elif factors["melanin"] < 0.3:
+                fields.append("pale dye")
+            if factors["redness"] > 0.25:
+                fields.append("warm red")
+    shade = dict(factors)
+    shade["fields"] = fields
+    shade["hash"] = hair_shade_hash(shade)
+    return shade
+
+
+def hair_shade_hash(s):
+    """The DETERMINISTIC hair-shade hash - mirrors hairShadeHash in
+    hair-shade.ts bit-exactly (sha256-16)."""
+    key = "89|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1".format(s["melanin"], s["redness"], s["radial"], s["longitudinal"])
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def hair_shade_line(s):
+    """The shade as one ledger line (mirrors hairShadeLine)."""
+    from_txt = f"named by the hex: {', '.join(s['fields'])}" if s["fields"] else "the hex's own read"
+    return (f"hair shade: melanin {s['melanin']:.2f}, redness {s['redness']:.2f}, "
+            f"radial {s['radial']:.2f}, longitudinal {s['longitudinal']:.2f} ({from_txt})")
+
+
+def _set_hair_socket(node, name, value):
+    """5.2.2 LAW: the Principled Hair node REJECTS string-key socket
+    access (inputs['Melanin'] raises KeyError, .get returns None)
+    while iteration + index work - so the sockets resolve BY NAME
+    through iteration (the comp-tree's by-type law, hair edition)."""
+    for s in node.inputs:
+        if s.name == name:
+            try:
+                s.default_value = value
+            except Exception:
+                pass
+            return True
+    return False
+
+
+def build_hair_shade_material(bpy, name, color_hex, shade):
+    """The melanin hair material: a Principled Hair BSDF driven by the
+    shade profile (the Chiang model - light tunnels the strand, the
+    dye absorbs in the cortex). Sockets resolve by iteration (the
+    5.2.2 law above); a missing socket keeps its default."""
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    bsdf = nt.nodes.new("ShaderNodeBsdfHairPrincipled")
+    out = next(n for n in nt.nodes if n.type == "OUTPUT_MATERIAL")
+    _set_hair_socket(bsdf, "Melanin", float(shade["melanin"]))
+    _set_hair_socket(bsdf, "Melanin Redness", float(shade["redness"]))
+    _set_hair_socket(bsdf, "Radial Roughness", float(shade["radial"]))
+    _set_hair_socket(bsdf, "Longitudinal Roughness", float(shade["longitudinal"]))
+    hx = str(color_hex or "#1B1B2A")
+    mn = re.match(r"^#?([0-9a-fA-F]{6})$", hx.strip())
+    n = int(mn.group(1), 16) if mn else 0x1B1B2A
+    _set_hair_socket(bsdf, "Color", (((n >> 16) & 255) / 255.0, ((n >> 8) & 255) / 255.0, (n & 255) / 255.0, 1.0))
+    nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+    mat["animeosKind"] = "hair-curve"
+    mat["hairShadeHash"] = shade["hash"]
+    return mat
+
+
+def groom_hair_curves(scn, bpy, head, shade_mat, style, hair_f, height_f, gp, strand_f):
+    """THE HAIR IS TRUE CURVES (iteration 89): grow real BLENDER HAIR
+    CURVES off the style's guide spines under the SAME directed
+    direction + seed law the mesh strands ride (fnv1a + mulberry32 -
+    the same DNA always grooms the same curves), each a 6-point
+    polyline with the sweep/flow/scatter factors, shaded by the
+    melanin hair material. The LOD law owns the pass: full/reduced
+    framings carry curves, WIDE framings keep the mesh cards only
+    (curves nobody can see are wasted frames - the iter-85 law).
+    Deterministic + hash-named. Returns the evidence (None when the
+    LOD skipped - honest)."""
+    if strand_f < GROOM_CURVE_MIN_LOD:
+        return None
+    f = gp["factors"]
+    guides = _groom_guides(style, height_f)
+    per_guide = max(1, int(round(GROOM_CURVE_BASE * strand_f)))
+    mat_name = f"GroomCurveHair_{shade_mat['hairShadeHash']}"
+    existing = bpy.data.materials.get(mat_name)
+    count = 0
+    pts_total = 0
+    for gi, guide in enumerate(guides):
+        pts = [(x, y, (0.05 + (z - 0.05) * hair_f) if z < 0.05 else z) for (x, y, z) in guide]
+        for ci in range(per_guide):
+            rng = mulberry32(fnv1a(f"groomcurve|{style}|{gi}|{ci}"))
+            lat = (rng() - 0.5) * 0.05 * (1.0 + f["flow"])
+            along = rng() * 0.25
+            phase = rng() * math.tau
+            n_pts = 6
+            cu = bpy.data.curves.new(f"GroomCurve{gi}_{ci}", type="CURVE")
+            cu.dimensions = "3D"
+            cu.bevel_depth = (0.0016 + 0.0012 * (1.0 - f["taper"])) * hair_f
+            cu.bevel_resolution = 2
+            sp = cu.splines.new("POLY")
+            sp.points.add(n_pts - 1)
+            for ri in range(n_pts):
+                t = along + (1.0 - along) * ri / (n_pts - 1)
+                base = _guide_point(pts, t)
+                sweep_off = f["sweep"] * 0.1 * (t ** 1.5)
+                wave = math.sin(t * math.pi * (1.5 + 2.0 * f["flow"]) + phase) * 0.022 * f["flow"] * t
+                sp.points[ri].co = (base[0] + lat + wave, base[1] + sweep_off, base[2] + wave * 0.6, 1.0)
+            cu.materials.append(shade_mat if existing is None else existing)
+            ob = bpy.data.objects.new(f"GroomCurve{gi}_{ci}", cu)
+            scn.collection.objects.link(ob)
+            ob.parent = head
+            ob.location = (0.0, 0.0, 0.0)
+            count += 1
+            pts_total += n_pts
+    if existing is None:
+        shade_mat.name = mat_name
+    return {"curves": count, "curvePts": pts_total}
+
 
 def groom_strand_factor(shot_type):
     """The LOD law (mirrors groomStrandFactor in groom.ts): the close
@@ -2601,6 +2766,15 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     #    riding, scaled by the framing's LOD factor ──
     gp = groom_profile(dna)
     groom_evidence = groom_strands(scn, bpy, head, hair_mat, str(style), hair_f, height_f, gp, strand_f)
+    # ── THE HAIR IS TRUE CURVES (iteration 89): real BLENDER HAIR
+    #    CURVES off the same guides under the same direction + seed
+    #    law, shaded by the sheet hex's own melanin physics - the
+    #    wide framings keep the mesh cards only (the LOD law) ──
+    shade = hair_shade(dna)
+    curve_evidence = None
+    if strand_f >= GROOM_CURVE_MIN_LOD:
+        curve_mat = build_hair_shade_material(bpy, "GroomCurveHairTmp", str(dna.get("hairColor") or "#1B1B2A"), shade)
+        curve_evidence = groom_hair_curves(scn, bpy, head, curve_mat, str(style), hair_f, height_f, gp, strand_f)
 
     # ── arms: robe sleeves + skin forearms + v3.2 hands (the shoulder
     #    span and the sleeve drop ride the silhouette factors) ──
@@ -2749,6 +2923,12 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         # framing earned, the clamped factors and the deterministic
         # hash (always present: the groom rides every styled build)
         "groom": groom_evidence,
+        # THE HAIR IS TRUE CURVES (iteration 89): the curve detail's
+        # evidence - the curves grown, the points, the melanin shade
+        # the sheet hex derived and its hash (None when the wide LOD
+        # kept the mesh cards - honest)
+        "hairShade": shade,
+        "hairCurves": curve_evidence,
         # THE SILHOUETTE SHAPES THE MESH: the applied shaping evidence -
         # the clamped factors, the traits that actually moved, and the
         # trait names the sheet's own silhouette sentence described
@@ -4007,6 +4187,14 @@ def worker_run(job_file):
             # the framing earned, the clamped factors, the hash)
             if isinstance(figure, dict) and figure.get("groom"):
                 state["rig"]["groom"] = figure["groom"]
+            # THE HAIR IS TRUE CURVES (iteration 89): the curve detail's
+            # evidence rides the state too (the curves grown, the
+            # points, the melanin shade the sheet hex derived + its
+            # hash; None when the wide LOD kept the mesh cards - honest)
+            if isinstance(figure, dict) and figure.get("hairShade"):
+                state["rig"]["hairShade"] = figure["hairShade"]
+            if isinstance(figure, dict) and figure.get("hairCurves"):
+                state["rig"]["hairCurves"] = figure["hairCurves"]
 
             # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
             #    canonical model sheet is COLOR LAW over the DNA defaults

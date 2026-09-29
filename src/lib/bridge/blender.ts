@@ -313,6 +313,19 @@ interface CharacterDesignDnaWire {
     taper: number;
     fields?: string[];
   };
+  // iteration 89 THE HAIR SHADES LIKE HAIR (the deeper groom): the
+  // sheet's own hairColor hex derived into a bounded hair-shade
+  // profile (melanin concentration, pheomelanin redness, the
+  // roughness pair) - the worker shades the TRUE CURVE strands with
+  // the Principled Hair BSDF from it (the mesh cards keep the graded
+  // surface). A wire without one keeps the neutral mid-brown dye.
+  hairShade?: {
+    melanin: number;
+    redness: number;
+    radial: number;
+    longitudinal: number;
+    fields?: string[];
+  };
   // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
   // measured into a palette and planned into bounded material pulls
   // (iteration 80: every detected cast member carries their own)
