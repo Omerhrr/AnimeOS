@@ -111,3 +111,5 @@ public/exports/
 public/subtitles/*.srt
 !public/subtitles/.gitkeep
 tmp/
+public/headbake/*.png
+!public/headbake/.gitkeep

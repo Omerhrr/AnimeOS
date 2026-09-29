@@ -1797,22 +1797,36 @@ def _expr_key_jaw_open(x, y, z):
     return 0.0, 0.0, -0.055 * fall
 
 
-def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f):
-    """THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head is
-    a real sculpted mesh - an icosphere whose vertices are displaced
-    by deterministic bounded laws (jaw taper, chin, brow ridge, eye
-    sockets, cheekbones, the nose wedge, the skull dome, ears) - never
-    an assembled sphere again. Mesh only: the head EMPTY stays where
-    the v3.x rig contract expects it and the face features (eyes,
-    brows, mouth) keep their anchors, so the face rig, lip-sync and
-    the framing math work unchanged. Deterministic: the same profile
-    always lands the same mesh (the same vertex count, the same
-    positions - the smoke test hashes them)."""
+def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f, depth=4):
+    """THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82) and THE HEAD
+    IS CARVED AT DEPTH (iteration 90, Layer A): the head is a real
+    sculpted mesh - an icosphere whose vertices are displaced by
+    deterministic bounded laws. The DEPTH answers the framing (the
+    groom's LOD law, head edition):
+      depth 6 - the HERO CARVE (subdivisions 6, ~41k verts): the base
+                eight laws PLUS the fifteen anatomical planes (nose
+                bridge/tip/wings, philtrum, the lip masses with the
+                cupid's bow, the lip line, the eyelid plates, tear
+                ducts, nasolabial creases, temple hollows, the
+                jawline edge, the chin ball);
+      depth 5 - the REDUCED CARVE (subdivisions 5, ~10k verts), the
+                same planes;
+      depth 4 - the LIGHT HEAD (subdivisions 4, 642 verts): the base
+                eight laws only - the resolution the v3.x contract
+                rode since iteration 82, unchanged (a face nobody can
+                resolve at wide is wasted frames).
+    Mesh only: the head EMPTY stays where the v3.x rig contract
+    expects it and the face features (eyes, brows, mouth) keep their
+    anchors, so the face rig, lip-sync and the framing math work
+    unchanged. Every level carries the SPHERICAL UV LAW (deterministic
+    per-vertex parameterization) - the layout the bake writes through
+    and the wear path samples through, identical across depths.
+    Deterministic: the same profile + depth always lands the same
+    mesh (the same vertex count, the same positions - the smoke test
+    hashes them)."""
     r = 0.115
-    # subdivisions=4 under Blender 5.2.2 -> 642 verts / 1280 faces: the
-    # resolution the face laws need (jaw, nose wedge, brow band); the
-    # v3.x contract only ever asked for MESH, never a vertex count
-    mesh = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=4, radius=r, location=(0, 0, 0))
+    deep = depth >= 5
+    mesh = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=int(depth), radius=r, location=(0, 0, 0))
     mesh.name = "HeadMesh"
     mesh.data.materials.append(skin_mat)
     smooth(mesh)
@@ -1856,9 +1870,111 @@ def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f):
         # 8. ears: side bumps at ear height
         if abs(x) > 0.82 and -0.12 < z < 0.26 and -0.15 < y < 0.35:
             nx = nx * 1.10
+        if deep:
+            # ── the hero planes (iteration 90): each a bounded
+            #    kernel over the same unit-sphere space, the front
+            #    the -Y face, every delta 0.5-2.5mm in world units ──
+            ax = abs(x)
+            # 9. nose bridge: the sharp crest the wedge only hinted
+            if y < -0.80 and ax < 0.13 and 0.00 < z < 0.26:
+                fall = (1.0 - ax / 0.13) * max(0.0, 1.0 - abs((z - 0.13) / 0.13))
+                if fall > 0.0:
+                    ny = ny - 0.015 * fall
+            # 10. nose tip: the focused ball the wedge spread too wide
+            if y < -0.90 and ax < 0.10 and -0.12 < z < 0.02:
+                fall = (1.0 - ax / 0.10) * max(0.0, 1.0 - abs((z + 0.05) / 0.07))
+                if fall > 0.0:
+                    ny = ny - 0.018 * fall
+            # 11. nostril wings: the flare beside the tip
+            if y < -0.82 and 0.08 < ax < 0.22 and -0.14 < z < 0.02:
+                fall = min(1.0, (ax - 0.08) / 0.06) * max(0.0, 1.0 - abs((z + 0.06) / 0.08))
+                if fall > 0.0:
+                    nx = nx + (1.0 if x >= 0 else -1.0) * 0.010 * fall
+                    ny = ny - 0.004 * fall
+            # 12. philtrum: the groove between nose and lip
+            if y < -0.85 and ax < 0.05 and -0.30 < z < -0.20:
+                fall = (1.0 - ax / 0.05) * max(0.0, 1.0 - abs((z + 0.25) / 0.05))
+                if fall > 0.0:
+                    ny = ny + 0.006 * fall
+            # 13. upper lip: the forward mass
+            if y < -0.85 and ax < 0.20 and -0.38 < z < -0.30:
+                fall = (1.0 - ax / 0.20) * max(0.0, 1.0 - abs((z + 0.34) / 0.04))
+                if fall > 0.0:
+                    ny = ny - 0.010 * fall
+            # 14. cupid's bow: the two peaks and the center dip
+            if y < -0.87 and ax < 0.09 and -0.36 < z < -0.31:
+                peak = max(0.0, 1.0 - abs((ax - 0.055) / 0.035))
+                if peak > 0.0:
+                    ny = ny - 0.005 * peak
+                if ax < 0.02:
+                    ny = ny + 0.004 * (1.0 - ax / 0.02)
+            # 15. lower lip: the fuller mass
+            if y < -0.85 and ax < 0.17 and -0.48 < z < -0.40:
+                fall = (1.0 - ax / 0.17) * max(0.0, 1.0 - abs((z + 0.44) / 0.04))
+                if fall > 0.0:
+                    ny = ny - 0.012 * fall
+            # 16. lip line: the crease between the masses
+            if y < -0.85 and ax < 0.18 and -0.40 < z < -0.37:
+                fall = (1.0 - ax / 0.18) * max(0.0, 1.0 - abs((z + 0.385) / 0.015))
+                if fall > 0.0:
+                    ny = ny + 0.005 * fall
+            # 17. upper eyelids: the lid folds forward over the socket
+            if y < -0.80 and 0.20 < ax < 0.55 and 0.24 < z < 0.36:
+                fall = min(1.0, (ax - 0.20) / 0.08) * max(0.0, 1.0 - abs((z - 0.30) / 0.06))
+                if fall > 0.0:
+                    ny = ny - 0.008 * fall
+            # 18. lower lids: the subtle under-eye band
+            if y < -0.82 and 0.20 < ax < 0.55 and 0.10 < z < 0.18:
+                fall = min(1.0, (ax - 0.20) / 0.08) * max(0.0, 1.0 - abs((z - 0.14) / 0.04))
+                if fall > 0.0:
+                    ny = ny - 0.004 * fall
+            # 19. tear ducts: the inner-corner hollows
+            if y < -0.85 and 0.12 < ax < 0.20 and 0.16 < z < 0.24:
+                fall = max(0.0, 1.0 - abs((ax - 0.16) / 0.04)) * max(0.0, 1.0 - abs((z - 0.20) / 0.04))
+                if fall > 0.0:
+                    ny = ny + 0.005 * fall
+            # 20. nasolabial creases: the wing-to-corner diagonal
+            if y < -0.80 and -0.36 < z < -0.08:
+                cxt = max(0.0, min(1.0, (-0.08 - z) / 0.28))  # 0 at wing, 1 at corner
+                line_x = 0.20 + 0.07 * cxt
+                line_z = -0.10 - 0.24 * cxt
+                d = math.hypot(ax - line_x, (z - line_z) * 0.5)
+                fall = max(0.0, 1.0 - d / 0.05)
+                if fall > 0.0:
+                    ny = ny + 0.006 * fall
+            # 21. temple hollows: the inset above the cheekbones
+            if y < 0.2 and 0.55 < ax < 0.85 and 0.28 < z < 0.52:
+                fall = min(1.0, (ax - 0.55) / 0.10) * max(0.0, 1.0 - abs((z - 0.40) / 0.12))
+                if fall > 0.0:
+                    nx = nx * (1.0 - 0.012 * fall)
+            # 22. jawline edge: the crisp band the taper only smoothed
+            if -0.55 < z < -0.38 and ax > 0.25:
+                fall = max(0.0, 1.0 - abs((z + 0.46) / 0.09)) * min(1.0, (ax - 0.25) / 0.15)
+                if fall > 0.0:
+                    nx = nx * (1.0 - 0.020 * fall)
+            # 23. chin ball: the focused projection below the band
+            if y < 0.1 and ax < 0.16 and -0.78 < z < -0.60:
+                fall = (1.0 - ax / 0.16) * max(0.0, 1.0 - abs((z + 0.69) / 0.09))
+                if fall > 0.0:
+                    ny = ny - 0.010 * fall
         v.co.x = nx * r
         v.co.y = ny * r
         v.co.z = nz * r
+    # ── THE SPHERICAL UV LAW (iteration 90): the deterministic
+    #    per-vertex parameterization every depth shares - the layout
+    #    the hero bake writes through and the wear path samples
+    #    through (the seam hides behind the hair; the margin holds it)
+    uv = mesh.data.uv_layers.get("HeadCarveUV")
+    if uv is None:
+        uv = mesh.data.uv_layers.new(name="HeadCarveUV")
+    flat = []
+    verts = mesh.data.vertices
+    for lp in mesh.data.loops:
+        co = verts[lp.vertex_index].co
+        nrm = math.sqrt(co.x * co.x + co.y * co.y + co.z * co.z) or 1.0
+        flat.append(math.atan2(co.y, co.x) / math.tau + 0.5)
+        flat.append((co.z / nrm) * 0.5 + 0.5)
+    uv.data.foreach_set("uv", flat)
     mesh.parent = head
     mesh.location = (0.0, 0.0, 0.12)
     mesh.scale = (0.92, 0.98, 1.05 * height_f)
@@ -2699,14 +2815,62 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     # neck: a high robe collar (accent) so the chin never floats over
     # a pale gap - donghua robes close at the throat
     capsule("NeckMesh", spine, (0.0, 0.0, 0.17), 0.036, 0.22 * height_f, accent_mat)
-    # ── THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82): the head
-    #    is a sculpted mesh (jaw, chin, brow, cheeks, nose, dome,
-    #    ears), never an assembled sphere ──
-    hm = sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f)
+    # ── THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82) and THE
+    #    HEAD IS CARVED AT DEPTH (iteration 90, Layer A): the depth
+    #    answers the framing (the groom's LOD law, head edition) - the
+    #    hero carve at the close framings, the reduced carve between,
+    #    the light head at wide. The hero build BAKES DOWN (a
+    #    tangent-space normal + a cavity map through the shared
+    #    spherical UVs, cached by the deterministic bake key); the
+    #    levels below WEAR the bake when the cache exists and render
+    #    unbaked, honestly named, when it does not. ──
+    head_depth = 5 if strand_f >= 0.9 else 4
+    head_bake_pass = None
+    try:
+        # the pass lives beside this file (the ROOT law: the bridge's
+        # own directory rides sys.path for the pass imports)
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:
+            sys.path.insert(0, here)
+        import head_bake as head_bake_pass
+    except Exception:  # noqa: BLE001
+        head_bake_pass = None
+    head_mat = skin_mat
+    bake_evidence = None
+    bake_key_txt = head_bake_pass.bake_key(prof) if head_bake_pass else ""
+    if head_depth < 5 and head_bake_pass:
+        n_path, c_path = head_bake_pass.cache_paths(bake_key_txt)
+        if os.path.isfile(n_path) and os.path.isfile(c_path):
+            head_mat = skin_mat.copy()
+            head_mat.name = f"HeadSkin_{bake_key_txt}"
+            if head_bake_pass.wear_baked_maps(bpy, head_mat, n_path, c_path):
+                bake_evidence = {"worn": True, "key": bake_key_txt,
+                                 "normal": os.path.basename(n_path), "cavity": os.path.basename(c_path)}
+            else:
+                head_mat = skin_mat  # the wear refused - keep the honest shared grade
+                bake_evidence = {"worn": False, "key": bake_key_txt, "note": "wear refused"}
+    hm = sculpt_head_mesh(scn, bpy, head, head_mat, prof, height_f, depth=head_depth)
+    if head_depth >= 5 and head_bake_pass:
+        # the hero build bakes down: a depth-4 PROXY of the same face
+        # (the light law, the shared spherical UVs) takes the hi->lo
+        # bake, then is deleted - the proxy never renders
+        proxy_mat = bpy.data.materials.new("HeadBakeProxy")
+        proxy_mat.use_nodes = True
+        proxy = sculpt_head_mesh(scn, bpy, head, proxy_mat, prof, height_f, depth=4)
+        try:
+            bake_evidence = head_bake_pass.bake_head_depth(bpy, scn, hm, proxy, bake_key_txt)
+        except Exception as exc:  # noqa: BLE001
+            bake_evidence = {"skipped": f"bake failed: {exc}"}
+        me, ma = proxy.data, proxy.data.materials[0] if proxy.data.materials else None
+        bpy.data.objects.remove(proxy, do_unlink=True)
+        if me is not None:
+            bpy.data.meshes.remove(me)
+        if ma is not None and ma.users == 0:
+            bpy.data.materials.remove(ma)
     # ── THE FACE PERFORMS THE BEAT (iteration 84): the four
     #    expression shape keys ride the sculpted head (mesh-local;
-    #    the faceHash and the vertex count stay exactly what
-    #    iteration 82 proved) ──
+    #    the faceHash stays deterministic per profile + depth - the
+    #    vertex count rides the depth law since iteration 90) ──
     expr_keys = sculpt_expression_keys(hm)
 
     # ── face (v3.2 rig, restyled): stylized eyes with readable irises;
@@ -2953,6 +3117,16 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
             "faceHash": hashlib.sha256(
                 "".join(f"{v.co.x:.5f},{v.co.y:.5f},{v.co.z:.5f};" for v in hm.data.vertices).encode("utf-8")
             ).hexdigest()[:16],
+            # THE HEAD IS CARVED AT DEPTH (iteration 90): the depth the
+            # framing earned, the plane count the carve applied, the
+            # deterministic bake key (the profile's own factors, shared
+            # by every depth of the same face) and the bake evidence -
+            # the hero build's written bake, the lower levels' worn
+            # pair, or the honest skip
+            "depth": head_depth,
+            "planes": 23 if head_depth >= 5 else 8,
+            "bakeKey": bake_key_txt,
+            "bake": bake_evidence,
         },
     }
 
