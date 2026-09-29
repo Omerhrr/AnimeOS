@@ -2244,6 +2244,55 @@ def cloth_directive_line(d):
             f"turbulence {d['turbulence']:.2f}, {d['garment']} garments, {coll} ({from_txt})")
 
 
+# ── iteration 88 THE CAMERA CHOREOGRAPHS THE DRAMA (Layer C): the
+#    shot's own words compiled a bounded camera choreo
+#    (camera-choreo.ts -> the payload's shot.cameraChoreo) - the
+#    revelation push-in, the retreat pull-out, the dread dutch tilt,
+#    the storm's handheld breath, the cut-in whip. One law, two
+#    runtimes: the worker re-clamps the same bounds and layers the
+#    choreo onto WHATEVER aims the lens. A payload without one keeps
+#    the steady house camera, honestly named. ──
+CAMERA_CHOREO_BOUNDS = {"pushIn": (0.0, 1.0), "pullOut": (0.0, 1.0), "dutch": (0.0, 1.0), "handheld": (0.0, 1.0), "whip": (0.0, 1.0)}
+CAMERA_CHOREO_KEYS = ("pushIn", "pullOut", "dutch", "handheld", "whip")
+
+
+def camera_choreo(shot):
+    """Validate + clamp the shot's camera choreo (one law, two
+    runtimes): a wild factor clamps, a missing choreo returns None
+    honestly (the steady house camera)."""
+    raw = shot.get("cameraChoreo") if isinstance(shot, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    factors = {}
+    for key in CAMERA_CHOREO_KEYS:
+        v = raw.get(key)
+        lo, hi = CAMERA_CHOREO_BOUNDS[key]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+            factors[key] = 0.0
+        else:
+            factors[key] = round(max(lo, min(hi, float(v))), 3)
+    fields = [str(f) for f in raw.get("fields") or [] if isinstance(f, str)]
+    c = dict(factors)
+    c["fields"] = fields
+    c["hash"] = camera_choreo_hash(c)
+    return c
+
+
+def camera_choreo_hash(c):
+    """The DETERMINISTIC camera-choreo hash - mirrors cameraChoreoHash
+    in camera-choreo.ts bit-exactly (sha256-16)."""
+    key = "88|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1".format(
+        c["pushIn"], c["pullOut"], c["dutch"], c["handheld"], c["whip"])
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def camera_choreo_line(c):
+    """The choreo as one ledger line (mirrors cameraChoreoLine)."""
+    from_txt = f"named by the shot: {', '.join(c['fields'])}" if c["fields"] else "steady house camera"
+    return (f"camera: choreographed - push-in {c['pushIn']:.2f}, pull-out {c['pullOut']:.2f}, "
+            f"dutch {c['dutch']:.2f}, handheld {c['handheld']:.2f}, whip {c['whip']:.2f} ({from_txt})")
+
+
 def _groom_guides(style, height_f):
     """The per-style guide spines (head-local, crown riding height_f):
     the same bone structure the loft volumes hang from - strands fan
@@ -4120,6 +4169,16 @@ def worker_run(job_file):
         # air, the turbulence scatters the panels. Absent = the probed
         # house air, honestly named.
         cloth_dir = cloth_directive(shot)
+        # v13.0 THE CAMERA CHOREOGRAPHS THE DRAMA: the shot's own words
+        # compiled a bounded choreo (camera-choreo.ts); the worker
+        # re-clamps it (one law, two runtimes) and layers it onto
+        # WHATEVER aims the lens - the push-in/pull-out dolly, the
+        # dutch tilt, the handheld breath, the cut-in whip. Absent =
+        # the steady house camera, honestly named.
+        cam_choreo = camera_choreo(shot)
+        if cam_choreo:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import camera_choreo as camera_choreo_pass
         if sec_chains and figure:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import cloth_pass
@@ -4377,6 +4436,30 @@ def worker_run(job_file):
         # the legacy grade line (iteration 73's evidence) stays honest
         state["render"]["grade"] = comp_ev["layers"]
 
+        # ── v13.0 THE CAMERA CHOREOGRAPHS THE DRAMA: the evidence names
+        #    what the drama asked of the lens and what the camera did
+        #    (the max travel, the max roll) - a payload without a choreo
+        #    keeps the steady house camera honestly ──
+        if cam_choreo is not None:
+            state["render"]["camera"] = {
+                "mode": mode,
+                "source": "shot wire",
+                "profile": {k: cam_choreo[k] for k in ("pushIn", "pullOut", "dutch", "handheld", "whip")},
+                "fields": list(cam_choreo["fields"]),
+                "hash": cam_choreo["hash"],
+                "line": camera_choreo_line(cam_choreo),
+                "physics": {"dollyUnits": camera_choreo_pass.DOLLY_UNITS, "dutchDeg": camera_choreo_pass.DUTCH_DEG,
+                            "wobbleUnits": camera_choreo_pass.WOBBLE_UNITS, "whipDeg": camera_choreo_pass.WHIP_DEG},
+            }
+        else:
+            state["render"]["camera"] = {
+                "mode": mode,
+                "source": "steady house camera",
+                "profile": None,
+                "fields": [],
+                "hash": None,
+            }
+
         scn.render.resolution_x = out_w
         scn.render.resolution_y = out_h
         scn.render.resolution_percentage = 100
@@ -4421,6 +4504,11 @@ def worker_run(job_file):
                 choreography_pass.apply_impact(choreo_prog, cam, choreo_flash, f, frames_total)
 
             t_sec = (f - 1) / fps
+            if cam_choreo:
+                # v13.0 the drama rides the aimed lens (after the punch:
+                # the choreo is the shot's own breath, the punch the
+                # strike's kick - both bounded, both deterministic)
+                camera_choreo_pass.apply_choreo(cam, cam_choreo, t, t_sec, direction)
             if figure:
                 apply_pose(figure, pose_s, pose_e, pose_t, t_sec,
                            speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None,

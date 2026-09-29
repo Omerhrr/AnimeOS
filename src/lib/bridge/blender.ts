@@ -384,6 +384,22 @@ export interface BridgeJobPayload {
       collision: string;
       fields?: string[];
     };
+    // iteration 88 THE CAMERA CHOREOGRAPHS THE DRAMA (Layer C): the
+    // shot's own words compiled into a bounded camera choreo - the
+    // revelation push-in, the retreat pull-out, the dread dutch tilt,
+    // the storm's handheld breath, the cut-in whip. The worker layers
+    // it onto WHATEVER aims the lens (the whole-clip movement, the
+    // grammar beats, the pose follow) and names the evidence + the
+    // deterministic hash in the render state. A payload without one
+    // keeps the steady house camera, honestly named.
+    cameraChoreo?: {
+      pushIn: number;
+      pullOut: number;
+      dutch: number;
+      handheld: number;
+      whip: number;
+      fields?: string[];
+    };
     // KEYFRAME CHOREOGRAPHY (iteration 74): the keyed performance the
     // body performs instead of the two-pose slide - the keys own the
     // body, the impact frame flares a real light and punches the

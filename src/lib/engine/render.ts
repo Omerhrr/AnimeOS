@@ -24,6 +24,7 @@ import { adherentDna, sheetDnaFresh } from "@/lib/blender/adherence";
 import { parseExpressionClip } from "@/lib/blender/expressions";
 import { parseCompProfile } from "@/lib/blender/comp";
 import { parseClothDirective } from "@/lib/blender/cloth-directive";
+import { parseCameraChoreo } from "@/lib/blender/camera-choreo";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
 import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
@@ -338,6 +339,21 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
               clothDirective: parseClothDirective({
                 description: shot.description,
                 energyIntensity: shot.scene.energyIntensity,
+              }),
+            }
+          : {}),
+        // iteration 88 THE CAMERA CHOREOGRAPHS THE DRAMA (Layer C):
+        // the camera choreo the shot's own words compile rides every
+        // DESIGNED render beside the comp profile and the cloth
+        // directive - the worker layers it onto whatever aims the
+        // lens (push-in, pull-out, dutch tilt, handheld breath,
+        // cut-in whip). Legacy stand-in paths keep the steady house
+        // camera.
+        ...(cast.length > 0
+          ? {
+              cameraChoreo: parseCameraChoreo({
+                description: shot.description,
+                shotType: shot.shotType,
               }),
             }
           : {}),
