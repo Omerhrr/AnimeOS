@@ -56,6 +56,7 @@ import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import type { CharacterDesignDna, HairStyle, WeaponType, Build } from "@/lib/animation/design";
 import { parseGroomProfile, groomProfileLine, type GroomProfile } from "@/lib/blender/groom";
 import { parseHairShade, hairShadeLine, type HairShade } from "@/lib/blender/hair-shade";
+import { parseSkinDepth, skinDepthLine, type SkinDepth } from "@/lib/blender/skin-depth";
 
 export interface SheetDnaRead {
   sheetUrl: string; // the sheet this read came from (the staleness key)
@@ -525,7 +526,7 @@ export async function readSheetDna(
 export function adherentDna(
   base: CharacterDesignDna,
   read: SheetDnaRead | null,
-): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape; faceShape?: FaceShape; faceProfile?: FaceProfile; materialProfile?: MaterialProfile; groomProfile?: GroomProfile; hairShade?: HairShade } {
+): CharacterDesignDna & { sheetFields: string[]; conformFactor: number; silhouetteShape?: SilhouetteShape; faceShape?: FaceShape; faceProfile?: FaceProfile; materialProfile?: MaterialProfile; groomProfile?: GroomProfile; hairShade?: HairShade; skinDepth?: SkinDepth } {
   if (!read) return { ...base, sheetFields: [], conformFactor: GUESS_CONFORM_FACTOR };
   const sheetFields: string[] = [];
   const pick = <T>(sheetVal: T | null | undefined, guessVal: T, field: string): T => {
@@ -572,6 +573,10 @@ export function adherentDna(
     groomProfile: parseGroomProfile(read.silhouette, read.hairStyle ?? base.hairStyle),
     // iteration 89 THE HAIR SHADES LIKE HAIR: the hex's own dye physics
     hairShade: parseHairShade({ hairColor: read.hairColor ?? base.hairColor }),
+    // iteration 91 THE SKIN IS ALIVE (the Layer A remainder): the hex's
+    // own subsurface + coat physics - the skin answers the body, not
+    // the lens, so every framing carries the same depth
+    skinDepth: parseSkinDepth({ skinTone: read.skinTone ?? base.skinTone }),
   };
 }
 
@@ -583,5 +588,6 @@ export function adherenceLine(name: string, merged: ReturnType<typeof adherentDn
   const materials = merged.materialProfile ? `; ${materialProfileLine(merged.materialProfile)}` : "";
   const groom = merged.groomProfile ? `; ${groomProfileLine(merged.groomProfile)}` : "";
   const shade = merged.hairShade ? `; ${hairShadeLine(merged.hairShade)}` : "";
-  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape}${face}${materials}${groom}${shade})`;
+  const depth = merged.skinDepth ? `; ${skinDepthLine(merged.skinDepth)}` : "";
+  return `${name}: sheet-adherent build (${merged.sheetFields.join(", ")} from the sheet read; palette pull ${merged.conformFactor}${shape}${face}${materials}${groom}${shade}${depth})`;
 }

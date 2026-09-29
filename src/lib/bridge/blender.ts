@@ -326,6 +326,22 @@ interface CharacterDesignDnaWire {
     longitudinal: number;
     fields?: string[];
   };
+  // iteration 91 THE SKIN IS ALIVE (the Layer A remainder): the
+  // sheet's own skinTone hex derived into a bounded skin-depth
+  // profile (the subsurface weight, the radius triplet's reach, the
+  // scatter scale, the coat pair) - the worker grades the skin tree
+  // with it: subsurface beneath, the carve's baked normal above. A
+  // wire without one derives from the DNA's own hex; either way the
+  // depth rides EVERY framing (the skin answers the body, not the
+  // lens).
+  skinDepth?: {
+    weight: number;
+    radius: number;
+    scale: number;
+    coat: number;
+    coatRough: number;
+    fields?: string[];
+  };
   // v10.1 THE SHEET DRESSES THE RENDER: the hero's canonical sheet,
   // measured into a palette and planned into bounded material pulls
   // (iteration 80: every detected cast member carries their own)

@@ -1337,19 +1337,50 @@ def _lift(color, amount):
     return tuple(min(1.0, c + (1.0 - c) * amount) for c in color)
 
 
-def _grade_skin_tree(mat, color_hex, prof):
+def _grade_skin_tree(mat, color_hex, prof, sdepth=None):
     """THE SURFACE IS GRADED (iteration 83): the skin tree - ONE dye
     (the sheet's own skinTone) pushed through subsurface, roughness
     breakup, warm zones and a fresnel rim. Rebuilds from scratch, so
-    the same dye always lands the same tree."""
+    the same dye always lands the same tree. THE SKIN IS ALIVE
+    (iteration 91): when the skin-depth profile rides (sdepth), the
+    flat token subsurface retires - the hex's own depth drives the
+    subsurface weight + radius triplet + scatter scale and the COAT
+    pair above the diffusion (subsurface beneath, the carve's baked
+    normal wears in above)."""
     f = _graded_factors(prof)
     nt, b, _out = _grade_common(mat)
     base = hex_to_rgb(color_hex)
     r, g, bl = base
     b.inputs["Base Color"].default_value = (*base, 1.0)
+    sdf = None
+    if isinstance(sdepth, dict):
+        # both shapes ride: the flat depth dict skin_depth() returns,
+        # or the regrade's {"factors": ...} wrapper over the stored prop
+        raw_f = sdepth.get("factors")
+        if not isinstance(raw_f, dict):
+            raw_f = sdepth if all(k in sdepth for k in SKIN_DEPTH_BOUNDS) else None
+        if isinstance(raw_f, dict) and all(isinstance(raw_f.get(k), (int, float)) and not isinstance(raw_f.get(k), bool)
+                                           and math.isfinite(float(raw_f[k])) for k in SKIN_DEPTH_BOUNDS):
+            sdf = {k: _clamp3(raw_f[k], *SKIN_DEPTH_BOUNDS[k]) for k in SKIN_DEPTH_BOUNDS}
     if "Subsurface Weight" in b.inputs:
-        b.inputs["Subsurface Weight"].default_value = 0.14
-        b.inputs["Subsurface Radius"].default_value = (0.016 * f["skinSss"], 0.006, 0.003)
+        if sdf is not None:
+            # the hex's own depth: the weight the luminance set, the
+            # radius triplet's reach (red scatters furthest - the
+            # hemoglobin law; the numbers live in the worker), the
+            # scatter scale explicit (no default gamble), the coat pair
+            rad = sdf["radius"]
+            b.inputs["Subsurface Weight"].default_value = sdf["weight"]
+            b.inputs["Subsurface Radius"].default_value = (0.014 * rad, 0.0053 * rad, 0.0025 * rad)
+            if "Subsurface Scale" in b.inputs:
+                b.inputs["Subsurface Scale"].default_value = sdf["scale"]
+            if "Coat Weight" in b.inputs:
+                b.inputs["Coat Weight"].default_value = sdf["coat"]
+            if "Coat Roughness" in b.inputs:
+                b.inputs["Coat Roughness"].default_value = sdf["coatRough"]
+            mat["animeosSkinDepth"] = json.dumps(sdf, sort_keys=True)
+        else:
+            b.inputs["Subsurface Weight"].default_value = 0.14
+            b.inputs["Subsurface Radius"].default_value = (0.016 * f["skinSss"], 0.006, 0.003)
     if "Sheen Weight" in b.inputs:
         b.inputs["Sheen Weight"].default_value = 0.12
     if "Specular IOR Level" in b.inputs:
@@ -1525,13 +1556,15 @@ def _grade_hair_tree(mat, color_hex, prof):
     mat["animeosProfile"] = json.dumps(prof, sort_keys=True)
 
 
-def graded_mat(bpy, kind, name, color_hex, prof):
+def graded_mat(bpy, kind, name, color_hex, prof, sdepth=None):
     """Build ONE graded material of the named kind (skin / cloth /
-    hair) from its dye and the profile."""
+    hair) from its dye and the profile. The skin kind takes the
+    skin-depth profile too (iteration 91) - the subsurface + coat
+    depth the hex's own luminance and saturation set."""
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     if kind == "skin":
-        _grade_skin_tree(mat, color_hex, prof)
+        _grade_skin_tree(mat, color_hex, prof, sdepth=sdepth)
     elif kind == "hair":
         _grade_hair_tree(mat, color_hex, prof)
     else:
@@ -1560,7 +1593,18 @@ def regrade_material(mat, new_hex):
     if kind in ("skin", "cloth", "hair") and prof is not None:
         mat.use_nodes = True
         if kind == "skin":
-            _grade_skin_tree(mat, new_hex, prof)
+            # the stored depth rebuilds with the tree (the regrade
+            # never loses the subsurface + coat the hex earned)
+            sd = None
+            raw_sd = mat.get("animeosSkinDepth")
+            if isinstance(raw_sd, str):
+                try:
+                    parsed_sd = json.loads(raw_sd)
+                    if isinstance(parsed_sd, dict):
+                        sd = {"factors": parsed_sd}
+                except Exception:  # noqa: BLE001
+                    sd = None
+            _grade_skin_tree(mat, new_hex, prof, sdepth=sd)
         elif kind == "hair":
             _grade_hair_tree(mat, new_hex, prof)
         else:
@@ -2258,6 +2302,89 @@ def hair_shade_line(s):
     from_txt = f"named by the hex: {', '.join(s['fields'])}" if s["fields"] else "the hex's own read"
     return (f"hair shade: melanin {s['melanin']:.2f}, redness {s['redness']:.2f}, "
             f"radial {s['radial']:.2f}, longitudinal {s['longitudinal']:.2f} ({from_txt})")
+
+
+# ── iteration 91 THE SKIN IS ALIVE (the Layer A remainder): the
+#    sheet's own skinTone hex derives a bounded skin-depth profile -
+#    the SUBSURFACE weight + the scatter scale (the hex's luminance:
+#    pale skin bleeds visibly, deep skin stays tight), the radius
+#    triplet's reach (the red surplus warms it - red scatters
+#    furthest, the hemoglobin law) and the COAT pair (the saturation:
+#    a vivid stylized dye glosses, a washed one mattes). The graded
+#    skin tree carries it - subsurface beneath, the carve's baked
+#    normal above. The depth answers the BODY, not the framing: every
+#    shot of a face carries the same depth. One law, two runtimes. ──
+SKIN_DEPTH_BOUNDS = {"weight": (0.1, 0.55), "radius": (0.55, 1.25), "scale": (0.3, 0.7), "coat": (0.04, 0.22), "coatRough": (0.22, 0.6)}
+SKIN_DEPTH_BASE = {"weight": 0.38, "radius": 1.0, "scale": 0.5, "coat": 0.1, "coatRough": 0.38}
+
+
+def skin_depth(dna):
+    """Derive + clamp the skin depth from the wire's skinTone (one
+    law, two runtimes): a wire-carried profile re-clamps against the
+    same bounds skin-depth.ts clamps against; a missing/invalid one
+    derives from the DNA's own hex; no hex at all keeps the neutral
+    mid-dye depth honestly."""
+    raw = dna.get("skinDepth") if isinstance(dna, dict) else None
+    if isinstance(raw, dict):
+        factors = {}
+        for key, (lo, hi) in SKIN_DEPTH_BOUNDS.items():
+            v = raw.get(key)
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+                factors[key] = SKIN_DEPTH_BASE[key]
+            else:
+                factors[key] = _clamp3(v, lo, hi)
+        fields = [str(f) for f in raw.get("fields") or [] if isinstance(f, str)]
+    else:
+        factors = dict(SKIN_DEPTH_BASE)
+        fields = []
+        hex_txt = str(dna.get("skinTone") or "") if isinstance(dna, dict) else ""
+        m = re.match(r"^#?([0-9a-fA-F]{6})$", hex_txt.strip())
+        if m:
+            n = int(m.group(1), 16)
+            r, g, b = ((n >> 16) & 255) / 255.0, ((n >> 8) & 255) / 255.0, (n & 255) / 255.0
+            lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            mx, mn = max(r, g, b), min(r, g, b)
+            sat = (mx - mn) / mx if mx > 0 else 0.0
+            red_bias = max(0.0, (r - (g + b) / 2.0) / 0.5)
+            factors["weight"] = _clamp3(0.16 + (lum - 0.35) * 0.5, *SKIN_DEPTH_BOUNDS["weight"])
+            factors["radius"] = _clamp3(0.62 + (lum - 0.5) * 0.55 + red_bias * 0.3, *SKIN_DEPTH_BOUNDS["radius"])
+            factors["scale"] = _clamp3(0.32 + (lum - 0.5) * 0.42, *SKIN_DEPTH_BOUNDS["scale"])
+            factors["coat"] = _clamp3(0.04 + sat * 0.16, *SKIN_DEPTH_BOUNDS["coat"])
+            factors["coatRough"] = _clamp3(0.55 - sat * 0.28, *SKIN_DEPTH_BOUNDS["coatRough"])
+            if factors["weight"] >= 0.42:
+                fields.append("pale bleed")
+            if factors["weight"] <= 0.24:
+                fields.append("tight bleed")
+            if red_bias >= 0.2:
+                fields.append("warm radius")
+            if factors["coat"] >= 0.17:
+                fields.append("porcelain coat")
+    depth = dict(factors)
+    depth["fields"] = fields
+    depth["hash"] = skin_depth_hash(depth)
+    return depth
+
+
+def skin_depth_hash(s):
+    """The DETERMINISTIC skin-depth hash - mirrors skinDepthHash in
+    skin-depth.ts bit-exactly (sha256-16)."""
+    key = "91|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1".format(s["weight"], s["radius"], s["scale"], s["coat"], s["coatRough"])
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def skin_depth_line(s):
+    """The depth as one ledger line (mirrors skinDepthLine)."""
+    from_txt = f"named by the hex: {', '.join(s['fields'])}" if s["fields"] else "the hex's own read"
+    return (f"skin depth: sss {s['weight']:.2f}, radius {s['radius']:.2f}, scale {s['scale']:.2f}, "
+            f"coat {s['coat']:.2f} @ {s['coatRough']:.2f} ({from_txt})")
+
+
+def skin_depth_evidence(sd):
+    """The state's skin-depth evidence: the clamped factors, the fields
+    the hex owns, and the deterministic hash (the same hex lands the
+    same depth, hash-proven)."""
+    prof = {k: sd[k] for k in SKIN_DEPTH_BOUNDS}
+    return {"profile": prof, "fields": sd["fields"], "hash": sd["hash"]}
 
 
 def _set_hair_socket(node, name, value):
@@ -4304,11 +4431,15 @@ def worker_run(job_file):
             # build rides its compiled profile; a payload without one
             # keeps the neutral grade, honestly named)
             mprof = material_profile(hero)
+            # THE SKIN IS ALIVE (iteration 91): the hex's own subsurface
+            # + coat depth rides the skin tree at EVERY framing (the
+            # skin answers the body, not the lens)
+            sdep = skin_depth(hero)
             energy_hex = hero.get("bladeColor") or "#5eead4"
             hero_mats = {
                 "robe": graded_mat(bpy, "cloth", "RobeMat", hero.get("robeColor", "#2f6d63"), mprof),
                 "accent": graded_mat(bpy, "cloth", "AccentMat", hero.get("robeAccent", "#a8842c"), mprof),
-                "skin": graded_mat(bpy, "skin", "SkinMat", hero.get("skinTone", "#d9b48f"), mprof),
+                "skin": graded_mat(bpy, "skin", "SkinMat", hero.get("skinTone", "#d9b48f"), mprof, sdepth=sdep),
                 "hair": graded_mat(bpy, "hair", "HairMat", hero.get("hairColor", "#16161d"), mprof),
                 "blade": emission_mat(bpy, "BladeMat", energy_hex, 2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0),
                 "boots": graded_mat(bpy, "cloth", "BootsMat", "#241a12", mprof),
@@ -4347,6 +4478,11 @@ def worker_run(job_file):
             # evidence rides the state too (the clamped profile, the
             # fields the sheet read owns, the deterministic hash)
             state["rig"]["materials"] = materials_evidence(mprof)
+            # THE SKIN IS ALIVE: the depth's evidence rides the state too
+            # (the clamped factors, the fields the hex owns, the
+            # deterministic hash - hash-proven on both sides of the wire)
+            state["rig"]["skinDepth"] = skin_depth_evidence(sdep)
+            state["rig"]["skinDepthLine"] = skin_depth_line(sdep)
             # THE FACE PERFORMS THE BEAT (iteration 84): the shot's own
             # expression clip rides the state too - the emotion, the
             # timing, the shape keys it drives, the blended weights at
@@ -4425,10 +4561,11 @@ def worker_run(job_file):
                 other_rig = try_load_cast_asset(asset_cast[1] if len(asset_cast) > 1 else None)
                 if other_rig is None:
                     other_mprof = material_profile(other)
+                    other_sdep = skin_depth(other)
                     other_mats = {
                         "robe": graded_mat(bpy, "cloth", "RobeMatB", other.get("robeColor", "#4a5560"), other_mprof),
                         "accent": graded_mat(bpy, "cloth", "AccentMatB", other.get("robeAccent", "#a8842c"), other_mprof),
-                        "skin": graded_mat(bpy, "skin", "SkinMatB", other.get("skinTone", "#d9b48f"), other_mprof),
+                        "skin": graded_mat(bpy, "skin", "SkinMatB", other.get("skinTone", "#d9b48f"), other_mprof, sdepth=other_sdep),
                         "hair": graded_mat(bpy, "hair", "HairMatB", other.get("hairColor", "#16161d"), other_mprof),
                         "blade": hero_mats["blade"],
                         "boots": graded_mat(bpy, "cloth", "BootsMatB", "#241a12", other_mprof),
@@ -4444,6 +4581,8 @@ def worker_run(job_file):
                         state["secondFigureSculpt"] = other_rig["sculpt"]
                     # the second figure's material grade rides the state too
                     state["secondFigureMaterials"] = materials_evidence(other_mprof)
+                    # the second figure's skin depth rides the state too
+                    state["secondFigureSkinDepth"] = skin_depth_evidence(other_sdep)
                     # the second figure's groom rides the state too
                     if isinstance(other_rig, dict) and other_rig.get("groom"):
                         state["secondFigureGroom"] = other_rig["groom"]
