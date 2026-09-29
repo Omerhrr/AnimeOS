@@ -35,7 +35,7 @@ import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
 // ── the loop's knobs (bounded: a repair pass is a pass, not a night) ──
 export const REPAIR_MAX_MEMBERS = 4;
 export const REPAIR_MAX_SHOTS_PER_MEMBER = 3;
-export const REPAIR_TICKS = 420;
+export const REPAIR_TICKS = 660;
 export const REPAIR_TICK_MS = 500;
 
 export type ShotRepairVerdict = "REPAIRED" | "IMPROVED" | "UNCHANGED" | "WORSE" | "UNSCORED";

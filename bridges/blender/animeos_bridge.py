@@ -2168,6 +2168,82 @@ def comp_hash(prof):
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+# ── iteration 87 THE CLOTH IS DIRECTED (Layer B): the shot's own words
+#    compiled a bounded cloth directive (cloth-directive.ts -> the
+#    payload's shot.clothDirective) - the wind's travel heading on the
+#    screen plane (0 back-stream / 90 screen-right / 180 toward-lens /
+#    270 screen-left), the directed strength, the gust turbulence, the
+#    garment class (the REAL solver re-tunes per class) and the
+#    collision tier. One law, two runtimes: the worker re-clamps the
+#    same bounds, folds the heading into 0..360 and degrades an
+#    unknown garment/collision name honestly. A payload without one
+#    keeps the probed house air. ──
+CLOTH_DIRECTIVE_BOUNDS = {"strength": (0.0, 1.0), "turbulence": (0.0, 1.0)}
+GARMENT_CLASSES = ("silk", "cloth", "leather", "armor")
+COLLISION_TIERS = ("self", "off")
+# per-class solver physics - mirrors GARMENT_SETTINGS in cloth-directive.ts
+GARMENT_SETTINGS = {
+    "silk": {"mass": 0.14, "tension": 7.0, "compression": 5.5, "shear": 4.5, "bending": 0.12, "air_damping": 1.35},
+    "cloth": {"mass": 0.25, "tension": 12.0, "compression": 10.0, "shear": 8.0, "bending": 0.3, "air_damping": 1.6},
+    "leather": {"mass": 0.42, "tension": 20.0, "compression": 17.0, "shear": 14.0, "bending": 0.85, "air_damping": 1.9},
+    "armor": {"mass": 0.65, "tension": 30.0, "compression": 26.0, "shear": 22.0, "bending": 2.2, "air_damping": 2.2},
+}
+
+
+def cloth_directive(shot):
+    """Validate + clamp the shot's cloth directive (one law, two
+    runtimes): a wild factor clamps, the heading folds into 0..360
+    (Python's positive modulo - a -30 arrives as 330), an unknown
+    garment degrades to cloth, an unknown collision tier to off, and
+    a missing directive returns None honestly (the probed house air)."""
+    raw = shot.get("clothDirective") if isinstance(shot, dict) else None
+    if not isinstance(raw, dict):
+        return None
+
+    def num(key, default):
+        v = raw.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+            return default
+        lo, hi = CLOTH_DIRECTIVE_BOUNDS[key]
+        return round(max(lo, min(hi, float(v))), 3)
+
+    strength = num("strength", 0.0)
+    turbulence = num("turbulence", 0.0)
+    hv = raw.get("heading")
+    heading = 0.0
+    if isinstance(hv, (int, float)) and not isinstance(hv, bool) and math.isfinite(float(hv)):
+        folded = float(hv) % 360.0
+        heading = round(folded, 1)
+    garment = str(raw.get("garment") or "cloth").lower()
+    if garment not in GARMENT_CLASSES:
+        garment = "cloth"
+    collision = str(raw.get("collision") or "off").lower()
+    if collision not in COLLISION_TIERS:
+        collision = "off"
+    fields = [str(f) for f in raw.get("fields") or [] if isinstance(f, str)]
+    d = {"heading": heading, "strength": strength, "turbulence": turbulence,
+         "garment": garment, "collision": collision, "fields": fields}
+    d["hash"] = cloth_directive_hash(d)
+    return d
+
+
+def cloth_directive_hash(d):
+    """The DETERMINISTIC cloth-directive hash - mirrors clothHash in
+    cloth-directive.ts bit-exactly (sha256 over the bounded directive,
+    first 16 hex)."""
+    key = "87|{:.1f}|{:.3f}|{:.3f}|{}|{}|v1".format(
+        d["heading"], d["strength"], d["turbulence"], d["garment"], d["collision"])
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def cloth_directive_line(d):
+    """The directive as one ledger line (mirrors clothDirectiveLine)."""
+    from_txt = f"named by the shot: {', '.join(d['fields'])}" if d["fields"] else "house air"
+    coll = "self-collision" if d["collision"] == "self" else "no self-collision"
+    return (f"cloth: directed - heading {d['heading']:.0f}°, strength {d['strength']:.2f}, "
+            f"turbulence {d['turbulence']:.2f}, {d['garment']} garments, {coll} ({from_txt})")
+
+
 def _groom_guides(style, height_f):
     """The per-style guide spines (head-local, crown riding height_f):
     the same bone structure the loft volumes hang from - strands fan
@@ -4037,10 +4113,17 @@ def worker_run(job_file):
         if isinstance(cloth_call, (int, float)) and not isinstance(cloth_call, bool):
             cloth_intensity = max(0.0, min(1.0, float(cloth_call)))
             cloth_called = True
+        # v12.0 THE CLOTH IS DIRECTED: the shot's own words compiled a
+        # bounded directive (cloth-directive.ts); the worker re-clamps
+        # it (one law, two runtimes) and the solver answers it - the
+        # garment class re-tunes the physics, the heading steers the
+        # air, the turbulence scatters the panels. Absent = the probed
+        # house air, honestly named.
+        cloth_dir = cloth_directive(shot)
         if sec_chains and figure:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import cloth_pass
-            cloth_rig = cloth_pass.build_cloth_rig(bpy, scn, figure, sec_chains, frames_total)
+            cloth_rig = cloth_pass.build_cloth_rig(bpy, scn, figure, sec_chains, frames_total, directive=cloth_dir)
             if cloth_rig is not None:
                 simmed = [p["name"] for p in cloth_rig["parts"]]
                 springs = [c["piv"].name.replace("SecPiv_", "") for c in sec_chains if not c.get("sim")]
@@ -4052,6 +4135,17 @@ def worker_run(job_file):
                 }
                 if cloth_called:
                     solver["clothCall"] = round(cloth_intensity, 3)
+                if cloth_dir is not None:
+                    solver["directive"] = {
+                        "heading": cloth_dir["heading"],
+                        "strength": cloth_dir["strength"],
+                        "turbulence": cloth_dir["turbulence"],
+                        "garment": cloth_dir["garment"],
+                        "collision": cloth_dir["collision"],
+                        "fields": list(cloth_dir["fields"]),
+                        "hash": cloth_dir["hash"],
+                        "line": cloth_directive_line(cloth_dir),
+                    }
                 if cloth_rig["notes"]:
                     solver["notes"] = list(cloth_rig["notes"])
                 state.setdefault("secondary", {"chains": len(sec_chains)})["solver"] = solver
@@ -4377,7 +4471,8 @@ def worker_run(job_file):
                 # v10.1: the shot's CLOTH call scales the answer.
                 sec_kick = float(((figure.get("_sec") or {}).get("last_kick")) or 0.0) if figure else 0.0
                 cloth_pass.apply_cloth_frame(cloth_rig, figure, t_sec, 1.0 / fps,
-                                             fbi, fwind, fagit, sec_kick, cloth_intensity)
+                                             fbi, fwind, fagit, sec_kick, cloth_intensity,
+                                             directive=cloth_dir)
             if flesh_rig and flesh_rig["parts"]:
                 # v11.0: THE FLESH LAGS THE BEAT - the same inputs steer
                 # the flesh regions' anchor bones one solver up; the

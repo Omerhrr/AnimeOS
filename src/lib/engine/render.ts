@@ -23,6 +23,7 @@ import { characterDesignDna, environmentDna } from "@/lib/animation/design";
 import { adherentDna, sheetDnaFresh } from "@/lib/blender/adherence";
 import { parseExpressionClip } from "@/lib/blender/expressions";
 import { parseCompProfile } from "@/lib/blender/comp";
+import { parseClothDirective } from "@/lib/blender/cloth-directive";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
 import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
@@ -321,6 +322,22 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
                 shotType: shot.shotType,
                 fogDensity: shot.scene.fogDensity,
                 lightningIntensity: shot.scene.lightningIntensity,
+              }),
+            }
+          : {}),
+        // iteration 87 THE CLOTH IS DIRECTED (Layer B): the cloth
+        // directive the shot's own words compile rides every DESIGNED
+        // render beside the comp profile - the worker re-tunes the REAL
+        // solver's physics per garment class and steers the anchor air
+        // by the directed heading + strength + turbulence (the scalar
+        // cloth call above still scales the answer; the directive owns
+        // the direction and the fabric). Legacy stand-in paths keep the
+        // probed house air.
+        ...(cast.length > 0
+          ? {
+              clothDirective: parseClothDirective({
+                description: shot.description,
+                energyIntensity: shot.scene.energyIntensity,
               }),
             }
           : {}),

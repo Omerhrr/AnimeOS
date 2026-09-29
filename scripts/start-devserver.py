@@ -8,7 +8,9 @@ pid to /home/z/my-project/devserver.pid, and waits until :3000 answers.
 """
 import os, sys, time, subprocess, urllib.request
 
-ROOT = "/home/z/my-project"
+# the app root derives from THIS script's location (the repo's scripts/
+# dir) - the launcher survives the project moving between sandbox paths
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL = "http://127.0.0.1:3000/api/projects"
 
 
@@ -28,13 +30,30 @@ def fork_daemon():
         os._exit(0)
     # grandchild: detach stdio, chdir, exec
     os.chdir(ROOT)
+    # THE ENV IS OURS: the sandbox provisioner exports a DATABASE_URL
+    # from an older layout; the repo's own .env is the source of truth
+    # (this beat the stale-SQLite-handle ghost three resets running).
+    env = dict(os.environ)
+    try:
+        with open(os.path.join(ROOT, ".env")) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    except FileNotFoundError:
+        pass
+    env.setdefault("AUTH_TRUST_HOST", "true")
+    if not env.get("AUTH_SECRET"):
+        env["AUTH_SECRET"] = "animeos-studio-dev-secret"
     sys.stdout.flush(); sys.stderr.flush()
     with open(os.devnull, "rb") as dn:
         os.dup2(dn.fileno(), 0)
     log = open(os.path.join(ROOT, "dev.log"), "ab", buffering=0)
     os.dup2(log.fileno(), 1)
     os.dup2(log.fileno(), 2)
-    os.execvp("bash", ["bash", "-c", "exec bun run dev"])
+    os.execvpe("bash", ["bash", "-c", "exec bun run dev"], env)
     os._exit(1)
 
 

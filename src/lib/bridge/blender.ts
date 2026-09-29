@@ -368,6 +368,22 @@ export interface BridgeJobPayload {
     // lag - both 0..1 per shot; absent = the full probed response
     cloth?: number;
     flesh?: number;
+    // iteration 87 THE CLOTH IS DIRECTED (Layer B): the shot's own words
+    // compiled into a bounded cloth directive - the wind's travel heading
+    // on the screen plane (0 back-stream ... 180 toward-lens), the
+    // directed strength, the gust turbulence, the garment class (the
+    // worker re-tunes the REAL solver's mass/stiffness per class) and
+    // the collision tier. The worker re-clamps against the same bounds
+    // and names the evidence + deterministic hash in the render state.
+    // A payload without one keeps the probed house air, honestly named.
+    clothDirective?: {
+      heading: number;
+      strength: number;
+      turbulence: number;
+      garment: string;
+      collision: string;
+      fields?: string[];
+    };
     // KEYFRAME CHOREOGRAPHY (iteration 74): the keyed performance the
     // body performs instead of the two-pose slide - the keys own the
     // body, the impact frame flares a real light and punches the

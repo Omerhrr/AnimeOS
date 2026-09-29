@@ -38,6 +38,18 @@ KIND_SETTINGS = {
               "shear": 10.0, "bending": 0.5, "air_damping": 1.8},
 }
 
+# v12.0 THE CLOTH IS DIRECTED: per-GARMENT-class solver physics -
+# mirrors GARMENT_SETTINGS in cloth-directive.ts (the animeos_bridge
+# validates the directive against the same table; this module applies
+# it). The probed CLOTH preset is the `cloth` class; silk is lighter
+# and looser, leather heavier and stiffer, armor nearly rigid.
+GARMENT_SETTINGS = {
+    "silk": {"mass": 0.14, "tension": 7.0, "compression": 5.5, "shear": 4.5, "bending": 0.12, "air_damping": 1.35},
+    "cloth": {"mass": 0.25, "tension": 12.0, "compression": 10.0, "shear": 8.0, "bending": 0.3, "air_damping": 1.6},
+    "leather": {"mass": 0.42, "tension": 20.0, "compression": 17.0, "shear": 14.0, "bending": 0.85, "air_damping": 1.9},
+    "armor": {"mass": 0.65, "tension": 30.0, "compression": 26.0, "shear": 22.0, "bending": 2.2, "air_damping": 2.2},
+}
+
 ANCHOR_MAX = 0.85       # rad - the anchor never folds the garment past this
 KICK_IMPULSE = 1.2      # the beat-boundary impulse into the anchor spring
 KICK_STIFF = 34.0
@@ -58,13 +70,20 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
-def build_cloth_rig(bpy, scn, figure, chains, frames_total):
+def build_cloth_rig(bpy, scn, figure, chains, frames_total, directive=None):
     """Graduate every qualifying cloth chain to the real solver: bake the
     part's scale, pin its top band (weight 1 pins - probed law), hang a
     one-bone ANCHOR ARMATURE from the same pivot (so it rides the pose),
     and stack Armature -> Subsurf -> Cloth on the mesh. Simmed chains are
     marked (their spring pivot freezes); hair and refusals keep the
-    springs. Returns the rig (or None when nothing qualified - honest)."""
+    springs.
+
+    v12.0 THE CLOTH IS DIRECTED: when the shot carries a cloth
+    directive, the solver's PHYSICS re-tune per the garment class (a
+    silk sash and an armored skirt no longer share one probed mass)
+    and the collision tier arms self-collision when directed - every
+    re-tune named honestly in the notes. Returns the rig (or None
+    when nothing qualified - honest)."""
     if not chains:
         return None
     parts = []
@@ -127,7 +146,17 @@ def build_cloth_rig(bpy, scn, figure, chains, frames_total):
         sub.levels = 2
         sub.render_levels = 2
         cloth = ob.modifiers.new("Cloth", "CLOTH")
-        tune = KIND_SETTINGS[ch["kind"]]
+        tune = dict(KIND_SETTINGS[ch["kind"]])
+        # v12.0 THE CLOTH IS DIRECTED: the garment class re-tunes the
+        # solver's physics for THIS shot (silk floats, armor barely
+        # sways); the pin law and the quality stay probed.
+        if directive:
+            g = GARMENT_SETTINGS[directive["garment"]]
+            tune.update({"mass": g["mass"], "tension": g["tension"],
+                         "compression": g["compression"], "shear": g["shear"],
+                         "bending": g["bending"], "air_damping": g["air_damping"]})
+            if directive["garment"] != "cloth":
+                notes.append(f"{ob.name} re-tuned {directive['garment']} (directed)")
         st = cloth.settings
         st.vertex_group_mass = "Pin"
         st.quality = tune["quality"]
@@ -139,7 +168,12 @@ def build_cloth_rig(bpy, scn, figure, chains, frames_total):
         st.air_damping = tune["air_damping"]
         st.effector_weights.gravity = 1.0
         st.effector_weights.wind = 0.0
-        cloth.collision_settings.use_self_collision = False
+        # the collision tier: self-collision only when directed (it
+        # costs; the close-quarters words arm it)
+        cloth.collision_settings.use_self_collision = bool(
+            directive and directive["collision"] == "self")
+        if directive and directive["collision"] == "self":
+            notes.append(f"{ob.name} self-collision armed (directed)")
         cloth.point_cache.frame_start = 1
         cloth.point_cache.frame_end = max(2, int(frames_total))
         bone = arm_ob.pose.bones["Air"]
@@ -162,7 +196,7 @@ def build_cloth_rig(bpy, scn, figure, chains, frames_total):
     return {"parts": parts, "notes": notes, "prev_beat": -1, "max_sway": 0.0}
 
 
-def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick, intensity=1.0):
+def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick, intensity=1.0, directive=None):
     """Drive every part's anchor bone for this frame with the SAME
     deterministic air the springs ride: the beat's wind call and
     blocking energy, a phased per-part gust (the panels never flap in
@@ -173,7 +207,17 @@ def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick, intens
     solver's ANSWER - every directed term answers at the called
     intensity; the solver's physics stay probed law. A stillness call
     (0) holds the anchors near rest while the solver settles the
-    garment under gravity - stillness, not a frozen cache."""
+    garment under gravity - stillness, not a frozen cache.
+
+    v12.0 THE CLOTH IS DIRECTED: when the shot carries a cloth
+    directive, the directed air gains a HEADING - the directive's
+    heading decomposes into a forward pull (cos, the back-stream the
+    scalar wind always rendered) and a lateral pull (sin, the
+    crosswind peeling the sash sideways), the strength scales both at
+    the called intensity, and the turbulence adds a second harmonic
+    per part (a vortex scatters the panels; a clean hall holds one
+    fall). Every term stays a pure function of the frame - the same
+    directive on the same grammar always lands the same cloth."""
     if not rig or not rig["parts"]:
         return
     intensity = clamp(float(intensity), 0.0, 1.0)
@@ -186,6 +230,17 @@ def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick, intens
     jerk = min(1.0, float((stg or {}).get("jerk") or 0.0) / 1.4) * intensity
     svx = float((stg or {}).get("vx") or 0.0)
     drive = (wind * 1.45 + agit * 0.45 + 0.12) * intensity   # ambient life answers the call too
+    # v12.0 the directed air: the heading decomposes into the forward
+    # pull (the back-stream at heading 0 - the same sign the scalar
+    # wind always drove) and the lateral pull (the crosswind); the
+    # turbulence rides a second per-part harmonic
+    d_fwd = d_lat = d_str = d_turb = 0.0
+    if directive:
+        h = math.radians(float(directive["heading"]))
+        d_fwd = math.cos(h)
+        d_lat = math.sin(h)
+        d_str = clamp(float(directive["strength"]), 0.0, 1.0) * intensity
+        d_turb = clamp(float(directive["turbulence"]), 0.0, 1.0) * intensity
     for p in rig["parts"]:
         gain, phase = p["gain"], p["phase"]
         # the directed air: the held call plus the per-part gust
@@ -193,6 +248,15 @@ def apply_cloth_frame(rig, figure, t_sec, dt, beat_idx, wind, agit, kick, intens
         # direct pull, the gust's amplitude, the lateral breath)
         ax = wind * intensity * 0.9 * gain + drive * gain * 0.10 * (1.0 + math.sin(t_sec * 2.4 + phase))
         ay = 0.35 * gain * math.sin(t_sec * 1.7 + phase) * (0.3 + wind * intensity)
+        if directive:
+            # the heading's directional pull at the directed strength
+            ax += d_str * d_fwd * 0.9 * gain
+            ay += d_str * d_lat * 0.7 * gain
+            # the turbulence: a second harmonic scatters the panels
+            # (a vortex, not a metronome) - pure in (t_sec, phase)
+            if d_turb > 0.0:
+                ax += d_str * d_turb * 0.22 * gain * math.sin(t_sec * 3.9 + phase * 2.3)
+                ay += d_str * d_turb * 0.16 * gain * math.sin(t_sec * 3.1 + phase * 1.7)
         # the beat-boundary impulse through the anchor spring
         p["kv"] += kick * gain * KICK_IMPULSE * (0.7 + 0.3 * math.sin(phase))
         p["kv"] += (-KICK_STIFF * p["ka"] - KICK_DAMP * p["kv"]) * dt
