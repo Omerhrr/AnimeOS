@@ -1917,3 +1917,22 @@ The digest and publish webhook targets (DAILY_DIGEST, publish_cut, member notifi
 
 Stage Summary:
 - The slate is signed: outbound webhooks carry a verifiable production-keyed signature, receivers get the exact verification law, and the network layer enforces a domain allowlist at both the pen and the wire - SSRF and forged-slate both refuse by name
+
+---
+Task ID: round (the render night drill)
+Agent: Super Z (main agent)
+Task: "run a real render night and read the fire's cost line, and stage a publish to feel the gate refuse a HOLD episode"
+
+Work Log:
+- Drill script scripts/drill-render-night-gate.ts (phase-resumable PHASE=night|gate|all) over the STANDING production (Immortal Path, no throwaway lab; artifacts stay)
+- The night's cargo directed for real: S005 fx slash_trace+energy_coil + DOLLY_IN/ORBIT grammar, S006 fx lightning_flash+debris_burst + cloth physics + CRANE/DOLLY_IN, S004 aura_crawl (the shots' own descriptions call for it)
+- THE REAL RENDER NIGHT: six PREVIEW jobs through the resident bridge + warm Blender 5.2.2 pool (~2h real Cycles wall, 739 frames), supervised BY THE FIRE ITSELF (a standing REPAINT_QUEUE cadence 'Render Night' fired on a loop; its part-1 supervision tick advanced every active job; the MOTION fallback honestly took the sixth job when the pool saturated)
+- THE FIRE'S COST LINE read verbatim from the fire report: 'night cost read: 8 finished in the last 24h (119.8min wall, 739 frame(s)); ledger median 11.46s/f, worst 14.87s/f - no regressions - every job holds its cohort's proven cost'; the window count cross-checked against the ledger (N6)
+- THE GATE FELT through the REAL /api/publish route (director session): refused while UNSCORED ('the release spine does not guess a release'), then the cast anchored on REAL generated model sheets (Lin Yue, Demon Lord Wei, the Clone caught by first-token detection), four shots scored by REAL vision calls over pose-matched filmstrips of the night's real clips
+- The REAL verdict: BELOW (mean 2%, median 0%, p10 0% over 7 readings, floor 70%) - the vision notes name the truth ('a low-poly 3D mannequin that bears no resemblance' - the stand-in pipeline does not yet carry the cast's designs); the staging refused AND the PUBLISH_RUN cadence SKIPPED with the under cells named as the work order; zero PUBLISH events
+- Honest seams caught (queued for the next iterations): (1) a same-second finish race can land a render REVIEW with the clip lost while the wall still counts (the 903s bhudss attempt - the cost ledger reads the loss); (2) a saturated pool double-dispatched a finished job (S001 re-rendered while already REVIEW); (3) detectCast's substring match reads 'coiling' as Lin Yue's 'lin' (word-boundary law wanted); (4) warm-pool /status read alive:0 busy:2 under 6-way contention (bookkeeping drift, self-healed)
+- Gates: src tsc clean, eslint clean on the drill; neighbor smokes untouched (no src/bridge changes)
+
+Stage Summary:
+- The machinery of iterations 100/101 now has a REAL night on the books: the fire supervises, the cost line reads real walls, and the release spine refused a real episode twice (by hand and by cadence) on an honestly-earned distribution
+- The production's next real work order (named by the gate): bind the cast's designed assets into the Blender scenes so the pixels carry the sheets' identity, repair the distribution, then stage
