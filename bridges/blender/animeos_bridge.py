@@ -332,6 +332,75 @@ def leg_ik_hash():
     return hashlib.sha256(leg_ik_key().encode("utf-8")).hexdigest()[:16]
 
 
+# ── THE HAND CLOSES ON THE HILT (iteration 97): the grip-contact
+#    law over the hand-weapon pair. The readings named the pair: the
+#    designed sword built three DISCONNECTED pieces (a tilted blade
+#    slab, a straight-axis guard cube, a hilt cylinder floating near
+#    the elbow), so the fist curled around air while the weapon read
+#    as debris. The law makes the pair STRUCTURAL: one GRIP ANCHOR
+#    (the fist's center, derived once from the hand rig's own
+#    geometry), one axis per weapon kind (the kind's own tilt
+#    preserved - the read stays), and every piece PLACED BY THE LAW
+#    along that axis through the anchor. All the pieces parent to
+#    one GRIP PIVOT empty at the anchor (child of the hand), so the
+#    weapon rides every pose frame through the hand and the
+#    follow-through pivots the WHOLE weapon around the fist (the
+#    physically honest flex) instead of re-tilting the blade slab
+#    away from its own hilt. Mirrors grip.ts bit-exactly (one law,
+#    two runtimes). ──
+
+GRIP_LAW_VERSION = 97
+# the fist's center in hand-local space: just past the palm's front
+# face (y -0.009) at the finger pivots' height (z -0.05) raised by
+# the curl's half-chord - the rig both figures share
+GRIP_ANCHOR = (0.0, -0.010, -0.048)
+# per-kind law constants: the axis tilt (the kind's own read), the
+# hold offset along the shaft for through-grip kinds, the hilt
+# length and the guard offset for the sword
+GRIP_SPEC = {
+    "sword": {"tilt": -55.0, "hold": 0.0, "hilt": 0.14, "guard": 0.076},
+    "staff": {"tilt": -72.0, "hold": 0.25, "hilt": 0.0, "guard": 0.0},
+    "spear": {"tilt": -72.0, "hold": 0.2, "hilt": 0.0, "guard": 0.0},
+    # the stand-in's emissive energy blade (midpoint-gripped)
+    "blade": {"tilt": -72.0, "hold": 0.0, "hilt": 0.0, "guard": 0.0},
+}
+
+
+def grip_tip_axis(kind):
+    """The axis direction the TIP points (hand-local), from the
+    kind's own tilt: the mesh's local -z maps to this under R_x(tilt)
+    - down-forward for the negative tilts the kinds carry."""
+    t = math.radians(GRIP_SPEC[kind]["tilt"])
+    return (0.0, round(math.sin(t), 4), round(-math.cos(t), 4))
+
+
+def grip_piece_offset(kind, along):
+    """Where a piece sits (PIVOT-local, the pivot at the anchor)
+    given its distance along the tip axis - the law's single
+    placement function, mirrored piece for piece by the builder."""
+    u = grip_tip_axis(kind)
+    return (0.0, round(u[1] * along, 4), round(u[2] * along, 4))
+
+
+def grip_key():
+    """The canonical key - the anchor, the per-kind constants and the
+    axis the pieces hang from, pipe-format, versioned 97. Mirrors
+    gripKey in grip.ts field for field."""
+    kinds = []
+    for k, s in GRIP_SPEC.items():
+        u = grip_tip_axis(k)
+        kinds.append(f"{k}:tilt={s['tilt']:.4f},hold={s['hold']:.4f},hilt={s['hilt']:.4f},guard={s['guard']:.4f},u={u[1]:.4f},{u[2]:.4f}")
+    return (f"{GRIP_LAW_VERSION}"
+            f"|A={GRIP_ANCHOR[0]:.4f},{GRIP_ANCHOR[1]:.4f},{GRIP_ANCHOR[2]:.4f}"
+            f"|{'|'.join(kinds)}|v1")
+
+
+def grip_hash():
+    """The DETERMINISTIC grip hash - sha256-16 over the canonical key
+    (mirrors gripHash in grip.ts bit-exactly)."""
+    return hashlib.sha256(grip_key().encode("utf-8")).hexdigest()[:16]
+
+
 # ─── per-pose face/hand channels (v3.2 rig upgrade) ──────────────
 #
 # Same 13-pose vocabulary, second table: every pose also expresses
@@ -1134,11 +1203,17 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
     r_fingers, r_thumb = hand("R", r_hand, 1.0)   # right hand: thumb toward the body (+X inner)
     l_fingers, l_thumb = hand("L", l_hand, -1.0)
 
+    # THE HAND CLOSES ON THE HILT (iteration 97): the stand-in's
+    # energy blade grips like the designed kinds - one GRIP PIVOT at
+    # the fist's own anchor (the law's), the cone centered ON it
+    # (its midpoint gripped - the contact the v3.2 read always
+    # meant), riding the pivot the follow-through flexes.
+    grip_pivot = empty("GripPivot", r_hand, GRIP_ANCHOR)
     blade = prim(scn, bpy.ops.mesh.primitive_cone_add, radius1=0.05, radius2=0.0, depth=1.2, vertices=6, location=(0, 0, 0), )
     blade.name = "HandBlade"
     blade.data.materials.append(blade_mat)
-    blade.parent = r_hand
-    blade.location = (0.0, -0.05, -0.07)  # between palm and fingers: a gripped blade
+    blade.parent = grip_pivot
+    blade.location = (0.0, 0.0, 0.0)  # the fist grips the cone's midpoint
     blade.rotation_euler = (math.radians(-72), 0.0, 0.0)
 
     # prop scale: the stand-in shares the scene's existing prop sizing
@@ -1158,6 +1233,7 @@ def build_stand_in_figure(bpy, scn, body_mat, blade_mat):
         "rFingers": r_fingers, "lFingers": l_fingers,
         "rThumb": r_thumb, "lThumb": l_thumb,
         "blade": blade,
+        "gripPivot": grip_pivot,
     }
 
 
@@ -1351,7 +1427,15 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None, expr=None):
     x = clamp(t, 0.0, 1.0)
     k_deriv = 12.0 * x * x if x < 0.5 else 12.0 * (1.0 - x) * (1.0 - x)
     lag = clamp((b_row[4] - a_row[4]) * k_deriv * 0.03, -12.0, 12.0)
-    if figure.get("blade") is not None:
+    # ── THE HAND CLOSES ON THE HILT (iteration 97): the follow-through
+    #    pivots the WHOLE weapon around the fist (the physically honest
+    #    flex) - the pieces keep their law placements on the kind's own
+    #    axis, the pivot takes the lag. A figure without the pivot (an
+    #    old asset load) falls back to the legacy blade re-tilt, and a
+    #    weaponless figure has nothing to flex - both honest. ──
+    if figure.get("gripPivot") is not None:
+        figure["gripPivot"].rotation_euler.x = math.radians(lag)
+    elif figure.get("blade") is not None:
         figure["blade"].rotation_euler.x = math.radians(-72.0 + lag)
 
 
@@ -3698,51 +3782,67 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     l_fingers, l_thumb = hand("L", l_hand, -1.0)
 
     # ── weapon (v4.0): per DNA, gripped in the right hand ──
+    # THE HAND CLOSES ON THE HILT (iteration 97): one GRIP PIVOT at
+    # the fist's own anchor (the law's), every piece placed BY THE
+    # LAW on the kind's own axis through it - the fist grips the
+    # hilt, the guard sits between the fist and the blade, the
+    # pieces stay collinear down-forward, and the follow-through
+    # pivots the whole weapon around the fist (the pivot takes the
+    # lag; the pieces keep their law rotations).
     wtype = str(dna.get("weaponType") or "none")
     blade = None
-    if wtype == "sword":
-        blade = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
-        blade.name = "HandBlade"
-        blade.scale = (0.015, 0.005, 0.55)
-        blade.data.materials.append(blade_mat)
-        blade.parent = r_hand
-        blade.location = (0.0, -0.04, -0.22)
-        guard = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
-        guard.name = "BladeGuard"
-        guard.scale = (0.05, 0.015, 0.011)
-        guard.data.materials.append(accent_mat)
-        guard.parent = r_hand
-        guard.location = (0.0, -0.04, 0.19)
-        grip = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.013, depth=0.14, location=(0, 0, 0), )
-        grip.name = "BladeGrip"
-        grip.data.materials.append(boots_mat)
-        grip.parent = r_hand
-        grip.location = (0.0, -0.04, 0.26)
-        blade.rotation_euler = (math.radians(-55), 0.0, 0.0)
-    elif wtype == "staff":
-        blade = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.013, depth=1.3, location=(0, 0, 0), )
-        blade.name = "HandBlade"
-        blade.data.materials.append(boots_mat)
-        blade.parent = r_hand
-        blade.location = (0.0, -0.05, -0.1)
-        gem = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=2, radius=0.045, location=(0, 0, 0), )
-        gem.name = "StaffGem"
-        gem.data.materials.append(blade_mat)
-        gem.parent = blade
-        gem.location = (0.0, 0.0, 0.7)
-        blade.rotation_euler = (math.radians(-72), 0.0, 0.0)
-    elif wtype == "spear":
-        blade = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.012, depth=1.5, location=(0, 0, 0), )
-        blade.name = "HandBlade"
-        blade.data.materials.append(boots_mat)
-        blade.parent = r_hand
-        blade.location = (0.0, -0.05, -0.1)
-        tip = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=10, radius1=0.03, radius2=0.0, depth=0.22, location=(0, 0, 0), )
-        tip.name = "SpearTip"
-        tip.data.materials.append(blade_mat)
-        tip.parent = blade
-        tip.location = (0.0, 0.0, 0.83)
-        blade.rotation_euler = (math.radians(-72), 0.0, 0.0)
+    grip_pivot = None
+    if wtype in GRIP_SPEC:
+        spec = GRIP_SPEC[wtype]
+        tilt = spec["tilt"]
+        grip_pivot = empty("GripPivot", r_hand, GRIP_ANCHOR)
+        if wtype == "sword":
+            # the fist grips the HILT at the anchor (pivot-local zero)
+            grip = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.013, depth=spec["hilt"], location=(0, 0, 0), )
+            grip.name = "BladeGrip"
+            grip.data.materials.append(boots_mat)
+            grip.parent = grip_pivot
+            grip.location = (0.0, 0.0, 0.0)
+            grip.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+            # the guard just past the hilt's forward end, ON the axis
+            guard = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
+            guard.name = "BladeGuard"
+            guard.scale = (0.05, 0.015, 0.011)
+            guard.data.materials.append(accent_mat)
+            guard.parent = grip_pivot
+            guard.location = grip_piece_offset(wtype, spec["hilt"] / 2.0 + 0.0055)
+            guard.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+            # the blade meets the guard and extends down-forward
+            blade = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
+            blade.name = "HandBlade"
+            blade.scale = (0.015, 0.005, 0.55)
+            blade.data.materials.append(blade_mat)
+            blade.parent = grip_pivot
+            blade.location = grip_piece_offset(wtype, spec["guard"] + 0.0055 + 0.55)
+            blade.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+        else:
+            # staff / spear: the shaft THROUGH the fist at the kind's
+            # own hold fraction (the fist in the shaft's lower third),
+            # the gem/tip riding the shaft's local frame unchanged
+            depth = 1.3 if wtype == "staff" else 1.5
+            blade = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.013 if wtype == "staff" else 0.012, depth=depth, location=(0, 0, 0), )
+            blade.name = "HandBlade"
+            blade.data.materials.append(boots_mat)
+            blade.parent = grip_pivot
+            blade.location = grip_piece_offset(wtype, -spec["hold"])  # the top sits pommel-ward (up-back)
+            blade.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+            if wtype == "staff":
+                gem = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=2, radius=0.045, location=(0, 0, 0), )
+                gem.name = "StaffGem"
+                gem.data.materials.append(blade_mat)
+                gem.parent = blade
+                gem.location = (0.0, 0.0, 0.7)
+            else:
+                tip = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=10, radius1=0.03, radius2=0.0, depth=0.22, location=(0, 0, 0), )
+                tip.name = "SpearTip"
+                tip.data.materials.append(blade_mat)
+                tip.parent = blade
+                tip.location = (0.0, 0.0, 0.83)
 
     # prop scale: identical to the v3.x stand-in so every shot-type
     # framing in SHOT_FRAMING keeps working unchanged
@@ -3758,6 +3858,9 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         "rFingers": r_fingers, "lFingers": l_fingers,
         "rThumb": r_thumb, "lThumb": l_thumb,
         "blade": blade,
+        # THE HAND CLOSES ON THE HILT (iteration 97): the pivot the
+        # follow-through flexes (None when the DNA named no weapon)
+        "gripPivot": grip_pivot,
         "headMesh": hm,
         # THE FACE PERFORMS THE BEAT (iteration 84): the head's four
         # expression shape keys ({name: KeyBlock}) - apply_pose blends
@@ -4389,6 +4492,10 @@ def resolve_loaded_figure(new_objects):
         "mouth": need("mouth", "Mouth"),
         "rThumb": need("rThumb", "RThumb"), "lThumb": need("lThumb", "LThumb"),
         "blade": need("blade", "HandBlade"),
+        # THE HAND CLOSES ON THE HILT (iteration 97): an old .blend
+        # container predating the pivot loads honestly without it (the
+        # follow-through falls back to the legacy blade re-tilt)
+        "gripPivot": by_base.get("GripPivot"),
         "headMesh": need("headMesh", "HeadMesh"),
     }
     fingers = {"r": [], "l": []}
@@ -5100,6 +5207,20 @@ def worker_run(job_file):
                 "kneeMax": LEG_IK_KNEE_MAX,
                 "table": leg_ik_table(),
             }
+            # THE HAND CLOSES ON THE HILT (iteration 97): the grip's
+            # law evidence rides the state - the kind, the hand, the
+            # anchor, the deterministic hash (mirrored in grip.ts, one
+            # law two runtimes); the contact itself is structural (the
+            # pivot at the anchor) - a payload naming no weapon grips
+            # nothing, honestly
+            state["rig"]["grip"] = {
+                "kind": str(hero.get("weaponType") or "none"),
+                "hand": "R",
+                "anchor": list(GRIP_ANCHOR),
+                "hash": grip_hash(),
+                "lawVersion": GRIP_LAW_VERSION,
+                "contact": isinstance(figure, dict) and figure.get("gripPivot") is not None,
+            }
             # THE FACE PERFORMS THE BEAT (iteration 84): the shot's own
             # expression clip rides the state too - the emotion, the
             # timing, the shape keys it drives, the blended weights at
@@ -5244,6 +5365,16 @@ def worker_run(job_file):
                     "lawVersion": LEG_IK_VERSION,
                     "kneeMax": LEG_IK_KNEE_MAX,
                     "table": leg_ik_table(),
+                },
+                # THE HAND CLOSES ON THE HILT (iteration 97): the
+                # stand-in's energy blade grips by the same law
+                "grip": {
+                    "kind": "blade",
+                    "hand": "R",
+                    "anchor": list(GRIP_ANCHOR),
+                    "hash": grip_hash(),
+                    "lawVersion": GRIP_LAW_VERSION,
+                    "contact": True,
                 },
             }
         else:
