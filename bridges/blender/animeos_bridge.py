@@ -2608,6 +2608,89 @@ def skin_depth_evidence(sd):
     return {"profile": prof, "fields": sd["fields"], "hash": sd["hash"]}
 
 
+# ── THE CHARACTER IS ONE ASSET (AnimeOS 5.0, iteration 95): the
+#    manifest law's DETERMINISTIC MASTER HASH - mirrors
+#    characterAssetHash in character-asset.ts bit-exactly (sha256-16
+#    over the canonical WIRE TRUTH, versioned 95). The per-shot
+#    resolutions (the tiers, the worn keys, the counts) are NEVER
+#    inside the key: the same wire DNA lands the same master hash at
+#    every framing - the lens resolves the asset, it never rewrites
+#    it. ──
+
+def _ka_st(v):
+    s = "" if v is None else str(v).strip()
+    return s if s else "-"
+
+
+def _ka_hx(v):
+    s = "" if v is None else str(v).strip().lower()
+    return s if s else "-"
+
+
+def _ka_f3(v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+        return "-"
+    return "{:.3f}".format(float(v))
+
+
+def _ka_fl(v):
+    if not isinstance(v, list):
+        return "-"
+    parts = [str(s).strip() for s in v if isinstance(s, str) and str(s).strip()]
+    return "+".join(parts) if parts else "-"
+
+
+def _ka_profile(prefix, prof, keys):
+    if not isinstance(prof, dict):
+        return prefix + ":-"
+    return prefix + ":" + ",".join(_ka_f3(prof.get(k)) for k in keys)
+
+
+def character_asset_key(dna):
+    """The manifest's canonical key - the wire truth, canonicalized:
+    the identity fields, the conformance, and every profile the
+    sheet read compiled, absent ones named '-'. Mirrors
+    characterAssetKey in character-asset.ts field for field."""
+    dna = dna if isinstance(dna, dict) else {}
+    cf = dna.get("conformFactor")
+    cf = 0.35 if cf is None else cf
+    return "|".join([
+        "95",
+        _ka_st(dna.get("name")),
+        _ka_st(dna.get("hairStyle")),
+        _ka_hx(dna.get("hairColor")),
+        _ka_hx(dna.get("robeColor")),
+        _ka_hx(dna.get("robeAccent")),
+        _ka_hx(dna.get("skinTone")),
+        _ka_st(dna.get("weaponType")),
+        _ka_hx(dna.get("bladeColor")),
+        _ka_st(dna.get("build")),
+        "beard" if dna.get("beard") else "clean",
+        _ka_st(dna.get("faceShape")),
+        _ka_f3(cf),
+        _ka_fl(dna.get("sheetFields")),
+        _ka_profile("sh", dna.get("silhouetteShape"), ("height", "shoulders", "torso", "sleeves", "skirt", "hair")),
+        _ka_profile("fc", dna.get("faceProfile"), ("jawTaper", "chinFwd", "browFwd", "cheekOut", "noseLen", "eyeScale")),
+        _ka_profile("mt", dna.get("materialProfile"), ("skinSss", "skinRough", "skinWarmth", "rim", "clothRamp", "clothSheen", "clothWeave", "hairRough")),
+        _ka_profile("hs", dna.get("hairShade"), ("melanin", "redness", "radial", "longitudinal")),
+        _ka_profile("sd", dna.get("skinDepth"), ("weight", "radius", "scale", "coat", "coatRough")),
+        _ka_profile("gr", dna.get("groomProfile"), ("sweep", "flow", "flyaway", "taper")),
+        "v1",
+    ])
+
+
+def character_asset_hash(dna):
+    """The DETERMINISTIC master hash - sha256-16 over the canonical
+    key. The same wire truth lands the same hash on both runtimes."""
+    return hashlib.sha256(character_asset_key(dna).encode("utf-8")).hexdigest()[:16]
+
+
+CHARACTER_ASSET_SECTIONS = (
+    "canonicalIdentity", "baseMesh", "sculptLayers", "maps", "materials",
+    "facialRig", "groom", "wardrobe", "lod", "validationProfile",
+)
+
+
 def _set_hair_socket(node, name, value):
     """5.2.2 LAW: the Principled Hair node REJECTS string-key socket
     access (inputs['Melanin'] raises KeyError, .get returns None)
@@ -4866,6 +4949,19 @@ def worker_run(job_file):
             # deterministic hash - hash-proven on both sides of the wire)
             state["rig"]["skinDepth"] = skin_depth_evidence(sdep)
             state["rig"]["skinDepthLine"] = skin_depth_line(sdep)
+            # THE CHARACTER IS ONE ASSET (iteration 95): the master
+            # hash rides the state - the manifest's canonical key
+            # covers the WIRE TRUTH only, so the same hash stands at
+            # every framing (the lens resolves the asset, it never
+            # rewrites it); the per-shot resolutions (the strand
+            # tier, the worn bake, the curve evidence) ride beside
+            # as the rig's own evidence fields, never inside the key.
+            state["rig"]["asset"] = {
+                "name": _ka_st(hero.get("name")),
+                "hash": character_asset_hash(hero),
+                "sections": list(CHARACTER_ASSET_SECTIONS),
+                "lawVersion": 95,
+            }
             # THE FACE PERFORMS THE BEAT (iteration 84): the shot's own
             # expression clip rides the state too - the emotion, the
             # timing, the shape keys it drives, the blended weights at

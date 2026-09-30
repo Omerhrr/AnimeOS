@@ -54,6 +54,7 @@ model Project {
   panelEmbeddings  PanelEmbedding[]
   planTemplates    PlanTemplate[]
   blenderAssets    BlenderAsset[]
+  characterAssets  CharacterAsset[]
   designPresets    DesignPreset[]
   designReviews    DesignReview[]
   designIssues     DesignIssue[]
@@ -108,6 +109,43 @@ model BlenderAsset {
   reviews         DesignReview[]
 
   @@unique([projectId, kind, refName])
+}
+
+// ─────────────────────────────────────────────────────────────
+// CHARACTER MASTER ASSET (AnimeOS 5.0, iteration 95)
+//
+// The cast member's production truth as ONE first-class object:
+// the CharacterAsset manifest gathers what the character IS
+// (canonical identity, base mesh, sculpt layers, maps, materials,
+// facial rig, groom tiers, wardrobe, the LOD law, the validation
+// profile) into one versioned manifest compiled by one pure law
+// from the sheet read's own DNA, master-hash-proven on both sides
+// of the wire (sha256-16, versioned 95, mirrored bit-exactly in
+// the worker). The BlenderAsset row above stays the CONTAINER
+// (the versioned .blend); the CharacterAsset is the production
+// abstraction the container carries and the readings validate:
+// COMPILED until the identity readings clear the bar, VALIDATED
+// when they do - the validation profile's judge is the readings
+// (rule 69), never a structural proof.
+// ─────────────────────────────────────────────────────────────
+model CharacterAsset {
+  id           String    @id @default(cuid())
+  projectId    String
+  characterId  String
+  name         String // the cast member's exact name
+  version      Int       @default(1) // bumped when the master hash moves
+  status       String    @default("COMPILED") // COMPILED | VALIDATED
+  masterHash   String // sha256-16 over the manifest law (versioned 95)
+  manifest     String // JSON: the full CharacterAsset manifest (the ten sections)
+  bar          Float     @default(0.7) // the validation profile's release floor (the RENDER bar)
+  lastReadings String? // JSON: the readings judge's latest verdict summary (the repair pass writes it)
+  validatedAt  DateTime? // when the readings last cleared the bar
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, characterId])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -528,6 +566,7 @@ model Character {
   parent           Character?       @relation("Derivatives", fields: [parentId], references: [id])
   derivatives      Character[]      @relation("Derivatives")
   states           CharacterState[]
+  characterAssets  CharacterAsset[]
   stateAuditions   StateAudition[]
   relationsFrom    Relationship[]   @relation("RelFrom")
   relationsTo      Relationship[]   @relation("RelTo")

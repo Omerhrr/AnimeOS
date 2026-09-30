@@ -26,6 +26,7 @@
  */
 
 import { db } from "@/lib/db";
+import { recordCharacterAssetReadings } from "@/lib/character-assets";
 import { castIdentityMeasurement, scoreRenderIdentity, type CastIdentityMeasurement, type IdentitySource } from "@/lib/identity";
 import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
 import { parseGroomProfile, groomProfileLine } from "@/lib/blender/groom";
@@ -260,6 +261,8 @@ export async function runIdentityRepairPass(
       }
     }
 
+    // the standing after this member's shots were re-judged
+    const afterSnap = memberSnapshot(await castIdentityMeasurement(projectId, "RENDER"), member.characterId);
     rows.push({
       characterId: member.characterId,
       name: member.name,
@@ -268,9 +271,30 @@ export async function runIdentityRepairPass(
       shots: shotRows,
       reanchored,
       ...(reanchorError ? { reanchorError } : {}),
-      after: memberSnapshot(await castIdentityMeasurement(projectId, "RENDER"), member.characterId),
+      after: afterSnap,
       verdict: memberRepairVerdict(shotRows),
     });
+
+    // ANIMEOS 5.0 - THE CHARACTER IS ONE ASSET (iteration 95): the
+    // validation profile's judge is THE READINGS (rule 69) - the
+    // pass writes the member's verdict summary onto their
+    // CharacterAsset row; an asset stays COMPILED until the
+    // readings clear the bar, VALIDATED when they do. A store miss
+    // is named, never hidden.
+    try {
+      const landed = await recordCharacterAssetReadings(projectId, member.characterId, {
+        at: new Date().toISOString(),
+        source: "RENDER",
+        bar: before.bar,
+        before: { average: member.average, worst: member.worst },
+        after: { standing: afterSnap.standing, average: afterSnap.average, worst: afterSnap.worst, worstRef: afterSnap.worstRef },
+        verdict: memberRepairVerdict(shotRows),
+        shots: shotRows.map((s) => ({ ref: s.ref, before: s.before, after: s.after, verdict: s.verdict })),
+      });
+      console.log(`[character-asset] ${member.name}: ${landed.note}`);
+    } catch (err) {
+      console.log(`[character-asset] ${member.name}: the validation write failed - ${err instanceof Error ? err.message : "unknown"}`);
+    }
   }
 
   const after = await castIdentityMeasurement(projectId, "RENDER");

@@ -21,6 +21,8 @@ import {
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
 import { adherentDna, sheetDnaFresh } from "@/lib/blender/adherence";
+import { upsertCharacterAsset } from "@/lib/character-assets";
+import { identityThresholdFor } from "@/lib/identity";
 import { parseExpressionClip } from "@/lib/blender/expressions";
 import { parseCompProfile } from "@/lib/blender/comp";
 import { parseClothDirective } from "@/lib/blender/cloth-directive";
@@ -234,6 +236,28 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // an unreadable sheet is honestly absent for this member
       }
     }
+    // ANIMEOS 5.0 - THE CHARACTER IS ONE ASSET (iteration 95): every
+    // detected cast member's DNA compiles through the manifest law
+    // into their FIRST-CLASS CharacterAsset - one versioned row per
+    // member, master-hash-proven on both sides of the wire. The same
+    // hash renders the same version (design once, render many); a
+    // moved hash re-versions the asset honestly. The .blend stays
+    // the container; this row is the production abstraction. The
+    // render path never blocks on the store: a hiccup degrades to
+    // an absent row, named in the log.
+    const assetBar = identityThresholdFor("RENDER");
+    for (let i = 0; i < detected.length && i < cast.length; i++) {
+      const memberRow = detected[i];
+      const memberDna = cast[i];
+      if (!memberRow || !memberDna) continue;
+      try {
+        const landed = await upsertCharacterAsset(projectId, memberRow.id, memberRow.name, memberDna, assetBar);
+        if (landed.created || landed.moved) console.log(`[character-asset] ${landed.line}`);
+      } catch (err) {
+        console.log(`[character-asset] ${memberRow.name}: the asset store refused the compile - ${err instanceof Error ? err.message : "unknown"}`);
+      }
+    }
+
     const env = shot.scene.environment
       ? environmentDna({
           name: shot.scene.environment.name,
