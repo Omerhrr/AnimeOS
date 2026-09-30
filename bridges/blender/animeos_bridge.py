@@ -233,6 +233,105 @@ def lerp_pose(start, end, t):
     return tuple(a[i] + (b[i] - a[i]) * k for i in range(len(a)))
 
 
+# ── THE FEET STAY PLANTED (iteration 96): two-bone leg IK over the
+#    shot pose vocabulary. The readings named the frontier: the pose
+#    program drops the root (CROUCH -0.40, RISE -0.25, FALL -0.62)
+#    while the legs keep the table's knee angles, so the boots sink
+#    through the ground plane exactly where the audience's eye
+#    measures the lie. The law: the pose table stays the INTENT; the
+#    IK corrects the penetration only - a penetrating leg solves
+#    closed-form (law of cosines) with the thigh read PRESERVED and
+#    the shin taking the FOLD branch (the solved knee is never below
+#    the table's angle - the IK folds, it never pops a crouch
+#    straight), clamped at KNEE_MAX; whatever survives the clamp the
+#    ROOT lifts (one root, the worse leg wins); a floating foot (the
+#    lunge heel, the leap tuck) is the pose's own read - named as
+#    clearance, never "fixed". Mirrors leg-ik.ts bit-exactly (one
+#    law, two runtimes). ──
+
+LEG_IK_VERSION = 96
+LEG_IK_UPPER = 0.46     # hip pivot -> knee empty (build units)
+LEG_IK_LOWER = 0.46     # knee empty -> boot sole (build units)
+LEG_IK_HIP_STAND = 0.92  # the hip's height above its own rest sole
+LEG_IK_KNEE_MAX = 130.0
+LEG_IK_PROP_SCALE = 0.45  # the figures' prop scale (root hierarchy)
+LEG_IK_POSES = tuple(POSE_JOINTS.keys())  # the TS POSES order (insertion)
+
+
+def leg_foot_drop(thigh_deg, knee_deg):
+    """Down-positive vertical distance hip pivot -> boot sole under the
+    rig's own rotation composition (hip rotates -thigh, knee +knee
+    about the same axis, so the shin's world angle is knee - thigh)."""
+    return (LEG_IK_UPPER * math.cos(math.radians(thigh_deg))
+            + LEG_IK_LOWER * math.cos(math.radians(knee_deg - thigh_deg)))
+
+
+def solve_leg_ik(root_y, thigh_deg, knee_deg, bob=0.0):
+    """The two-bone solve for one leg: the effective thigh angle (the
+    table's + the walk swing), the table's knee, the hip's height
+    inputs (rootY + bob, build units). Returns the solved knee (the
+    table's own when nothing penetrated), the penetration before, the
+    residual after the clamp, the clearance when the solve never
+    fired. Fold-only; the thigh read is preserved."""
+    hip = LEG_IK_HIP_STAND + root_y + bob
+    drop = leg_foot_drop(thigh_deg, knee_deg)
+    pen = round(drop - hip, 3)
+    if pen <= 0:
+        return {"knee": round(knee_deg, 3), "pen": pen,
+                "residual": 0.0,
+                "clearance": 0.0 if pen == 0 else round(hip - drop, 3),
+                "solved": False}
+    rhs = clamp((hip - LEG_IK_UPPER * math.cos(math.radians(thigh_deg))) / LEG_IK_LOWER, -1.0, 1.0)
+    knee = round(min(LEG_IK_KNEE_MAX, thigh_deg + math.degrees(math.acos(rhs))), 3)
+    residual = round(max(0.0, leg_foot_drop(thigh_deg, knee) - hip), 3)
+    return {"knee": knee, "pen": pen, "residual": residual,
+            "clearance": 0.0, "solved": True}
+
+
+def leg_ik_table():
+    """The law over the whole vocabulary: every pose solved at its own
+    end row - the canonical table the hash covers and the evidence
+    carries. Per pose: the table knees, the solved knees, the deeper
+    sole's penetration before, the penetration after (0 across the
+    vocabulary - the proof the law plants), the root lift."""
+    out = {}
+    for name in LEG_IK_POSES:
+        j = POSE_JOINTS[name]
+        sr = solve_leg_ik(j[1], j[8], j[9])
+        sl = solve_leg_ik(j[1], j[10], j[11])
+        out[name] = {
+            "kneeTableR": round(float(j[9]), 3), "kneeSolvedR": sr["knee"],
+            "kneeTableL": round(float(j[11]), 3), "kneeSolvedL": sl["knee"],
+            "penBefore": round(max(sr["pen"], sl["pen"]), 3),
+            "penAfter": round(max(sr["residual"], sl["residual"]), 3),
+            "rootLift": round(max(sr["residual"], sl["residual"]), 3),
+        }
+    return out
+
+
+def leg_ik_key():
+    """The canonical key - the law's inputs and its answers over the
+    vocabulary, pipe-format, versioned 96. Mirrors legIkKey in
+    leg-ik.ts field for field."""
+    rows = []
+    for name, r in leg_ik_table().items():
+        rows.append(
+            f"{name}:r={r['kneeTableR']:.3f},{r['kneeSolvedR']:.3f}"
+            f";l={r['kneeTableL']:.3f},{r['kneeSolvedL']:.3f}"
+            f";res={r['penAfter']:.3f};lift={r['rootLift']:.3f}"
+        )
+    return (f"{LEG_IK_VERSION}"
+            f"|L1={LEG_IK_UPPER:.3f}|L2={LEG_IK_LOWER:.3f}"
+            f"|HIP={LEG_IK_HIP_STAND:.3f}|KMAX={LEG_IK_KNEE_MAX:.3f}"
+            f"|{'|'.join(rows)}|v1")
+
+
+def leg_ik_hash():
+    """The DETERMINISTIC leg-IK hash - sha256-16 over the canonical
+    key (mirrors legIkHash in leg-ik.ts bit-exactly)."""
+    return hashlib.sha256(leg_ik_key().encode("utf-8")).hexdigest()[:16]
+
+
 # ─── per-pose face/hand channels (v3.2 rig upgrade) ──────────────
 #
 # Same 13-pose vocabulary, second table: every pose also expresses
@@ -1112,8 +1211,34 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None, expr=None):
     figure["lElbow"].rotation_euler = (math.radians(-l_elb), 0.0, 0.0)
     figure["rHip"].rotation_euler = (math.radians(-r_leg - leg_r), 0.0, 0.0)
     figure["lHip"].rotation_euler = (math.radians(-l_leg - leg_l), 0.0, 0.0)
-    figure["rKnee"].rotation_euler = (math.radians(r_knee), 0.0, 0.0)
-    figure["lKnee"].rotation_euler = (math.radians(l_knee), 0.0, 0.0)
+    # ── THE FEET STAY PLANTED (iteration 96): the pose drove the
+    #    intent; the two-bone IK now solves each leg against the
+    #    ground plane with the EFFECTIVE thigh angle (table + walk
+    #    swing) and the hip's height (built rest + rootY + bob). The
+    #    knees take the solved (fold-only) angles and the root takes
+    #    the worse leg's residual lift; a floating foot is named, not
+    #    fixed. The frame's answer rides the figure's aggregate (the
+    #    state's post-loop report reads it). ──
+    ik_r = solve_leg_ik(root_y + bob, r_leg + leg_r, r_knee)
+    ik_l = solve_leg_ik(root_y + bob, l_leg + leg_l, l_knee)
+    lift = max(ik_r["residual"], ik_l["residual"])
+    root.location = (0.0, -root_x * s, (root_y + bob + lift) * s)
+    figure["rKnee"].rotation_euler = (math.radians(ik_r["knee"]), 0.0, 0.0)
+    figure["lKnee"].rotation_euler = (math.radians(ik_l["knee"]), 0.0, 0.0)
+    agg = figure.get("_legik")
+    if agg is None:
+        agg = figure["_legik"] = {
+            "frames": 0, "solvedFrames": 0, "maxPenBefore": 0.0,
+            "maxKneeDelta": 0.0, "maxRootLift": 0.0, "maxResidual": 0.0,
+        }
+    agg["frames"] += 1
+    if ik_r["solved"] or ik_l["solved"]:
+        agg["solvedFrames"] += 1
+    agg["maxPenBefore"] = max(agg["maxPenBefore"], ik_r["pen"], ik_l["pen"])
+    agg["maxKneeDelta"] = max(
+        agg["maxKneeDelta"], abs(ik_r["knee"] - r_knee), abs(ik_l["knee"] - l_knee))
+    agg["maxRootLift"] = max(agg["maxRootLift"], lift)
+    agg["maxResidual"] = max(agg["maxResidual"], ik_r["residual"], ik_l["residual"])
 
     # ── face rig (v3.2): brows mirror their tilt so the inner ends
     # move together (+ brow = inner up, surprised; - = angry knit),
@@ -4962,6 +5087,19 @@ def worker_run(job_file):
                 "sections": list(CHARACTER_ASSET_SECTIONS),
                 "lawVersion": 95,
             }
+            # THE FEET STAY PLANTED (iteration 96): the leg IK's law
+            # evidence rides the state - the deterministic hash over
+            # the whole vocabulary's solves (mirrored in leg-ik.ts,
+            # one law two runtimes), the per-pose table (the
+            # penetration the readings named, before and after, the
+            # fold law per pose) - the frame aggregates land after
+            # the loop (the applied report).
+            state["rig"]["legIk"] = {
+                "hash": leg_ik_hash(),
+                "lawVersion": LEG_IK_VERSION,
+                "kneeMax": LEG_IK_KNEE_MAX,
+                "table": leg_ik_table(),
+            }
             # THE FACE PERFORMS THE BEAT (iteration 84): the shot's own
             # expression clip rides the state too - the emotion, the
             # timing, the shape keys it drives, the blended weights at
@@ -5098,6 +5236,15 @@ def worker_run(job_file):
                 "face": True, "hands": True,
                 "eyes": 2, "brows": 2, "fingers": 10,
                 "faceChannels": FACE_CHANNELS,
+                # THE FEET STAY PLANTED (iteration 96): the same law
+                # evidence the hero carries - the stand-in's legs ride
+                # the identical chain constants and the identical solve
+                "legIk": {
+                    "hash": leg_ik_hash(),
+                    "lawVersion": LEG_IK_VERSION,
+                    "kneeMax": LEG_IK_KNEE_MAX,
+                    "table": leg_ik_table(),
+                },
             }
         else:
             legacy_mat = bpy.data.materials.new("SetMat")
@@ -5565,6 +5712,25 @@ def worker_run(job_file):
             state["progress"] = 0.05 + 0.8 * (f / frames_total)
             state["stage"] = f"Blender: rendering frame {f}/{frames_total}"
             flush()
+
+        # THE FEET STAY PLANTED (iteration 96): what the IK actually
+        # did this render - the frames it solved, the deepest sole it
+        # caught before the solve, the widest knee move it asked of
+        # the pose table, the root lift it applied and any residual
+        # it had to name (honest evidence: a still STANCE frame
+        # reports zeros - nothing penetrated)
+        if isinstance(figure, dict) and figure.get("_legik"):
+            _la = figure["_legik"]
+            _lr = (state.setdefault("rig", {}).get("legIk") or None)
+            if _lr is not None:
+                _lr["applied"] = {
+                    "frames": _la["frames"],
+                    "solvedFrames": _la["solvedFrames"],
+                    "maxPenBefore": round(_la["maxPenBefore"], 3),
+                    "maxKneeDelta": round(_la["maxKneeDelta"], 3),
+                    "maxRootLift": round(_la["maxRootLift"], 3),
+                    "maxResidual": round(_la["maxResidual"], 3),
+                }
 
         # secondary motion report: the chains that rode the beats and
         # how far they actually swung (a flat 0.0 means something is
