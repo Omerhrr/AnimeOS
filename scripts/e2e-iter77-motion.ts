@@ -135,7 +135,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A4 the registry stands at 84 tools (the motion pen joins)", toolCount === 88, `count=${toolCount}`);
+  check("A4 the registry stands at 84 tools (the motion pen joins)", toolCount === 89, `count=${toolCount}`);
   check("A5 learn_motion_flow is a registry pen", tools.includes('name: "learn_motion_flow"'));
   check("A6 the apply is flow-aware (resolution + the applied record)", tools.includes("learned flow '${learnedFlow.name}'") && tools.includes("applied: { increment: 1 }"));
   check("A7 the review credits the carried flow (the verification half)", tools.includes("flowNameFromChoreo(reviewedShot?.choreo ?? null)") && tools.includes("verified: { increment: 1 }"));

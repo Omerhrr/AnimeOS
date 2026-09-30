@@ -177,7 +177,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A14 the registry stands at 84 tools (iter63 joined)", toolCount === 88 && tools.includes('name: "plan_sculpt"') && tools.includes('name: "render_redirection"'), `count=${toolCount}`);
+  check("A14 the registry stands at 84 tools (iter63 joined)", toolCount === 89 && tools.includes('name: "plan_sculpt"') && tools.includes('name: "render_redirection"'), `count=${toolCount}`);
   check("A15 plan_sculpt teaches the read (a carve you can cite beats the slab you hoped for)", tools.includes("THE SURFACE IS READ BEFORE IT IS CARVED: run VISION-GUIDED SCULPT PLANNING") && tools.includes("The carve you can cite beats the slab you hoped for"), "");
   check("A16 render_redirection teaches the graduation (stop re-lighting, re-direct)", tools.includes("THE FIX GRADUATES TO THE DIRECTION: when a reviewed render's issues are not the light's fault") && tools.includes("Read the verdict from the new review's issues, never from intention"), "");
 

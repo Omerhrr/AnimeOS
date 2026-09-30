@@ -212,7 +212,7 @@ async function run() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A9 the registry stands at 88 tools (the depth deepens, no new tool)", toolCount === 88, `count=${toolCount}`);
+  check("A9 the registry stands at 88 tools (the depth deepens, no new tool)", toolCount === 89, `count=${toolCount}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A10 rule 66 teaches the living skin", prompts.includes("66. THE SKIN IS ALIVE"));

@@ -193,7 +193,7 @@ async function run() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A11 the registry stands at 88 tools (the sculpt deepens, no new tool)", toolCount === 88, `count=${toolCount}`);
+  check("A11 the registry stands at 88 tools (the sculpt deepens, no new tool)", toolCount === 89, `count=${toolCount}`);
   check("A12 the repair pass names the head sculpt", tools.includes("SCULPTS THE HEAD") && tools.includes("THE FACE IS SCULPTED, NOT ASSEMBLED"));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");

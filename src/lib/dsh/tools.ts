@@ -13,6 +13,7 @@ import { IDENTITY_REPAINT_THRESHOLD, IDENTITY_RENDER_THRESHOLD, identityThreshol
 import { parseBattleArc, allocateBattleShots, battleLegLabel } from "@/lib/dsh/battles";
 import { reanchorByName, REANCHOR_DEFAULT_RESCORE, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
 import { runIdentityRepairPass, repairVerdictLine } from "@/lib/identity-repair";
+import { identityMatrixData, identityMatrixLine } from "@/lib/identity-matrix";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
 } from "@/lib/scheduler";
@@ -871,6 +872,14 @@ export const TOOL_DEFS: ToolDef[] = [
       shotsPerMember: "number (optional - how many of each member's worst shots to re-render; default 1, max 3)",
       reanchor: "boolean (optional - regenerate the sheet of a member the re-render could not lift; default true)",
       nameFilter: "string (optional - work only the member whose name contains it; the pass still answers to the same standing)",
+    },
+  },
+  {
+    name: "identity_matrix",
+    description: "THE DISTRIBUTION IS THE RELEASE: read the production's identity readings AS A DISTRIBUTION against the release floor - the matrix the point statistics cannot draw. measure_identity_bar answers the average-and-worst question and cast_identity_pass names the per-member work order; neither can see SHAPE: forty readings at 85% and one at 5% carry the same 'worst 5%' headline as forty at 85% and one at 84%, though only one of them is a dip. This pass rolls the same real per-character vision readings into the five axes the lens and the stage actually vary - framing (close/med/wide) x yaw (yawing/traveling/locked) x expression (the eight emotions the face performs) x lighting (the light families the words name) x state (the pose the body opens in) - every cell carrying its own n, mean, median, p10 (nearest-rank: the reading the worst tenth sits at or under) and worst with the shot ref its worst came from, and the RELEASE FLOOR judged distributionally: RELEASE (p10 and mean clear the floor - the tail and the body both hold), HOLD (the body clears, the tail dips - the release waits, the dipping cells named), BELOW (the body itself sits under), UNSCORED (nothing measured - named, never guessed). The standing law keeps its teeth beside this (any reading under the bar still puts its member BELOW) - the matrix is the release view: a production can hold a member BELOW for one dipped wide shot while their closeup distribution, the frames the audience actually reads the face on, RELEASES. Every axis and every member names its own verdict, so the repair goes where the distribution actually dips instead of wherever the worst number landed. Pass scoreFirst N to first score up to N unmeasured renders (same law as measure_identity_bar).",
+    args: {
+      source: "render | panel (optional - default render: the shipping pixels against the 70% floor; panel reads the 60% storyboard line)",
+      scoreFirst: "number (optional - first score up to N finished renders with real vision calls; default 0 = read the existing distribution only)",
     },
   },
   {
@@ -3336,6 +3345,35 @@ async function executeToolInner(
         return { status: "OK", result: `SEQUENCE FLOW '${flow.name}' remembered for ${register.toLowerCase()} direction: ${slots.length} slot(s) - ${slots.map((s) => s.grammar).join(" -> ")} (learned from program '${programName}'). Consult it with direct_sequence register:'${register}' (no program, no slots - the register's best-proven flow starts the sentence); every direction the flow drives grows its measured record, a run that lands whole with a clean read earns the clear, and the context's learned sequence flows line carries the standing.` };
       }
 
+      case "identity_matrix": {
+        // THE DISTRIBUTION IS THE RELEASE: optionally earn fresh
+        // readings (same law as measure_identity_bar's limit), then
+        // roll the persisted readings into the five-axis matrix.
+        const source = String(args.source ?? "render").trim().toLowerCase() === "panel" ? "PANEL" : "RENDER";
+        const scoreFirst = Number(args.scoreFirst ?? 0);
+        const fresh: string[] = [];
+        const failed: string[] = [];
+        if (Number.isFinite(scoreFirst) && scoreFirst > 0) {
+          const scored = await scoreProjectIdentity(projectId, Math.min(8, Math.round(scoreFirst)), source);
+          for (const s of scored.scored) {
+            fresh.push(`${s.ref}: ${s.verdict.entries.map((e) => `${e.characterName} ${(e.similarity * 100).toFixed(0)}%`).join(", ")} - worst ${(s.verdict.worst * 100).toFixed(0)}%`);
+          }
+          for (const e of scored.errors) failed.push(`${e.ref}: ${e.error}`);
+        }
+        const m = await identityMatrixData(projectId, source);
+        const tail =
+          m.readings === 0
+            ? " Nothing is measured yet - score the renders first (measure_identity_bar or identity_matrix scoreFirst:'<N>'), then the matrix reads the distribution."
+            : m.overall.verdict === "RELEASE"
+              ? " The distribution RELEASES - the tail and the body both hold the floor. The standing law still owns the work order: any reading under the bar (cast_identity_pass) is still a repair, but the release question is answered."
+              : m.overall.verdict === "HOLD"
+                ? " The body holds but the tail dips - the release waits. Work the HOLD/BELOW cells the axes name (their worst refs are the shots), then read the matrix again."
+                : " The body itself sits under the floor - the release is refused. Work the BELOW cells by name, then read the matrix again.";
+        return {
+          status: "OK",
+          result: `IDENTITY MATRIX (${source.toLowerCase()} source, floor ${Math.round(m.floor * 100)}%):\n${identityMatrixLine(m)}.${fresh.length ? `\nFreshly measured (${fresh.length}):\n${fresh.join("\n")}` : ""}${failed.length ? `\nSkipped (honest misses):\n${failed.join("\n")}` : ""}${tail}`,
+        };
+      }
       case "stage_battle": {
         // THE BATTLE IS STAGED (iteration 79): the chain at episode
         // scale. An arc of registers; every leg consults the

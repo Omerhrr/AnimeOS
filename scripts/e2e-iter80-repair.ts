@@ -155,7 +155,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A7 the registry stands at 88 tools (the repair pass joins)", toolCount === 88, `count=${toolCount}`);
+  check("A7 the registry stands at 88 tools (the repair pass joins)", toolCount === 89, `count=${toolCount}`);
   check("A8 identity_repair_pass is a registry pen with its knobs", tools.includes('name: "identity_repair_pass"') && tools.includes("shotsPerMember") && tools.includes("reanchor"));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");

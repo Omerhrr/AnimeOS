@@ -17,7 +17,9 @@ URL = "http://127.0.0.1:3000/api/projects"
 def alive() -> bool:
     try:
         with urllib.request.urlopen(URL, timeout=2) as r:
-            return r.status == 200
+            return r.status in (200, 401)  # 401 = the auth gate answering - the server is up
+    except urllib.error.HTTPError as e:
+        return e.code in (200, 401)
     except Exception:
         return False
 
@@ -47,6 +49,11 @@ def fork_daemon():
     env.setdefault("AUTH_TRUST_HOST", "true")
     if not env.get("AUTH_SECRET"):
         env["AUTH_SECRET"] = "animeos-studio-dev-secret"
+    # the studio compiles heavy routes (blender specs, DSH registry) -
+    # the default 2GB heap OOMs mid-session; give the compiler room
+    # (3GB: the host box carries ~4GB total - a bigger cap overcommits
+    # and the host killer reaps the daemon mid-phase)
+    env.setdefault("NODE_OPTIONS", "--max-old-space-size=3072")
     sys.stdout.flush(); sys.stderr.flush()
     with open(os.devnull, "rb") as dn:
         os.dup2(dn.fileno(), 0)
