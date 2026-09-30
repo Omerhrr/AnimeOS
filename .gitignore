@@ -113,3 +113,6 @@ public/subtitles/*.srt
 tmp/
 public/headbake/*.png
 !public/headbake/.gitkeep
+
+# the audio-render cache (iteration 102)
+.cache

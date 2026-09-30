@@ -4,6 +4,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { resolveTakePlan, buildTakeSig, VoicePlanError, type TakeOverrides } from "@/lib/ai/voice-plan";
 import { shiftWavPlayback, ttsSpeedAndPitchFactor } from "@/lib/ai/wav-dsp";
+import { audioCacheKey, audioCacheGet, audioCachePut, withRateLimitBackoff } from "@/lib/ai/audio-cache";
 
 // ─────────────────────────────────────────────────────────────
 // VOICE RENDER CORE
@@ -14,6 +15,15 @@ import { shiftWavPlayback, ttsSpeedAndPitchFactor } from "@/lib/ai/wav-dsp";
 // (voiceSig) so the per-episode direction diff can tell which takes
 // are stale. Shared by the render API route and the selective
 // re-render in the direction-diff route.
+//
+// THE STEM IS REMEMBERED (iteration 102): the take is a pure function
+// of its structure (voice + text + delivery style + speed/pitch
+// hints), so the first take earned under a structure is remembered in
+// the audio-render cache (src/lib/ai/audio-cache.ts) under that
+// structure's composite sha256-16 - an unchanged structure instantly
+// fetches the cached stem + viseme manifest instead of paying the
+// rate-limited TTS call again, and a 429 storm backs off on the
+// doubling schedule (1s/2s/4s) before surfacing honestly.
 // ─────────────────────────────────────────────────────────────
 
 export class VoiceRenderError extends Error {
@@ -71,6 +81,7 @@ export interface RenderTakeResult {
   hints: { stateLabel: string; speed: number | null; pitch: number | null } | null; // state performance hints active on this take
   stateOverride: string | null; // per-line state override the dialogue line forces (null = auto)
   pitch: number; // effective pitch factor the take was bent by (1 = natural)
+  cache: { key: string; hit: boolean }; // the structural key + whether the stem was remembered (iteration 102)
   direction: {
     note: string | null;
     standingDelivery: string | null;
@@ -101,37 +112,62 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
 
   let wav: Buffer | null = null;
   let cloneDegraded: string | null = null;
-  try {
-    // the trained-clone path: the character's own voice performs when
-    // the cloning provider can render it; ANY failure degrades to the
-    // catalog fallback voice with an honest note
-    if (plan.clone) {
-      const { clonedTake } = await import("@/lib/ai/voice-clone");
-      const cloned = await clonedTake(plan.clone.voiceId, plan.spoken, plan.speed);
-      if (cloned) {
-        const { factor: cloneFactor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
-        wav = shiftWavPlayback(cloned, cloneFactor);
-      } else {
-        cloneDegraded = plan.clone.fallbackVoiceId;
+  let fromCache = false;
+  // THE STEM IS REMEMBERED (iteration 102): the take is a pure
+  // function of its structure (voice + text + delivery + speed/pitch
+  // hints) - an unchanged structure fetches the remembered stem and
+  // its viseme manifest instead of paying the rate-limited TTS call
+  // again. The key rides the REQUESTED voice (a clone's own id); the
+  // manifest names the voice that actually performed.
+  const requestedVoiceId = plan.clone?.voiceId ?? plan.voiceId;
+  const cacheKey = audioCacheKey({
+    voiceId: requestedVoiceId,
+    text: plan.spoken,
+    deliveryStyle: plan.delivery.id,
+    speed: plan.speed,
+    pitch: plan.pitch,
+  });
+  const cached = audioCacheGet(cacheKey);
+  if (cached) {
+    wav = cached.wav;
+    fromCache = true;
+    cloneDegraded = cached.manifest.degraded ? cached.manifest.performedVoice : null;
+  }
+  if (!wav) {
+    try {
+      // the trained-clone path: the character's own voice performs when
+      // the cloning provider can render it; ANY failure degrades to the
+      // catalog fallback voice with an honest note
+      if (plan.clone) {
+        const { clonedTake } = await import("@/lib/ai/voice-clone");
+        const cloned = await clonedTake(plan.clone.voiceId, plan.spoken, plan.speed);
+        if (cloned) {
+          const { factor: cloneFactor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
+          wav = shiftWavPlayback(cloned, cloneFactor);
+        } else {
+          cloneDegraded = plan.clone.fallbackVoiceId;
+        }
       }
+      if (!wav) {
+        const zai = await ZAI.create();
+        // state pitch hint: render at compensated speed, then shift the
+        // playback rate so the take lands on plan.speed with the bend
+        const { ttsSpeed, factor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
+        // THE 429 LAW: a rate limit backs off on the doubling schedule
+        // (1s/2s/4s) and retries before the failure surfaces
+        const res = await withRateLimitBackoff(() => zai.audio.tts.create({
+          input: plan.spoken,
+          voice: cloneDegraded ?? plan.voiceId, // state voice variant when active, else the cast/clone voice
+          speed: ttsSpeed,
+          response_format: "wav",
+          stream: false,
+        }));
+        const arrayBuffer = await res.arrayBuffer();
+        wav = shiftWavPlayback(Buffer.from(new Uint8Array(arrayBuffer)), factor);
+      }
+    } catch (err) {
+      throw new VoiceRenderError(`TTS render failed: ${err instanceof Error ? err.message : "unknown error"}`, 502);
     }
-    if (!wav) {
-      const zai = await ZAI.create();
-      // state pitch hint: render at compensated speed, then shift the
-      // playback rate so the take lands on plan.speed with the bend
-      const { ttsSpeed, factor } = ttsSpeedAndPitchFactor(plan.speed, plan.pitch);
-      const res = await zai.audio.tts.create({
-        input: plan.spoken,
-        voice: cloneDegraded ?? plan.voiceId, // state voice variant when active, else the cast/clone voice
-        speed: ttsSpeed,
-        response_format: "wav",
-        stream: false,
-      });
-      const arrayBuffer = await res.arrayBuffer();
-      wav = shiftWavPlayback(Buffer.from(new Uint8Array(arrayBuffer)), factor);
-    }
-  } catch (err) {
-    throw new VoiceRenderError(`TTS render failed: ${err instanceof Error ? err.message : "unknown error"}`, 502);
   }
   if (wav.length < 100) throw new VoiceRenderError("TTS returned an empty take", 502);
 
@@ -141,6 +177,25 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
   await writeFile(path.join(dir, file), wav);
 
   const actualMs = wavDurationMs(wav) ?? Math.round((wav.length / (24000 * 2)) * 1000);
+
+  // remember the earned take under its structure (miss path only - a
+  // hit re-serves; the manifest rides the whole-take viseme program)
+  if (!fromCache) {
+    audioCachePut(
+      cacheKey,
+      wav,
+      {
+        voiceId: requestedVoiceId,
+        performedVoice: cloneDegraded ?? plan.voiceId,
+        degraded: Boolean(cloneDegraded),
+        deliveryStyle: plan.delivery.id,
+        speed: plan.speed,
+        pitch: plan.pitch,
+        ms: actualMs,
+      },
+      actualMs,
+    );
+  }
 
   // Widen the cue slot when the real take needs more room (stays inside the shot timeline)
   const timelineMs = Math.max(1, Math.round((cue.shot.duration ?? 4) * 1000));
@@ -196,6 +251,7 @@ export async function renderVoiceTake(cueId: string, overrides: TakeOverrides = 
       : null,
     stateOverride: plan.stateOverride,
     pitch: plan.pitch,
+    cache: { key: cacheKey, hit: fromCache },
     direction: {
       note: cue.voiceNote,
       standingDelivery: cue.voiceDelivery,

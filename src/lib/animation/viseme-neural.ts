@@ -2,6 +2,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { buildSpeechProgram, buildVisemes, type SpeechProgram, type Viseme } from "@/lib/animation/lipsync";
 import { acousticProvider, analyzeAcoustics, retimedPlanVisemes, transcribeTake, reweightUnitsForAsr } from "@/lib/animation/acoustic";
 import { analyzeTakeVisemes, audioOpennessSampler, type AudioTake } from "@/lib/animation/viseme-audio";
+import { cachedSpanVisemes } from "@/lib/ai/audio-cache";
 import { alignPhonemeTimeline } from "@/lib/animation/align";
 
 // ─────────────────────────────────────────────────────────────
@@ -279,7 +280,11 @@ export async function neuralSpeechProgram(input: {
     const span = base.spans[i];
     const units = plan?.lines[Math.min(i, (plan?.lines.length ?? 1) - 1)];
     const take = paired ? takes[i] : undefined;
-    const audio = take?.wav ? analyzeTakeVisemes(take.wav, { startMs: span.startMs, endMs: span.endMs }) : null;
+    // THE VISEME MANIFEST IS REMEMBERED (iteration 102): the span's
+    // mouth program is a pure function of the take's audio CONTENT and
+    // the span - the memo skips the repeated DSP for every re-render
+    // of a take that has not changed
+    const audio = take?.wav ? cachedSpanVisemes(take.wav, { startMs: span.startMs, endMs: span.endMs }) : null;
     if (audio) {
       let lineUnits = units;
       let planVisemes = plan && units ? planVisemesFromPlan(units, { startMs: span.startMs, endMs: span.endMs }) : [];

@@ -1867,3 +1867,18 @@ The verdicts the studio keeps were still REPORTS: the performance engine answere
 
 Stage Summary:
 - The ledgers ride the spine: the render night reads its cost with the regressions' cargo named, and the release spine publishes only on a RELEASE distribution - the verdicts are law, not commentary
+
+---
+## Iteration 102 - THE STEM IS REMEMBERED (2026-10-01)
+
+The voice pipeline paid the TTS provider for the SAME take over and over: a re-rendered cue re-called the rate-limited API with an unchanged structure, and one 429 storm could grind a batch cadence to a halt. The law: a take is a pure function of its structure, and the first take earned under a structure is REMEMBERED.
+
+- `src/lib/ai/audio-cache.ts` (NEW): the composite key law `sha256-16(canonical({voiceId, text, deliveryStyle, speed, pitch}, versioned 102))` - the same fields the take signature names; one character of text is structural, sub-hint rounding is not (the sig's own r2 law); the store (`.cache/audio/{key}.wav` + `{key}.json`, gitignored, self-healing); every read validates the manifest's key/version/byte-size against the stem - corruption reads as a miss, never served; the honest counters (hits, misses, saves, corrupt reads, rate-limit waits)
+- `renderVoiceTake` obeys the cache: lookup BEFORE the provider; a hit serves the remembered stem (post-DSP, byte-identical) + its stored viseme manifest and skips TTS entirely; a miss renders under the 429 LAW (`withRateLimitBackoff`: 1s/2s/4s doubling schedule, `isRateLimitError` matches the status or the wording and nothing else) and stores the earned take; the result now carries `cache: {key, hit}` so the routes name what was remembered
+- The viseme manifest got the same discipline: `cachedSpanVisemes` memoizes the neural pass's per-span mouth programs by the take's audio CONTENT + span window - re-rendering an unchanged take skips the repeated frame-by-frame DSP
+- E2E `scripts/e2e-iter102-audiocache.ts` ALL GREEN in two phases over the real runtime and the REAL TTS provider (phase a: the key sensitivity grid, the schedule, the matcher, the store round trip, corruption-as-miss, the memo identity; phase b: the first render earning the take over the provider, the re-render serving byte-identical audio with ZERO new provider calls, a changed line landing a new key, a second cue with the SAME line hitting the same remembered take - one take per structure, the studio never pays twice - exact cleanup)
+- Neighbor phase-a halves re-run ALL GREEN (iter99, iter100; stale labs purged first)
+- Gates: src tsc clean, eslint clean on the changed files, py_compile clean
+
+Stage Summary:
+- The audio stem is remembered: an unchanged dialogue cue costs the pipeline ZERO provider calls, a 429 storm backs off instead of halting the batch, and the viseme manifest rides the stem it was derived from
