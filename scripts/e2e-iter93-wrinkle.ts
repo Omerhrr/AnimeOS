@@ -247,7 +247,7 @@ async function run() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A10 the registry stands at 88 tools (the creases deepen, no new tool)", toolCount === 89, `count=${toolCount}`);
+  check("A10 the registry stands at 88 tools (the creases deepen, no new tool)", toolCount === 90, `count=${toolCount}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A11 rule 68 teaches the creasing face", prompts.includes("68. THE FACE CREASES WHEN IT ACTS"));

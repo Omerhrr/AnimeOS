@@ -163,7 +163,7 @@ async function run() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry stands at 89 tools (the matrix joins by name)", toolCount === 89, `count=${toolCount}`);
+  check("A5 the registry stands at 89 tools (the matrix joins by name)", toolCount === 90, `count=${toolCount}`);
   check("A6 the identity_matrix tool teaches THE DISTRIBUTION IS THE RELEASE",
     tools.includes('name: "identity_matrix"') && tools.includes("THE DISTRIBUTION IS THE RELEASE")
     && tools.includes("identityMatrixData(projectId, source)") && tools.includes("identityMatrixLine(m)"));

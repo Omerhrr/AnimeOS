@@ -14,6 +14,7 @@ import { parseBattleArc, allocateBattleShots, battleLegLabel } from "@/lib/dsh/b
 import { reanchorByName, REANCHOR_DEFAULT_RESCORE, REANCHOR_MAX_RESCORE } from "@/lib/reanchor";
 import { runIdentityRepairPass, repairVerdictLine } from "@/lib/identity-repair";
 import { identityMatrixData, identityMatrixLine } from "@/lib/identity-matrix";
+import { performanceData, performanceLine } from "@/lib/engine/performance";
 import {
   createSchedule, fireScheduleNow, listSchedules, describeCadence,
 } from "@/lib/scheduler";
@@ -881,6 +882,11 @@ export const TOOL_DEFS: ToolDef[] = [
       source: "render | panel (optional - default render: the shipping pixels against the 70% floor; panel reads the 60% storyboard line)",
       scoreFirst: "number (optional - first score up to N finished renders with real vision calls; default 0 = read the existing distribution only)",
     },
+  },
+  {
+    name: "performance_report",
+    description: "THE COST IS NAMED: read the production's render PERFORMANCE - what the finished jobs actually spent, judged against what the pipeline has PROVEN. Every finished render job carries its measured wall clock (startedAt -> finishedAt) and its per-provider telemetry spans, and until now nothing read them back - a shot rendering three times its siblings' cost slid through as just another finished row. This pass earns every finished job a READING: the measured wall (queue, orchestration and render together - what the production waited), the frames it owed by the worker's own clamped frame law (duration 0.8-30s, fps 1-60 at the default 24, frames = max(2, round(duration * fps))), the SECONDS PER FRAME it spent, the telemetry's own totalMs and the difference named as the wait; then the budget - never an invented constant, but the job's own cohort (the finished jobs of the same driver and mode, comparable by construction): HOLDS at 2x the cohort's median, SLOW to 3x (the tail, watched), OVER beyond (the regression names itself; a job alone holds its own budget - a regression needs a cohort to be a regression). Cohorts roll median/p10/worst spf, total frames and total wall; the OVER regressions and the SLOW tail are named worst-first. Failed attempts measure too - their wall was spent, the status rides honestly. Read it before promising a render deadline, after a night of scheduled fires, or whenever a shot FEELS slow - the feeling is not the number.",
+    args: {},
   },
   {
     name: "stage_battle",
@@ -3345,6 +3351,23 @@ async function executeToolInner(
         return { status: "OK", result: `SEQUENCE FLOW '${flow.name}' remembered for ${register.toLowerCase()} direction: ${slots.length} slot(s) - ${slots.map((s) => s.grammar).join(" -> ")} (learned from program '${programName}'). Consult it with direct_sequence register:'${register}' (no program, no slots - the register's best-proven flow starts the sentence); every direction the flow drives grows its measured record, a run that lands whole with a clean read earns the clear, and the context's learned sequence flows line carries the standing.` };
       }
 
+      case "performance_report": {
+        // THE COST IS NAMED: the finished jobs' measured wall against
+        // their own cohorts' proven medians - the cost ledger.
+        const r = await performanceData(projectId);
+        const tail =
+          r.measured === 0
+            ? " Render a shot first - the cost was not spent yet, and the engine names nothing it did not measure."
+            : r.over.length > 0
+              ? " The OVER jobs are the regressions by name: their own cohort's median is the budget they broke - inspect what rode the render (a hero strand pass, a solver call, a busy machine) before re-queuing."
+              : r.slow.length > 0
+                ? " The SLOW tail is watched, not broken - re-read after the next renders to see which way the median moves."
+                : " Every job holds its cohort's proven cost - the pipeline's night is healthy.";
+        return {
+          status: "OK",
+          result: `PERFORMANCE REPORT:\n${performanceLine(r)}.${tail}`,
+        };
+      }
       case "identity_matrix": {
         // THE DISTRIBUTION IS THE RELEASE: optionally earn fresh
         // readings (same law as measure_identity_bar's limit), then

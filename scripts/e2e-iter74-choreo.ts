@@ -159,7 +159,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A12 the registry stands at 84 tools (the two choreography pens join)", toolCount === 89, `count=${toolCount}`);
+  check("A12 the registry stands at 84 tools (the two choreography pens join)", toolCount === 90, `count=${toolCount}`);
   check("A13 design_choreography + set_shot_choreography are registry pens", tools.includes('name: "design_choreography"') && tools.includes('name: "set_shot_choreography"'));
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");

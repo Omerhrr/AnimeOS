@@ -219,7 +219,7 @@ async function run() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A8 the registry stands at 88 tools (the choreo deepens, no new tool)", toolCount === 89, `count=${toolCount}`);
+  check("A8 the registry stands at 88 tools (the choreo deepens, no new tool)", toolCount === 90, `count=${toolCount}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A9 rule 63 teaches the choreographed camera", prompts.includes("63. THE CAMERA CHOREOGRAPHS THE DRAMA"));

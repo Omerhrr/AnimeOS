@@ -103,7 +103,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A5 the registry grew to 80 tools (learn_sequence_flow joins)", toolCount === 89, `count=${toolCount}`);
+  check("A5 the registry grew to 80 tools (learn_sequence_flow joins)", toolCount === 90, `count=${toolCount}`);
   check("A6 learn_sequence_flow adopts a verified program per register", tools.includes('name: "learn_sequence_flow"') && tools.includes("ADOPT A VERIFIED SEQUENCE"));
   check("A7 the consult path starts from the sentence that verified", tools.includes("THE STUDIO REMEMBERS ITS SENTENCES") && tools.includes("bestSequenceFlow(projectId, register)") && tools.includes("No learned flow for register"));
   check("A8 the memory grows from what the run measured", tools.includes("THE MEMORY GROWS FROM WHAT THE RUN MEASURED") && tools.includes("verified: unused === 0 && directed > 0") && tools.includes("flowsLearnedFromProgram(projectId, programName)"));

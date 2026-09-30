@@ -125,7 +125,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A8 the registry stands at 84 tools (schedule_release joins)", toolCount === 89, `count=${toolCount}`);
+  check("A8 the registry stands at 84 tools (schedule_release joins)", toolCount === 90, `count=${toolCount}`);
   check("A9 set_shot_grammar directs the solver per shot", tools.includes("the shot's SOLVER calls (iterations 68-69)") && tools.includes("cloth: \"number 0..1 (optional) - the CLOTH call"));
   // bumped at iteration 79: the learn pen's line grew the chained
   // performance clause ("... AND chained performance included")

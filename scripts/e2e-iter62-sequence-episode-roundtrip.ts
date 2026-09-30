@@ -109,7 +109,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A10 the registry stands at 84 tools (learn_sequence_flow joined in iter 63)", toolCount === 89, `count=${toolCount}`);
+  check("A10 the registry stands at 84 tools (learn_sequence_flow joined in iter 63)", toolCount === 90, `count=${toolCount}`);
   check("A11 design_sequence slots carry fx/physics (validated at design time)", tools.includes("optional fx / physics program names (a design_fx / design_physics preset") && tools.includes("no fx program named") && tools.includes("no physics program named"));
   check("A12 direct_sequence cuts the WHOLE EPISODE in story order", tools.includes("scope:'episode' cuts the WHOLE EPISODE in story order") && tools.includes("episodeNumber:") && tools.includes("episode allocates the slots across every scene of the episode"));
   check("A13 the sequence stamps the world the same way the shot tools do", tools.includes("compiling every grammar exactly like") && tools.includes("set_shot_fx / set_shot_physics"));

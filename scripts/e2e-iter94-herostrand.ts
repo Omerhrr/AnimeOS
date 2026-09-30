@@ -195,7 +195,7 @@ async function run() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A4 the registry stands at 88 tools (the hero strands deepen, no new tool)", toolCount === 89, `count=${toolCount}`);
+  check("A4 the registry stands at 88 tools (the hero strands deepen, no new tool)", toolCount === 90, `count=${toolCount}`);
 
   const prompts = readFileSync("src/lib/dsh/prompts.ts", "utf8");
   check("A5 rule 69 teaches the hero strands + the readings as judge",

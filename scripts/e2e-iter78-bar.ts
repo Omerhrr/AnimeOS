@@ -161,7 +161,7 @@ async function main() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A7 the registry stands at 85 tools (the measurement pen joins)", toolCount === 89, `count=${toolCount}`);
+  check("A7 the registry stands at 85 tools (the measurement pen joins)", toolCount === 90, `count=${toolCount}`);
   check("A8 measure_identity_bar is a registry pen", tools.includes('name: "measure_identity_bar"'));
   check("A9 the chain resolves the same registry set_shot_choreography consults", tools.includes("async function resolveChoreoSource") && tools.includes("learned flow '${learnedFlow.name}'"));
   check("A10 the sequence stamps the chained performance with the flow marker", tools.includes("data.choreo = JSON.stringify(chainedPerf)") && tools.includes("applied: { increment: 1 }"));
