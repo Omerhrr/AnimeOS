@@ -2446,6 +2446,25 @@ HAIR_SHADE_BASE = {"melanin": 0.65, "redness": 0.12, "radial": 0.34, "longitudin
 GROOM_CURVE_BASE = 24   # true curve strands per groomed guide at the full LOD
 GROOM_CURVE_MIN_LOD = 0.55   # wide framings keep the mesh cards only
 
+# ── iteration 94 THE STRANDS GO HERO (the deeper groom's hero-strand
+#    half): the true-curve strands' own DETAIL rides the strand LOD.
+#    Iteration 89 grew every curve at one detail - six points, a
+#    uniform bevel - and the closeup read the difference. Three
+#    tiers: the close framings grow the HERO strands (twelve-point
+#    splines, the root-to-tip radius taper the groom's own taper
+#    factor drives, the HERO FLYAWAY curves riding the flyaway
+#    factor); the middle framings keep the STANDARD curve (the
+#    iteration-89 law, unchanged - the reduced level honest); the
+#    wide framings keep the mesh cards only. One law, two runtimes:
+#    the tier, the taper law and the hash mirror groom.ts
+#    bit-exactly. ──
+GROOM_HERO_PTS = 12          # spline points per hero strand (the closeup lens reads the wave)
+GROOM_STD_PTS = 6            # the standard curve (iteration 89's law) stays the reduced level
+GROOM_HERO_BEVEL_RES = 3     # the hero bevel (the standard keeps 2)
+GROOM_HERO_FLYAWAY_BASE = 6  # hero flyaway curves, riding the flyaway factor
+GROOM_HERO_TIP_LO = 0.25     # a fine taper (0.5) dies to a quarter radius
+GROOM_HERO_TIP_SPAN = 0.55   # ...a blunt one (1.0) keeps 0.8
+
 
 def _clamp3(v, lo, hi):
     return round(max(lo, min(hi, float(v))), 3)
@@ -2628,20 +2647,57 @@ def build_hair_shade_material(bpy, name, color_hex, shade):
     return mat
 
 
+def groom_strand_tier(strand_f):
+    """THE STRANDS GO HERO (mirrors groomStrandTier in groom.ts): the
+    close framings grow the HERO strands, the middle framings keep
+    the STANDARD curve, the wide framings keep the mesh cards only."""
+    if strand_f >= 0.9:
+        return "hero"
+    if strand_f >= GROOM_CURVE_MIN_LOD:
+        return "standard"
+    return "cards"
+
+
+def hero_taper_tip(taper):
+    """The root-to-tip taper law (mirrors heroTaperTip in groom.ts):
+    the strand dies from a root radius of 1.0 to a tip radius the
+    groom's own taper factor drives - a fine taper (0.5) dies to
+    0.25, a blunt one (1.0) keeps 0.8."""
+    t = max(0.5, min(1.0, float(taper)))
+    return round((GROOM_HERO_TIP_LO + GROOM_HERO_TIP_SPAN * ((t - 0.5) / 0.5)) * 1000) / 1000
+
+
+def groom_curve_hash(f, style, tier):
+    """The DETERMINISTIC curve hash (mirrors groomCurveHash in
+    groom.ts bit-exactly): sha256-16 over the pipe-format key - the
+    same profile at the same tier always lands the same key."""
+    key = f"94|{style}|{tier}|{f['sweep']:.3f}|{f['flow']:.3f}|{f['flyaway']:.3f}|{f['taper']:.3f}|v1"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
 def groom_hair_curves(scn, bpy, head, shade_mat, style, hair_f, height_f, gp, strand_f):
-    """THE HAIR IS TRUE CURVES (iteration 89): grow real BLENDER HAIR
-    CURVES off the style's guide spines under the SAME directed
-    direction + seed law the mesh strands ride (fnv1a + mulberry32 -
-    the same DNA always grooms the same curves), each a 6-point
-    polyline with the sweep/flow/scatter factors, shaded by the
-    melanin hair material. The LOD law owns the pass: full/reduced
-    framings carry curves, WIDE framings keep the mesh cards only
-    (curves nobody can see are wasted frames - the iter-85 law).
-    Deterministic + hash-named. Returns the evidence (None when the
-    LOD skipped - honest)."""
-    if strand_f < GROOM_CURVE_MIN_LOD:
+    """THE HAIR IS TRUE CURVES (iteration 89) + THE STRANDS GO HERO
+    (iteration 94): grow real BLENDER HAIR CURVES off the style's
+    guide spines under the SAME directed direction + seed law the
+    mesh strands ride (fnv1a + mulberry32 - the same DNA always
+    grooms the same curves), shaded by the melanin hair material.
+    The STRAND LOD owns the curve's own detail: the close framings
+    grow the HERO strands (twelve-point splines, the root-to-tip
+    radius taper the groom's taper factor drives, the hero flyaway
+    curves riding the flyaway factor); the middle framings keep the
+    STANDARD curve (iteration 89's six-point law, unchanged - the
+    reduced level honest); the wide framings keep the mesh cards
+    only (curves nobody can see are wasted frames - the iter-85
+    law). Deterministic + hash-named. Returns the evidence (None
+    when the LOD skipped - honest)."""
+    tier = groom_strand_tier(strand_f)
+    if tier == "cards":
         return None
     f = gp["factors"]
+    hero = tier == "hero"
+    n_pts = GROOM_HERO_PTS if hero else GROOM_STD_PTS
+    bevel_res = GROOM_HERO_BEVEL_RES if hero else 2
+    tip = hero_taper_tip(f["taper"]) if hero else 1.0
     guides = _groom_guides(style, height_f)
     per_guide = max(1, int(round(GROOM_CURVE_BASE * strand_f)))
     mat_name = f"GroomCurveHair_{shade_mat['hairShadeHash']}"
@@ -2655,11 +2711,10 @@ def groom_hair_curves(scn, bpy, head, shade_mat, style, hair_f, height_f, gp, st
             lat = (rng() - 0.5) * 0.05 * (1.0 + f["flow"])
             along = rng() * 0.25
             phase = rng() * math.tau
-            n_pts = 6
             cu = bpy.data.curves.new(f"GroomCurve{gi}_{ci}", type="CURVE")
             cu.dimensions = "3D"
             cu.bevel_depth = (0.0016 + 0.0012 * (1.0 - f["taper"])) * hair_f
-            cu.bevel_resolution = 2
+            cu.bevel_resolution = bevel_res
             sp = cu.splines.new("POLY")
             sp.points.add(n_pts - 1)
             for ri in range(n_pts):
@@ -2668,6 +2723,12 @@ def groom_hair_curves(scn, bpy, head, shade_mat, style, hair_f, height_f, gp, st
                 sweep_off = f["sweep"] * 0.1 * (t ** 1.5)
                 wave = math.sin(t * math.pi * (1.5 + 2.0 * f["flow"]) + phase) * 0.022 * f["flow"] * t
                 sp.points[ri].co = (base[0] + lat + wave, base[1] + sweep_off, base[2] + wave * 0.6, 1.0)
+                # THE STRANDS GO HERO: the per-point radius carries the
+                # strand's own root-to-tip taper (its root 1.0 -> the
+                # taper-driven tip); the standard curve keeps the
+                # uniform bevel honestly (the iteration-89 law).
+                u = ri / (n_pts - 1)
+                sp.points[ri].radius = (1.0 - (1.0 - tip) * u) if hero else 1.0
             cu.materials.append(shade_mat if existing is None else existing)
             ob = bpy.data.objects.new(f"GroomCurve{gi}_{ci}", cu)
             scn.collection.objects.link(ob)
@@ -2675,9 +2736,52 @@ def groom_hair_curves(scn, bpy, head, shade_mat, style, hair_f, height_f, gp, st
             ob.location = (0.0, 0.0, 0.0)
             count += 1
             pts_total += n_pts
+    fly_built = 0
+    if hero:
+        # the HERO FLYAWAY pass: loose curves off the dome riding the
+        # flyaway factor - the mesh flyaway law's curve edition
+        # (the same seeded law, the same drop + wave physics).
+        n_fly = int(round(GROOM_HERO_FLYAWAY_BASE * f["flyaway"]))
+        for si in range(n_fly):
+            rng = mulberry32(fnv1a(f"groomcurvefly|{style}|{si}"))
+            a = rng() * math.tau
+            rr = 0.07 + rng() * 0.035
+            sx, sz = math.cos(a) * rr, 0.16 + rng() * 0.07 * height_f
+            base_z = max(0.05, sz * hair_f if sz < 0.05 else sz)
+            phase = rng() * math.tau
+            cu = bpy.data.curves.new(f"GroomCurveFly{si}", type="CURVE")
+            cu.dimensions = "3D"
+            cu.bevel_depth = 0.0012 * hair_f
+            cu.bevel_resolution = bevel_res
+            sp = cu.splines.new("POLY")
+            sp.points.add(n_pts - 1)
+            for ri in range(n_pts):
+                t = ri / (n_pts - 1)
+                drop = -0.05 - 0.13 * t * (0.5 + f["flow"])
+                wave = math.sin(t * math.pi * 2.0 + phase) * 0.014 * (0.4 + f["flow"])
+                sp.points[ri].co = (
+                    sx * (1.0 + 0.4 * t) + wave,
+                    0.02 + rng() * 0.01,
+                    base_z + drop * (0.8 + 0.2 * hair_f),
+                    1.0,
+                )
+                sp.points[ri].radius = 1.0 - (1.0 - tip) * t
+            cu.materials.append(shade_mat if existing is None else existing)
+            ob = bpy.data.objects.new(f"GroomCurveFly{si}", cu)
+            scn.collection.objects.link(ob)
+            ob.parent = head
+            ob.location = (0.0, 0.0, 0.0)
+            count += 1
+            pts_total += n_pts
+            fly_built += 1
     if existing is None:
         shade_mat.name = mat_name
-    return {"curves": count, "curvePts": pts_total}
+    return {
+        "curves": count, "curvePts": pts_total,
+        "tier": tier, "ptsPerCurve": n_pts,
+        "flyaways": fly_built,
+        "hash": groom_curve_hash(f, style, tier),
+    }
 
 
 def groom_strand_factor(shot_type):
@@ -3297,10 +3401,13 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     #    riding, scaled by the framing's LOD factor ──
     gp = groom_profile(dna)
     groom_evidence = groom_strands(scn, bpy, head, hair_mat, str(style), hair_f, height_f, gp, strand_f)
-    # ── THE HAIR IS TRUE CURVES (iteration 89): real BLENDER HAIR
-    #    CURVES off the same guides under the same direction + seed
-    #    law, shaded by the sheet hex's own melanin physics - the
-    #    wide framings keep the mesh cards only (the LOD law) ──
+    # ── THE HAIR IS TRUE CURVES (iteration 89) + THE STRANDS GO
+    #    HERO (iteration 94): real BLENDER HAIR CURVES off the same
+    #    guides under the same direction + seed law, shaded by the
+    #    sheet hex's own melanin physics - the close framings grow
+    #    the HERO strands (tapered, flyaway curves riding), the
+    #    middle framings the standard curve, the wide framings the
+    #    mesh cards only (the strand LOD law) ──
     shade = hair_shade(dna)
     curve_evidence = None
     if strand_f >= GROOM_CURVE_MIN_LOD:
@@ -3466,10 +3573,13 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         # framing earned, the clamped factors and the deterministic
         # hash (always present: the groom rides every styled build)
         "groom": groom_evidence,
-        # THE HAIR IS TRUE CURVES (iteration 89): the curve detail's
-        # evidence - the curves grown, the points, the melanin shade
-        # the sheet hex derived and its hash (None when the wide LOD
-        # kept the mesh cards - honest)
+        # THE HAIR IS TRUE CURVES (iteration 89) + THE STRANDS GO
+        # HERO (iteration 94): the curve detail's evidence - the
+        # curves grown, the points, the TIER the framing earned
+        # (hero/standard), the hero flyaways, the curve hash over
+        # the law inputs and the melanin shade the sheet hex
+        # derived (None when the wide LOD kept the mesh cards -
+        # honest)
         "hairShade": shade,
         "hairCurves": curve_evidence,
         # THE SILHOUETTE SHAPES THE MESH: the applied shaping evidence -
@@ -4770,10 +4880,11 @@ def worker_run(job_file):
             # the framing earned, the clamped factors, the hash)
             if isinstance(figure, dict) and figure.get("groom"):
                 state["rig"]["groom"] = figure["groom"]
-            # THE HAIR IS TRUE CURVES (iteration 89): the curve detail's
-            # evidence rides the state too (the curves grown, the
-            # points, the melanin shade the sheet hex derived + its
-            # hash; None when the wide LOD kept the mesh cards - honest)
+            # THE HAIR IS TRUE CURVES (iteration 89) + THE STRANDS
+            # GO HERO (iteration 94): the curve detail's evidence
+            # rides the state too (the curves grown, the points, the
+            # tier, the hero flyaways, the curve hash; None when the
+            # wide LOD kept the mesh cards - honest)
             if isinstance(figure, dict) and figure.get("hairShade"):
                 state["rig"]["hairShade"] = figure["hairShade"]
             if isinstance(figure, dict) and figure.get("hairCurves"):

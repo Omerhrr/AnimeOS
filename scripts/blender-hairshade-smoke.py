@@ -108,12 +108,15 @@ ev_full = m.groom_hair_curves(scn, bpy, head, mat2, "long", 1.0, 1.0, gp, 1.0)
 ok("the full LOD grows TRUE CURVES (real curve objects with spline points)",
    ev_full is not None and ev_full["curves"] > 0 and ev_full["curvePts"] > 0, json.dumps(ev_full or {}))
 curves = [ob for ob in scn.collection.objects if ob.type == "CURVE"]
-ok("the curves are real CURVE objects with 6-point splines, parented to the head",
-   len(curves) == ev_full["curves"] and all(len(ob.data.splines[0].points) == 6 for ob in curves)
+# iteration 94 re-point: the full LOD now grows the HERO strands -
+# twelve-point splines with the flyaway pass riding (the standard
+# 6-point curve is the MIDDLE framing's reduced level now).
+ok("the curves are real CURVE objects with 12-point HERO splines, parented to the head",
+   len(curves) == ev_full["curves"] and all(len(ob.data.splines[0].points) == 12 for ob in curves)
    and all(ob.parent is head for ob in curves), f"count={len(curves)}")
 bevels = {round(ob.data.bevel_depth, 5) for ob in curves}
-ok("the strands carry a real bevel radius (they render as strands, not lines)",
-   len(bevels) == 1 and next(iter(bevels)) > 0.0, str(bevels))
+ok("the strands carry a real bevel radius (guides + flyaways render as strands, not lines)",
+   len(bevels) >= 1 and all(b > 0.0 for b in bevels), str(bevels))
 ok("the curves carry the melanin material",
    all(any(m2.get("hairShadeHash") == raven["hash"] for m2 in ob.data.materials) for ob in curves))
 
