@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { parseDialogue, type DialogueLine } from "@/lib/comic/dialogue";
 
 // ─────────────────────────────────────────────────────────────
@@ -220,6 +221,112 @@ export function sampleSpeech(visemes: Viseme[], tMs: number): { o: number; w: nu
     prev = v;
   }
   return null;
+}
+
+// ─── THE MOUTH SPEAKS IN THE MESH (iteration 92, Layer A) ────
+//
+// The v3.3 lip-sync drove the mouth OBJECT's scale - the carved
+// face MESH held still beneath it, the mannequin's second tell: a
+// talking closeup whose lips never parted. This half gives the
+// viseme program its MESH: three speech shape keys sculpted onto
+// the same carved head (mouthWide's spread, mouthRound's purse,
+// the bilabial press), the jaw following the line at a bounded
+// fraction beneath the expression's own jaw, and the evidence
+// sampled at the identity clock (22/40/62%) with the DETERMINISTIC
+// hash mirroring the worker bit-exactly (one law, two runtimes).
+
+/** The three speech shape keys the worker sculpts (fixed names). */
+export const SPEECH_MESH_SHAPES = ["mouthWide", "mouthRound", "lipPress"] as const;
+
+/** The mesh law's constants: the jaw follows the viseme openness at
+ * this fraction, and the bilabial press fires inside this openness
+ * window (the CLOSED shape's 0.04 lives here - m/b/p press the lips,
+ * vowels and breath never do). */
+export const SPEECH_JAW_FOLLOW = 0.45;
+export const SPEECH_PRESS_WINDOW: [number, number] = [0.005, 0.055];
+
+export interface SpeechMeshWeights {
+  jaw: number; // 0..1 - the jawOpen key follows the line at SPEECH_JAW_FOLLOW
+  wide: number; // 0..1 - the mouthWide key (the "ee" spread)
+  round: number; // 0..1 - the mouthRound key (the "oo" purse)
+  press: number; // 0|1 - the lipPress key (m/b/p bilabial closure)
+}
+
+const r3 = (v: number): number => Math.round(v * 1000) / 1000;
+
+/**
+ * THE MOUTH SPEAKS IN THE MESH (pure): map one sampled viseme shape
+ * onto the speech shape-key weights. The openness drives the jaw at
+ * the bounded fraction, the wide/round factors ride through, and the
+ * press fires only inside the bilabial window (a closed lip the
+ * consonant pressed, not a breath or a vowel). A null shape (the
+ * mouth between segments) lands the rest pose: every weight zero.
+ * Deterministic: the same sample always lands the same weights.
+ */
+export function visemeMeshWeights(shape: { o: number; w: number; r: number } | null): SpeechMeshWeights {
+  if (!shape) return { jaw: 0, wide: 0, round: 0, press: 0 };
+  const o = Math.min(1, Math.max(0, shape.o));
+  const w = Math.min(1, Math.max(0, shape.w));
+  const r = Math.min(1, Math.max(0, shape.r));
+  const press = o > SPEECH_PRESS_WINDOW[0] && o <= SPEECH_PRESS_WINDOW[1] ? 1 : 0;
+  return { jaw: r3(o * SPEECH_JAW_FOLLOW), wide: r3(w), round: r3(r), press };
+}
+
+export interface SpeechMeshSample {
+  at: number; // seconds on the clip clock
+  o: number; // the sampled openness (0 between segments)
+  w: number;
+  r: number;
+  mesh: SpeechMeshWeights;
+}
+
+/**
+ * Sample the program at the identity clock (the same 22/40/62%
+ * fractions the expression evidence and the re-score judge), derive
+ * the mesh weights per sample. Between segments the mouth rests.
+ */
+export function speechMeshSamples(program: SpeechProgram, durationSec: number): SpeechMeshSample[] {
+  const dur = Math.max(0.1, durationSec);
+  const stamps = [0.22, 0.4, 0.62].map((f) => Math.round(dur * f * 1000) / 1000);
+  return stamps.map((at) => {
+    const shape = sampleSpeech(program.visemes, at * 1000);
+    return {
+      at,
+      o: r3(shape?.o ?? 0),
+      w: r3(shape?.w ?? 0),
+      r: r3(shape?.r ?? 0),
+      mesh: visemeMeshWeights(shape),
+    };
+  });
+}
+
+/**
+ * The DETERMINISTIC speech-mesh hash (16 hex) - sha256-16 over the
+ * sampled shapes AND their derived mesh weights, mirrored
+ * bit-exactly in the worker (f"{...:.3f}" formatting).
+ */
+export function speechMeshHash(samples: SpeechMeshSample[]): string {
+  const spec =
+    `92|` +
+    samples
+      .map(
+        (s) =>
+          `${s.at.toFixed(3)}:${s.o.toFixed(3)},${s.w.toFixed(3)},${s.r.toFixed(3)}:` +
+          `${s.mesh.jaw.toFixed(3)},${s.mesh.wide.toFixed(3)},${s.mesh.round.toFixed(3)},${s.mesh.press.toFixed(3)}`,
+      )
+      .join("|") +
+    `|v1`;
+  return createHash("sha256").update(spec, "utf8").digest("hex").slice(0, 16);
+}
+
+/** The evidence block the render state names under speech.mesh. */
+export function speechMeshEvidence(program: SpeechProgram, durationSec: number): {
+  shapes: readonly string[];
+  samples: SpeechMeshSample[];
+  hash: string;
+} {
+  const samples = speechMeshSamples(program, durationSec);
+  return { shapes: SPEECH_MESH_SHAPES, samples, hash: speechMeshHash(samples) };
 }
 
 /** Bridge payload shape (millisecond viseme table). */

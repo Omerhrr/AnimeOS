@@ -365,6 +365,67 @@ def speech_open_at(visemes, t_ms):
     return None
 
 
+# ─── THE MOUTH SPEAKS IN THE MESH (iteration 92, Layer A) ───────
+#
+# The v3.3 lip-sync drove the mouth OBJECT's scale while the carved
+# face MESH held still - the mannequin's second tell. The viseme
+# program drives the mesh half now: three speech shape keys (the
+# wide spread, the round purse, the bilabial press) sculpted onto
+# the same carved head, the jaw following the line at a bounded
+# fraction beneath the expression's own jaw. One law, two runtimes:
+# the constants + mapping + hash mirror src/lib/animation/lipsync.ts
+# bit-exactly.
+
+SPEECH_MESH_SHAPES = ("mouthWide", "mouthRound", "lipPress")
+SPEECH_JAW_FOLLOW = 0.45
+SPEECH_PRESS_WINDOW = (0.005, 0.055)
+
+
+def speech_mesh_weights(shape):
+    """The viseme sample -> mesh weights (mirrors visemeMeshWeights in
+    lipsync.ts): the openness drives the jaw at the bounded fraction,
+    wide/round ride through, and the press fires only inside the
+    bilabial window (a closed lip the consonant pressed, not a breath
+    or a vowel). None (the mouth between segments) lands the rest."""
+    if not isinstance(shape, dict):
+        return {"jaw": 0.0, "wide": 0.0, "round": 0.0, "press": 0.0}
+    o = clamp(float(shape.get("o", 0.0)), 0.0, 1.0)
+    w = clamp(float(shape.get("w", 0.0)), 0.0, 1.0)
+    r = clamp(float(shape.get("r", 0.0)), 0.0, 1.0)
+    lo, hi = SPEECH_PRESS_WINDOW
+    press = 1.0 if (o > lo and o <= hi) else 0.0
+    return {"jaw": round(o * SPEECH_JAW_FOLLOW, 3), "wide": round(w, 3), "round": round(r, 3), "press": press}
+
+
+def speech_mesh_evidence(visemes, duration_sec):
+    """The state's speech-mesh evidence (mirrors speechMeshEvidence in
+    lipsync.ts): the program sampled at the identity clock (22/40/62%),
+    the mesh weights per sample, and the DETERMINISTIC hash over the
+    sampled shapes AND their derived weights (sha256-16, bit-exact)."""
+    dur = max(0.1, float(duration_sec))
+    samples = []
+    for f in (0.22, 0.4, 0.62):
+        at = round(dur * f, 3)
+        shape = speech_open_at(visemes, at * 1000.0)
+        mw = speech_mesh_weights(shape)
+        o = round(clamp(float(shape.get("o", 0.0)), 0.0, 1.0), 3) if isinstance(shape, dict) else 0.0
+        w = round(clamp(float(shape.get("w", 0.0)), 0.0, 1.0), 3) if isinstance(shape, dict) else 0.0
+        r = round(clamp(float(shape.get("r", 0.0)), 0.0, 1.0), 3) if isinstance(shape, dict) else 0.0
+        samples.append({"at": at, "o": o, "w": w, "r": r, "mesh": mw})
+    spec = "92|" + "|".join(
+        "{:.3f}:{:.3f},{:.3f},{:.3f}:{:.3f},{:.3f},{:.3f},{:.3f}".format(
+            s["at"], s["o"], s["w"], s["r"],
+            s["mesh"]["jaw"], s["mesh"]["wide"], s["mesh"]["round"], s["mesh"]["press"],
+        )
+        for s in samples
+    ) + "|v1"
+    return {
+        "shapes": list(SPEECH_MESH_SHAPES),
+        "samples": samples,
+        "hash": hashlib.sha256(spec.encode("utf-8")).hexdigest()[:16],
+    }
+
+
 def eye_scale(eye):
     """Eye lid openness as a Z squash on the eye sphere (never fully
     flat so the eyeball stays visible)."""
@@ -1072,6 +1133,35 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None, expr=None):
             kb = keys.get(name)
             if kb is not None:
                 kb.value = clamp(float(expr.get(weight, 0.0)), float(kb.slider_min), float(kb.slider_max))
+
+    # ── THE MOUTH SPEAKS IN THE MESH (v92): the mesh half of the
+    # lip-sync - the sampled viseme drives the three speech shape
+    # keys (the spread, the purse, the bilabial press) and the jaw
+    # follows the line at the bounded fraction, composed with the
+    # expression's own jaw by max (the spoken line never flattens
+    # the performed scowl beneath it). A rig without the keys skips
+    # honestly (the stand-in, an asset load).
+    if speech is not None:
+        mw = speech_mesh_weights(speech)
+        skeys = figure.get("speechKeys") or {}
+        for name, wkey in (("mouthWide", "wide"), ("mouthRound", "round"), ("lipPress", "press")):
+            kb = skeys.get(name)
+            if kb is not None:
+                kb.value = clamp(float(mw.get(wkey, 0.0)), 0.0, 1.0)
+        jkb = (figure.get("exprKeys") or {}).get("jawOpen")
+        if jkb is not None:
+            jaw_target = float(mw.get("jaw", 0.0))
+            if isinstance(expr, dict):
+                jaw_target = max(jaw_target, clamp(float(expr.get("jaw", 0.0)), 0.0, 1.0))
+            jkb.value = clamp(jaw_target, float(jkb.slider_min), float(jkb.slider_max))
+    else:
+        # between segments (and on silent shots) the mouth RESTS: the
+        # speech keys return to zero and the jaw returns to the
+        # expression's own jaw (the block above already wrote it when
+        # a clip rides) - a mouth frozen mid-shape between words is
+        # the same tell this law exists to kill
+        for kb in (figure.get("speechKeys") or {}).values():
+            kb.value = 0.0
 
     # ── hand rig (v3.2): grip curls the fingers, point straightens the
     # index, the thumb half-curls with the grip
@@ -1839,6 +1929,72 @@ def _expr_key_jaw_open(x, y, z):
         return 0.0, 0.0, 0.0
     fall = max(0.0, min(1.0, (-z - 0.45) / 0.50))
     return 0.0, 0.0, -0.055 * fall
+
+
+def sculpt_speech_keys(mesh):
+    """THE MOUTH SPEAKS IN THE MESH (iteration 92): sculpt the three
+    speech shape keys onto the carved head mesh (mesh-local unit-sphere
+    space, the same law family the expression keys ride): mouthWide
+    (the "ee" spread - the corners pull out and the lips thin),
+    mouthRound (the "oo" purse - the lips push forward and the corners
+    draw in), lipPress (the bilabial closure - both masses squeeze
+    toward the lip line). The basis keeps the sculpt's own positions,
+    so the faceHash and the vertex count stay exactly what iteration
+    82/90 proved them. Deterministic: the same sculpt always lands the
+    same keys. Returns {name: KeyBlock}."""
+    r = 0.115
+    keys = {}
+    try:
+        if mesh.data.shape_keys is None:
+            mesh.shape_key_add(name="Basis")
+        for name in SPEECH_MESH_SHAPES:
+            kb = mesh.shape_key_add(name=name, from_mix=False)
+            base = mesh.data.vertices
+            for i, v in enumerate(base):
+                x, y, z = v.co.x / r, v.co.y / r, v.co.z / r  # unit-sphere space
+                dx, dy, dz = _speech_key_deltas(name, x, y, z)
+                kb.data[i].co = (v.co.x + dx * r, v.co.y + dy * r, v.co.z + dz * r)
+            kb.value = 0.0
+            keys[name] = kb
+    except Exception:  # noqa: BLE001
+        return keys
+    return keys
+
+
+def _mouth_fall(x, y, z):
+    """The mouth region's falloff: the lip masses' box (front band,
+    around the lip line z = -0.385, within the corner reach) - the
+    same geometry the carve's lip planes and the corner key live in."""
+    if y >= -0.80 or not (-0.55 < z < -0.28):
+        return 0.0
+    ax = abs(x)
+    if ax >= 0.35:
+        return 0.0
+    front = max(0.0, min(1.0, (-y - 0.80) / 0.15))
+    height = max(0.0, 1.0 - abs((z + 0.40) / 0.14))
+    return front * height
+
+
+def _speech_key_deltas(name, x, y, z):
+    """The three speech keys' unit-sphere deltas (bounded, in family
+    with the carve planes' 0.004-0.012 amplitudes)."""
+    fall = _mouth_fall(x, y, z)
+    if fall <= 0.0:
+        return 0.0, 0.0, 0.0
+    ax = abs(x)
+    if name == "mouthWide":
+        # the spread: the corners pull outward, the lips thin rearward
+        corner = max(0.0, min(1.0, (ax - 0.06) / 0.24))
+        return (1.0 if x > 0 else -1.0) * 0.011 * fall * corner, 0.002 * fall, 0.0
+    if name == "mouthRound":
+        # the purse: the lips push forward, the corners draw inward
+        corner = max(0.0, min(1.0, (ax - 0.06) / 0.24))
+        return -(1.0 if x > 0 else -1.0) * 0.006 * fall * corner, -0.011 * fall, 0.0
+    if name == "lipPress":
+        # the press: both masses squeeze toward the lip line (z -0.385)
+        toward = -1.0 if (z - -0.385) > 0 else 1.0
+        return 0.0, -0.003 * fall, toward * 0.009 * fall
+    return 0.0, 0.0, 0.0
 
 
 def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f, depth=4):
@@ -2999,6 +3155,11 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     #    the faceHash stays deterministic per profile + depth - the
     #    vertex count rides the depth law since iteration 90) ──
     expr_keys = sculpt_expression_keys(hm)
+    # ── THE MOUTH SPEAKS IN THE MESH (iteration 92): the three
+    #    speech shape keys ride the same carved head (the basis the
+    #    expression sculpt kept stays untouched - the faceHash and
+    #    the vertex count still read exactly what 82/90 proved) ──
+    speech_keys = sculpt_speech_keys(hm)
 
     # ── face (v3.2 rig, restyled): stylized eyes with readable irises;
     #    the eye SIZE rides the face profile's eyeScale ──
@@ -3209,6 +3370,11 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         # their values with the clip every frame; a rig without them
         # (the stand-in, an asset load) simply skips the mesh half
         "exprKeys": expr_keys,
+        # THE MOUTH SPEAKS IN THE MESH (iteration 92): the head's three
+        # speech shape keys ({name: KeyBlock}) - apply_pose drives them
+        # with the sampled viseme weights every frame (the mesh half of
+        # the lip-sync); a rig without them skips honestly
+        "speechKeys": speech_keys,
         # THE HAIR IS GROOMED (iteration 85): the strand detail's
         # evidence - the strands grown, the flyaways, the LOD the
         # framing earned, the clamped factors and the deterministic
@@ -4423,7 +4589,20 @@ def worker_run(job_file):
         state["posesRequested"] = [str(shot.get("poseStart")), str(shot.get("poseEnd"))]
         state["posesResolved"] = [pose_start, pose_end]
         state["scriptMtime"] = os.path.getmtime(__file__)
-        state["speech"] = {"lines": int((shot.get("speech") or {}).get("lines", 0) or 0), "visemes": len(speech_visemes)} if speech_visemes else None
+        state["speech"] = (
+            {
+                "lines": int((shot.get("speech") or {}).get("lines", 0) or 0),
+                "visemes": len(speech_visemes),
+                # THE MOUTH SPEAKS IN THE MESH (iteration 92): the mesh
+                # half's evidence rides beside the counts - the speech
+                # keys, the program sampled at the identity clock with
+                # the mesh weights per sample, and the DETERMINISTIC
+                # hash (one law, two runtimes, bit-exact)
+                "mesh": speech_mesh_evidence(speech_visemes, duration_sec),
+            }
+            if speech_visemes
+            else None
+        )
         if hero:
             # THE SURFACE IS GRADED, NOT PAINTED (iteration 83): every
             # material is a layered surface built from its dye - the
