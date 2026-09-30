@@ -100,9 +100,9 @@ async function run() {
   check("A1 the pool worker mode stands (loopback socket, one boot, the clean-scene purge)",
     src.includes("def pool_worker_main") && src.includes("read_factory_settings(use_empty=True)")
     && src.includes("pool_ready_path") && src.includes("pool worker ready on"));
-  check("A2 the server dispatches warm above the proven cold path (the fallback never loses a job)",
+  check("A2 the server dispatches warm above the proven cold path (the fallback never loses a job; the wait watches the work - iteration 105's clip-loss laws live here)",
     src.includes("def _run_warm") && src.includes('"--worker", "--job", job_file')
-    && src.includes("settimeout(900)") && src.includes("cold fallback"));
+    && src.includes("WARM_STALE_S") && src.includes("warm worker went quiet") && src.includes("cold fallback"));
   check("A3 the pool's ledger counts jobs served warm (a respawn keeps the slot's lifetime count)",
     src.includes('prev_served = (self.pool.get(port) or {}).get("served", 0)')
     && src.includes('"served": prev_served'));

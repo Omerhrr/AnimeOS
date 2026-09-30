@@ -29,6 +29,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BRIDGE = os.path.join(ROOT, "bridges", "blender", "animeos_bridge.py")
 PORT = 8133
 BASE = f"http://127.0.0.1:{PORT}"
+# the pool base derives from the server port (iteration 105) - the
+# smoke's workers live on PORT+100 so a cohabiting resident on another
+# port never competes for them
+POOL_BASE = PORT + 100
 
 failures = 0
 
@@ -119,6 +123,22 @@ def main():
     check("S0 the blender binary stands", blender_bin is not None, str(bin_candidates))
 
     env = dict(os.environ, ANIMEOS_BLENDER_BIN=blender_bin or "")
+    # test hygiene: any leftover pool worker from an earlier lifetime
+    # (its ready file proves the pid) dies before this boot - a stale
+    # worker squatting on POOL_BASE would swallow this server's dispatch
+    for _f in os.listdir(os.path.join(ROOT, "public", "renders")) if os.path.isdir(os.path.join(ROOT, "public", "renders")) else []:
+        if _f.startswith(".pool-") and _f.endswith(".ready"):
+            try:
+                with open(os.path.join(ROOT, "public", "renders", _f)) as fh:
+                    _pid = int(fh.read().strip() or 0)
+                if _pid:
+                    os.kill(_pid, signal.SIGKILL)
+            except Exception:
+                pass
+            try:
+                os.unlink(os.path.join(ROOT, "public", "renders", _f))
+            except Exception:
+                pass
     server = subprocess.Popen(
         [sys.executable, BRIDGE, "--", "--port", str(PORT), "--pool", "1"],
         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -151,7 +171,7 @@ def main():
               r1["wall"] > 0 and r2["wall"] > 0, f"{r1['wall']:.1f}s vs {r2['wall']:.1f}s")
 
         # 4. the cold fallback: kill the worker; job 3 still completes
-        ready = os.path.join(ROOT, "public", "renders", ".pool-9410.ready")
+        ready = os.path.join(ROOT, "public", "renders", f".pool-{POOL_BASE}.ready")
         pid = None
         if os.path.exists(ready):
             with open(ready) as fh:
@@ -167,7 +187,7 @@ def main():
               st["pool"]["served"] == 2, json.dumps(st["pool"]))
     finally:
         # the pool worker is a detached Blender - kill it by its ready-file pid
-        for port in (9410,):
+        for port in (POOL_BASE,):
             ready = os.path.join(ROOT, "public", "renders", f".pool-{port}.ready")
             try:
                 with open(ready) as fh:

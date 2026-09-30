@@ -93,6 +93,8 @@ scripts/.e2e34-state.json
 # Generated render clips + cuts (regenerable, large)
 public/renders/*.mp4
 public/renders/.job-*.json
+public/renders/.pool-*.ready
+public/renders/.pool-*.log
 public/renders/.frames-*/
 !public/renders/cuts/.gitkeep
 public/renders/cuts/*

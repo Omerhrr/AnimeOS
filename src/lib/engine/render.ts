@@ -817,6 +817,18 @@ export async function tickRenderJob(jobId: string) {
             data: { status: "FAILED", stage: `Blender: ${prog.error}`.slice(0, 120), progress: 100, finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "workstation Cycles")) },
             include: { evaluation: true },
           });
+        } else if (!prog.mp4Base64 && !prog.pngBase64) {
+          // THE CLIP-LOSS BELT (iteration 105): a done answer with no
+          // error and no bytes is the residue of the race that lost a
+          // 903s render - the bridge concluded without a clip. The
+          // honest landing is a NAMED failure: FAILED re-queues, the
+          // wall counts in the ledger, the loss is named; a clipless
+          // REVIEW never re-ticks and the loss hides forever.
+          job = await db.renderJob.update({
+            where: { id: jobId },
+            data: { status: "FAILED", stage: "Blender: the bridge concluded without a clip - the loss is named, queue the render again".slice(0, 120), progress: 100, finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "workstation Cycles")) },
+            include: { evaluation: true },
+          });
         } else {
           const hasClip = Boolean(prog.mp4Base64) && fs.existsSync(path.join(process.cwd(), "public", "renders", `${job.id}.mp4`));
           job = await db.renderJob.update({

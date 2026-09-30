@@ -6055,6 +6055,11 @@ def worker_run(job_file):
         if not encode_ok:
             # Blender's own FFMPEG writer as the fallback
             try:
+                # flush BEFORE the writer runs - the wait's liveness law
+                # reads this file, and an unannounced quiet stretch here
+                # could read as a dead worker
+                state["stage"] = "Blender: encoding clip (blender writer)"
+                flush()
                 scn.render.image_settings.file_format = "FFMPEG"
                 scn.render.ffmpeg.format = "MPEG4"
                 scn.render.ffmpeg.codec = "H264"
@@ -6114,6 +6119,59 @@ def _recv_exact(conn, n):
             raise ConnectionError("pool socket closed early")
         buf += chunk
     return buf
+
+
+# ── THE CLIP-LOSS LAWS (iteration 105) ──
+# The render night lost a 903s clip to a chain of quiet lies: a flat
+# 900s socket wait gave up on a HEALTHY warm worker, the finalize then
+# marked the mid-render job file done with NO error and NO clip, and
+# the tick landed a clipless REVIEW it never revisits. Three helpers
+# carry the fix: the stale law (how quiet a job file may go before the
+# worker counts as gone), the liveness read (seconds since the last
+# per-frame flush), and the cold budget (a spawn cap scaled to the
+# job's own frame count, so long-but-honest renders never die mid-run).
+
+WARM_STALE_S = max(60, int(os.environ.get("ANIMEOS_WARM_STALE_S", "600") or 600))
+
+
+def _job_file_quiet_s(job_file):
+    """Seconds since the job file was last flushed (a big number when
+    unreadable - an unreadable file is never proof of life)."""
+    try:
+        return max(0.0, time.time() - os.path.getmtime(job_file))
+    except Exception:  # noqa: BLE001
+        return float(WARM_STALE_S) + 1.0
+
+
+def _job_frames(job_file):
+    """The job's own frame count from its payload (the same clamps the
+    worker applies), 72 when unreadable - the historical median shot."""
+    try:
+        with open(job_file, "r", encoding="utf-8") as fh:
+            payload = (json.load(fh) or {}).get("payload", {})
+        shot = payload.get("shot", {}) if isinstance(payload.get("shot"), dict) else {}
+        project = payload.get("project", {}) if isinstance(payload.get("project"), dict) else {}
+        duration = min(30.0, max(0.8, float(shot.get("duration", 3.0) or 3.0)))
+        fps = min(60, max(1, int(project.get("fps", 24) or 24)))
+        return max(2, round(duration * fps))
+    except Exception:  # noqa: BLE001
+        return 72
+
+
+def cold_budget_s(job_file, payload=None):
+    """The cold spawn's own cap: 600s of build/encode headroom plus
+    30s per frame (the contended worst proven cost, doubled)."""
+    try:
+        frames = _job_frames(job_file)
+        if payload is None:
+            return 600 + frames * 30
+        shot = payload.get("shot", {}) if isinstance(payload.get("shot"), dict) else {}
+        project = payload.get("project", {}) if isinstance(payload.get("project"), dict) else {}
+        duration = min(30.0, max(0.8, float(shot.get("duration", 3.0) or 3.0)))
+        fps = min(60, max(1, int(project.get("fps", 24) or 24)))
+        return 600 + max(2, round(duration * fps)) * 30
+    except Exception:  # noqa: BLE001
+        return 600 + 72 * 30
 
 
 def pool_ready_path(port):
@@ -6179,7 +6237,7 @@ def pool_worker_main(port):
 # ═══ SERVER MODE (plain python; bpy NOT required) ═════════════
 
 class BridgeServer:
-    def __init__(self, blender_bin, pool_size=0):
+    def __init__(self, blender_bin, pool_size=0, port=8100):
         self.lock = threading.RLock()  # re-entrant: submit -> _free_worker_port -> _spawn_worker
         self.jobs = {}  # job_id -> {"jobFile", "mp4Cache", "done"}
         self.current = None
@@ -6190,7 +6248,11 @@ class BridgeServer:
         # loaded bpy once and wait for payloads on private loopback
         # sockets. port -> {"proc", "busy", "dead", "served", "attempts"}
         self.pool = {}
-        self.pool_base = 9410
+        # the pool base DERIVES from the server's own port (iteration
+        # 105): two bridge servers on one box must never compete for the
+        # same worker ports (the pool smoke on :8133 and the resident on
+        # :8101 both landing on 9410 lost jobs to the collision)
+        self.pool_base = port + 100
         self.pool_size = max(0, int(pool_size or 0))
         self.cold_workers = 0  # cold spawns in flight (the proven fallback path)
         if self.pool_size > 0:
@@ -6295,11 +6357,29 @@ class BridgeServer:
         result = {"ok": False, "error": "warm dispatch failed", "mp4Path": None, "served": 0, "ms": None}
         try:
             sock = socket.create_connection(("127.0.0.1", port), timeout=30)
-            sock.settimeout(900)  # the render itself may take minutes (the cold path's own cap)
+            sock.settimeout(60)
             blob = json.dumps({"jobId": job_id, "payload": payload, "outDir": render_dir(), "jobFile": job_file}).encode("utf-8")
             sock.sendall(len(blob).to_bytes(8, "little") + blob)
-            header = _recv_exact(sock, 8)
-            result = json.loads(_recv_exact(sock, int.from_bytes(header, "little")).decode("utf-8"))
+            # THE WAIT WATCHES THE WORK (iteration 105, the clip-loss
+            # law): the worker sends NOTHING until the render concludes,
+            # so a flat socket timeout cannot tell a slow render from a
+            # dead one - the flat 900s gave up on a HEALTHY worker
+            # mid-render and the finalize's silent done lost a 903s
+            # clip. The job file is the liveness truth: the worker
+            # flushes per-frame progress there, so a fresh mtime means
+            # the render is alive - the wait keeps waiting; a file quiet
+            # past WARM_STALE_S means the worker is genuinely gone.
+            sock.settimeout(15)
+            while True:
+                try:
+                    header = _recv_exact(sock, 8)
+                    result = json.loads(_recv_exact(sock, int.from_bytes(header, "little")).decode("utf-8"))
+                    break
+                except (socket.timeout, TimeoutError):
+                    quiet = _job_file_quiet_s(job_file)
+                    if quiet < WARM_STALE_S:
+                        continue
+                    raise RuntimeError(f"warm worker went quiet: no job-file progress for {quiet:.0f}s (stale law {WARM_STALE_S}s)")
             sock.close()
         except Exception as exc:  # noqa: BLE001
             with self.lock:
@@ -6307,9 +6387,12 @@ class BridgeServer:
                 if w is not None:
                     w["dead"] = True
             try:
+                # the cold fallback's own cap scales with the JOB'S OWN
+                # frame budget (a flat 900s killed long renders that
+                # were still honestly running)
                 subprocess.run(
                     [self.blender_bin, "-b", "-P", self.script_path, "--", "--worker", "--job", job_file],
-                    capture_output=True, text=True, timeout=900,
+                    capture_output=True, text=True, timeout=cold_budget_s(job_file, payload),
                 )
                 result = {"ok": True, "error": None, "mp4Path": None, "served": 0, "ms": None, "fallback": "cold"}
             except Exception as exc2:  # noqa: BLE001
@@ -6321,18 +6404,22 @@ class BridgeServer:
                     w["busy"] = False
                     if result.get("ok"):
                         w["served"] = w.get("served", 0) + 1
-        # finalize the job file exactly like the cold path's finally
+        # finalize the job file exactly like the cold path's finally -
+        # THE FINALIZE NEVER LIES (iteration 105, the clip-loss law):
+        # a job the worker never concluded is marked done WITH an honest
+        # error, because a silent clipless done is the lie that landed a
+        # 903s render as a clipless REVIEW the tick never revisits; a
+        # NAMED failure re-queues, the loss is counted, nothing hides.
         try:
             with open(job_file, "r", encoding="utf-8") as fh:
                 state = json.load(fh)
-            state.setdefault("done", True)
             if not state.get("done"):
                 state["done"] = True
-                state.setdefault("error", result.get("error") or "worker exited unexpectedly")
-            if result.get("error") and not state.get("error"):
+                err = result.get("error") or "worker exited unexpectedly"
+                state["error"] = err
+                state["stage"] = f"Blender worker: failed - {err}"
+            elif result.get("error") and not state.get("error"):
                 state["error"] = result["error"]
-            if result.get("mp4Path") and not state.get("mp4Path"):
-                state["mp4Path"] = result["mp4Path"]
             tmp = job_file + ".tmp"
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(state, fh)
@@ -6344,20 +6431,31 @@ class BridgeServer:
         entry = self.jobs.get(job_id)
         try:
             cmd = [self.blender_bin, "-b", "-P", self.script_path, "--", "--worker", "--job", job_file]
-            subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            # the cold spawn's cap scales with the JOB'S OWN frame
+            # budget - a flat 900s killed long-but-honest renders
+            subprocess.run(cmd, capture_output=True, text=True, timeout=cold_budget_s(job_file))
         except Exception:  # noqa: BLE001
             traceback.print_exc()
         finally:
-            with open(job_file, "r", encoding="utf-8") as fh:
-                state = json.load(fh)
-            state.setdefault("done", True)
-            if not state.get("done"):
-                state["done"] = True
-                state.setdefault("error", "worker exited unexpectedly")
-            tmp = job_file + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(state, fh)
-            os.replace(tmp, job_file)
+            # THE FINALIZE NEVER LIES (iteration 105, the clip-loss law):
+            # a worker that never concluded is marked done WITH an honest
+            # error - the old setdefault marked a mid-render file done
+            # with no error and no clip, and the tick landed a clipless
+            # REVIEW it never revisits. A named failure re-queues.
+            try:
+                with open(job_file, "r", encoding="utf-8") as fh:
+                    state = json.load(fh)
+                if not state.get("done"):
+                    state["done"] = True
+                    if not state.get("error"):
+                        state["error"] = "worker exited unexpectedly"
+                    state["stage"] = f"Blender worker: failed - {state['error']}"
+                tmp = job_file + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(state, fh)
+                os.replace(tmp, job_file)
+            except Exception:  # noqa: BLE001
+                pass
             with self.lock:
                 self.current = None
 
@@ -6379,14 +6477,18 @@ class BridgeServer:
                     with open(state["mp4Path"], "rb") as fh:
                         entry["mp4Cache"] = base64.b64encode(fh.read()).decode("ascii")
                 except Exception:  # noqa: BLE001
-                    entry["mp4Cache"] = ""
+                    # THE CACHE NEVER POISONS (iteration 105): a failed
+                    # read stays None and retries on the next poll - the
+                    # old "" cache turned one transient miss into a
+                    # PERMANENT clipless done answer
+                    pass
             if entry["mp4Cache"]:
                 out["mp4_base64"] = entry["mp4Cache"]
         return out, 200
 
 
 def run_server(port, blender_bin, pool_size=0):
-    bridge = BridgeServer(blender_bin, pool_size=pool_size)
+    bridge = BridgeServer(blender_bin, pool_size=pool_size, port=port)
     bridge.probe_version()
 
     class Handler(BaseHTTPRequestHandler):
