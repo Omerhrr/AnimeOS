@@ -792,6 +792,86 @@ def normalize_grammar(raw):
     return beats
 
 
+SHOT_DIRECTIVE_VERSION = 98
+
+
+def shot_directive_key(shot):
+    """THE SHOTDIRECTIVE COMPILER (iteration 98): the shot's directed
+    intent as ONE canonical key - the movement, the resolved pose
+    pair, the duration, the lighting, the grammar's NORMALIZED beats
+    (the same all-or-nothing law the camera plays), the fx and
+    physics program counts + kinds, the cloth/flesh intensities, the
+    speech lines, the presence of the parsed sub-programs. Mirrors
+    shotDirectiveKey in shot-directive.ts field for field (one law,
+    two runtimes at the SHOT level)."""
+    mv = str(shot.get("movement") or "").strip().upper() or "-"
+    ps = normalize_pose(shot.get("poseStart"))
+    pe = normalize_pose(shot.get("poseEnd"))
+    if ps and pe:
+        poses = f"{ps}->{pe}"
+    elif ps or pe:
+        poses = ps or pe
+    else:
+        poses = "-"
+    dur = "{:.3f}".format(float(shot.get("duration") or 0))
+    light = str(shot.get("lighting") or "").strip().lower() or "-"
+    g = normalize_grammar(shot.get("grammar"))
+    if g:
+        moves = "+".join(b["move"] for b in g)
+        wind_sum = sum(b["wind"] or 0.0 for b in g)
+        pose_beats = sum(1 for b in g if normalize_pose(b.get("poseStart")) or normalize_pose(b.get("poseEnd")))
+        gr = f"{len(g)}:{moves}:{wind_sum:.1f}:{pose_beats}"
+    else:
+        gr = "-"
+
+    def programs(key):
+        raw = shot.get(key)
+        if not isinstance(raw, list) or len(raw) == 0:
+            return "-"
+        kinds = sorted({str(p.get("kind") or "").strip().lower() for p in raw if isinstance(p, dict)} - {""})
+        return f"{len(raw)}:{'+'.join(kinds)}"
+
+    fx = programs("fx")
+    ph = programs("physics")
+    cloth = "{:.3f}".format(float(shot["cloth"])) if isinstance(shot.get("cloth"), (int, float)) and not isinstance(shot.get("cloth"), bool) else "-"
+    flesh = "{:.3f}".format(float(shot["flesh"])) if isinstance(shot.get("flesh"), (int, float)) and not isinstance(shot.get("flesh"), bool) else "-"
+    sp = shot.get("speech")
+    speech = str(int((sp or {}).get("lines", 0) or 0)) if isinstance(sp, dict) else "-"
+    expr = 1 if shot.get("expression") else 0
+    comp = 1 if shot.get("comp") else 0
+    clothd = 1 if shot.get("clothDirective") else 0
+    camchoreo = 1 if shot.get("cameraChoreo") else 0
+    choreo = 1 if shot.get("choreo") else 0
+    return (f"98|mv={mv}|poses={poses}|dur={dur}|light={light}"
+            f"|gr={gr}|fx={fx}|ph={ph}"
+            f"|cloth={cloth}|flesh={flesh}|speech={speech}"
+            f"|expr={expr}|comp={comp}|clothd={clothd}|camchoreo={camchoreo}|choreo={choreo}|v1")
+
+
+def shot_directive_hash(shot):
+    """The DETERMINISTIC directive hash - sha256-16 over the canonical
+    key (mirrors compileShotDirective in shot-directive.ts)."""
+    return hashlib.sha256(shot_directive_key(shot).encode("utf-8")).hexdigest()[:16]
+
+
+def shot_directive_sections(shot):
+    """The readable sections the state names beside the hashes."""
+    g = normalize_grammar(shot.get("grammar"))
+    mv = str(shot.get("movement") or "").strip().upper() or "-"
+    ps = normalize_pose(shot.get("poseStart"))
+    pe = normalize_pose(shot.get("poseEnd"))
+    return {
+        "movement": mv,
+        "poses": (f"{ps}->{pe}" if ps and pe else (ps or pe or "-")),
+        "grammarBeats": len(g) if g else 0,
+        "expression": 1 if shot.get("expression") else 0,
+        "comp": 1 if shot.get("comp") else 0,
+        "clothDirective": 1 if shot.get("clothDirective") else 0,
+        "cameraChoreo": 1 if shot.get("cameraChoreo") else 0,
+        "choreo": 1 if shot.get("choreo") else 0,
+    }
+
+
 def _beat_at(beats, t):
     """The active beat for progress t (the last beat catches t=1)."""
     for i, b in enumerate(beats):
@@ -5102,6 +5182,21 @@ def worker_run(job_file):
                 "beatPoses": sum(1 for b in grammar if normalize_pose(b.get("poseStart")) or normalize_pose(b.get("poseEnd"))),
                 "windBeats": sum(1 for b in grammar if b.get("wind")),
             }
+        # ── THE SHOTDIRECTIVE COMPILER (iteration 98): the worker
+        #    re-compiles the directive from the ARRIVED payload and
+        #    names BOTH hashes - the arrived wire is what the studio
+        #    compiled, or the mismatch names itself. The payload
+        #    without a hash (a legacy driver) still names its own
+        #    derivation, honestly unmatched. ──
+        _d_hash = shot_directive_hash(shot)
+        _d_expected = shot.get("directiveHash")
+        state["shotDirective"] = {
+            "hash": _d_hash,
+            "expected": _d_expected,
+            "match": True if _d_expected is None else (_d_hash == _d_expected),
+            "lawVersion": SHOT_DIRECTIVE_VERSION,
+            "sections": shot_directive_sections(shot),
+        }
         figure = None
         eclip = None  # THE FACE PERFORMS THE BEAT: the hero's clip (None = pose-driven)
         speech_visemes = parse_speech(shot)

@@ -27,6 +27,7 @@ import { parseExpressionClip } from "@/lib/blender/expressions";
 import { parseCompProfile } from "@/lib/blender/comp";
 import { parseClothDirective } from "@/lib/blender/cloth-directive";
 import { parseCameraChoreo } from "@/lib/blender/camera-choreo";
+import { compileShotDirective } from "@/lib/shot-directive";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
 import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
@@ -402,6 +403,32 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       },
       mode,
     };
+    // ── THE SHOTDIRECTIVE COMPILER (iteration 98): the shot's
+    //    directed intent compiles into ONE canonical directive under
+    //    one deterministic hash (sha256-16, versioned 98). The hash
+    //    rides the payload; the worker re-compiles from the ARRIVED
+    //    payload with its own mirror and names both - the wire is
+    //    what the studio compiled, or the mismatch names itself. ──
+    const directive = compileShotDirective({
+      movement: shot.movement,
+      poseStart: shot.poseStart,
+      poseEnd: shot.poseEnd,
+      duration: shot.duration,
+      lighting: shot.lighting,
+      grammar: shot.grammar,
+      fx: shot.fx,
+      physics: shot.physics,
+      choreo: shot.choreo,
+      cloth: shot.cloth ?? null,
+      flesh: shot.flesh ?? null,
+      speechLines: speech ? (speechPayload(speech)?.lines ?? null) : null,
+      expressionPresent: cast.length > 0 && Boolean(parseExpressionClip(shot.description, shot.poseStart, shot.poseEnd)),
+      compPresent: cast.length > 0,
+      clothDirectivePresent: cast.length > 0,
+      cameraChoreoPresent: cast.length > 0,
+    });
+    (payload.shot as Record<string, unknown>).directiveHash = directive.hash;
+    console.log(`[shot-directive] ${directive.hash} ${directive.key}`);
     const submit = await submitRenderJob(payload);
     if (submit.submitted) {
       driver = submit.path === "local" ? "BLENDER_LOCAL" : "BLENDER";
