@@ -299,7 +299,13 @@ export async function ensureResident(): Promise<boolean> {
     // it); stdio streams straight into the log file (no pipes to a
     // parent that may be gone)
     const logFd = fs.openSync(RESIDENT_LOG, "a");
-    const child = spawn(bin, ["-b", "-P", script, "--", "--port", String(RESIDENT_PORT)], {
+    // THE WARM POOL (iteration 103): the resident boots N resident
+    // pool workers (default 2) that load bpy once and wait for job
+    // payloads on loopback sockets - the per-job cold boot is paid
+    // once per worker lifetime instead of once per shot. Set
+    // ANIMEOS_BRIDGE_WORKERS=0 to run the proven cold-spawn path only.
+    const poolSize = Math.max(0, Math.round(Number(process.env.ANIMEOS_BRIDGE_WORKERS ?? "2")) || 0);
+    const child = spawn(bin, ["-b", "-P", script, "--", "--port", String(RESIDENT_PORT), "--pool", String(poolSize)], {
       stdio: ["ignore", logFd, logFd],
       detached: true,
       env: { ...process.env, ANIMEOS_BLENDER_BIN: bin },

@@ -1882,3 +1882,22 @@ The voice pipeline paid the TTS provider for the SAME take over and over: a re-r
 
 Stage Summary:
 - The audio stem is remembered: an unchanged dialogue cue costs the pipeline ZERO provider calls, a 429 storm backs off instead of halting the batch, and the viseme manifest rides the stem it was derived from
+
+---
+## Iteration 103 - THE WORKERS STAY WARM (2026-10-01)
+
+v3 spawned a FRESH `blender -b` subprocess per job: a crashed worker could never poison the server and every job got a clean scene, but every job paid Blender's full cold boot before the first frame. The law: the boot is paid ONCE per worker lifetime, not once per shot.
+
+- `--pool-worker --pw-port W` (NEW worker mode): a long-lived headless Blender that imports bpy once, waits for length-prefixed job payloads on a private loopback socket, renders through the SAME `worker_run` core (the per-frame progress JSON the /progress endpoint polls is unchanged), sends the outcome back BEFORE its clean-scene purge (`bpy.ops.wm.read_factory_settings(use_empty=True)` - the clean-scene guarantee holds, and the result is never lost to a purge crash), and waits for the next payload
+- A ready-file (`.pool-<port>.ready`) proves the boot finished - a booting slot is never dispatched
+- The server dispatches warm ABOVE the proven cold path: a free warm slot takes the job; a dispatch failure marks the slot dead AND falls back to the cold spawn for the same job file (a dead warm worker never loses a job); dead slots respawn bounded (5) with the slot's lifetime served count preserved; the socket wait honors the cold path's own 900s cap
+- `/status` names the pool (size/alive/free/busy/served); `busy` reads true only when no warm slot AND no cold slot is free
+- The resident boots the pool by default (2; `ANIMEOS_BRIDGE_WORKERS` overrides, 0 = cold-only)
+- Smoke `scripts/blender-pool-smoke.py` ALL GREEN over real renders (the one-time boot, served=2 on the SAME worker, a killed worker's job completed by the cold fallback, the pool ledger untouched by the cold job)
+- E2E `scripts/e2e-iter103-warmworkers.ts` ALL GREEN in two phases (three REAL renders over the resident: the first may honestly ride cold while the workers boot, the second and third ride WARM - served 1 -> 2; exact cleanup)
+- Honest catches: `--pool-worker` initially read the server's `--port` flag (a rogue server on 9410); the RLock law (submit -> _free_worker_port -> _spawn_worker re-enters the lock); the purge-before-result ordering lost a job's outcome; a respawn wiped the slot's served count - the ledger counts JOBS SERVED WARM, not worker processes
+- Neighbor phase-a halves re-run ALL GREEN (iter99, iter100, iter102)
+- Gates: src tsc clean, eslint clean, py_compile clean
+
+Stage Summary:
+- The workers stay warm: per-shot initialization latency drops from a full Blender cold boot to a socket send, the proven cold spawn remains the fallback that never loses a job, and the pool's reuse ledger names itself

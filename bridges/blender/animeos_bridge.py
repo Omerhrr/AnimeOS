@@ -113,6 +113,7 @@ import math
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -6081,16 +6082,160 @@ def worker_run(job_file):
         fail(exc)
 
 
+# ═══ WARM POOL WORKERS (iteration 103: THE WORKERS STAY WARM) ═══
+#
+# v3 spawned a FRESH `blender -b -P ... --worker` subprocess per job:
+# a crashed worker could never poison the server and every job got a
+# clean scene, but every job also paid Blender's FULL cold boot
+# (binary start, module init, memory allocation) before the first
+# frame. The pool keeps WARM resident workers instead: each one is a
+# long-lived headless Blender that loads bpy ONCE, then waits for job
+# payloads on a private loopback socket - the boot is paid once per
+# worker lifetime, not once per shot.
+#
+#   --pool-worker --port W   (spawned by the server; one per slot)
+#
+# Protocol (length-prefixed JSON over 127.0.0.1:W):
+#   -> {"jobId", "payload", "outDir", "jobFile"}   one render job
+#   <- {"ok", "error"?, "mp4Path"?, "served", "ms"} the outcome
+# The worker renders through the SAME worker_run path the cold
+# spawn uses (the per-frame progress JSON the /progress endpoint
+# polls is unchanged), then reads the factory settings back to an
+# EMPTY scene - every job still gets a clean scene, a crashed job
+# still cannot poison the next one - and waits for the next payload.
+# A ready-file (.pool-<port>.ready) tells the server when the worker
+# is actually listening, so a booting slot is never dispatched.
+
+def _recv_exact(conn, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = conn.recv(n - len(buf))
+        if not chunk:
+            raise ConnectionError("pool socket closed early")
+        buf += chunk
+    return buf
+
+
+def pool_ready_path(port):
+    return os.path.join(render_dir(), f".pool-{port}.ready")
+
+
+def pool_worker_main(port):
+    import bpy  # noqa: F401 - the WHOLE point: loaded once, warm for the worker's lifetime
+
+    served = 0
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", port))
+    srv.listen(2)
+    ready = pool_ready_path(port)
+    try:
+        os.makedirs(os.path.dirname(ready), exist_ok=True)
+        with open(ready, "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+    except Exception:  # noqa: BLE001
+        ready = None
+    print(f"[animeos-bridge] pool worker ready on 127.0.0.1:{port}", flush=True)
+
+    while True:
+        conn, _addr = srv.accept()
+        result = {"ok": False, "error": "unknown", "served": served, "ms": None}
+        try:
+            length = int.from_bytes(_recv_exact(conn, 8), "little")
+            job = json.loads(_recv_exact(conn, length).decode("utf-8"))
+            t0 = time.time()
+            worker_run(job["jobFile"])  # the proven render path, unchanged
+            with open(job["jobFile"], "r", encoding="utf-8") as fh:
+                state = json.load(fh)
+            served += 1
+            result = {
+                "ok": not state.get("error"),
+                "error": state.get("error"),
+                "mp4Path": state.get("mp4Path"),
+                "served": served,
+                "ms": int((time.time() - t0) * 1000),
+            }
+        except Exception as exc:  # noqa: BLE001
+            served += 1
+            result = {"ok": False, "error": f"pool worker crashed: {exc}", "served": served, "ms": None}
+        # the outcome goes back FIRST - the clean-scene purge must never
+        # cost the job its result
+        try:
+            blob = json.dumps(result).encode("utf-8")
+            conn.sendall(len(blob).to_bytes(8, "little") + blob)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            # the clean-scene guarantee: the next job opens an EMPTY scene
+            bpy.ops.wm.read_factory_settings(use_empty=True)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 # ═══ SERVER MODE (plain python; bpy NOT required) ═════════════
 
 class BridgeServer:
-    def __init__(self, blender_bin):
-        self.lock = threading.Lock()
+    def __init__(self, blender_bin, pool_size=0):
+        self.lock = threading.RLock()  # re-entrant: submit -> _free_worker_port -> _spawn_worker
         self.jobs = {}  # job_id -> {"jobFile", "mp4Cache", "done"}
         self.current = None
         self.blender_bin = blender_bin
         self.blender_version = None
         self.script_path = os.path.abspath(__file__)
+        # THE WARM POOL (iteration 103): resident Blender workers that
+        # loaded bpy once and wait for payloads on private loopback
+        # sockets. port -> {"proc", "busy", "dead", "served", "attempts"}
+        self.pool = {}
+        self.pool_base = 9410
+        self.pool_size = max(0, int(pool_size or 0))
+        self.cold_workers = 0  # cold spawns in flight (the proven fallback path)
+        if self.pool_size > 0:
+            threading.Thread(target=self._boot_pool, args=(self.pool_size,), daemon=True).start()
+
+    def _boot_pool(self, size):
+        for i in range(size):
+            self._spawn_worker(self.pool_base + i)
+
+    def _spawn_worker(self, port):
+        cmd = [self.blender_bin, "-b", "-P", self.script_path, "--", "--pool-worker", "--pw-port", str(port)]
+        try:
+            log_path = os.path.join(render_dir(), f".pool-{port}.log")
+            log_fh = open(log_path, "a", encoding="utf-8")
+            proc = subprocess.Popen(cmd, stdout=log_fh, stderr=log_fh)
+        except Exception:  # noqa: BLE001
+            return
+        with self.lock:
+            # a respawn keeps the SLOT's lifetime served count - the pool's
+            # reuse ledger counts JOBS SERVED WARM, not worker processes
+            prev_served = (self.pool.get(port) or {}).get("served", 0)
+            prev_attempts = (self.pool.get(port) or {}).get("attempts", 0) + 1
+            self.pool[port] = {"proc": proc, "busy": False, "dead": False, "served": prev_served, "attempts": prev_attempts}
+
+    def _free_worker_port(self):
+        # a slot is FREE when it is alive, not busy, and actually
+        # listening (the ready-file proves the boot finished)
+        for port, w in sorted(self.pool.items()):
+            if w["busy"] or w["dead"]:
+                continue
+            if w["proc"].poll() is not None:
+                w["dead"] = True
+                try:
+                    os.unlink(pool_ready_path(port))
+                except Exception:  # noqa: BLE001
+                    pass
+                continue
+            if not os.path.exists(pool_ready_path(port)):
+                continue  # still booting - the cold path takes this job
+            return port
+        # respawn dead slots in the background (bounded per port)
+        for port, w in list(self.pool.items()):
+            if w["dead"] and w.get("attempts", 1) < 5:
+                self._spawn_worker(port)
+        return None
 
     def probe_version(self):
         try:
@@ -6102,26 +6247,98 @@ class BridgeServer:
 
     def status(self):
         with self.lock:
-            busy = self.current is not None
+            warm_total = len(self.pool)
+            warm_busy = sum(1 for _port, w in self.pool.items() if w["busy"])
+            warm_free = sum(1 for port, w in self.pool.items() if not w["busy"] and not w["dead"] and os.path.exists(pool_ready_path(port)))
+            warm_alive = sum(1 for _port, w in self.pool.items() if not w["dead"])
+            served = sum(w.get("served", 0) for _port, w in self.pool.items())
+            cold_free = self.current is None and self.cold_workers == 0
+            busy = not (warm_free > 0 or cold_free)
+            pool = {"size": warm_total, "alive": warm_alive, "free": warm_free, "busy": warm_busy, "served": served}
         return {
             "ok": True,
             "blender_version": self.blender_version or "unknown",
-            "scene": "AnimeOS sequence worker pool",
+            "scene": f"warm {pool['free']}/{pool['size']} - served {pool['served']}" if warm_total else "AnimeOS sequence worker pool",
             "busy": busy,
+            "pool": pool,
         }
 
     def submit(self, payload):
         job_id = str(payload.get("jobId") or f"job_{int(time.time())}")
         with self.lock:
-            if self.current is not None:
-                return {"error": "busy", "current_job": self.current}, 409
-            self.current = job_id
+            port = self._free_worker_port() if self.pool_size > 0 else None
+            warm = port is not None
+            if not warm:
+                # the proven cold path, unchanged: one spawn at a time
+                if self.current is not None or self.cold_workers > 0:
+                    return {"error": "busy", "current_job": self.current}, 409
+                self.current = job_id
+            if warm:
+                self.pool[port]["busy"] = True
             job_file = os.path.join(render_dir(), f".job-{job_id}.json")
             self.jobs[job_id] = {"jobFile": job_file, "mp4Cache": None, "done": False}
         with open(job_file, "w", encoding="utf-8") as fh:
             json.dump({"jobId": job_id, "payload": payload, "outDir": render_dir()}, fh)
+        if warm:
+            threading.Thread(target=self._run_warm, args=(job_id, job_file, payload, port), daemon=True).start()
+            return {"ok": True, "jobId": job_id, "worker": "warm"}, 200
         threading.Thread(target=self._run_worker, args=(job_id, job_file), daemon=True).start()
-        return {"ok": True, "jobId": job_id}, 200
+        return {"ok": True, "jobId": job_id, "worker": "cold"}, 200
+
+    def _run_warm(self, job_id, job_file, payload, port):
+        # dispatch the payload to the WARM worker over its socket; the
+        # worker renders through the same worker_run core and the job
+        # file keeps the per-frame progress /progress already polls.
+        # ANY warm failure marks the slot dead AND falls back to the
+        # proven cold spawn for the SAME job file - a dead warm worker
+        # never loses a job.
+        result = {"ok": False, "error": "warm dispatch failed", "mp4Path": None, "served": 0, "ms": None}
+        try:
+            sock = socket.create_connection(("127.0.0.1", port), timeout=30)
+            sock.settimeout(900)  # the render itself may take minutes (the cold path's own cap)
+            blob = json.dumps({"jobId": job_id, "payload": payload, "outDir": render_dir(), "jobFile": job_file}).encode("utf-8")
+            sock.sendall(len(blob).to_bytes(8, "little") + blob)
+            header = _recv_exact(sock, 8)
+            result = json.loads(_recv_exact(sock, int.from_bytes(header, "little")).decode("utf-8"))
+            sock.close()
+        except Exception as exc:  # noqa: BLE001
+            with self.lock:
+                w = self.pool.get(port)
+                if w is not None:
+                    w["dead"] = True
+            try:
+                subprocess.run(
+                    [self.blender_bin, "-b", "-P", self.script_path, "--", "--worker", "--job", job_file],
+                    capture_output=True, text=True, timeout=900,
+                )
+                result = {"ok": True, "error": None, "mp4Path": None, "served": 0, "ms": None, "fallback": "cold"}
+            except Exception as exc2:  # noqa: BLE001
+                result = {"ok": False, "error": f"warm worker failed: {exc}; cold fallback failed: {exc2}", "mp4Path": None, "served": 0, "ms": None}
+        finally:
+            with self.lock:
+                w = self.pool.get(port)
+                if w is not None:
+                    w["busy"] = False
+                    if result.get("ok"):
+                        w["served"] = w.get("served", 0) + 1
+        # finalize the job file exactly like the cold path's finally
+        try:
+            with open(job_file, "r", encoding="utf-8") as fh:
+                state = json.load(fh)
+            state.setdefault("done", True)
+            if not state.get("done"):
+                state["done"] = True
+                state.setdefault("error", result.get("error") or "worker exited unexpectedly")
+            if result.get("error") and not state.get("error"):
+                state["error"] = result["error"]
+            if result.get("mp4Path") and not state.get("mp4Path"):
+                state["mp4Path"] = result["mp4Path"]
+            tmp = job_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(state, fh)
+            os.replace(tmp, job_file)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _run_worker(self, job_id, job_file):
         entry = self.jobs.get(job_id)
@@ -6168,8 +6385,8 @@ class BridgeServer:
         return out, 200
 
 
-def run_server(port, blender_bin):
-    bridge = BridgeServer(blender_bin)
+def run_server(port, blender_bin, pool_size=0):
+    bridge = BridgeServer(blender_bin, pool_size=pool_size)
     bridge.probe_version()
 
     class Handler(BaseHTTPRequestHandler):
@@ -6216,7 +6433,7 @@ def run_server(port, blender_bin):
 
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(f"[animeos-bridge] serving on 127.0.0.1:{port} (workers via {blender_bin})", flush=True)
+    print(f"[animeos-bridge] serving on 127.0.0.1:{port} (workers via {blender_bin}, pool {pool_size})", flush=True)
     try:
         while True:
             time.sleep(3600)
@@ -6233,8 +6450,15 @@ def main():
     parser.add_argument("--port", type=int, default=PORT_DEFAULT)
     parser.add_argument("--worker", action="store_true")
     parser.add_argument("--job", type=str, default=None)
+    parser.add_argument("--pool", type=int, default=0, help="warm pool size (resident Blender workers)")
+    parser.add_argument("--pool-worker", action="store_true")
+    parser.add_argument("--pw-port", type=int, default=None, help="pool worker socket port")
     args, _ = parser.parse_known_args(extra)
     port = args.port
+
+    if args.pool_worker and args.pw_port:
+        pool_worker_main(args.pw_port)
+        return
 
     if args.worker and args.job:
         worker_run(args.job)
@@ -6251,7 +6475,8 @@ def main():
         print("[animeos-bridge] no blender binary found - set ANIMEOS_BLENDER_BIN", flush=True)
         sys.exit(1)
 
-    run_server(port, blender_bin)
+    pool_size = max(0, args.pool)
+    run_server(port, blender_bin, pool_size=pool_size)
 
 
 if __name__ == "__main__":
