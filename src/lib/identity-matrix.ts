@@ -348,32 +348,28 @@ export function identityMatrixLine(m: IdentityMatrixData): string {
   ].join(" | ");
 }
 
-// ── the loader (the production's REAL readings, rolled) ──
+// ── the loaders (the production's REAL readings, rolled) ──
 
-/**
- * Roll the production's persisted identity readings into the matrix.
- * The readings are the SAME per-character entries the cast standing
- * reads (each IdentityScore row carries every scored member's own
- * similarity) - no new vision calls here; run measure_identity_bar /
- * scoreProjectIdentity to earn readings first. Each reading's five
- * axis buckets derive purely from its own shot row (the framing from
- * the shot type, the yaw from the movement, the expression from the
- * shot's own drama the same law the payload rides, the lighting from
- * the light words, the state from the staged pose). Cast members
- * with no readings ride along as unscored members - the matrix names
- * them, never drops them.
- */
-export async function identityMatrixData(projectId: string, source: IdentitySource = "RENDER"): Promise<IdentityMatrixData> {
-  const [project, scoreRows] = await Promise.all([
-    db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true } } } }),
-    db.identityScore.findMany({
-      where: { projectId, source },
-      include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
-    }),
-  ]);
-  const floor = source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
-  const cast = project?.characters ?? [];
-  const idByName = new Map(cast.map((c) => [c.name, c.id] as const));
+/** The structural shape a loaded IdentityScore row must carry (the
+ *  prisma include chain both loaders share). */
+interface ScoreRowWithShot {
+  shotId: string;
+  scores: string;
+  shot: {
+    number: number;
+    shotType: string | null;
+    movement: string | null;
+    description: string | null;
+    poseStart: string | null;
+    poseEnd: string | null;
+    lighting: string | null;
+    scene: { number: number; episode: { number: number } };
+  };
+}
+
+/** The shared row mapper: persisted IdentityScore rows -> matrix
+ *  rows (the five buckets derived per reading from its own shot). */
+function scoreRowsToMatrixRows(scoreRows: ScoreRowWithShot[], idByName: Map<string, string>): MatrixReadingRow[] {
   const rows: MatrixReadingRow[] = [];
   for (const row of scoreRows) {
     let entries: IdentityScoreEntry[] = [];
@@ -401,6 +397,34 @@ export async function identityMatrixData(projectId: string, source: IdentitySour
       });
     }
   }
+  return rows;
+}
+
+/**
+ * Roll the production's persisted identity readings into the matrix.
+ * The readings are the SAME per-character entries the cast standing
+ * reads (each IdentityScore row carries every scored member's own
+ * similarity) - no new vision calls here; run measure_identity_bar /
+ * scoreProjectIdentity to earn readings first. Each reading's five
+ * axis buckets derive purely from its own shot row (the framing from
+ * the shot type, the yaw from the movement, the expression from the
+ * shot's own drama the same law the payload rides, the lighting from
+ * the light words, the state from the staged pose). Cast members
+ * with no readings ride along as unscored members - the matrix names
+ * them, never drops them.
+ */
+export async function identityMatrixData(projectId: string, source: IdentitySource = "RENDER"): Promise<IdentityMatrixData> {
+  const [project, scoreRows] = await Promise.all([
+    db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true } } } }),
+    db.identityScore.findMany({
+      where: { projectId, source },
+      include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
+    }),
+  ]);
+  const floor = source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
+  const cast = project?.characters ?? [];
+  const idByName = new Map(cast.map((c) => [c.name, c.id] as const));
+  const rows = scoreRowsToMatrixRows(scoreRows, idByName);
   const matrix = identityMatrixFromRows(rows, floor, source);
   // anchored-but-unscored members ride along, named (never dropped)
   const scored = new Set(matrix.members.map((m) => m.name));
@@ -416,4 +440,100 @@ export async function identityMatrixData(projectId: string, source: IdentitySour
   }
   matrix.cast = matrix.members.length;
   return matrix;
+}
+
+// ── the release spine's gate (iteration 101: THE VERDICT IS THE LAW) ──
+
+/**
+ * One EPISODE's release read: the matrix rolled over ONLY the
+ * readings whose shots belong to this episode - the same five-axis
+ * law, the same floor, judged at the grain the spine publishes at.
+ * The overall cell's verdict is the episode's release answer, and
+ * the blocking cells (the HOLD/BELOW slices, worst p10 first) are
+ * what the refusal names.
+ */
+export interface EpisodeReleaseRead {
+  episodeId: string;
+  source: IdentitySource;
+  floor: number;
+  readings: number;
+  verdict: DistributionVerdict; // the episode's own overall verdict
+  overall: MatrixCell;
+  blocking: MatrixCell[]; // the HOLD/BELOW cells, worst p10 first
+}
+
+/**
+ * THE RELEASE GATE (loader): roll ONE episode's identity readings
+ * into its release verdict. The gate the spine obeys: an episode
+ * stages for publish on a RELEASE verdict ONLY - a HOLD distribution
+ * (the body clears, the tail dips) refuses with the dipping cells
+ * named, a BELOW distribution refuses with the body named, and
+ * UNSCORED refuses honestly (nothing measured - the spine does not
+ * guess a release). The standing law keeps its teeth beside this
+ * (rule 69 untouched) - this is the release view, at the episode
+ * grain, wired into the machinery that ships the pixels.
+ */
+export async function episodeReleaseVerdict(
+  projectId: string,
+  episodeId: string,
+  source: IdentitySource = "RENDER",
+): Promise<EpisodeReleaseRead> {
+  const [project, scoreRows] = await Promise.all([
+    db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true } } } }),
+    db.identityScore.findMany({
+      where: { projectId, source, shot: { scene: { episodeId } } },
+      include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
+    }),
+  ]);
+  const floor = source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
+  const cast = project?.characters ?? [];
+  const idByName = new Map(cast.map((c) => [c.name, c.id] as const));
+  const rows = scoreRowsToMatrixRows(scoreRows, idByName);
+  const matrix = identityMatrixFromRows(rows, floor, source);
+  const blocking = matrix.axes
+    .flatMap((t) => t.cells.filter((c) => c.verdict === "HOLD" || c.verdict === "BELOW"))
+    .sort(cellOrder)
+    .slice(0, 4);
+  return {
+    episodeId,
+    source,
+    floor,
+    readings: rows.length,
+    verdict: matrix.overall.verdict,
+    overall: matrix.overall,
+    blocking,
+  };
+}
+
+function pct2(v: number | null): string {
+  return v === null ? "-" : `${(v * 100).toFixed(0)}%`;
+}
+
+/**
+ * The conformance line a RELEASE verdict earns (pure): the check the
+ * package carries once the gate opens.
+ */
+export function episodeReleaseCheckLine(read: EpisodeReleaseRead): string {
+  return `identity distribution RELEASES - p10 ${pct2(read.overall.p10)}, mean ${pct2(read.overall.mean)}, median ${pct2(read.overall.median)} over ${read.readings} reading(s), floor ${pct2(read.floor)}`;
+}
+
+/**
+ * The honest refusal a non-RELEASE verdict earns (pure): the verdict
+ * named, the distribution's shape, the blocking cells with their
+ * worst shot refs, and the law itself - an episode does not publish
+ * on a HOLD distribution.
+ */
+export function episodeReleaseRefusal(read: EpisodeReleaseRead, epTag: string): string {
+  const floorPct = pct2(read.floor);
+  if (read.verdict === "UNSCORED") {
+    return `${epTag} carries no scored identity readings (${read.source.toLowerCase()} source) - the matrix has nothing to judge and the release spine does not guess a release: score the episode's renders first (measure_identity_bar or identity_matrix scoreFirst), then stage the publish again`;
+  }
+  const shape = `mean ${pct2(read.overall.mean)}, median ${pct2(read.overall.median)}, p10 ${pct2(read.overall.p10)}, worst ${pct2(read.overall.worst)} over ${read.readings} reading(s), floor ${floorPct}`;
+  const cells = read.blocking.length > 0
+    ? read.blocking.map((c) => `${c.key} - ${c.verdict}, p10 ${pct2(c.p10)}${c.worstRef ? ` (worst at ${c.worstRef})` : ""}`).join("; ")
+    : "the dipping cells sit outside the top of each axis - read identity_matrix for the full shape";
+  if (read.verdict === "HOLD") {
+    return `${epTag}'s identity distribution HOLDS at the release floor: the body clears but the tail dips under ${floorPct} (${shape}) - the release waits. The dipping cells: ${cells}. Work those shots by name (render_fix / identity_repair_pass), read the matrix again, then stage. An episode does not publish on a HOLD distribution`;
+  }
+  return `${epTag}'s identity distribution sits BELOW the release floor: the body itself is under (${shape}). The under cells: ${cells}. Repair the distribution (identity_repair_pass), then stage. An episode does not publish BELOW the floor`;
 }

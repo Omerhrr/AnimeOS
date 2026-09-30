@@ -1,6 +1,11 @@
 /**
  * performance - THE COST IS NAMED (iteration 100, rule 75, the
- * forty-fourth law).
+ * forty-fourth law) and THE LEDGERS RIDE THE SPINE (iteration 101):
+ * the nightly render read and the release spine now consume these
+ * verdicts - a render night reads its cost line back with the OVER
+ * regressions NAMING WHAT RODE THE RENDER (the shot's directed
+ * cargo + the top telemetry spans + the fix lineage), and the
+ * release spine gates a publish on the identity matrix's verdict.
  *
  * The pipeline spent ninety-nine iterations proving the FRAMES are
  * right (the laws that shape them, the hashes that pin them, the
@@ -109,6 +114,9 @@ export interface PerformanceReading {
   frames: number; // the frames the job owed (the worker's law)
   spf: number; // seconds per frame: measuredMs / 1000 / frames
   verdict: PerformanceVerdict; // filled by the cohort law
+  cargo: string | null; // what rode the render (the shot's directed cargo, iteration 101)
+  topSpans: Array<{ provider: string; ms: number }>; // the top telemetry spans, worst-first
+  finishedAt: string; // ISO - the night window reads it
 }
 
 export interface PerformanceCohort {
@@ -169,6 +177,8 @@ export function performanceReadings(jobs: Array<{
   status: string; attempt: number; fixOfJobId: string | null;
   startedAt: Date | string | null; finishedAt: Date | string | null;
   telemetry: string | null; durationSec: number | null; fps: number | null;
+  grammar?: string | null; fx?: string | null; physics?: string | null;
+  dialogue?: string | null; lipNote?: string | null;
 }>): PerformanceReading[] {
   const readings: PerformanceReading[] = [];
   for (const j of jobs) {
@@ -194,6 +204,15 @@ export function performanceReadings(jobs: Array<{
       frames,
       spf: measuredMs / 1000 / frames,
       verdict: "UNSCORED",
+      cargo: performanceCargo({
+        grammar: j.grammar ?? null,
+        fx: j.fx ?? null,
+        physics: j.physics ?? null,
+        dialogue: j.dialogue ?? null,
+        lipNote: j.lipNote ?? null,
+      }),
+      topSpans: topSpans(tel.spans),
+      finishedAt: new Date(end).toISOString(),
     });
   }
   return readings;
@@ -264,6 +283,65 @@ export function performanceCohorts(readings: PerformanceReading[]): PerformanceC
   return cohorts;
 }
 
+// ── what rode the render (the cargo law, iteration 101) ──
+
+export interface PerfCargoInput {
+  grammar: string | null; // shot.grammar - JSON beats [{move, from, to, ...}]
+  fx: string | null; // shot.fx - JSON [{kind, ...}]
+  physics: string | null; // shot.physics - JSON [{kind, ...}]
+  dialogue: string | null; // shot.dialogue - JSON [{kind, text, ...}]
+  lipNote: string | null; // job.lipNote - the lip-sync note stamped at submit
+}
+
+function jsonCount(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0; // a corrupt column reads as nothing named - never guessed
+  }
+}
+
+/**
+ * WHAT RODE THE RENDER (pure): the directed cargo the job carried,
+ * read from the shot's own persisted columns - the grammar beats the
+ * camera and body obey, the fx passes, the solver calls, the speech
+ * lines and the lip-sync note the submit stamped. A job with nothing
+ * directed reads null ("the stock pass") - the cargo is never
+ * invented. The OVER regression names this: a shot does not cost
+ * three times its cohort for nothing, and the ledger says what the
+ * extra seconds were SPENT ON.
+ */
+export function performanceCargo(input: PerfCargoInput): string | null {
+  const beats = jsonCount(input.grammar);
+  const fx = jsonCount(input.fx);
+  const physics = jsonCount(input.physics);
+  let speech = 0;
+  if (input.dialogue) {
+    try {
+      const parsed = JSON.parse(input.dialogue) as Array<{ kind?: unknown }>;
+      if (Array.isArray(parsed)) speech = parsed.filter((l) => l.kind === "SPEECH").length;
+    } catch {
+      speech = 0;
+    }
+  }
+  const lip = Boolean(String(input.lipNote ?? "").trim());
+  const parts: string[] = [];
+  if (beats > 0) parts.push(`${beats} grammar beat(s)`);
+  if (fx > 0) parts.push(`${fx} fx`);
+  if (physics > 0) parts.push(`${physics} solver call(s)`);
+  if (speech > 0) parts.push(`speech ${speech} line(s)`);
+  if (lip) parts.push("lip-sync");
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/** The job's top telemetry spans (the providers that actually worked
+ *  it), worst-first, capped at 3 - the cost's own anatomy. */
+function topSpans(spans: PerfTelemetry["spans"]): Array<{ provider: string; ms: number }> {
+  return [...spans].sort((a, b) => b.ms - a.ms).slice(0, 3).map((s) => ({ provider: s.provider, ms: s.ms }));
+}
+
 /**
  * THE REPORT (pure): the production's cost ledger - the cohorts,
  * the overall shape, the OVER regressions and the SLOW tail named
@@ -315,9 +393,49 @@ export function performanceLine(r: PerformanceReport): string {
     return `${c.driver}/${c.mode}: ${c.n} job(s), median ${spf(c.medianSpf)}, p10 ${spf(c.p10Spf)}, worst ${spf(c.worstSpf)}, ${c.totalFrames} frame(s), ${ms(c.totalWallMs)}${tail}`;
   });
   const regressions = r.over.length > 0
-    ? `over: ${r.over.map((x) => `${x.ref ?? x.jobId.slice(-6)} at ${spf(x.spf)} (${x.mode.toLowerCase()} ${x.driver.toLowerCase()}, ${x.measuredMs >= 60000 ? `${(x.measuredMs / 60000).toFixed(1)}min` : `${(x.measuredMs / 1000).toFixed(0)}s`} wall)`).join("; ")}`
+    ? `over: ${r.over.map((x) => performanceCargoLine(x)).join("; ")}`
     : "no regressions - every job holds its cohort's proven cost";
   return `performance over ${r.measured} finished job(s): median ${spf(r.overall.medianSpf)}, p10 ${spf(r.overall.p10Spf)}, worst ${spf(r.overall.worstSpf)}, ${r.overall.totalFrames} frame(s), ${ms(r.overall.totalWallMs)} wall | ${cohortLines.join(" | ")} | ${regressions}`;
+}
+
+/**
+ * What ONE regression rode to its cost (pure): the ref, the verdict
+ * numbers, the fix lineage, the directed cargo and the top spans -
+ * the OVER line's full anatomy. The regression names WHAT the extra
+ * seconds were spent on, not just that they were spent.
+ */
+export function performanceCargoLine(r: PerformanceReading): string {
+  const wall = ms(r.measuredMs);
+  const fix = r.fixOfJobId ? `, fix of attempt ${r.attempt - 1 < 1 ? 1 : r.attempt - 1}` : "";
+  const spans = (r.topSpans ?? []).length > 0
+    ? `; spans: ${(r.topSpans ?? []).map((s) => `${s.provider} ${ms(s.ms)}`).join(" > ")}`
+    : "";
+  const cargo = r.cargo ? `; rode: ${r.cargo}` : "; rode: the stock pass (no directed cargo)";
+  const wait = r.waitMs === null || r.waitMs === undefined ? "" : `, wait ${ms(Math.max(0, r.waitMs))}`;
+  return `${r.ref ?? r.jobId.slice(-6)} at ${spf(r.spf)} (${r.mode.toLowerCase()} ${r.driver.toLowerCase()}, ${wall} wall, ${r.frames} frame(s)${wait}${fix})${cargo}${spans}`;
+}
+
+/**
+ * THE RENDER NIGHT LINE (pure): what the nightly supervision fire
+ * reads back - the night's own window (jobs finished inside it) over
+ * the whole proven ledger, the OVER regressions NAMING WHAT RODE THE
+ * RENDER, the SLOW tail counted. Empty string when nothing was ever
+ * measured (the honest absence - the fire report simply skips it).
+ */
+export function performanceNightLine(r: PerformanceReport, windowHours = 24, now: Date = new Date()): string {
+  if (r.measured === 0) return "";
+  const since = now.getTime() - windowHours * 3600 * 1000;
+  const nightJobs = r.cohorts.flatMap((c) => c.readings).filter((x) => new Date(x.finishedAt).getTime() >= since);
+  const nightMs = nightJobs.reduce((a, x) => a + x.measuredMs, 0);
+  const nightFrames = nightJobs.reduce((a, x) => a + x.frames, 0);
+  const night = nightJobs.length > 0
+    ? `${nightJobs.length} finished in the last ${windowHours}h (${ms(nightMs)} wall, ${nightFrames} frame(s))`
+    : `nothing finished in the last ${windowHours}h`;
+  const over = r.over.length > 0
+    ? `over: ${r.over.map((x) => performanceCargoLine(x)).join("; ")}`
+    : "no regressions - every job holds its cohort's proven cost";
+  const slow = r.slow.length > 0 ? `; slow tail: ${r.slow.length} job(s) watched` : "";
+  return `night cost read: ${night}; ledger median ${spf(r.overall.medianSpf)}, worst ${spf(r.overall.worstSpf)} - ${over}${slow}`;
 }
 
 // ── the loader (the production's REAL finished jobs, read) ──
@@ -335,7 +453,11 @@ export async function performanceData(projectId: string): Promise<PerformanceRep
   const rows = await db.renderJob.findMany({
     where: { projectId, finishedAt: { not: null } },
     include: {
-      shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } },
+      shot: {
+        include: {
+          scene: { include: { episode: { include: { season: { select: { number: true } } } } } },
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -357,6 +479,11 @@ export async function performanceData(projectId: string): Promise<PerformanceRep
     telemetry: j.telemetry,
     durationSec: j.shot?.duration ?? null,
     fps,
+    grammar: j.shot?.grammar ?? null,
+    fx: j.shot?.fx ?? null,
+    physics: j.shot?.physics ?? null,
+    dialogue: j.shot?.dialogue ?? null,
+    lipNote: j.lipNote ?? null,
   })));
   return performanceReport(readings);
 }

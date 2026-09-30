@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { probeMedia } from "@/lib/bridge/motion";
 import { buildSpeechProgram } from "@/lib/animation/lipsync";
 import { parseDialogue } from "@/lib/comic/dialogue";
+import { episodeReleaseVerdict, episodeReleaseCheckLine, episodeReleaseRefusal, type EpisodeReleaseRead } from "@/lib/identity-matrix";
 
 // ─────────────────────────────────────────────────────────────
 // PLATFORM PUBLISHING - the delivery spine's last mile
@@ -453,10 +454,34 @@ export async function listPublishEvents(projectId: string, take = 8): Promise<Pu
 }
 
 /**
+ * THE MATRIX'S VERDICT IS THE SPINE'S (iteration 101): the gate the
+ * release obeys - an episode stages for publish on a RELEASE
+ * distribution ONLY. A HOLD distribution (the body clears, the tail
+ * dips) refuses with the dipping cells named; a BELOW distribution
+ * refuses with the body named; UNSCORED refuses honestly (nothing
+ * measured - the spine never guesses a release). The refusal is the
+ * work order: the named cells are the shots to repair.
+ */
+export async function episodePublishGate(
+  projectId: string,
+  episodeId: string,
+  epTag: string,
+): Promise<{ ok: true; read: EpisodeReleaseRead } | { ok: false; error: string }> {
+  const read = await episodeReleaseVerdict(projectId, episodeId);
+  if (read.verdict !== "RELEASE") {
+    return { ok: false, error: `${episodeReleaseRefusal(read, epTag)}` };
+  }
+  return { ok: true, read };
+}
+
+/**
  * Stage a publish package for one episode on one platform: finds the
  * episode's latest cut on the delivery spine, probes it, builds the
  * metadata + subtitles, conformance-checks and lands a PUBLISH event.
  * No network calls - staging is local and honest by design.
+ * The identity matrix's verdict gates the staging (iteration 101):
+ * the matrix answers whether the episode's readings RELEASE against
+ * the floor, and the spine publishes only on RELEASE.
  */
 export async function stagePublishPackage(
   episodeId: string,
@@ -476,6 +501,14 @@ export async function stagePublishPackage(
   });
   if (!episode) return { ok: false, error: "Episode not found" };
   const project = episode.season.project;
+
+  // THE RELEASE GATE: the matrix's verdict rides the spine - a HOLD
+  // (or BELOW, or unscored) distribution does not publish, and the
+  // refusal names the dipping cells as the work order.
+  const epTag0 = `EP${String(episode.number).padStart(2, "0")}`;
+  const gate = await episodePublishGate(project.id, episode.id, epTag0);
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const release = gate.read;
 
   // the episode's latest cut event on the spine
   const epTag = `EP${String(episode.number).padStart(2, "0")}`;
@@ -557,6 +590,11 @@ export async function stagePublishPackage(
     subtitleCues,
     subtitleNote,
   });
+  // the release gate's own check rides the package: the matrix's
+  // verdict is part of the conformance record now
+  pkg.conformance.push({ label: "identity distribution", ok: true, detail: episodeReleaseCheckLine(release) });
+  pkg.ready = pkg.conformance.every((c) => c.ok);
+  pkg.checklist.push(`identity matrix: RELEASES against the ${(release.floor * 100).toFixed(0)}% floor (${release.readings} reading(s)) - the spine's gate passed`);
 
   const checksPassed = pkg.conformance.filter((c) => c.ok).length;
   const pkgFolder = writePackageFolder(pkg, epTag);
@@ -583,6 +621,7 @@ export async function stagePublishPackage(
         conformance: pkg.conformance,
         tags: pkg.tags,
         package: pkgFolder,
+        identity: { verdict: release.verdict, floor: release.floor, readings: release.readings, p10: release.overall.p10, mean: release.overall.mean, median: release.overall.median },
       }),
     },
   });

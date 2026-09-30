@@ -3,6 +3,7 @@ import { runPlanSteps, latestPlan, getPlan, type PlanView } from "@/lib/dsh/plan
 import { startRepaintRun, latestRepaintRun } from "@/lib/universe-repaint";
 import { universeReRenderQueue } from "@/lib/universe-facts";
 import { tickProjectJobs } from "@/lib/engine/render";
+import { performanceData, performanceNightLine } from "@/lib/engine/performance";
 import { postDailyDigest, webhookUrlRefusal } from "@/lib/digest";
 import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
 
@@ -303,6 +304,23 @@ interface FireOutcome {
   report: string;
 }
 
+/**
+ * THE RENDER NIGHT'S COST READ (iteration 101): every render-night
+ * supervision fire reads the cost ledger back - the night's finished
+ * jobs, the ledger median/worst, and the OVER regressions NAMING
+ * WHAT RODE THE RENDER (the shot's directed cargo, the top telemetry
+ * spans, the fix lineage). A production that never finished a job
+ * reads an honest empty line (the fire report simply skips it).
+ */
+async function nightCostLine(projectId: string): Promise<string> {
+  try {
+    const report = await performanceData(projectId);
+    return performanceNightLine(report);
+  } catch {
+    return ""; // the cost read must never break the supervision fire
+  }
+}
+
 /** Execute one schedule fire. Claims nothing - the caller advances the row. */
 async function fireSchedule(row: ScheduleRow): Promise<FireOutcome> {
   if (row.kind === "DAILY_DIGEST") {
@@ -330,18 +348,19 @@ async function fireSchedule(row: ScheduleRow): Promise<FireOutcome> {
     }
     // supervision part 2: the universe-facts re-render queue
     const live = await latestRepaintRun(row.projectId);
+    const tickNote = `${ticked} render job(s) ticked`;
     if (live && (live.status === "RUNNING" || live.status === "PAUSED")) {
-      return { status: "SKIPPED", report: `re-paint run already ${live.status.toLowerCase()} (${live.index}/${live.total} steps) - nothing started; ${ticked} render job(s) ticked` };
+      return { status: "SKIPPED", report: `re-paint run already ${live.status.toLowerCase()} (${live.index}/${live.total} steps) - nothing started; ${tickNote}; ${await nightCostLine(row.projectId)}` };
     }
     const queue = await universeReRenderQueue(row.projectId);
     if (queue.length === 0) {
-      return { status: "SKIPPED", report: `re-render queue clean - nothing to re-paint; ${ticked} render job(s) ticked` };
+      return { status: "SKIPPED", report: `re-render queue clean - nothing to re-paint; ${tickNote}; ${await nightCostLine(row.projectId)}` };
     }
     const started = await startRepaintRun(row.projectId, 3);
     if (!started.ok) {
-      return { status: "SKIPPED", report: `${started.error} (${ticked} render job(s) ticked)` };
+      return { status: "SKIPPED", report: `${started.error} (${tickNote}); ${await nightCostLine(row.projectId)}` };
     }
-    return { status: "OK", report: `started a supervised re-paint pass over ${started.run.total} queued panel(s), worst confidence first; ${ticked} render job(s) ticked` };
+    return { status: "OK", report: `started a supervised re-paint pass over ${started.run.total} queued panel(s), worst confidence first; ${tickNote}; ${await nightCostLine(row.projectId)}` };
   }
 
   if (row.kind === "PUBLISH_RUN") {

@@ -1850,3 +1850,20 @@ Stage Summary:
 - The pipeline now names its own minutes: every finished render job's wall, frames (the worker's own law, mirrored to the half-even boundary), seconds-per-frame and provider wait ride one cost ledger; the budget is what the pipeline has PROVEN per driver+mode, the regression names itself against its cohort's median, and the DSH can answer "how long will the night take" with numbers instead of feelings
 - Both slices of the round are closed: the Distributional Identity matrix gave the readings their SHAPE (release judged distributionally, the standing's teeth untouched beside), the Performance Engine gave the renders their COST (the budget judged cohort-relative, nothing invented)
 - Commit: Iteration 100, pushed to GitHub main
+
+---
+## Iteration 101 - THE LEDGERS RIDE THE SPINE (2026-10-01)
+
+The verdicts the studio keeps were still REPORTS: the performance engine answered when asked, the matrix judged when invoked, and the machinery that runs between conversations - the render-night fire, the release spine - shipped pixels without reading either. The law: the ledgers GATE and REPORT through the cadence itself.
+
+- THE RENDER NIGHT READS ITS COST: every REPAINT_QUEUE fire appends the night cost read (`performanceNightLine`) - the night's finished jobs (24h window) over the whole proven ledger, the ledger median/worst, the SLOW tail counted
+- AN OVER REGRESSION NAMES WHAT RODE THE RENDER: `performanceCargo` reads the shot's own persisted columns (grammar beats, fx, solver calls, SPEECH lines) plus the job's lip-sync note - corrupt columns count as nothing named, an undirected shot reads the stock pass (never invented); `performanceCargoLine` carries the full OVER anatomy (ref, spf, wall/frames/wait, fix lineage, cargo, top spans worst-first); the DSH tool's line and tail teach the same law
+- THE MATRIX'S VERDICT IS THE SPINE'S: `episodeReleaseVerdict` rolls ONE episode's identity readings through the same five-axis distribution law at the episode grain; `stagePublishPackage` gates on it - HOLD refuses with the dipping cells named, BELOW refuses with the body named, UNSCORED refuses honestly (the spine does not guess a release), only RELEASE stages; a RELEASE staging carries a new `identity distribution` conformance check, the checklist pass line and the verdict inside the PUBLISH event payload; the PUBLISH_RUN cadence SKIPS on the refusal - an episode cannot publish on a HOLD distribution by hand OR by schedule
+- The standing laws stand untouched: rule 69's teeth (any reading under the bar is a work order) keep biting beside the release view; the matrix's pure law is unchanged (the loader factored, the row mapping shared)
+- E2E `scripts/e2e-iter101-ledgers.ts` ALL GREEN in two phases over the real runtime (phase a: the cargo law, the OVER anatomy, the night window over the ledger, the refusal/check lines; phase b: a real three-episode lab at fps 30 - RELEASE staged with the identity check riding the package and the event, HOLD refused with the close cell named, UNSCORED refused, no events on refusals, the render-night fire reading its cost line naming the FAILED attempt-2 regression's cargo and spans, the cadence skipping on HOLD, the DSH tool naming what rode, viewer 403, exact cleanup)
+- Honest catches: the close cell's own verdict reads BELOW when its two-reading body sits under the floor while the EPISODE verdict reads HOLD (the distribution law is the same at every grain - the episode is judged by ITS body and tail, the cell by its own); the walls are the difference of timestamps - a lab that stamps started/finished an hour apart MEASURES an hour, whatever the spf plan intended
+- Neighbor phase-a halves re-run ALL GREEN (iter99, iter100; stale labs from earlier sessions purged first - the Shot(sceneId, number) unique collision names a half-crafted lab)
+- Gates: src tsc clean (tsconfig.src.json), eslint clean on the changed files, py_compile clean
+
+Stage Summary:
+- The ledgers ride the spine: the render night reads its cost with the regressions' cargo named, and the release spine publishes only on a RELEASE distribution - the verdicts are law, not commentary
