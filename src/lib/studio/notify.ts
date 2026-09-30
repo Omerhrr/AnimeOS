@@ -53,7 +53,7 @@ export async function deliverToMember(
   const outcomes = await deliverDigest(digest, title, {
     webhookUrl: member.notifyWebhook,
     email: member.notifyEmail ? member.email : null,
-  }).catch(() => [{ kind: "webhook" as const, target: "?", ok: false, detail: "delivery crashed" }]);
+  }, projectId).catch(() => [{ kind: "webhook" as const, target: "?", ok: false, detail: "delivery crashed" }]);
   for (const o of outcomes) {
     await db.notificationDelivery.create({
       data: {

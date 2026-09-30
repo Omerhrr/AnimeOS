@@ -4,7 +4,7 @@ import { startRepaintRun, latestRepaintRun } from "@/lib/universe-repaint";
 import { universeReRenderQueue } from "@/lib/universe-facts";
 import { tickProjectJobs } from "@/lib/engine/render";
 import { performanceData, performanceNightLine } from "@/lib/engine/performance";
-import { postDailyDigest, webhookUrlRefusal } from "@/lib/digest";
+import { postDailyDigest, webhookUrlRefusal, webhookAllowlistRefusal } from "@/lib/digest";
 import { stagePublishPackage, platformPreset, PLATFORM_PRESETS } from "@/lib/comic/publish";
 
 // ─────────────────────────────────────────────────────────────
@@ -261,6 +261,11 @@ export async function createSchedule(
       if (!WEBHOOK_RE.test(hook)) return { ok: false, error: "webhookUrl must be an http(s) URL" };
       const ssrfRefusal = webhookUrlRefusal(hook);
       if (ssrfRefusal) return { ok: false, error: ssrfRefusal };
+      // THE SLATE IS SIGNED (iteration 104): the domain allowlist bites
+      // at the PEN too - the same refusal the network layer enforces at
+      // delivery, so a disallowed target never even lands on a schedule
+      const allowlistRefusal = webhookAllowlistRefusal(hook, process.env.ANIMEOS_WEBHOOK_ALLOWLIST);
+      if (allowlistRefusal) return { ok: false, error: allowlistRefusal };
       webhookUrl = hook.slice(0, 400);
     }
     const mail = String(input.digestEmail ?? "").trim();

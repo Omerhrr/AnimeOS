@@ -30,6 +30,12 @@ model Project {
   artNegativePrompt String? // extra negative tokens appended to the negative tail
   status            String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
   approvalGate      Boolean  @default(false) // when on, an APPROVED DSH inspection parks the render at REVIEW until a human approves
+  // THE SLATE IS SIGNED (iteration 104): this production's own webhook
+  // signing secret - generated once, lazily, on the first signed
+  // outbound delivery (ANIMEOS_WEBHOOK_SECRET overrides). Every
+  // outbound webhook payload rides an HMAC-SHA256 signature the
+  // receiving target can verify before trusting a slate.
+  webhookSecret     String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

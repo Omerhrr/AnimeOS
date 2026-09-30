@@ -1901,3 +1901,19 @@ v3 spawned a FRESH `blender -b` subprocess per job: a crashed worker could never
 
 Stage Summary:
 - The workers stay warm: per-shot initialization latency drops from a full Blender cold boot to a socket send, the proven cold spawn remains the fallback that never loses a job, and the pool's reuse ledger names itself
+
+---
+## Iteration 104 - THE SLATE IS SIGNED (2026-10-01)
+
+The digest and publish webhook targets (DAILY_DIGEST, publish_cut, member notification channels) accepted custom webhookUrl entries - a compromised mapping could aim the studio's outbound POSTs at internal endpoints (SSRF), and a receiving gateway executed on payloads it could not authenticate. The law: every outbound webhook payload is a SLATE the receiver can verify, and the network layer refuses targets outside the domain allowlist.
+
+- THE SIGNATURE: `X-AnimeOS-Signature: sha256=HMAC_SHA256(secret, '<ts>.<body>')` + `X-AnimeOS-Timestamp` on every outbound POST (`webhookSignature`); the verification law (`verifyWebhookSignature`) binds the RAW body and a 300s replay window, compares constant-time, and names the refusal reason (missing signature / missing timestamp / stale / mismatch)
+- THE SECRET: the production's OWN - generated once, lazily, persisted on the project row (`webhookSecret`, schema + db push); `ANIMEOS_WEBHOOK_SECRET` overrides; a delivery with no secret reads honestly "unsigned", never silently; stable across fires so a receiver enrolls one key
+- THE DOMAIN ALLOWLIST: `ANIMEOS_WEBHOOK_ALLOWLIST` (comma-separated hosts, a leading dot or `*.` admits subdomains) bites at the PEN (`create_schedule` refuses before the schedule lands) and at DELIVERY (`deliverDigest` records the refusal with no network call) - defense in depth, the SSRF private-host guard (iteration 68/71) stands untouched beside it
+- E2E `scripts/e2e-iter104-signedslate.ts` ALL GREEN in two phases (the pure laws: signature determinism over body+ts+secret, the tolerance boundaries at +/-300/301 exact, the allowlist grid; the REAL lab: a live loopback receiver capturing the POST - the slate verifies against the raw body with the persisted project secret, a tampered body fails the receiver's verification, the second delivery verifies with the SAME secret, an off-allowlist target is refused with zero network calls, the pen refuses a private-range host, exact cleanup including the secret)
+- Honest catches: the arg-order confusion in the tolerance test (the 4th argument is the SIGNING timestamp, the 5th the receiver's clock - the signature binds the timestamp, so a shifted call must shift both); with the documented DEV escape on (ALLOW_PRIVATE=1) the allowlist still bites - the composition is the law
+- Neighbor phase-a halves re-run ALL GREEN (iter99, iter100, iter102, iter103)
+- Gates: src tsc clean, eslint clean, py_compile clean
+
+Stage Summary:
+- The slate is signed: outbound webhooks carry a verifiable production-keyed signature, receivers get the exact verification law, and the network layer enforces a domain allowlist at both the pen and the wire - SSRF and forged-slate both refuse by name

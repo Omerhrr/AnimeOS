@@ -1,3 +1,4 @@
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { canonHealthData } from "@/lib/canon-health";
 import { identityDriftData } from "@/lib/identity";
@@ -65,6 +66,99 @@ export interface DeliveryOutcome {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// ── THE SLATE IS SIGNED (iteration 104) ──
+//
+// Every outbound webhook payload is a SLATE: the receiving delivery
+// target (a Slack/Discord gateway, an automation hub, a phone's push
+// bridge) executes on what it receives, so it must be able to VERIFY
+// the slate's authenticity before acting. The law:
+//
+//   X-AnimeOS-Signature: sha256=HMAC_SHA256(secret, `${ts}.${body}`)
+//   X-AnimeOS-Timestamp: <unix seconds at signing>
+//
+// The secret is the production's OWN (generated once, lazily, stored
+// on the project row) unless ANIMEOS_WEBHOOK_SECRET sets a global
+// one. The receiver verifies the signature over the RAW body and
+// rejects a stale timestamp (the replay window is 5 minutes) - a
+// forged or replayed slate reads as refused.
+//
+// Beside the signature stands the DOMAIN ALLOWLIST: when
+// ANIMEOS_WEBHOOK_ALLOWLIST names hosts (comma-separated; a leading
+// dot admits subdomains), the network layer refuses any webhookUrl
+// outside it - at the PEN (create_schedule) and again at DELIVERY
+// (defense in depth, the same law the SSRF guard obeys). An unset
+// allowlist leaves the SSRF private-host law standing alone.
+
+export const WEBHOOK_SIGNATURE_TOLERANCE_SEC = 300;
+
+/** The signing law (pure): the exact header value the receiver verifies. */
+export function webhookSignature(secret: string, body: string, timestamp: number): string {
+  return "sha256=" + createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
+}
+
+/** The verification law (pure): what a listening delivery target runs
+ *  before executing on a slate. Tampered bodies, wrong secrets and
+ *  stale timestamps all read refused, with the reason named. */
+export function verifyWebhookSignature(
+  secret: string,
+  body: string,
+  signature: string | null | undefined,
+  timestamp: number | null | undefined,
+  nowSec: number = Math.floor(Date.now() / 1000),
+  toleranceSec: number = WEBHOOK_SIGNATURE_TOLERANCE_SEC,
+): { ok: boolean; reason?: string } {
+  if (!signature || typeof signature !== "string") return { ok: false, reason: "missing signature" };
+  if (timestamp === null || timestamp === undefined || !Number.isFinite(timestamp)) return { ok: false, reason: "missing timestamp" };
+  if (Math.abs(nowSec - timestamp) > toleranceSec) return { ok: false, reason: "stale timestamp (replay window exceeded)" };
+  const expected = Buffer.from(webhookSignature(secret, body, timestamp).slice(7), "hex");
+  const given = String(signature).startsWith("sha256=") ? String(signature).slice(7) : String(signature);
+  let givenBuf: Buffer;
+  try {
+    givenBuf = Buffer.from(given, "hex");
+  } catch {
+    return { ok: false, reason: "malformed signature" };
+  }
+  if (givenBuf.length !== expected.length || !timingSafeEqual(givenBuf, expected)) {
+    return { ok: false, reason: "signature mismatch" };
+  }
+  return { ok: true };
+}
+
+/**
+ * The domain allowlist law (pure): null admits everything (the SSRF
+ * law stands alone); a configured list refuses any host outside it -
+ * a leading-dot entry admits that host's subdomains.
+ */
+export function webhookAllowlistRefusal(url: string, allowlistRaw: string | null | undefined): string | null {
+  const raw = String(allowlistRaw ?? "").trim();
+  if (!raw) return null;
+  const hosts = raw.split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  if (hosts.length === 0) return null;
+  let u: URL;
+  try {
+    u = new URL(String(url ?? "").trim());
+  } catch {
+    return "webhookUrl is not a valid URL";
+  }
+  const host = u.hostname.toLowerCase();
+  const ok = hosts.some((h) => h === host || (h.startsWith(".") && host.endsWith(h)) || (h.startsWith("*.") && host.endsWith(h.slice(1))));
+  if (ok) return null;
+  return `webhookUrl host '${host}' is not on the delivery allowlist (${hosts.join(", ")}) - the network layer refuses`;
+}
+
+/** The secret resolution law: the env override wins; otherwise the
+ *  production's own secret, generated once and persisted lazily. */
+export async function resolveWebhookSecret(projectId: string | null): Promise<{ secret: string; source: "env" | "project" } | null> {
+  const envSecret = String(process.env.ANIMEOS_WEBHOOK_SECRET ?? "").trim();
+  if (envSecret) return { secret: envSecret, source: "env" };
+  if (!projectId) return null;
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { webhookSecret: true } });
+  if (project?.webhookSecret) return { secret: project.webhookSecret, source: "project" };
+  const secret = randomBytes(32).toString("hex");
+  await db.project.update({ where: { id: projectId }, data: { webhookSecret: secret } }).catch(() => null);
+  return { secret, source: "project" };
+}
+
 // SSRF guard (audit, iteration 68): the digest webhook POSTs to a
 // member-supplied URL, so the URL must be a public http(s) one -
 // never a loopback, link-local, private-range or cloud-metadata
@@ -108,6 +202,7 @@ export async function deliverDigest(
   digest: DailyDigest,
   projectTitle: string,
   targets: DeliveryTarget,
+  projectId: string | null = null,
 ): Promise<DeliveryOutcome[]> {
   const outcomes: DeliveryOutcome[] = [];
   const body = JSON.stringify({
@@ -125,16 +220,33 @@ export async function deliverDigest(
     if (refusal) {
       outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: refusal });
     } else {
-      try {
-        const res = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-          signal: AbortSignal.timeout(8000),
-        });
-        outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: res.ok, detail: `webhook responded ${res.status}` });
-      } catch (err) {
-        outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: err instanceof Error ? err.message.slice(0, 120) : "webhook failed" });
+      const allowlistRefusal = webhookAllowlistRefusal(webhookUrl, process.env.ANIMEOS_WEBHOOK_ALLOWLIST);
+      if (allowlistRefusal) {
+        outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: allowlistRefusal });
+      } else {
+        // THE SLATE IS SIGNED: the receiving target can verify the
+        // slate before executing on it; a missing secret reads honest
+        // (unsigned), never silently
+        const secret = await resolveWebhookSecret(projectId);
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        let signNote = "unsigned (no signing secret)";
+        if (secret) {
+          const ts = Math.floor(Date.now() / 1000);
+          headers["X-AnimeOS-Signature"] = webhookSignature(secret.secret, body, ts);
+          headers["X-AnimeOS-Timestamp"] = String(ts);
+          signNote = `signed (${secret.source} secret)`;
+        }
+        try {
+          const res = await fetch(webhookUrl, {
+            method: "POST",
+            headers,
+            body,
+            signal: AbortSignal.timeout(8000),
+          });
+          outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: res.ok, detail: `webhook responded ${res.status}, ${signNote}` });
+        } catch (err) {
+          outcomes.push({ kind: "webhook", target: redactUrl(webhookUrl), ok: false, detail: err instanceof Error ? err.message.slice(0, 120) : "webhook failed" });
+        }
       }
     }
   }
@@ -253,7 +365,7 @@ export async function postDailyDigest(
     queueCounts: { active: activeJobs, rerender: rerenderQueue },
   });
 
-  const deliveries = await deliverDigest(digest, project.title, targets).catch(() => [
+  const deliveries = await deliverDigest(digest, project.title, targets, projectId).catch(() => [
     { kind: "webhook" as const, target: "?", ok: false, detail: "delivery crashed" },
   ]);
   const deliveryLine = describeDeliveries(deliveries);
