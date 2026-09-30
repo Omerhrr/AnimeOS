@@ -426,6 +426,32 @@ def speech_mesh_evidence(visemes, duration_sec):
     }
 
 
+# ── THE FACE CREASES WHEN IT ACTS (iteration 93, Layer A): the
+#    drive half of the wrinkle law - the cached wrinkle normal maps'
+#    strengths ride the LIVE expression weights every frame (the
+#    furrow deepens as the scowl deepens, rests when the face rests;
+#    the corner map wears by the absolute weight - both the smile's
+#    and the frown's pull crease the same masses at this stylization).
+#    Mirrors wrinkle.ts bit-exactly (WRINKLE_STRENGTH /
+#    wrinkleStrengthFor); the bake half lives in head_bake.py. ──
+WRINKLE_STRENGTH = 0.85
+WRINKLE_STRENGTH_MAX = 1.2
+
+
+def wrinkle_strength_for(weight):
+    """The driven strength for a live shape weight - mirrors
+    wrinkleStrengthFor in wrinkle.ts (the base strength scaled by the
+    clamped absolute weight, bounded)."""
+    try:
+        w = float(weight)
+    except Exception:  # noqa: BLE001
+        w = 0.0
+    if not math.isfinite(w):
+        w = 0.0
+    w = min(1.0, max(-1.0, w))
+    return min(WRINKLE_STRENGTH_MAX, max(0.0, WRINKLE_STRENGTH * abs(w)))
+
+
 def eye_scale(eye):
     """Eye lid openness as a Z squash on the eye sphere (never fully
     flat so the eyeball stays visible)."""
@@ -1133,6 +1159,26 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None, expr=None):
             kb = keys.get(name)
             if kb is not None:
                 kb.value = clamp(float(expr.get(weight, 0.0)), float(kb.slider_min), float(kb.slider_max))
+
+    # ── THE FACE CREASES WHEN IT ACTS (v93): the wrinkle normals'
+    # strengths ride the LIVE expression weights the same frame the
+    # shape keys do - the furrow deepens as the scowl deepens, the
+    # corner map wears by the absolute weight, and a face at rest
+    # rests at zero (no faked crease). A rig without the nodes (the
+    # hero - its creases are real geometry - the stand-in, an asset
+    # load) has nothing to drive. ──
+    wnodes = figure.get("wrinkleNodes") or {}
+    if wnodes:
+        wweights = {"browKnit": 0.0, "cheekRaise": 0.0, "mouthCorner": 0.0}
+        if isinstance(expr, dict):
+            wweights["browKnit"] = clamp(float(expr.get("knit", 0.0)), 0.0, 1.0)
+            wweights["cheekRaise"] = clamp(float(expr.get("cheek", 0.0)), 0.0, 1.0)
+            wweights["mouthCorner"] = abs(clamp(float(expr.get("corner", 0.0)), -1.0, 1.0))
+        for wshape, wnode in wnodes.items():
+            try:
+                wnode.inputs["Strength"].default_value = wrinkle_strength_for(wweights.get(wshape, 0.0))
+            except Exception:  # noqa: BLE001
+                pass
 
     # ── THE MOUTH SPEAKS IN THE MESH (v92): the mesh half of the
     # lip-sync - the sampled viseme drives the three speech shape
@@ -3120,7 +3166,10 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         head_bake_pass = None
     head_mat = skin_mat
     bake_evidence = None
+    wrinkle_evidence = None
+    wrinkle_nodes = {}
     bake_key_txt = head_bake_pass.bake_key(prof) if head_bake_pass else ""
+    wrinkle_key_txt = head_bake_pass.wrinkle_key(prof) if head_bake_pass else ""
     if head_depth < 5 and head_bake_pass:
         n_path, c_path = head_bake_pass.cache_paths(bake_key_txt)
         if os.path.isfile(n_path) and os.path.isfile(c_path):
@@ -3129,10 +3178,32 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
             if head_bake_pass.wear_baked_maps(bpy, head_mat, n_path, c_path):
                 bake_evidence = {"worn": True, "key": bake_key_txt,
                                  "normal": os.path.basename(n_path), "cavity": os.path.basename(c_path)}
+                # ── THE FACE CREASES WHEN IT ACTS (iteration 93): the
+                #    cached wrinkle set wears INTO the same tree - each
+                #    map through its own Normal Map node, Strength at
+                #    rest now and DRIVEN LIVE by the shape's expression
+                #    weight every frame. The depth wears on the bake's
+                #    own tree (a face with no base bake wears no
+                #    creases - the honest skip). ──
+                wrinkle_nodes = head_bake_pass.wear_wrinkle_maps(bpy, head_mat, wrinkle_key_txt)
+                wrinkle_evidence = (
+                    {"worn": True, "baked": False, "key": wrinkle_key_txt,
+                     "shapes": sorted(wrinkle_nodes.keys()), "strength": WRINKLE_STRENGTH}
+                    if wrinkle_nodes else
+                    {"worn": False, "baked": False, "key": wrinkle_key_txt,
+                     "note": "no cached wrinkle set"})
             else:
                 head_mat = skin_mat  # the wear refused - keep the honest shared grade
                 bake_evidence = {"worn": False, "key": bake_key_txt, "note": "wear refused"}
     hm = sculpt_head_mesh(scn, bpy, head, head_mat, prof, height_f, depth=head_depth)
+    # ── THE FACE PERFORMS THE BEAT (iteration 84): the four
+    #    expression shape keys ride the sculpted head (mesh-local;
+    #    the faceHash stays deterministic per profile + depth - the
+    #    vertex count rides the depth law since iteration 90).
+    #    Sculpted BEFORE the hero bake since iteration 93 - the
+    #    wrinkle bake evaluates these keys at full weight on the deep
+    #    surface; the basis law is unchanged ──
+    expr_keys = sculpt_expression_keys(hm)
     if head_depth >= 5 and head_bake_pass:
         # the hero build bakes down: a depth-4 PROXY of the same face
         # (the light law, the shared spherical UVs) takes the hi->lo
@@ -3144,17 +3215,25 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
             bake_evidence = head_bake_pass.bake_head_depth(bpy, scn, hm, proxy, bake_key_txt)
         except Exception as exc:  # noqa: BLE001
             bake_evidence = {"skipped": f"bake failed: {exc}"}
+        # ── THE FACE CREASES WHEN IT ACTS (iteration 93): the hero
+        #    build bakes the EXPRESSION's shading depth down too - each
+        #    wrinkle-bearing shape at full weight on BOTH surfaces (the
+        #    large move cancels between them; what remains is exactly
+        #    the crease detail the light mesh loses), through the same
+        #    spherical UVs, cached under the wrinkle key. The proxy
+        #    carries its own keys for the same law (deleted with it). ──
+        try:
+            proxy_keys = sculpt_expression_keys(proxy)
+            wrinkle_evidence = head_bake_pass.bake_wrinkle_set(
+                bpy, scn, hm, proxy, wrinkle_key_txt, expr_keys, proxy_keys)
+        except Exception as exc:  # noqa: BLE001
+            wrinkle_evidence = {"skipped": f"wrinkle bake failed: {exc}"}
         me, ma = proxy.data, proxy.data.materials[0] if proxy.data.materials else None
         bpy.data.objects.remove(proxy, do_unlink=True)
         if me is not None:
             bpy.data.meshes.remove(me)
         if ma is not None and ma.users == 0:
             bpy.data.materials.remove(ma)
-    # ── THE FACE PERFORMS THE BEAT (iteration 84): the four
-    #    expression shape keys ride the sculpted head (mesh-local;
-    #    the faceHash stays deterministic per profile + depth - the
-    #    vertex count rides the depth law since iteration 90) ──
-    expr_keys = sculpt_expression_keys(hm)
     # ── THE MOUTH SPEAKS IN THE MESH (iteration 92): the three
     #    speech shape keys ride the same carved head (the basis the
     #    expression sculpt kept stays untouched - the faceHash and
@@ -3375,6 +3454,13 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         # with the sampled viseme weights every frame (the mesh half of
         # the lip-sync); a rig without them skips honestly
         "speechKeys": speech_keys,
+        # THE FACE CREASES WHEN IT ACTS (iteration 93): the worn
+        # wrinkle normal maps' DRIVEN nodes ({shape: NormalMap node}) -
+        # apply_pose scales each Strength by the shape's live
+        # expression weight every frame (rest at zero). Empty on the
+        # hero (its creases are real geometry) and on rigs that never
+        # wore the set.
+        "wrinkleNodes": wrinkle_nodes,
         # THE HAIR IS GROOMED (iteration 85): the strand detail's
         # evidence - the strands grown, the flyaways, the LOD the
         # framing earned, the clamped factors and the deterministic
@@ -3420,6 +3506,14 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
             "planes": 23 if head_depth >= 5 else 8,
             "bakeKey": bake_key_txt,
             "bake": bake_evidence,
+            # THE FACE CREASES WHEN IT ACTS (iteration 93): the
+            # expression's shading depth under the same key law (the
+            # wrinkle key, the factors versioned 93) and the set's
+            # evidence - the hero build's written maps (with
+            # fingerprints), the lower levels' worn set (the driven
+            # nodes), or the honest skip
+            "wrinkleKey": wrinkle_key_txt,
+            "wrinkle": wrinkle_evidence,
         },
     }
 
