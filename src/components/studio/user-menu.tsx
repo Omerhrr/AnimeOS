@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { Check, ChevronDown, Copy, KeyRound, Loader2, LogOut, ShieldCheck, UsersRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -399,7 +399,14 @@ export function UserMenu() {
             {selfIsOwner && <InvitesDialog />}
             <DropdownMenuItem
               className="text-xs cursor-pointer text-red-300 focus:text-red-300"
-              onClick={() => void signOut({ callbackUrl: "/signin" })}
+              onClick={async () => {
+                // Direct cookie clear (DELETE /api/auth/login) instead of
+                // Auth.js signOut() - the standard signout redirects to the
+                // server-derived origin, which is localhost behind the
+                // preview edge. Same preview-proof reasoning as the login.
+                await fetch("/api/auth/login", { method: "DELETE" }).catch(() => {});
+                window.location.assign("/signin");
+              }}
             >
               <LogOut className="h-3.5 w-3.5 mr-2" /> Sign out
             </DropdownMenuItem>

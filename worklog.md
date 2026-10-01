@@ -2054,3 +2054,24 @@ Stage Summary:
 - THE FIRST RENDER of the 108/109 era on this machine: the designed character reads on screen - teal hanfu, crossed collar, sash, painted face, bangs, inked silhouette edges
 - Known limitation named honestly: the hull outline's weight is a constant law (no distance taper yet) and simmed parts (sash tails, hair tails) ride unlined until the hull learns to follow the cloth solver; the freestyle path remains one env flip away when a fixed Blender build lands
 - The board the distribution named is now UNBLOCKED: the render night + vision re-score over the crafted build can burn for real
+
+---
+Task ID: 1
+Agent: main (Super Z)
+Task: Fix the studio UI login through the preview edge (user could not sign in), then read the user's pulled changes.
+
+Work Log:
+- Read the user's pulled changes: local HEAD 9093476 already contains 09f1f4b (user's "fixing issues and make a better design") + Iteration 110 (freestyle SIGABRT bisect -> ANIMEOS_INK inverted-hull ink law, no-ink collection kept FLOATING, worker_run late graph flatten, apply_look severs stale no-ink links; new bridges/blender/anime_character.py + anime_turnaround.py + flesh_pass/toon_pass extensions, design/character-crew.ts + character-spec.ts, e2e-iter109, blender-anime/toon smokes; diffstat 3e6c17c..HEAD = 19 files, +3464/-13).
+- Diagnosed the login failure from dev.log: MissingCSRF once, but the real loop was POST /api/auth/callback/credentials 302 -> bounce to /signin?from=%2F repeatedly; the platform edge proxies with Host rewritten to localhost:3000, so Auth.js derived its base URL as http://localhost:3000 (proof: authjs.callback-url cookie carried localhost through the real preview edge) and answered successful sign-ins with Location: http://localhost:3000/ which no member's browser can follow.
+- Proved it live: full credentials flow through the real preview URL returned 302 with Location http://localhost:3000/ AND a valid session cookie - the server worked, the client redirect was unreachable.
+- Implemented the direct session mint: new src/app/api/auth/login/route.ts (POST verifies bcrypt row, mints the JWE session token via next-auth/jwt encode with secret=AUTH_SECRET and salt=authjs.session-token - the exact name getToken derives with secureCookie unset - sets it on a JSON response; DELETE expires it for sign-out). No Auth.js internals forked; standard handlers intact for E2E.
+- Switched the sign-in page (register -> login chain, full navigation after login) and the roster menu's sign-out to the direct mint.
+- Pinned AUTH_URL/NEXTAUTH_URL=http://localhost:3000 in .env (deterministic cookie naming), added allowedDevOrigins for the preview host in next.config.ts.
+- Caught a platform env trap on the way: the container exports DATABASE_URL=file:/home/z/my-project/db/custom.db (nonexistent) which beats .env - the dev server must start with the explicit DATABASE_URL=file:/home/z/my-project/AnimeOS/db/custom.db (the same convention the E2E suites follow). Restarted the dev server with it.
+- Verified through the real preview edge: login 200 + cookie, /api/projects 200, /api/auth/session returns the OWNER session, wrong password 401, logout clears, signed-in GET / loads; localhost standard credentials flow unchanged (E2E safe); src tsc clean; eslint clean on touched files.
+- README item 17 + this worklog entry.
+
+Stage Summary:
+- Login through the preview now works end to end: the studio door is the direct mint route, the Auth.js localhost flow remains the E2E surface.
+- The seeded OWNER account is director@studio.dev / anchored2026 (created by the E2E suites; the user should sign in with it or register a new account).
+- Next: the user's changes are read and understood (hull ink law + design crew); the board's next work order stays the body read (mannequin-anatomy law, wuxia/cel target) with face key light + hairline riding the same asset-law bump.

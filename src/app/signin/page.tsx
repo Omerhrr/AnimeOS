@@ -1,8 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { Clapperboard, Loader2, LogIn, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +23,6 @@ export default function SignInPage() {
 }
 
 function SignInForm() {
-  const router = useRouter();
   const params = useSearchParams();
   // An invite link (Iteration 50): /signin?invite=CODE pre-aims the
   // form at registration and names what the key carries - the role
@@ -77,15 +75,27 @@ function SignInForm() {
         }
         setNote(data.note ?? "Registered - signing you in…");
       }
-      const result = await signIn("credentials", { email, password, redirect: false });
-      if (result?.error) {
-        setError("Wrong email or password");
+      // The direct mint (see /api/auth/login): sets the session cookie
+      // on a JSON response with NO redirect to chase. The Auth.js
+      // signIn() dance breaks behind the preview edge - its callback
+      // redirects to the server-derived origin (localhost), which no
+      // member's browser can follow.
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Wrong email or password");
         setBusy(false);
         return;
       }
+      // Full navigation so the server components and the session
+      // provider remount against the fresh cookie - router.push
+      // would leave a stale null session rendered for a beat.
       const from = params.get("from") || "/";
-      router.push(from);
-      router.refresh();
+      window.location.assign(from);
     } catch {
       setError("Something went wrong - try again");
       setBusy(false);
