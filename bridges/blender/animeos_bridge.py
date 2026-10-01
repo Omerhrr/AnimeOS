@@ -687,6 +687,132 @@ def eye_scale(eye):
     return max(0.12, clamp(eye, 0.0, 1.2))
 
 
+# ── THE PRESENCE LAW (iteration 107): the share of frame height the
+#    subject owns per shot type - the framing SOLVES the distance from
+#    the subject's MEASURED box and this fill (dist = size / (fill *
+#    2*tan(vfov/2))), so the figure sits inside its frame at the size
+#    the shot type promises (the crafted night's verdict named the
+#    frontier: the figure sat at ~15% of its own medium shot).
+SUBJECT_FILL = {
+    "ESTABLISHING": 0.28,
+    "WIDE": 0.50,
+    "LOW_ANGLE": 0.58,
+    "MEDIUM": 0.74,
+    "CLOSEUP": 0.82,          # solved from the HEAD's measured size
+    "EXTREME_CLOSEUP": 1.15,  # solved from the HEAD's measured size
+}
+PRESENCE_LAW_VERSION = 107
+
+
+def measure_subject(root):
+    """MEASURE the subject from the built figure (the presence law's
+    input): the world bounding box over every mesh descendant, the
+    height, the head's own box (the headMesh's world bbox - the tight
+    framings solve from it) and the derived chest/face aim heights.
+    Deterministic per build; None when the rig is not measurable."""
+    if root is None:
+        return None
+    try:
+        import mathutils  # noqa: F401 - the matrix math below needs it
+        lo = [float("inf")] * 3
+        hi = [float("-inf")] * 3
+        hlo = [float("inf")] * 3
+        hhi = [float("-inf")] * 3
+        head_names = set()
+        stack = [root]
+        while stack:
+            ob = stack.pop()
+            stack.extend(ob.children)
+            if ob.type != "MESH":
+                continue
+            is_head = ob.name == "HeadMesh"
+            for c in ob.bound_box:
+                w = ob.matrix_world @ mathutils.Vector(c)
+                for i in range(3):
+                    lo[i] = min(lo[i], w[i])
+                    hi[i] = max(hi[i], w[i])
+                    if is_head:
+                        hlo[i] = min(hlo[i], w[i])
+                        hhi[i] = max(hhi[i], w[i])
+            if is_head:
+                head_names.add(ob.name)
+        if not head_names or hi[2] <= lo[2]:
+            return None
+        height = hi[2] - lo[2]
+        head_h = (hhi[2] - hlo[2]) or height * 0.15
+        return {
+            "h": round(height, 4),
+            "headH": round(head_h, 4),
+            "face": round((hlo[2] + hhi[2]) / 2.0 + head_h * 0.05, 4),
+            "chest": round(lo[2] + height * 0.66, 4),
+            "floor": round(lo[2], 4),
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+SUBJECT_BODY_RADIUS = 0.55  # hits this close to the aim are the subject's own body
+
+
+def _sightline_clear(scn, bpy, origin, target, margin=0.3):
+    """THE LENS OWNS ITS SIGHTLINE (iteration 107): one ray from the
+    solved camera toward the aim point. A hit NEAR the aim point is
+    the subject's own body (the worn blade hangs in front of the
+    chest - the figure blocked its own chest ray and the walk read
+    'the world owns every ray'); only a hit well short of the subject
+    is the world eating the lens."""
+    import mathutils
+    dg = bpy.context.evaluated_depsgraph_get()
+    o = mathutils.Vector(origin)
+    t = mathutils.Vector(target)
+    d = t - o
+    far = d.length
+    if far < 1e-6:
+        return True
+    hit, loc, _n, _i, _ob, _m = scn.ray_cast(dg, o, d / far, distance=max(0.05, far - margin))
+    if not hit:
+        return True
+    return (loc - t).length < SUBJECT_BODY_RADIUS
+
+
+def solve_sightline(scn, bpy, shot, scene_p, subject):
+    """THE SIGHTLINE WALK (iteration 107): the presence solve can put
+    the camera BEHIND the environment's own bodies (the triad night's
+    medium framed a temple pillar - the vision read 'no character
+    visible'). THE ORDER PRESERVES THE FRAMING (the walk's own night
+    lesson: walking IN first landed torso closeups and fog plates):
+    (1) step the base angle aside (12/24/36 degrees both ways) at the
+    SOLVED distance - the framing survives;
+    (2) walk the distance IN bounded (x0.85, max 4 steps, never below
+    0.6x the solve) with the best aside angle at each step;
+    (3) when the world owns every ray, name it - the closest solve
+    rides. Returns the correction the framing applies: the subject-
+    size scale (the fill solve lands the walked distance) and the
+    angle offset (degrees), both named in the evidence."""
+    fr = _Framing(shot, scene_p, subject)
+    dist0 = fr.dist
+    pos = _solve_position(dist0, fr.h, fr.angle, 0.0)
+    if _sightline_clear(scn, bpy, pos, fr.target):
+        return {"scale": 1.0, "angleOffset": 0.0, "walked": False, "cleared": True, "dist": round(dist0, 3)}
+    for deg in (12.0, -12.0, 24.0, -24.0, 36.0, -36.0):
+        pos = _solve_position(dist0, fr.h, fr.angle + deg, 0.0)
+        if _sightline_clear(scn, bpy, pos, fr.target):
+            return {"scale": 1.0, "angleOffset": deg, "walked": False, "cleared": True, "dist": round(dist0, 3), "steppedAside": deg}
+    dist = dist0
+    floor = dist0 * 0.6
+    for _ in range(4):
+        dist = max(floor, dist * 0.85)
+        for deg in (0.0, 12.0, -12.0, 24.0, -24.0, 36.0, -36.0):
+            pos = _solve_position(dist, fr.h, fr.angle + deg, 0.0)
+            if _sightline_clear(scn, bpy, pos, fr.target):
+                out = {"scale": dist / dist0, "angleOffset": deg, "walked": True, "cleared": True, "dist": round(dist, 3)}
+                if deg:
+                    out["steppedAside"] = deg
+                return out
+    return {"scale": dist / dist0, "angleOffset": 0.0, "walked": True, "cleared": False, "dist": round(dist, 3),
+            "note": "the world owns every ray - the closest solve rides"}
+
+
 class _Framing:
     """The per-shot framing context camera_pose computes once: the
     shot-type table entry, the subject scale correction, the base
@@ -695,7 +821,7 @@ class _Framing:
     beat never re-derives its own framing (a grammar that drifts
     between beats is not direction, it is a slide show)."""
 
-    def __init__(self, shot_payload, scene_payload):
+    def __init__(self, shot_payload, scene_payload, subject=None):
         dist, lens, height = SHOT_FRAMING.get(str(shot_payload.get("shotType", "MEDIUM")).upper(), SHOT_FRAMING["MEDIUM"])
         dist *= float(scene_payload.get("cameraDistance", 1.0))
         has_poses = bool(normalize_pose(shot_payload.get("poseStart")) or normalize_pose(shot_payload.get("poseEnd")))
@@ -705,7 +831,35 @@ class _Framing:
         # the full-scale table and hovered at 1.16m over a 0.9m figure,
         # grading a flat rectangle of terrace)
         framed = has_poses or bool(shot_payload.get("cast"))
-        if framed:
+        angle = 40.0
+        h = height
+        target = [0.0, 0.0, height * 0.75]
+        fill = None
+        if framed and isinstance(subject, dict) and subject.get("h"):
+            # ── THE PRESENCE LAW (iteration 107): the lens SOLVES the
+            #    distance from the subject's MEASURED box - the shot
+            #    type's fill (the share of frame height the subject
+            #    owns) and the real height set the distance
+            #      dist = size / (fill * 2 * tan(vfov/2))
+            #    so the figure sits INSIDE its frame at the size the
+            #    shot type promises (the night's verdict: the figure
+            #    sat at ~15% of its own medium shot). The tight
+            #    framings solve from the HEAD's measured size and aim
+            #    at the measured face; the wide framings solve from
+            #    the whole figure and aim at the measured chest. The
+            #    lens keeps the table's character (the shot type's
+            #    own glass); the 106 multipliers retire to the
+            #    fallback when nothing was measured. ──
+            st = str(shot_payload.get("shotType", "MEDIUM")).upper()
+            tight = st in ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")
+            size = float(subject.get("headH") or subject["h"]) if tight else float(subject["h"])
+            fill = SUBJECT_FILL.get(st, 0.7)
+            tan_half = 10.125 / float(lens)  # the 36mm sensor, horizontal fit, 16:9
+            dist = clamp(size / (fill * 2.0 * tan_half), 0.45, 14.0)
+            h = float(subject.get("chest") or subject["h"] * 0.62) + subject["h"] * 0.08
+            aim = "face" if (dist < 1.2 or tight) else "chest"
+            target = [0.0, 0.0, float(subject.get("face") or subject["h"] * 0.84) if aim == "face" else float(subject.get("chest") or subject["h"] * 0.62)]
+        elif framed:
             # prop-scale distance: the designed figure stands ~0.9m tall
             # (0.45x), and the lens table was tuned for full-scale sets -
             # at 1.25x a MEDIUM saw only 0.43m of frame height (a shins-
@@ -713,23 +867,32 @@ class _Framing:
             # framings cap tighter so a night establishing never loses
             # the subject entirely
             dist *= 1.9 if dist <= 1.2 else 1.35
-
-        angle = 40.0
-        h = height
-        target = [0.0, 0.0, height * 0.75]
-        # pose shots frame the DESIGNED figure: camera at chest/face
-        # height (NOT the 1.2-1.6m lens heights - those pitched every
-        # pose shot down onto the hero's head), tight shot types aim at
-        # the FACE (0.84m post-scale), wider framings at the chest (0.62m)
         if framed:
-            h = 0.62 + height * 0.12
-            target = [0.0, 0.0, 0.84 if dist < 1.2 else 0.62]
+            # pose shots frame the DESIGNED figure: camera at chest/face
+            # height (NOT the 1.2-1.6m lens heights - those pitched every
+            # pose shot down onto the hero's head), tight shot types aim at
+            # the FACE, wider framings at the chest (the measured branch
+            # set h/target from the subject's own box)
+            if fill is None:
+                h = 0.62 + height * 0.12
+                target = [0.0, 0.0, 0.84 if dist < 1.2 else 0.62]
             # and the camera stays on the figure's FRONT side: the figure
             # faces -Y, and the old base-angle formula (0.9 + n*0.7 rad)
             # landed tight framings on the back of the hair - a black
-            # frame. Small spread around -100 deg keeps every shot on the
-            # face while shot-to-shot variety survives.
-            angle = math.radians(-100.0 + 16.0 * ((shot_payload.get("number") or 1) % 7))
+            # frame. THE SPREAD AIMS AT THE FACE (iteration 107's second
+            # find: the -100-degree base only READ front-on because the
+            # double conversion flattened it to ~-1.2 degrees; at honest
+            # degrees -100 lands BEHIND the shoulder - the re-score saw
+            # the back-right quarter and read 'metallic humanoid'). The
+            # front arc is +-24 degrees around dead front: every shot on
+            # the face, shot-to-shot variety survives. THE SIGHTLINE
+            # STEP-ASIDE (iteration 107) rides the subject box - a world
+            # body that owned the ray at every depth moves the base
+            # angle aside by the walked offset.
+            angle_deg = -20.0 + 7.0 * ((shot_payload.get("number") or 1) % 7)
+            if isinstance(subject, dict) and subject.get("_angleOffset"):
+                angle_deg += float(subject["_angleOffset"])
+            angle = angle_deg
         self.dist = dist
         self.lens = lens
         self.height = height
@@ -738,6 +901,7 @@ class _Framing:
         self.angle = angle
         self.h = h
         self.target = target
+        self.fill = fill
 
 
 def apply_camera_move(movement, t, fr):
@@ -786,16 +950,24 @@ def _pose_follow(shot_payload, fr, radius, t):
     return radius
 
 
-def _solve_position(radius, h, angle, lateral):
-    rad = math.radians(angle)
+def _solve_position(radius, h, angle_deg, lateral):
+    """THE ANGLE CONTRACT IS DEGREES (iteration 107's find): the move
+    vocabulary speaks degrees (ORBIT's 44-degree swing, PAN's 24), the
+    framed base angle speaks degrees - but _Framing stored RADIANS and
+    this converted them AGAIN, silently flattening every framed shot's
+    camera to ~-1.2 degrees (dead front-on, the -100-degree spread's
+    variety cancelled). One unit, end to end: degrees."""
+    rad = math.radians(angle_deg)
     return [radius * math.sin(rad) + lateral, -radius * math.cos(rad), h]
 
 
-def camera_pose(shot_payload, scene_payload, t):
+def camera_pose(shot_payload, scene_payload, t, subject=None):
     """Camera position + look target for progress t (0..1) through the
     shot, driven by the movement grammar (whole-clip path: ONE move
-    across the shot; grammar shots go through grammar_camera_pose)."""
-    fr = _Framing(shot_payload, scene_payload)
+    across the shot; grammar shots go through grammar_camera_pose).
+    The subject's measured box (the presence law) rides in when the
+    caller measured one - the framing solves the distance from it."""
+    fr = _Framing(shot_payload, scene_payload, subject)
     movement = str(shot_payload.get("movement") or "STATIC").upper()
     if movement not in ("ORBIT", "PAN", "TRACKING", "CRANE", "DOLLY_IN", "DOLLY_OUT", "TILT_UP", "TILT_DOWN"):
         movement = "STATIC"
@@ -941,12 +1113,12 @@ def _beat_at(beats, t):
     return 0, beats[0]
 
 
-def grammar_camera_pose(shot_payload, scene_payload, grammar, t):
+def grammar_camera_pose(shot_payload, scene_payload, grammar, t, subject=None):
     """The grammar path: pose the ACTIVE beat in beat-local time, then
     ease into the NEXT beat's start camera across the fade zone. Both
     solves share the framing context, so the framing never drifts
     between beats."""
-    fr = _Framing(shot_payload, scene_payload)
+    fr = _Framing(shot_payload, scene_payload, subject)
     idx, beat = _beat_at(grammar, t)
     span = max(1e-6, beat["to"] - beat["from"])
     lt = clamp((t - beat["from"]) / span, 0.0, 1.0)
@@ -1929,17 +2101,53 @@ def _grade_skin_tree(mat, color_hex, prof, sdepth=None):
     mat["animeosProfile"] = json.dumps(prof, sort_keys=True)
 
 
-def _grade_cloth_tree(mat, color_hex, prof):
-    """THE SURFACE IS GRADED (iteration 83): the cloth tree - the dye
-    ramped into shadow/high ends (the painted gradient), the fabric
-    sheen, the weave bump and the fold-rim lift. The robe, the accent
-    and the boots all build from this one tree."""
+def _palette_ends(palette):
+    """THE SHEET'S OWN RANGE (iteration 107): the darkest and lightest
+    members of the sheet palette by luminance - the ends the cloth's
+    dye ramp pulls toward so the sheet's color RANGE rides the pixels
+    (one blended dye drowned under the shot lighting; the range
+    survives it). Deterministic: the same palette lands the same ends."""
+    if not isinstance(palette, list) or not palette:
+        return None, None
+    members = [str(h) for h in palette if isinstance(h, str) and h.startswith("#")]
+    if not members:
+        return None, None
+    def lum(h):
+        r, g, b = hex_to_rgb(h)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    dark = min(members, key=lum)
+    light = max(members, key=lum)
+    return dark, light
+
+
+PALETTE_PULL = 0.45   # the sheet's ends pull the ramp ends, bounded
+PALETTE_WASH = 0.22   # the large-scale sheet zone rides at this cap
+
+
+def _grade_cloth_tree(mat, color_hex, prof, palette=None):
+    """THE SURFACE IS GRADED (iteration 83) and THE SHEET'S RANGE RIDES
+    THE PIXELS (iteration 107): the cloth tree - the dye ramped into
+    shadow/high ends (the painted gradient), the fabric sheen, the
+    weave bump and the fold-rim lift. When the sheet's measured
+    palette arrives, the ramp's shadow/high ends pull toward the
+    palette's own dark/light members (bounded, PALETTE_PULL) and a
+    large-scale wash mixes a mid member across the garment
+    (PALETTE_WASH) - the hexes survive the shot lighting because the
+    pixels carry the sheet's RANGE, not one flat blended dye. The
+    robe, the accent and the boots all build from this one tree."""
     f = _graded_factors(prof)
     nt, b, _out = _grade_common(mat)
     base = hex_to_rgb(color_hex)
     ramp = f["clothRamp"]
     shadow = tuple(c * (1.0 - ramp * 0.55) for c in base)
     high = _lift(base, ramp * 0.4)
+    dark_end, light_end = _palette_ends(palette)
+    if dark_end is not None:
+        d = hex_to_rgb(dark_end)
+        shadow = tuple(shadow[i] + (d[i] - shadow[i]) * PALETTE_PULL for i in range(3))
+    if light_end is not None:
+        lt = hex_to_rgb(light_end)
+        high = tuple(high[i] + (lt[i] - high[i]) * PALETTE_PULL for i in range(3))
     b.inputs["Roughness"].default_value = 0.82
     if "Sheen Weight" in b.inputs:
         b.inputs["Sheen Weight"].default_value = f["clothSheen"]
@@ -1960,7 +2168,39 @@ def _grade_cloth_tree(mat, color_hex, prof):
     m_mix.inputs["Color2"].default_value = (*high, 1.0)
     nt.links.new(n_mottle.outputs["Fac"], m_ramp.inputs["Fac"])
     nt.links.new(m_ramp.outputs["Color"], m_mix.inputs["Fac"])
-    nt.links.new(m_mix.outputs[0], b.inputs["Base Color"])
+    dyed = m_mix.outputs[0]
+    # 1b. THE SHEET'S RANGE AT RENDER SCALE (iteration 107): a
+    #     large-scale zone noise mixes a mid-palette member across the
+    #     garment - big cloth areas carry the sheet's second color the
+    #     way the sheet paints them, at the scale the camera reads
+    if dark_end is not None:
+        members = sorted([str(h) for h in (palette or []) if isinstance(h, str) and h.startswith("#")], key=lambda h: 0.2126 * hex_to_rgb(h)[0] + 0.7152 * hex_to_rgb(h)[1] + 0.0722 * hex_to_rgb(h)[2])
+        mid = members[len(members) // 2]
+        n_zone = nt.nodes.new("ShaderNodeTexNoise")
+        n_zone.location = (-560, -80)
+        n_zone.inputs["Scale"].default_value = 2.2
+        n_zone.inputs["Detail"].default_value = 2.0
+        z_ramp = nt.nodes.new("ShaderNodeValToRGB")
+        z_ramp.location = (-340, -80)
+        z_ramp.color_ramp.elements[0].position = 0.38
+        z_ramp.color_ramp.elements[1].position = 0.62
+        z_mix = nt.nodes.new("ShaderNodeMixRGB")
+        z_mix.location = (80, 120)
+        z_mix.blend_type = "MIX"
+        z_mix.inputs["Color1"].default_value = (*hex_to_rgb(mid), 1.0)
+        z_mix.inputs["Fac"].default_value = 0.0
+        nt.links.new(n_zone.outputs["Fac"], z_ramp.inputs["Fac"])
+        nt.links.new(z_ramp.outputs["Color"], z_mix.inputs["Fac"])
+        # the zone's own strength caps at PALETTE_WASH (the wash rides,
+        # it never repaints - the dye's identity holds the majority)
+        z_clamp = nt.nodes.new("ShaderNodeMath")
+        z_clamp.location = (-100, -80)
+        z_clamp.operation = "MULTIPLY"
+        z_clamp.inputs[1].default_value = PALETTE_WASH
+        nt.links.new(z_ramp.outputs["Color"], z_clamp.inputs[0])
+        nt.links.new(z_clamp.outputs[0], z_mix.inputs["Fac"])
+        nt.links.new(dyed, z_mix.inputs["Color2"])
+        dyed = z_mix.outputs[0]
     # 2. the fold rim: fresnel lifts the mottled dye toward its high end
     lw = nt.nodes.new("ShaderNodeLayerWeight")
     lw.location = (-560, 420)
@@ -1975,7 +2215,7 @@ def _grade_cloth_tree(mat, color_hex, prof):
     r_mix.inputs["Color2"].default_value = (*high, 1.0)
     nt.links.new(lw.outputs["Fresnel"], rim_mul.inputs[0])
     nt.links.new(rim_mul.outputs[0], r_mix.inputs["Fac"])
-    nt.links.new(m_mix.outputs[0], r_mix.inputs["Color1"])
+    nt.links.new(dyed, r_mix.inputs["Color1"])
     nt.links.new(r_mix.outputs[0], b.inputs["Base Color"])
     # 3. the weave: a tight noise bump (the fabric is not glass)
     n_weave = nt.nodes.new("ShaderNodeTexNoise")
@@ -1991,6 +2231,7 @@ def _grade_cloth_tree(mat, color_hex, prof):
     mat["animeosKind"] = "cloth"
     mat["animeosBaseHex"] = str(color_hex)
     mat["animeosProfile"] = json.dumps(prof, sort_keys=True)
+    mat["animeosSheetPalette"] = json.dumps(palette or [], sort_keys=True)
 
 
 def _grade_hair_tree(mat, color_hex, prof):
@@ -2042,11 +2283,13 @@ def _grade_hair_tree(mat, color_hex, prof):
     mat["animeosProfile"] = json.dumps(prof, sort_keys=True)
 
 
-def graded_mat(bpy, kind, name, color_hex, prof, sdepth=None):
+def graded_mat(bpy, kind, name, color_hex, prof, sdepth=None, palette=None):
     """Build ONE graded material of the named kind (skin / cloth /
     hair) from its dye and the profile. The skin kind takes the
     skin-depth profile too (iteration 91) - the subsurface + coat
-    depth the hex's own luminance and saturation set."""
+    depth the hex's own luminance and saturation set. The cloth kind
+    takes the sheet palette (iteration 107) - the ramp ends pull
+    toward the sheet's own dark/light members."""
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     if kind == "skin":
@@ -2054,16 +2297,20 @@ def graded_mat(bpy, kind, name, color_hex, prof, sdepth=None):
     elif kind == "hair":
         _grade_hair_tree(mat, color_hex, prof)
     else:
-        _grade_cloth_tree(mat, color_hex, prof)
+        _grade_cloth_tree(mat, color_hex, prof, palette=palette)
     return mat
 
 
-def regrade_material(mat, new_hex):
+def regrade_material(mat, new_hex, palette=None):
     """THE SHEET DRESSES THE RENDER meets THE SURFACE IS GRADED: a
     graded material's DYE is re-set (the ramp's shadow/high ends, the
     warm zones and the rim lift all derive from the same dye, so the
     tree rebuilds from the new hex); a legacy flat material recolors
-    its Principled Base Color exactly as before. Returns True when the
+    its Principled Base Color exactly as before. THE SHEET'S RANGE
+    (iteration 107): the caller's palette (the conformance's measured
+    clusters) rides the rebuild - the cloth tree pulls its ramp ends
+    toward the sheet's own dark/light members; a regrade without one
+    reuses the palette stored on the material. Returns True when the
     color landed, False when the material cannot take it (named in the
     conformance's skipped rows)."""
     kind = mat.get("animeosKind") if isinstance(mat.get("animeosKind"), str) else None
@@ -2094,7 +2341,17 @@ def regrade_material(mat, new_hex):
         elif kind == "hair":
             _grade_hair_tree(mat, new_hex, prof)
         else:
-            _grade_cloth_tree(mat, new_hex, prof)
+            ride = palette
+            if ride is None:
+                raw_pal = mat.get("animeosSheetPalette")
+                if isinstance(raw_pal, str):
+                    try:
+                        parsed_pal = json.loads(raw_pal)
+                        if isinstance(parsed_pal, list):
+                            ride = parsed_pal
+                    except Exception:  # noqa: BLE001
+                        ride = None
+            _grade_cloth_tree(mat, new_hex, prof, palette=ride)
         return True
     b = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
     if b is None:
@@ -2393,6 +2650,15 @@ def _speech_key_deltas(name, x, y, z):
     return 0.0, 0.0, 0.0
 
 
+# THE RELIEF ANSWERS THE FRAMING (iteration 107): the deep planes'
+# delta scale - the 90 deltas (0.5-2.5mm) were invisible at the
+# framing the shots actually ride (the scorer read a featureless
+# vessel), so the planes' deltas carry this factor. The kernels'
+# footprints are unchanged; the same profile + relief always lands
+# the same mesh, and the factor rides the sculpt's evidence.
+FACE_RELIEF = 2.0
+
+
 def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f, depth=4):
     """THE FACE IS SCULPTED, NOT ASSEMBLED (iteration 82) and THE HEAD
     IS CARVED AT DEPTH (iteration 90, Layer A): the head is a real
@@ -2423,6 +2689,8 @@ def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f, depth=4):
     r = 0.115
     deep = depth >= 5
     mesh = prim(scn, bpy.ops.mesh.primitive_ico_sphere_add, subdivisions=int(depth), radius=r, location=(0, 0, 0))
+    # FACE_RELIEF is read inside the per-vertex loop (the deep planes'
+    # delta scale - defined at module level so the evidence mirrors it)
     mesh.name = "HeadMesh"
     mesh.data.materials.append(skin_mat)
     smooth(mesh)
@@ -2469,66 +2737,73 @@ def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f, depth=4):
         if deep:
             # ── the hero planes (iteration 90): each a bounded
             #    kernel over the same unit-sphere space, the front
-            #    the -Y face, every delta 0.5-2.5mm in world units ──
+            #    the -Y face. THE RELIEF ANSWERS THE FRAMING
+            #    (iteration 107): the 90 deltas (0.5-2.5mm) were
+            #    invisible at the framing the shots actually ride -
+            #    the scorer read a featureless vessel - so the
+            #    planes' deltas scale by FACE_RELIEF (the kernels'
+            #    footprints unchanged; the same profile + relief
+            #    always lands the same mesh). ──
             ax = abs(x)
+            rel = FACE_RELIEF
             # 9. nose bridge: the sharp crest the wedge only hinted
             if y < -0.80 and ax < 0.13 and 0.00 < z < 0.26:
                 fall = (1.0 - ax / 0.13) * max(0.0, 1.0 - abs((z - 0.13) / 0.13))
                 if fall > 0.0:
-                    ny = ny - 0.015 * fall
+                    ny = ny - 0.015 * rel * fall
             # 10. nose tip: the focused ball the wedge spread too wide
             if y < -0.90 and ax < 0.10 and -0.12 < z < 0.02:
                 fall = (1.0 - ax / 0.10) * max(0.0, 1.0 - abs((z + 0.05) / 0.07))
                 if fall > 0.0:
-                    ny = ny - 0.018 * fall
+                    ny = ny - 0.018 * rel * fall
             # 11. nostril wings: the flare beside the tip
             if y < -0.82 and 0.08 < ax < 0.22 and -0.14 < z < 0.02:
                 fall = min(1.0, (ax - 0.08) / 0.06) * max(0.0, 1.0 - abs((z + 0.06) / 0.08))
                 if fall > 0.0:
-                    nx = nx + (1.0 if x >= 0 else -1.0) * 0.010 * fall
-                    ny = ny - 0.004 * fall
+                    nx = nx + (1.0 if x >= 0 else -1.0) * 0.010 * rel * fall
+                    ny = ny - 0.004 * rel * fall
             # 12. philtrum: the groove between nose and lip
             if y < -0.85 and ax < 0.05 and -0.30 < z < -0.20:
                 fall = (1.0 - ax / 0.05) * max(0.0, 1.0 - abs((z + 0.25) / 0.05))
                 if fall > 0.0:
-                    ny = ny + 0.006 * fall
+                    ny = ny + 0.006 * rel * fall
             # 13. upper lip: the forward mass
             if y < -0.85 and ax < 0.20 and -0.38 < z < -0.30:
                 fall = (1.0 - ax / 0.20) * max(0.0, 1.0 - abs((z + 0.34) / 0.04))
                 if fall > 0.0:
-                    ny = ny - 0.010 * fall
+                    ny = ny - 0.010 * rel * fall
             # 14. cupid's bow: the two peaks and the center dip
             if y < -0.87 and ax < 0.09 and -0.36 < z < -0.31:
                 peak = max(0.0, 1.0 - abs((ax - 0.055) / 0.035))
                 if peak > 0.0:
-                    ny = ny - 0.005 * peak
+                    ny = ny - 0.005 * rel * peak
                 if ax < 0.02:
-                    ny = ny + 0.004 * (1.0 - ax / 0.02)
+                    ny = ny + 0.004 * rel * (1.0 - ax / 0.02)
             # 15. lower lip: the fuller mass
             if y < -0.85 and ax < 0.17 and -0.48 < z < -0.40:
                 fall = (1.0 - ax / 0.17) * max(0.0, 1.0 - abs((z + 0.44) / 0.04))
                 if fall > 0.0:
-                    ny = ny - 0.012 * fall
+                    ny = ny - 0.012 * rel * fall
             # 16. lip line: the crease between the masses
             if y < -0.85 and ax < 0.18 and -0.40 < z < -0.37:
                 fall = (1.0 - ax / 0.18) * max(0.0, 1.0 - abs((z + 0.385) / 0.015))
                 if fall > 0.0:
-                    ny = ny + 0.005 * fall
+                    ny = ny + 0.005 * rel * fall
             # 17. upper eyelids: the lid folds forward over the socket
             if y < -0.80 and 0.20 < ax < 0.55 and 0.24 < z < 0.36:
                 fall = min(1.0, (ax - 0.20) / 0.08) * max(0.0, 1.0 - abs((z - 0.30) / 0.06))
                 if fall > 0.0:
-                    ny = ny - 0.008 * fall
+                    ny = ny - 0.008 * rel * fall
             # 18. lower lids: the subtle under-eye band
             if y < -0.82 and 0.20 < ax < 0.55 and 0.10 < z < 0.18:
                 fall = min(1.0, (ax - 0.20) / 0.08) * max(0.0, 1.0 - abs((z - 0.14) / 0.04))
                 if fall > 0.0:
-                    ny = ny - 0.004 * fall
+                    ny = ny - 0.004 * rel * fall
             # 19. tear ducts: the inner-corner hollows
             if y < -0.85 and 0.12 < ax < 0.20 and 0.16 < z < 0.24:
                 fall = max(0.0, 1.0 - abs((ax - 0.16) / 0.04)) * max(0.0, 1.0 - abs((z - 0.20) / 0.04))
                 if fall > 0.0:
-                    ny = ny + 0.005 * fall
+                    ny = ny + 0.005 * rel * fall
             # 20. nasolabial creases: the wing-to-corner diagonal
             if y < -0.80 and -0.36 < z < -0.08:
                 cxt = max(0.0, min(1.0, (-0.08 - z) / 0.28))  # 0 at wing, 1 at corner
@@ -2537,22 +2812,22 @@ def sculpt_head_mesh(scn, bpy, head, skin_mat, prof, height_f, depth=4):
                 d = math.hypot(ax - line_x, (z - line_z) * 0.5)
                 fall = max(0.0, 1.0 - d / 0.05)
                 if fall > 0.0:
-                    ny = ny + 0.006 * fall
+                    ny = ny + 0.006 * rel * fall
             # 21. temple hollows: the inset above the cheekbones
             if y < 0.2 and 0.55 < ax < 0.85 and 0.28 < z < 0.52:
                 fall = min(1.0, (ax - 0.55) / 0.10) * max(0.0, 1.0 - abs((z - 0.40) / 0.12))
                 if fall > 0.0:
-                    nx = nx * (1.0 - 0.012 * fall)
+                    nx = nx * (1.0 - 0.012 * rel * fall)
             # 22. jawline edge: the crisp band the taper only smoothed
             if -0.55 < z < -0.38 and ax > 0.25:
                 fall = max(0.0, 1.0 - abs((z + 0.46) / 0.09)) * min(1.0, (ax - 0.25) / 0.15)
                 if fall > 0.0:
-                    nx = nx * (1.0 - 0.020 * fall)
+                    nx = nx * (1.0 - 0.020 * rel * fall)
             # 23. chin ball: the focused projection below the band
             if y < 0.1 and ax < 0.16 and -0.78 < z < -0.60:
                 fall = (1.0 - ax / 0.16) * max(0.0, 1.0 - abs((z + 0.69) / 0.09))
                 if fall > 0.0:
-                    ny = ny - 0.010 * fall
+                    ny = ny - 0.010 * rel * fall
         v.co.x = nx * r
         v.co.y = ny * r
         v.co.z = nz * r
@@ -2657,22 +2932,29 @@ def sculpt_hair(scn, bpy, head, hair_mat, style, hair_f, height_f):
         parts.append(obj.name)
         verts += len(obj.data.vertices)
 
-    # the cap every style shares: a dome hugging the skull (a bigger
-    # sphere swallowed the face - the loft hugs instead)
+    # the cap every style shares: a dome hugging the skull. THE FACE
+    # IS NOT HAIR (iteration 107): the night's pixels read the head as
+    # a dark vessel because the cap was a FULL RING - the front
+    # reached the eye line and buried the face under hair. The cap's
+    # rings now center behind the skull (y +0.028) and squash along y,
+    # so the back and crown stay covered while the front stops at the
+    # hairline: the face band (brow to chin) stays SKIN.
     cap = loft_strand(scn, bpy, "HairCap", hair_mat, _rings([
-        (0.0, 0.005, 0.02, 0.108, 1.0, 0.96),
-        (0.0, 0.005, 0.10, 0.116, 1.0, 0.98),
-        (0.0, 0.005, dome_top * 0.72, 0.112, 1.0, 0.98),
-        (0.0, 0.005, dome_top * 0.94, 0.082, 1.0, 1.0),
-        (0.0, 0.005, dome_top, 0.03, 1.0, 1.0),
+        (0.0, 0.028, 0.02, 0.108, 1.0, 0.74),
+        (0.0, 0.028, 0.10, 0.116, 1.0, 0.76),
+        (0.0, 0.028, dome_top * 0.72, 0.112, 1.0, 0.82),
+        (0.0, 0.028, dome_top * 0.94, 0.082, 1.0, 0.9),
+        (0.0, 0.028, dome_top, 0.03, 1.0, 1.0),
     ], hair_f))
     add(cap)
     # the fringe: a THIN wedge over the forehead (a deep fringe hangs
-    # onto the eyes and reads as a permanent scowl)
+    # onto the eyes and reads as a permanent scowl - and at eye level
+    # it painted the whole face hair). The wedge now stops above the
+    # brow line (the brows sit at z 0.182) so the eyes read under it.
     fringe = loft_strand(scn, bpy, "HairFringe", hair_mat, [
-        {"c": (0.0, -0.082, 0.208 * height_f), "r": 0.055, "sx": 1.45, "sy": 0.9},
-        {"c": (0.0, -0.098, 0.175 * height_f), "r": 0.032, "sx": 1.4, "sy": 0.85},
-        {"c": (0.0, -0.102, 0.148 * height_f), "r": 0.0},
+        {"c": (0.0, -0.086, 0.212 * height_f), "r": 0.05, "sx": 1.4, "sy": 0.9},
+        {"c": (0.0, -0.094, 0.196 * height_f), "r": 0.028, "sx": 1.35, "sy": 0.85},
+        {"c": (0.0, -0.096, 0.178 * height_f), "r": 0.0},
     ])
     add(fringe)
 
@@ -3001,14 +3283,15 @@ def character_asset_key(dna):
     the identity fields, the conformance, and every profile the
     sheet read compiled, absent ones named '-'. Mirrors
     characterAssetKey in character-asset.ts field for field. The
-    leading law stamp moved 95 -> 106 (THE FIGURE IS CRAFTED): the
-    craft change is an asset change - the library assets RE-BUILD
-    with the crafted meshes, honestly re-versioned."""
+    leading law stamp moved 95 -> 106 (THE FIGURE IS CRAFTED) and
+    106 -> 107 (THE TRIAD: surface/face/presence all change how the
+    asset is built and surfaced) - the craft change is an asset
+    change - the library assets RE-BUILD, honestly re-versioned."""
     dna = dna if isinstance(dna, dict) else {}
     cf = dna.get("conformFactor")
     cf = 0.35 if cf is None else cf
     return "|".join([
-        "106",
+        "107",
         _ka_st(dna.get("name")),
         _ka_st(dna.get("hairStyle")),
         _ka_hx(dna.get("hairColor")),
@@ -3794,24 +4077,33 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     speech_keys = sculpt_speech_keys(hm)
 
     # ── face (v3.2 rig, restyled): stylized eyes with readable irises;
-    #    the eye SIZE rides the face profile's eyeScale ──
+    #    the eye SIZE rides the face profile's eyeScale. THE FEATURES
+    #    STEP OUT OF THE SKULL (iteration 107): the night's close-up
+    #    framed a featureless head because the emissive eyes sat INSIDE
+    #    the head ellipsoid (a 0.5mm sliver past the surface) and the
+    #    hair cap covered the rest - the sockets now sit forward-set
+    #    with the eyeball and iris genuinely proud of the skin, and
+    #    the brow/mouth/nose carry the same law. THE IRIS IS A HUMAN
+    #    IRIS (the walk night's lesson: the blade's green emission on
+    #    the iris read as a robot's visor) - a dark iris over the pale
+    #    eyeball, a whisper of emission so it reads at distance. ──
     eye_mat = emission_mat(bpy, "EyeMat", "#cfe8ff", 2.4)
-    iris_mat = emission_mat(bpy, "IrisMat", dna.get("bladeColor", "#5eead4"), 4.5)
+    iris_mat = emission_mat(bpy, "IrisMat", "#141a17", 0.55)
     feature_mat = principled_mat(bpy, "FeatureMat", "#141118", 0.85)
     es = prof["factors"]["eyeScale"]
 
     def eye(side_sign, name):
-        piv = empty(name, head, (side_sign * 0.046, -0.104, 0.148))
-        sphere(name + "Mesh", piv, (0, 0, 0), 0.016 * es, eye_mat, scale=(1.0, 0.5, 1.2))
+        piv = empty(name, head, (side_sign * 0.048, -0.108, 0.146))
+        sphere(name + "Mesh", piv, (0, 0, 0), 0.020 * es, eye_mat, scale=(1.0, 0.55, 1.2))
         # the iris must POKE out past the white sphere or it never shows
-        sphere(name + "Iris", piv, (0, -0.011, 0), 0.008 * es, iris_mat, scale=(1.0, 0.4, 1.4))
+        sphere(name + "Iris", piv, (0, -0.015, 0), 0.011 * es, iris_mat, scale=(1.0, 0.45, 1.4))
         return piv
 
     def brow(side_sign, name):
-        piv = empty(name, head, (side_sign * 0.05, -0.108, 0.185))
+        piv = empty(name, head, (side_sign * 0.05, -0.112, 0.182))
         m = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
         m.name = name + "Mesh"
-        m.scale = (0.03, 0.007, 0.007)
+        m.scale = (0.034, 0.008, 0.01)
         m.data.materials.append(hair_mat)
         m.parent = piv
         craft_soften(m, CRAFT_BEVELS["brow"])
@@ -3822,16 +4114,16 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     eye_r = eye(-1.0, "EyeR")
     brow_l = brow(1.0, "BrowL")
     brow_r = brow(-1.0, "BrowR")
-    mouth = empty("Mouth", head, (0.0, -0.102, 0.05))
+    mouth = empty("Mouth", head, (0.0, -0.106, 0.046))
     mm = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
     mm.name = "MouthMesh"
-    mm.scale = (0.024, 0.006, 0.011)
+    mm.scale = (0.028, 0.007, 0.013)
     mm.data.materials.append(feature_mat)
     mm.parent = mouth
     craft_soften(mm, CRAFT_BEVELS["mouth"])
     crafted_parts.append("MouthMesh")
-    # nose hint
-    sphere("NoseMesh", head, (0.0, -0.112, 0.095), 0.012, skin_mat, scale=(0.7, 0.7, 0.9))
+    # nose hint: forward-set so the profile breaks the silhouette line
+    sphere("NoseMesh", head, (0.0, -0.118, 0.092), 0.014, skin_mat, scale=(0.75, 0.75, 0.95))
 
     # elder beard (v4.1): when the design text flags one, a shaded
     # beard hangs from chin and jaw, moving with the head
@@ -4103,6 +4395,7 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
             "namedBySheet": prof["fields"],
             "parts": hair_evidence["parts"],
             "verts": hair_evidence["verts"] + len(hm.data.vertices),
+            "relief": FACE_RELIEF,
             "faceHash": hashlib.sha256(
                 "".join(f"{v.co.x:.5f},{v.co.y:.5f},{v.co.z:.5f};" for v in hm.data.vertices).encode("utf-8")
             ).hexdigest()[:16],
@@ -5396,7 +5689,7 @@ def worker_run(job_file):
                 "name": _ka_st(hero.get("name")),
                 "hash": character_asset_hash(hero),
                 "sections": list(CHARACTER_ASSET_SECTIONS),
-                "lawVersion": 106,
+                "lawVersion": 107,
             }
             # THE FEET STAY PLANTED (iteration 96): the leg IK's law
             # evidence rides the state - the deterministic hash over
@@ -5480,9 +5773,12 @@ def worker_run(job_file):
                         continue
                     # THE SURFACE IS GRADED (iteration 83): a graded
                     # material's DYE re-sets (the whole tree rebuilds
-                    # from the new hex - one law, one dye); a legacy
-                    # flat material recolors its Base Color as before.
-                    if not regrade_material(mat, str(row.get("to") or "#000000")):
+                    # from the new hex - one law, one dye); THE SHEET'S
+                    # RANGE (iteration 107): the measured palette rides
+                    # the rebuild, so the pixels carry the sheet's own
+                    # ramp ends, not one blended dye. A legacy flat
+                    # material recolors its Base Color as before.
+                    if not regrade_material(mat, str(row.get("to") or "#000000"), conf.get("palette")):
                         skipped.append({"mat": mat_name, "skipped": "no principled node"})
                         continue
                     if row.get("skipped"):
@@ -5945,17 +6241,69 @@ def worker_run(job_file):
         os.makedirs(frames_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{job_id}.mp4")
 
+        # ── THE PRESENCE LAW (iteration 107): the subject is MEASURED
+        #    once from the built figure's world box and the framing
+        #    solves every frame's distance from it - the evidence
+        #    names the measured height, the solved fill and the law
+        #    version (a figure that could not be measured keeps the
+        #    106 table, honestly absent from the evidence). ──
+        subject_ctx = None
+        if figure is not None and isinstance(figure, dict):
+            try:
+                bpy.context.view_layer.update()
+                subject_ctx = measure_subject(figure.get("root"))
+            except Exception:  # noqa: BLE001
+                subject_ctx = None
+        sightline_ev = None
+        if subject_ctx is not None:
+            # THE LENS OWNS ITS SIGHTLINE (iteration 107): the solve
+            # may land the camera behind the world's own bodies - the
+            # walk corrects the subject solve sizes (the fill solve
+            # lands the walked distance) and steps the angle aside
+            # when the ray is owned at every depth; the correction
+            # rides the evidence.
+            try:
+                sightline_ev = solve_sightline(scn, bpy, shot, scene_p, subject_ctx)
+                subject_ctx["h"] = round(subject_ctx["h"] * sightline_ev["scale"], 4)
+                subject_ctx["headH"] = round(subject_ctx["headH"] * sightline_ev["scale"], 4)
+                if sightline_ev.get("angleOffset"):
+                    subject_ctx["_angleOffset"] = sightline_ev["angleOffset"]
+            except Exception:  # noqa: BLE001
+                sightline_ev = None
+        if subject_ctx is not None:
+            fr0 = _Framing(shot, scene_p, subject_ctx)
+            st0 = str(shot.get("shotType") or "MEDIUM").upper()
+            presence_ev = {
+                "lawVersion": PRESENCE_LAW_VERSION,
+                "subjectH": subject_ctx["h"],
+                "headH": subject_ctx["headH"],
+                "fill": fr0.fill,
+                "dist": round(fr0.dist, 3),
+                "lens": fr0.lens,
+                "aimZ": round(fr0.target[2], 3),
+                "aim": "face" if (fr0.dist < 1.2 or st0 in ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")) else "chest",
+            }
+            if sightline_ev is not None:
+                presence_ev["sightline"] = sightline_ev
+            state["render"]["presence"] = presence_ev
+        else:
+            state["render"]["presence"] = {
+                "lawVersion": PRESENCE_LAW_VERSION,
+                "measured": False,
+                "note": "no measurable subject - the 106 framing table holds",
+            }
+
         # ── frame loop: camera grammar + lightning strobe per frame ──
         choreo_max_smear = 0.0
         for f in range(1, frames_total + 1):
             t = (f - 1) / max(1, frames_total - 1)
             if grammar:
-                pos, target, lens = grammar_camera_pose(shot, scene_p, grammar, t)
+                pos, target, lens = grammar_camera_pose(shot, scene_p, grammar, t, subject_ctx)
                 g_start, g_end, g_t = grammar_pose_state(grammar, shot, t)
                 pose_t = g_t if g_t is not None else t
                 pose_s, pose_e = (g_start or pose_start), (g_end or pose_end)
             else:
-                pos, target, lens = camera_pose(shot, scene_p, t)
+                pos, target, lens = camera_pose(shot, scene_p, t, subject_ctx)
                 pose_t, pose_s, pose_e = t, pose_start, pose_end
             if choreo_prog:
                 # THE PERFORMANCE IS KEYED: the program owns the body

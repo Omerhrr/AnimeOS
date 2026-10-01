@@ -45,8 +45,14 @@ import { createHash } from "node:crypto";
  *  changed how the base mesh is BUILT (beveled organic boxes, rounded
  *  capsule fingers, 24-segment curved primitives), so every library
  *  asset re-builds with the crafted meshes; a craft change is an
- *  asset change, and the master hash moves with it. */
-export const CHARACTER_ASSET_LAW_VERSION = 106;
+ *  asset change, and the master hash moves with it.
+ *  106 -> 107: THE TRIAD - the surface (the sheet's range rides the
+ *  cloth ramp), the face (the hair cap opens, the features step out
+ *  of the skull, the deep relief answers the framing) and the
+ *  presence (the measured-subject framing) all change how the ASSET
+ *  is built and surfaced, so the library assets re-build again: a
+ *  law that changes the pixels is an asset change. */
+export const CHARACTER_ASSET_LAW_VERSION = 107;
 
 /** The manifest schema version (bumped when the manifest shape moves). */
 export const CHARACTER_ASSET_MANIFEST_VERSION = 1;
@@ -211,7 +217,7 @@ export function characterAssetKey(dna: CharacterAssetInput): string {
     ["sweep", "flow", "flyaway", "taper"],
   );
   return [
-    "106",
+    "107",
     st(dna.name),
     st(dna.hairStyle),
     hx(dna.hairColor),

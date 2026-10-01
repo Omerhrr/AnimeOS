@@ -254,10 +254,19 @@ def main():
         figure = bridge.build_designed_figure(bpy, scn, dna, mats)
         if not figure or "root" not in figure:
             fail("figure builder returned no rig")
-        # neutral A-pose report so the caller can assert the rig contract
-        rig_names = sorted(o.name for o in scn.objects)
+        # neutral A-pose report so the caller can assert the rig contract.
+        # THE CONTRACT ANSWERS THE DNA (iteration 107): the blade joint
+        # only rides when the design carries a weapon - a weapon-less
+        # figure (the regex DNA reads Lin Yue's "jade ribbon" topknot
+        # with no blade) failed the contract on a joint it never owned,
+        # and every library rebuild refused. The grip law grips nothing
+        # on the render path when the asset names no blade - honest.
+        wtype = str(dna.get("weaponType") or "none").strip().lower()
         required = {"Root", "Spine", "Head", "RShoulder", "RElbow", "LShoulder", "LElbow",
-                    "RHip", "RKnee", "LHip", "LKnee", "HandBlade", "BrowL", "BrowR", "EyeL", "EyeR", "Mouth"}
+                    "RHip", "RKnee", "LHip", "LKnee", "BrowL", "BrowR", "EyeL", "EyeR", "Mouth"}
+        if wtype not in ("none", ""):
+            required.add("HandBlade")
+        rig_names = sorted(o.name for o in scn.objects)
         missing = [n for n in required if n not in rig_names]
         if missing:
             fail(f"rig contract missing joints: {', '.join(missing)}")

@@ -660,11 +660,42 @@ export async function pollJobProgress(jobId: string): Promise<BridgeProgress> {
 
 /** Jobs whose worker state file went quiet for this long are failed out. */
 export function localJobStale(jobId: string): boolean {
+  // THE STALENESS LAW READS THE CONCLUSION FIRST (iteration 107): a
+  // concluded job file is never stale - the night failed a finished-
+  // but-unticked render on mtime alone because the tool read the
+  // clock and not the file's own truth. The finalize never lies
+  // (iteration 105), so a done file answers the staleness question
+  // before the mtime is consulted.
+  const concluded = readLocalJobConclusion(jobId);
+  if (concluded?.done) return false;
   try {
     const st = fs.statSync(jobFileFor(jobId));
     return Date.now() - st.mtimeMs > WORKER_TIMEOUT_MS;
   } catch {
     return false;
+  }
+}
+
+/** The job file's CONCLUDED state (iteration 107, the seam the night
+ * caught): the worker's finalize never lies - a done file with a clip
+ * is a finished render the tick must LAND, not lose; a done file with
+ * an error is a named failure the tick must carry, not degrade. The
+ * reader returns null when the file is absent or not honestly shaped
+ * (the caller keeps its legacy law). */
+export interface LocalJobConclusion {
+  done: boolean;
+  error: string | null;
+  mp4Path: string | null;
+}
+
+export function readLocalJobConclusion(jobId: string): LocalJobConclusion | null {
+  try {
+    const raw = fs.readFileSync(jobFileFor(jobId), "utf-8");
+    const state = JSON.parse(raw) as Partial<LocalJobState>;
+    if (typeof state.done !== "boolean") return null;
+    return { done: state.done, error: state.error ?? null, mp4Path: state.mp4Path ?? null };
+  } catch {
+    return null;
   }
 }
 

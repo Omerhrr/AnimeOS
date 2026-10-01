@@ -103,9 +103,12 @@ export interface HeadBakeKeySource {
  * factors (NOT the mesh: the cache must be shared by every depth of
  * the same face, and a 5-level mesh hashes differently from a 6).
  * Mirrored bit-exactly in the worker (head_bake.bake_key).
+ * Versioned 107 (was 90): the relief law scaled the deep planes'
+ * deltas, so the cached bakes baked from the old relief are stale -
+ * the version bump re-bakes every face under the new mesh law.
  */
 export function headBakeKeyHash(f: HeadBakeKeySource): string {
-  const key = `90|${f.jawTaper.toFixed(3)}|${f.chinFwd.toFixed(3)}|${f.browFwd.toFixed(3)}|${f.cheekOut.toFixed(3)}|${f.noseLen.toFixed(3)}|v1`;
+  const key = `107|${f.jawTaper.toFixed(3)}|${f.chinFwd.toFixed(3)}|${f.browFwd.toFixed(3)}|${f.cheekOut.toFixed(3)}|${f.noseLen.toFixed(3)}|v1`;
   return createHash("sha256").update(key, "utf8").digest("hex").slice(0, 16);
 }
 

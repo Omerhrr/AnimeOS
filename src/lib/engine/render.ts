@@ -17,6 +17,7 @@ import {
 import {
   bridgeStatus, submitRenderJob, pollJobProgress,
   pollLocalJob, localJobStale, pumpLocalWaiters, localWaitDepth, WORKER_TIMEOUT_MS,
+  readLocalJobConclusion,
 } from "@/lib/bridge/blender";
 import { renderShotClip, detectFfmpeg } from "@/lib/bridge/motion";
 import { characterDesignDna, environmentDna } from "@/lib/animation/design";
@@ -851,17 +852,47 @@ export async function tickRenderJob(jobId: string) {
         });
       }
     } else {
-      // Bridge lost mid-job - degrade to the simulator cleanly.
-      job = await db.renderJob.update({
-        where: { id: jobId },
-        data: {
-          driver: "SIMULATOR",
-          stage: "Blender bridge lost - simulator taking over",
-          startedAt: new Date(),
-          telemetry: takeoverSpan(job.telemetry, "BLENDER", job.startedAt, "Blender bridge lost -> simulator took over"),
-        },
-        include: { evaluation: true },
-      });
+      // THE DEGRADE CONSULTS THE CONCLUSION (iteration 107, the seam
+      // the crafted night caught): a done-with-clip job degraded to a
+      // clipless SIM row when the resident restarted between submit
+      // and tick - the bridge poll returned unreachable and the tick
+      // degraded without reading the job file's own truth (iteration
+      // 105's "the finalize never lies", consulted where it was
+      // ignored). A concluded job with a clip on disk LANDS as
+      // REVIEW; a concluded job with an error lands the NAMED
+      // failure; only an absent or unconcluded file degrades.
+      const concluded = readLocalJobConclusion(job.id);
+      if (concluded?.done && concluded.mp4Path && fs.existsSync(concluded.mp4Path)) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: {
+            status: "REVIEW", progress: 100,
+            stage: [job.lipNote, "Blender clip landed after the bridge restart - the job file's conclusion rode the tick", "awaiting DSH inspection"].filter(Boolean).join(" - "),
+            outputUrl: `/renders/${job.id}.mp4`,
+            finishedAt: new Date(),
+            telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "concluded job file (bridge restart survived)")),
+          },
+          include: { evaluation: true },
+        });
+      } else if (concluded?.done && concluded.error) {
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: { status: "FAILED", progress: 100, stage: `Blender: ${concluded.error}`.slice(0, 120), finishedAt: new Date(), telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "concluded job file (named failure)")) },
+          include: { evaluation: true },
+        });
+      } else {
+        // Bridge lost mid-job - degrade to the simulator cleanly.
+        job = await db.renderJob.update({
+          where: { id: jobId },
+          data: {
+            driver: "SIMULATOR",
+            stage: "Blender bridge lost - simulator taking over",
+            startedAt: new Date(),
+            telemetry: takeoverSpan(job.telemetry, "BLENDER", job.startedAt, "Blender bridge lost -> simulator took over"),
+          },
+          include: { evaluation: true },
+        });
+      }
     }
     return job;
   }

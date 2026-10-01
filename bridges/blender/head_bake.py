@@ -59,14 +59,17 @@ WRINKLE_BAKE_WEIGHT = 1.0
 def bake_key(prof):
     """The DETERMINISTIC bake key - mirrors headBakeKeyHash in
     head-carve.ts bit-exactly (sha256-16 over the face profile's
-    own factors)."""
+    own factors). Versioned 107 (was 90): the relief law scaled
+    the deep planes' deltas, so the cached bakes baked from the
+    old relief are stale - the version bump re-bakes every face
+    under the new mesh law."""
     f = prof.get("factors") if isinstance(prof, dict) else None
     if not isinstance(f, dict):
         f = {}
     def num(k):
         v = f.get(k)
         return float(v) if isinstance(v, (int, float)) and math.isfinite(float(v)) else 0.0
-    key = "90|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1".format(
+    key = "107|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1".format(
         num("jawTaper"), num("chinFwd"), num("browFwd"), num("cheekOut"), num("noseLen"))
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
@@ -74,15 +77,16 @@ def bake_key(prof):
 def wrinkle_key(prof):
     """The DETERMINISTIC wrinkle key (iteration 93) - mirrors
     wrinkleKeyHash in wrinkle.ts bit-exactly: the same factor law the
-    bake key hashes, versioned 93 (the caches are independent sets
-    over the same face)."""
+    bake key hashes, versioned 107 (was 93 - the relief law moved
+    the surface the creases bake from; the caches are independent
+    sets over the same face)."""
     f = prof.get("factors") if isinstance(prof, dict) else None
     if not isinstance(f, dict):
         f = {}
     def num(k):
         v = f.get(k)
         return float(v) if isinstance(v, (int, float)) and math.isfinite(float(v)) else 0.0
-    key = "93|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1".format(
+    key = "107|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1".format(
         num("jawTaper"), num("chinFwd"), num("browFwd"), num("cheekOut"), num("noseLen"))
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 

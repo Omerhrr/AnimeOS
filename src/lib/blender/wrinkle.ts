@@ -88,12 +88,13 @@ export interface WrinkleKeySource {
 
 /**
  * The DETERMINISTIC wrinkle key - sha256-16 over the face profile's
- * own factors, versioned 93 (the carve's 90-key stays the carve's;
- * the caches are independent sets over the same face). Mirrored
- * bit-exactly in the worker (head_bake.wrinkle_key).
+ * own factors, versioned 107 (was 93 - the relief law moved the
+ * surface the creases bake from; the caches are independent sets
+ * over the same face). Mirrored bit-exactly in the worker
+ * (head_bake.wrinkle_key).
  */
 export function wrinkleKeyHash(f: WrinkleKeySource): string {
-  const key = `93|${f.jawTaper.toFixed(3)}|${f.chinFwd.toFixed(3)}|${f.browFwd.toFixed(3)}|${f.cheekOut.toFixed(3)}|${f.noseLen.toFixed(3)}|v1`;
+  const key = `107|${f.jawTaper.toFixed(3)}|${f.chinFwd.toFixed(3)}|${f.browFwd.toFixed(3)}|${f.cheekOut.toFixed(3)}|${f.noseLen.toFixed(3)}|v1`;
   return createHash("sha256").update(key, "utf8").digest("hex").slice(0, 16);
 }
 

@@ -289,7 +289,7 @@ def indep_hash():
 
 EXPECT_CRAFT = indep_hash()
 
-state = run_job("craft-smoke-closeup", [hero_dna("Craft Smoke Hero", "sword")])
+state = run_job("craft-smoke-closeup", hero_dna("Craft Smoke Hero", "sword"))
 rig = state.get("rig") or {}
 craft = rig.get("craft")
 expect("the closeup render names the craft evidence",
