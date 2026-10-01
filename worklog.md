@@ -2075,3 +2075,27 @@ Stage Summary:
 - Login through the preview now works end to end: the studio door is the direct mint route, the Auth.js localhost flow remains the E2E surface.
 - The seeded OWNER account is director@studio.dev / anchored2026 (created by the E2E suites; the user should sign in with it or register a new account).
 - Next: the user's changes are read and understood (hull ink law + design crew); the board's next work order stays the body read (mannequin-anatomy law, wuxia/cel target) with face key light + hairline riding the same asset-law bump.
+
+---
+Task ID: 2
+Agent: main (Super Z)
+Task: The hull-ink re-score night over EP07 Sc12 - render the standing production on the designed build (design crew v109 + hull ink), re-score with real vision, attempt the REAL publish.
+
+Work Log:
+- Verified the resident bridge vintage: started 04:58, the hull-ink law landed 12:44 - restarted it on current code (port 8101, pool 1, ANIMEOS_BLENDER_BIN preserved).
+- Reset Sc12 (reset-sc12-renders: 6 jobs, 6 clips, 3 RENDER scores cleared, shots -> REVIEW) and fired all six PREVIEW jobs via the real API with the direct-mint OWNER session.
+- SEAM CAUGHT #1 (overflow): the batch fire overflowed the two-slot local 3D pool - four shots fell through to MOTION/SIMULATOR stand-ins (S001/S002 SIMULATOR with NO clip, S005/S006 MOTION). The engine's overflow law worked as designed; the night driver redid them through Blender.
+- SEAM CAUGHT #2 (boot-resume past the pool): the restarted bridge master resumed pending job files on boot and spawned THREE --worker processes past the pool law; the 4GB host OOM-killed a blender mid-render (~600MB per designed build x 3 + the dev server). The pool's honest size on this host is ONE designed render at a time.
+- The night driver (scripts/night111-run.ts, persisted): junk-driver redo scope, POOL admission (solo), the direct-mint session (dogfooding the new /api/auth/login), the UI-equivalent tick via GET /api/render-jobs. The driver itself died twice (the tool session reaps children - the double-fork detach fixed it) and its first burn exited while the last render was in flight (the while condition now lives until the redo shots hold clips).
+- The staleness tool landed two finished-but-unticked renders as REVIEW by reading the job files' conclusions (done + mp4Path) - the iteration 107 law holding in production.
+- NIGHT RESULT: 6/6 real Blender clips (S001 101f, S002 120f, S003 67f, S004 96f, S005 101f, S006 ~100f; solo renders ~1.5-2.5s/f - the hull-ink designed builds render FASTER than the crafted 9.09s/f era).
+- THE RE-SCORE (scripts/night111-rescore.ts, real vision over pose-matched filmstrips): S002 35% Lin Yue / 45% Clone 001 (hair 40-50%, wardrobe 40-60%, palette 40-50%, face 10-20%); S003 10% ("face obscured by a mask, wardrobe entirely different, 3D chibi style"); S004 20% ("silhouette and long hair match, wardrobe simplified, face lacks detail"); S001/S005/S006 REFUSED (no featured character with a model sheet - the anchor law).
+- THE DISTRIBUTION: mean 22% / median 20% / p10 10% over 3 scored shots - the prior nights read mean 2% / median 0% / p10 0%. An 11x mean lift: the FIRST readings where the scorer says the pixels resemble the design.
+- THE REAL GATE: POST /api/publish -> 400 verbatim: "EP07's identity distribution sits BELOW the release floor: mean 24%, median 20%, p10 10%, worst 10% over 5 reading(s), floor 70%. The under cells: calm, close, locked, shadow (all worst at E7 Sc12 S003). Repair the distribution (identity_repair_pass), then stage. An episode does not publish BELOW the floor." The PUBLISH gate's teeth held; zero softening.
+- Gates: src tsc clean, eslint clean (scripts included). README item 18 + this worklog.
+
+Stage Summary:
+- The hull-ink designed build moved the distribution from 2% to 22% mean - the design crew's spec-driven builds + hull ink clear the silhouette/palette read into resemblance territory for the first time.
+- The frontier the distribution names now: THE FACE (10-20% on every scored shot - the rendered face does not carry the sheet's face), the style read ("simplified geometry", "3D chibi" - the mannequin anatomy again), wardrobe fidelity drift on the close shots.
+- The next work order stands, now with numeric targets: the mannequin-anatomy law + face key light + hairline, aimed at the face cells; the anchor-law refusals (3 of 6 shots) name the second front - those shots' featured cast need model sheets before the gate can even read them.
+- Two seams written to the books: the bridge boot-resume ignores the pool law (spawned 3 workers -> OOM), and the platform tool-session reaps background children (the double-fork detach is the law).
