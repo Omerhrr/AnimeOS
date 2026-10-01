@@ -64,7 +64,7 @@ DNA = {
     "groomProfile": {"sweep": 0.1, "flow": 0.55, "flyaway": 0.35, "taper": 0.85},
 }
 EXPECT_KEY = (
-    "95|Bai Ling|long|#1b1b2a|#2f6d63|#a8842c|#d9b48f|sword|#5eead4|lean|clean|oval|0.750"
+    "106|Bai Ling|long|#1b1b2a|#2f6d63|#a8842c|#d9b48f|sword|#5eead4|lean|clean|oval|0.750"
     "|hairStyle+hairColor"
     "|sh:1.020,0.940,0.970,1.060,1.000,1.080"
     "|fc:0.920,0.880,0.900,0.850,0.950,1.120"
@@ -213,7 +213,7 @@ def key_for(d):
         dval = d.get(wire_key)
         return (pfx + ":" + ",".join(f3(dval[k]) for k in keys)) if isinstance(dval, dict) else (pfx + ":-")
     return "|".join([
-        "95", d["name"], d["hairStyle"],
+        "106", d["name"], d["hairStyle"],
         d["hairColor"].lower(), d["robeColor"].lower(), d["robeAccent"].lower(), d["skinTone"].lower(),
         d["weaponType"], d["bladeColor"].lower(), d["build"],
         "beard" if d.get("beard") else "clean", d.get("faceShape", "-"), f3(d.get("conformFactor", 0.35)),
@@ -234,7 +234,7 @@ asset = rig.get("asset")
 expect("the close render built the figure procedurally", state.get("figureSource") == "procedural:v4.0-designed", str(state.get("figureSource")))
 expect("the close render names the asset evidence", isinstance(asset, dict), json.dumps(rig)[:300])
 if isinstance(asset, dict):
-    expect("the asset names the member + the law version", asset.get("name") == HERO["name"] and asset.get("lawVersion") == 95, json.dumps(asset))
+    expect("the asset names the member + the law version", asset.get("name") == HERO["name"] and asset.get("lawVersion") == 106, json.dumps(asset))
     expect("the asset carries the ten sections in order",
            asset.get("sections") == ["canonicalIdentity", "baseMesh", "sculptLayers", "maps", "materials",
                                      "facialRig", "groom", "wardrobe", "lod", "validationProfile"],

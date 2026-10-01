@@ -11,6 +11,7 @@ import { api, type ArtistRow, type SceneWithShots, type ShotRow, type StyleLoraR
 import { parseDialogue } from "@/lib/comic/dialogue";
 import { POSES, POSE_LABELS, normalizePose, poseChip } from "@/lib/animation/poses";
 import { presetPosesForStateLabel, resolveActiveState } from "@/lib/animation/state-poses";
+import { filterCastByDescription } from "@/lib/cast-token";
 import {
   arcSpansForShot, computeArcSpans, describeArcPosition, ensembleGroupSizes, formatArcRange,
   groupEnsembleSpans, type ArcSpan,
@@ -228,10 +229,9 @@ export function PanelInspectorDialog({
    */
   function applyStatePoses() {
     if (!characters) return;
-    const desc = shot.description.toLowerCase();
-    const detected = characters
-      .filter((c) => desc.includes(c.name.toLowerCase().split(" ")[0]))
-      .slice(0, 3);
+    // THE NAME IS A WHOLE WORD (iteration 106): the server rides the
+    // same cast-token law - this client mirror matches it exactly
+    const detected = filterCastByDescription(characters, shot.description, 3);
     for (const ch of detected) {
       const active = resolveActiveState(ch.states, episodeNumber ?? 0);
       if (!active) continue;

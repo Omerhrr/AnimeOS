@@ -402,6 +402,66 @@ def grip_hash():
     return hashlib.sha256(grip_key().encode("utf-8")).hexdigest()[:16]
 
 
+# ─── THE FIGURE IS CRAFTED, NOT ASSEMBLED (iteration 106) ────────
+#
+# The gate's remaining work order: the binding put the sheets'
+# colors, silhouette and face families on the pixels, but the vision
+# scorer still read "a low-poly 3D robot". The tell was never the
+# palette - it was the MESH CRAFT: brows, mouth, skirt panels, sash
+# tail, palms and fingers were raw un-smoothed CUBES (hard 90-degree
+# edge lines read as machine segments), the fingers were square
+# robotic boxes, the limbs were 16-segment cylinders whose speculars
+# facet under the key light. The law: every part the audience reads
+# as cloth or skin is CRAFTED - a bevel softens every organic box,
+# the boxes smooth-shade, the fingers grow as rounded capsules, and
+# the curved primitives the camera reads lift to 24 segments.
+# MESH ONLY: the anchor empties, the pivots, the head sculpt's
+# faceHash, the shape keys and the framing math ride untouched.
+CRAFT_LAW_VERSION = 106
+CRAFT_BEVELS = {
+    "brow": 0.0025, "mouth": 0.0022, "skirt": 0.006, "sashTail": 0.004,
+    "palm": 0.0025, "finger": 0.0012, "thumb": 0.0012, "guard": 0.002,
+    "blade": 0.0008,
+}
+CRAFT_BEVEL_SEGMENTS = 2
+CRAFT_CYL_SEGMENTS = 24
+
+
+def craft_key():
+    """The canonical craft key - pipe-format, versioned 106. Mirrors
+    craftKey in craft.ts field for field."""
+    parts = ",".join(f"{k}={v:.4f}" for k, v in sorted(CRAFT_BEVELS.items()))
+    return f"{CRAFT_LAW_VERSION}|bevel:{parts}|seg:{CRAFT_BEVEL_SEGMENTS}|cyl:{CRAFT_CYL_SEGMENTS}|v1"
+
+
+def craft_hash():
+    """The DETERMINISTIC craft hash - sha256-16 over the canonical key
+    (mirrors craftHash in craft.ts bit-exactly)."""
+    return hashlib.sha256(craft_key().encode("utf-8")).hexdigest()[:16]
+
+
+def craft_soften(obj, width, segments=CRAFT_BEVEL_SEGMENTS, subsurf=False):
+    """THE FIGURE IS CRAFTED (iteration 106): bevel + smooth an
+    organic box so it reads as cloth/skin, not a block. The bevel is
+    angle-limited (only the hard edges round), clamped against
+    overlap so a thin panel never folds; an optional subsurf level
+    gives the cloth panels a flowing read. Mesh only: the parent
+    pivot empties the rig drives stay exactly where they were."""
+    if obj is None or obj.type != "MESH":
+        return obj
+    mod = obj.modifiers.new("CraftBevel", "BEVEL")
+    mod.width = width
+    mod.segments = segments
+    mod.limit_method = "ANGLE"
+    mod.angle_limit = math.radians(40)
+    if subsurf:
+        ss = obj.modifiers.new("CraftSubsurf", "SUBSURF")
+        ss.levels = 1
+        ss.render_levels = 1
+    smooth(obj)
+    return obj
+
+
 # ─── per-pose face/hand channels (v3.2 rig upgrade) ──────────────
 #
 # Same 13-pose vocabulary, second table: every pose also expresses
@@ -2940,12 +3000,15 @@ def character_asset_key(dna):
     """The manifest's canonical key - the wire truth, canonicalized:
     the identity fields, the conformance, and every profile the
     sheet read compiled, absent ones named '-'. Mirrors
-    characterAssetKey in character-asset.ts field for field."""
+    characterAssetKey in character-asset.ts field for field. The
+    leading law stamp moved 95 -> 106 (THE FIGURE IS CRAFTED): the
+    craft change is an asset change - the library assets RE-BUILD
+    with the crafted meshes, honestly re-versioned."""
     dna = dna if isinstance(dna, dict) else {}
     cf = dna.get("conformFactor")
     cf = 0.35 if cf is None else cf
     return "|".join([
-        "95",
+        "106",
         _ka_st(dna.get("name")),
         _ka_st(dna.get("hairStyle")),
         _ka_hx(dna.get("hairColor")),
@@ -3540,6 +3603,13 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     #    anchors stay). A guess build keeps the neutral sculpt. ──
     prof = face_profile(dna)
 
+    # ── THE FIGURE IS CRAFTED, NOT ASSEMBLED (iteration 106): the
+    #    parts the audience reads as cloth or skin are beveled,
+    #    smooth-shaded and rounded - the raw-box read was the 'low-poly
+    #    robot' tell. MESH ONLY: every anchor empty and pivot keeps its
+    #    proven coordinate, the crafted list names what was softened. ──
+    crafted_parts = []
+
     def empty(name, parent, loc):
         e = bpy.data.objects.new(name, None)
         scn.collection.objects.link(e)
@@ -3559,8 +3629,8 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         smooth(m)
         return m
 
-    def capsule(name, parent, loc, r, depth, mat, rot=(0, 0, 0)):
-        m = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=16, radius=r, depth=depth, location=(0, 0, 0), )
+    def capsule(name, parent, loc, r, depth, mat, rot=(0, 0, 0), verts=CRAFT_CYL_SEGMENTS):
+        m = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=verts, radius=r, depth=depth, location=(0, 0, 0), )
         m.name = name
         m.data.materials.append(mat)
         bpy.ops.object.shade_smooth()
@@ -3585,7 +3655,7 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     head = empty("Head", spine, (0.0, 0.0, 0.28))
 
     # sash: the accent-color waist band over the robe
-    sash = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=16, radius=0.135 * torso_w, depth=0.09, location=(0, 0, 0), )
+    sash = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=CRAFT_CYL_SEGMENTS, radius=0.135 * torso_w, depth=0.09, location=(0, 0, 0), )
     sash.name = "SashMesh"
     sash.data.materials.append(accent_mat)
     bpy.ops.object.shade_smooth()
@@ -3599,6 +3669,8 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     tail.data.materials.append(accent_mat)
     tail.parent = pelvis
     tail.location = (0.07 * width, -0.1, 0.02)
+    craft_soften(tail, CRAFT_BEVELS["sashTail"])
+    crafted_parts.append("SashTail")
 
     # skirt: overlapping cloth panels flaring from the waist - the
     # donghua robe read. Static on the pelvis (legs pose beneath).
@@ -3615,6 +3687,10 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         panel.data.materials.append(robe_mat)
         panel.parent = pelvis
         panel.location = (px * 1.3, py * 1.3, -0.005 - 0.095 * skirt_f)
+        # THE FIGURE IS CRAFTED (106): a beveled, subdivided, smooth
+        # panel reads as flowing cloth - the raw box hem read as armor
+        craft_soften(panel, CRAFT_BEVELS["skirt"], subsurf=True)
+        crafted_parts.append(panel.name)
 
     # neck + head (skin) - head mesh stays at spine-local z .12*? keep
     # the stand-in's world anchor: head empty +0.28, mesh center +0.12
@@ -3738,6 +3814,8 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         m.scale = (0.03, 0.007, 0.007)
         m.data.materials.append(hair_mat)
         m.parent = piv
+        craft_soften(m, CRAFT_BEVELS["brow"])
+        crafted_parts.append(m.name)
         return piv
 
     eye_l = eye(1.0, "EyeL")
@@ -3750,6 +3828,8 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     mm.scale = (0.024, 0.006, 0.011)
     mm.data.materials.append(feature_mat)
     mm.parent = mouth
+    craft_soften(mm, CRAFT_BEVELS["mouth"])
+    crafted_parts.append("MouthMesh")
     # nose hint
     sphere("NoseMesh", head, (0.0, -0.112, 0.095), 0.012, skin_mat, scale=(0.7, 0.7, 0.9))
 
@@ -3792,7 +3872,7 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
     def arm(side_sign, prefix):
         sh = empty(prefix + "Shoulder", spine, (side_sign * 0.24 * shoulder_w, 0.0, 0.18))
         # sleeve: wider cone over the upper arm (cloth, in robe color)
-        sl = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=16, radius1=0.085 * shoulder_w, radius2=0.05 * shoulder_w, depth=0.3 * sleeve_f, location=(0, 0, 0), )
+        sl = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=CRAFT_CYL_SEGMENTS, radius1=0.085 * shoulder_w, radius2=0.05 * shoulder_w, depth=0.3 * sleeve_f, location=(0, 0, 0), )
         sl.name = prefix + "Sleeve"
         sl.data.materials.append(robe_mat)
         bpy.ops.object.shade_smooth()
@@ -3802,7 +3882,7 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         elb = empty(prefix + "Elbow", sh, (0.0, 0.0, -0.28))
         capsule(prefix + "Forearm", elb, (0.0, 0.0, -0.12), 0.03, 0.22, skin_mat)
         # wide cuff at the wrist (accent trim)
-        cuff = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=14, radius=0.052, depth=0.09, location=(0, 0, 0), )
+        cuff = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=CRAFT_CYL_SEGMENTS, radius=0.052, depth=0.09, location=(0, 0, 0), )
         cuff.name = prefix + "Cuff"
         cuff.data.materials.append(accent_mat)
         bpy.ops.object.shade_smooth()
@@ -3835,25 +3915,34 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         pm.scale = (0.02, 0.009, 0.026)
         pm.data.materials.append(skin_mat)
         pm.parent = palm
+        # THE FIGURE IS CRAFTED (106): the palm's hard edges round - a
+        # boxed palm under light reads as a machine gripper
+        craft_soften(pm, CRAFT_BEVELS["palm"])
+        crafted_parts.append(pm.name)
         fingers = []
         index_x = 0.0055 * thumb_side
         for fx in (-0.0165, -0.0055, 0.0055, 0.0165):
             is_index = abs(fx - index_x) < 0.001
             piv = empty(prefix + ("Index" if is_index else f"Finger{len(fingers)}"), palm, (fx, 0.0, -0.05))
-            fm = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
+            # THE FIGURE IS CRAFTED (106): fingers grow as ROUNDED
+            # capsules - the square segments were the loudest machine
+            # tell, and a bevel rounds each cap's rim into a knuckle
+            fm = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=10, radius=0.005, depth=0.04, location=(0, 0, 0), )
             fm.name = piv.name + "Mesh"
-            fm.scale = (0.0052, 0.006, 0.022)
             fm.data.materials.append(skin_mat)
             fm.parent = piv
             fm.location = (0.0, 0.0, -0.018)
+            craft_soften(fm, CRAFT_BEVELS["finger"])
+            crafted_parts.append(piv.name + "Mesh")
             fingers.append((piv, is_index))
         tp = empty(prefix + "Thumb", palm, (thumb_side * 0.025, -0.002, -0.014))
-        tm = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
+        tm = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=10, radius=0.005, depth=0.028, location=(0, 0, 0), )
         tm.name = tp.name + "Mesh"
-        tm.scale = (0.005, 0.006, 0.016)
         tm.data.materials.append(skin_mat)
         tm.parent = tp
         tm.location = (0.0, 0.0, -0.013)
+        craft_soften(tm, CRAFT_BEVELS["thumb"])
+        crafted_parts.append(tp.name + "Mesh")
         tp.rotation_euler = (math.radians(20), 0.0, math.radians(-35 * thumb_side))
         return fingers, tp
 
@@ -3879,7 +3968,7 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         grip_pivot = empty("GripPivot", r_hand, GRIP_ANCHOR)
         if wtype == "sword":
             # the fist grips the HILT at the anchor (pivot-local zero)
-            grip = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.013, depth=spec["hilt"], location=(0, 0, 0), )
+            grip = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=CRAFT_CYL_SEGMENTS, radius=0.013, depth=spec["hilt"], location=(0, 0, 0), )
             grip.name = "BladeGrip"
             grip.data.materials.append(boots_mat)
             grip.parent = grip_pivot
@@ -3893,7 +3982,11 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
             guard.parent = grip_pivot
             guard.location = grip_piece_offset(wtype, spec["hilt"] / 2.0 + 0.0055)
             guard.rotation_euler = (math.radians(tilt), 0.0, 0.0)
-            # the blade meets the guard and extends down-forward
+            craft_soften(guard, CRAFT_BEVELS["guard"])
+            crafted_parts.append("BladeGuard")
+            # the blade meets the guard and extends down-forward - the
+            # tiny bevel keeps the hard silhouette and catches the
+            # light ON the edge (a raw slab edge reads flat plastic)
             blade = prim(scn, bpy.ops.mesh.primitive_cube_add, location=(0, 0, 0), )
             blade.name = "HandBlade"
             blade.scale = (0.015, 0.005, 0.55)
@@ -3901,12 +3994,14 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
             blade.parent = grip_pivot
             blade.location = grip_piece_offset(wtype, spec["guard"] + 0.0055 + 0.55)
             blade.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+            craft_soften(blade, CRAFT_BEVELS["blade"])
+            crafted_parts.append("HandBlade")
         else:
             # staff / spear: the shaft THROUGH the fist at the kind's
             # own hold fraction (the fist in the shaft's lower third),
             # the gem/tip riding the shaft's local frame unchanged
             depth = 1.3 if wtype == "staff" else 1.5
-            blade = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=12, radius=0.013 if wtype == "staff" else 0.012, depth=depth, location=(0, 0, 0), )
+            blade = prim(scn, bpy.ops.mesh.primitive_cylinder_add, vertices=CRAFT_CYL_SEGMENTS, radius=0.013 if wtype == "staff" else 0.012, depth=depth, location=(0, 0, 0), )
             blade.name = "HandBlade"
             blade.data.materials.append(boots_mat)
             blade.parent = grip_pivot
@@ -3919,7 +4014,7 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
                 gem.parent = blade
                 gem.location = (0.0, 0.0, 0.7)
             else:
-                tip = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=10, radius1=0.03, radius2=0.0, depth=0.22, location=(0, 0, 0), )
+                tip = prim(scn, bpy.ops.mesh.primitive_cone_add, vertices=CRAFT_CYL_SEGMENTS, radius1=0.03, radius2=0.0, depth=0.22, location=(0, 0, 0), )
                 tip.name = "SpearTip"
                 tip.data.materials.append(blade_mat)
                 tip.parent = blade
@@ -3964,6 +4059,19 @@ def build_designed_figure(bpy, scn, dna, mats, strand_f=1.0):
         # evidence - the strands grown, the flyaways, the LOD the
         # framing earned, the clamped factors and the deterministic
         # hash (always present: the groom rides every styled build)
+        # THE FIGURE IS CRAFTED, NOT ASSEMBLED (iteration 106): the
+        # applied craft evidence - the law version, the parts the
+        # bevel-and-smooth pass softened, the bevel widths and the
+        # DETERMINISTIC craft hash (mirrored in craft.ts, one law two
+        # runtimes - the same hash proves both sides of the wire)
+        "craft": {
+            "version": CRAFT_LAW_VERSION,
+            "softened": len(crafted_parts),
+            "parts": crafted_parts,
+            "bevels": dict(CRAFT_BEVELS),
+            "cylSegments": CRAFT_CYL_SEGMENTS,
+            "hash": craft_hash(),
+        },
         "groom": groom_evidence,
         # THE HAIR IS TRUE CURVES (iteration 89) + THE STRANDS GO
         # HERO (iteration 94): the curve detail's evidence - the
@@ -5288,7 +5396,7 @@ def worker_run(job_file):
                 "name": _ka_st(hero.get("name")),
                 "hash": character_asset_hash(hero),
                 "sections": list(CHARACTER_ASSET_SECTIONS),
-                "lawVersion": 95,
+                "lawVersion": 106,
             }
             # THE FEET STAY PLANTED (iteration 96): the leg IK's law
             # evidence rides the state - the deterministic hash over
@@ -5340,6 +5448,11 @@ def worker_run(job_file):
                 state["rig"]["hairShade"] = figure["hairShade"]
             if isinstance(figure, dict) and figure.get("hairCurves"):
                 state["rig"]["hairCurves"] = figure["hairCurves"]
+            # THE FIGURE IS CRAFTED, NOT ASSEMBLED (iteration 106): the
+            # craft pass's evidence rides the state too (the softened
+            # parts, the bevel law, the hash the TS mirror proves)
+            if isinstance(figure, dict) and figure.get("craft"):
+                state["rig"]["craft"] = figure["craft"]
 
             # ── v10.1 THE SHEET DRESSES THE RENDER + iteration 80: the
             #    canonical model sheet is COLOR LAW over the DNA defaults
@@ -6277,11 +6390,20 @@ class BridgeServer:
             prev_attempts = (self.pool.get(port) or {}).get("attempts", 0) + 1
             self.pool[port] = {"proc": proc, "busy": False, "dead": False, "served": prev_served, "attempts": prev_attempts}
 
-    def _free_worker_port(self):
-        # a slot is FREE when it is alive, not busy, and actually
-        # listening (the ready-file proves the boot finished)
-        for port, w in sorted(self.pool.items()):
-            if w["busy"] or w["dead"]:
+    def _reap_locked(self):
+        """THE FLAG IS MEMORY, THE PROCESS IS TRUTH (iteration 106, the
+        /status drift seam): a slot whose worker process has EXITED is
+        dead the moment the server looks at it - /status and the
+        dispatch path both reap by polling, so the bookkeeping can
+        never drift from the processes it names. The old law trusted
+        the 'dead' flag alone, which only the dispatch failure path or
+        a submit-time probe set: an idle worker that died quietly read
+        ALIVE in /status for as long as nobody submitted, and a worker
+        killed MID-JOB stayed busy=True through its whole cold-fallback
+        window - the drifted counts the render night recorded.
+        Callers must hold self.lock."""
+        for port, w in self.pool.items():
+            if w["dead"]:
                 continue
             if w["proc"].poll() is not None:
                 w["dead"] = True
@@ -6289,6 +6411,15 @@ class BridgeServer:
                     os.unlink(pool_ready_path(port))
                 except Exception:  # noqa: BLE001
                     pass
+
+    def _free_worker_port(self):
+        # a slot is FREE when it is alive, not busy, and actually
+        # listening (the ready-file proves the boot finished); the
+        # truth-reap runs first so a quietly-dead worker is never
+        # dispatched
+        self._reap_locked()
+        for port, w in sorted(self.pool.items()):
+            if w["busy"] or w["dead"]:
                 continue
             if not os.path.exists(pool_ready_path(port)):
                 continue  # still booting - the cold path takes this job
@@ -6309,14 +6440,22 @@ class BridgeServer:
 
     def status(self):
         with self.lock:
+            # the truth-reap first: the counts below name the PROCESSES,
+            # not the flags (iteration 106 - a dead slot never reads
+            # alive, and a dead slot's stale busy flag never counts)
+            self._reap_locked()
             warm_total = len(self.pool)
-            warm_busy = sum(1 for _port, w in self.pool.items() if w["busy"])
-            warm_free = sum(1 for port, w in self.pool.items() if not w["busy"] and not w["dead"] and os.path.exists(pool_ready_path(port)))
             warm_alive = sum(1 for _port, w in self.pool.items() if not w["dead"])
+            warm_busy = sum(1 for _port, w in self.pool.items() if w["busy"] and not w["dead"])
+            warm_free = sum(1 for port, w in self.pool.items() if not w["busy"] and not w["dead"] and os.path.exists(pool_ready_path(port)))
+            warm_booting = sum(
+                1 for port, w in self.pool.items()
+                if not w["dead"] and not w["busy"] and not os.path.exists(pool_ready_path(port))
+            )
             served = sum(w.get("served", 0) for _port, w in self.pool.items())
             cold_free = self.current is None and self.cold_workers == 0
             busy = not (warm_free > 0 or cold_free)
-            pool = {"size": warm_total, "alive": warm_alive, "free": warm_free, "busy": warm_busy, "served": served}
+            pool = {"size": warm_total, "alive": warm_alive, "free": warm_free, "busy": warm_busy, "booting": warm_booting, "served": served}
         return {
             "ok": True,
             "blender_version": self.blender_version or "unknown",
@@ -6355,6 +6494,15 @@ class BridgeServer:
         # proven cold spawn for the SAME job file - a dead warm worker
         # never loses a job.
         result = {"ok": False, "error": "warm dispatch failed", "mp4Path": None, "served": 0, "ms": None}
+        with self.lock:
+            # the SLOT GENERATION this dispatch owns (iteration 106): a
+            # dead slot can be RESPAWNED while this job's fallback still
+            # runs - the new generation's busy flag belongs to its own
+            # dispatch, and the old generation's cleanup must never
+            # clear it (the stale clear read 'free' while the slot was
+            # mid-render - a /status drift the counts alone couldn't
+            # name)
+            same_slot = self.pool.get(port)
         try:
             sock = socket.create_connection(("127.0.0.1", port), timeout=30)
             sock.settimeout(60)
@@ -6386,6 +6534,12 @@ class BridgeServer:
                 w = self.pool.get(port)
                 if w is not None:
                     w["dead"] = True
+                # THE FALLBACK RIDES THE COLD LANE (iteration 106): the
+                # fallback occupies the studio's cold capacity - the
+                # counter says so, /status reads it, and submit guards
+                # on it, so a saturated pool can never double-spawn
+                # cold workers while a fallback is already re-rendering
+                self.cold_workers += 1
             try:
                 # the cold fallback's own cap scales with the JOB'S OWN
                 # frame budget (a flat 900s killed long renders that
@@ -6397,13 +6551,21 @@ class BridgeServer:
                 result = {"ok": True, "error": None, "mp4Path": None, "served": 0, "ms": None, "fallback": "cold"}
             except Exception as exc2:  # noqa: BLE001
                 result = {"ok": False, "error": f"warm worker failed: {exc}; cold fallback failed: {exc2}", "mp4Path": None, "served": 0, "ms": None}
+            finally:
+                with self.lock:
+                    self.cold_workers -= 1
         finally:
             with self.lock:
                 w = self.pool.get(port)
-                if w is not None:
+                if w is not None and w is same_slot:
                     w["busy"] = False
                     if result.get("ok"):
                         w["served"] = w.get("served", 0) + 1
+                elif w is not None and result.get("ok"):
+                    # the slot was respawned mid-job - the served credit
+                    # still lands on the port's ledger (JOBS SERVED
+                    # WARM), the busy flag belongs to the new dispatch
+                    w["served"] = w.get("served", 0) + 1
         # finalize the job file exactly like the cold path's finally -
         # THE FINALIZE NEVER LIES (iteration 105, the clip-loss law):
         # a job the worker never concluded is marked done WITH an honest
@@ -6432,8 +6594,16 @@ class BridgeServer:
         try:
             cmd = [self.blender_bin, "-b", "-P", self.script_path, "--", "--worker", "--job", job_file]
             # the cold spawn's cap scales with the JOB'S OWN frame
-            # budget - a flat 900s killed long-but-honest renders
-            subprocess.run(cmd, capture_output=True, text=True, timeout=cold_budget_s(job_file))
+            # budget - a flat 900s killed long-but-honest renders; the
+            # lane counter makes the cold capacity honest to /status
+            # for the whole render window (iteration 106)
+            with self.lock:
+                self.cold_workers += 1
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, timeout=cold_budget_s(job_file))
+            finally:
+                with self.lock:
+                    self.cold_workers -= 1
         except Exception:  # noqa: BLE001
             traceback.print_exc()
         finally:

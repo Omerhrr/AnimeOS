@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireProjectAccess, projectOfRow } from "@/lib/access";
 import { normalizePose, poseChip } from "@/lib/animation/poses";
 import { presetPosesForStateLabel, resolveActiveState } from "@/lib/animation/state-poses";
+import { filterCastByDescription } from "@/lib/cast-token";
 
 /** Pose chips must name the shared vocabulary (or an alias) - typos 400 so renders never silently no-op. */
 function poseField(value: unknown): string | null | undefined {
@@ -169,10 +170,9 @@ export async function PATCH(req: Request) {
       });
       const project = scene?.episode.season.project;
       if (project) {
-        const desc = existing.description.toLowerCase();
-        const detected = project.characters
-          .filter((c) => desc.includes(c.name.toLowerCase().split(" ")[0]))
-          .slice(0, 3);
+        // THE NAME IS A WHOLE WORD (iteration 106): the same law the
+        // art prompts ride - "coiling" never detects "lin" again
+        const detected = filterCastByDescription(project.characters, existing.description, 3);
         let applied: { poseStart: string; poseEnd: string; source: string } | null = null;
         for (const ch of detected) {
           const active = resolveActiveState(ch.states, scene!.episode.number);

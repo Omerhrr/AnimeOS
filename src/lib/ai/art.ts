@@ -4,6 +4,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { safeJsonParse } from "@/lib/types";
 import { POSE_GLOSS } from "@/lib/animation/poses";
+import { filterCastByDescription } from "@/lib/cast-token";
 
 // ─────────────────────────────────────────────────────────────
 // AI ART SERVICE - panel art + character model sheets
@@ -153,12 +154,14 @@ export function castLook(member: CastMember, episodeNumber: number): string | nu
     .join("; ") || null;
 }
 
-/** Detect cast members referenced by a shot description (first-name match, max 3). */
+/**
+ * Detect cast members referenced by a shot description (first-name
+ * match, max 3). THE NAME IS A WHOLE WORD (iteration 106's
+ * word-boundary law, cast-token.ts): "coiling" never reads as Lin
+ * Yue's "lin" again - the match is exact-token, not substring.
+ */
 export function detectCast(projectCharacters: CastMember[], description: string): CastMember[] {
-  const desc = description.toLowerCase();
-  return projectCharacters
-    .filter((c) => desc.includes(c.name.toLowerCase().split(" ")[0]))
-    .slice(0, 3);
+  return filterCastByDescription(projectCharacters, description, 3);
 }
 
 // ─── Fact-aware prompts (the world's canon rides into generation) ───

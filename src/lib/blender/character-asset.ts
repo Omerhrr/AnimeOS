@@ -40,8 +40,13 @@ import { createHash } from "node:crypto";
 
 // ── the manifest law ──
 
-/** The manifest law's version tag (bumped when the law itself moves). */
-export const CHARACTER_ASSET_LAW_VERSION = 95;
+/** The manifest law's version tag (bumped when the law itself moves).
+ *  95 -> 106: THE FIGURE IS CRAFTED, NOT ASSEMBLED - the craft law
+ *  changed how the base mesh is BUILT (beveled organic boxes, rounded
+ *  capsule fingers, 24-segment curved primitives), so every library
+ *  asset re-builds with the crafted meshes; a craft change is an
+ *  asset change, and the master hash moves with it. */
+export const CHARACTER_ASSET_LAW_VERSION = 106;
 
 /** The manifest schema version (bumped when the manifest shape moves). */
 export const CHARACTER_ASSET_MANIFEST_VERSION = 1;
@@ -206,7 +211,7 @@ export function characterAssetKey(dna: CharacterAssetInput): string {
     ["sweep", "flow", "flyaway", "taper"],
   );
   return [
-    "95",
+    "106",
     st(dna.name),
     st(dna.hairStyle),
     hx(dna.hairColor),
