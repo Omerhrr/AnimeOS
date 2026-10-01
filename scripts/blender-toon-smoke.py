@@ -157,7 +157,9 @@ for k, node in wn.items():
     except Exception as exc:
         ok(f"wrinkle node {k} still alive", False, exc)
 vl = bpy.context.view_layer
-ok("ink is its own pass", scn.render.use_freestyle and vl.freestyle_settings.as_render_pass)
+ok("ink rides as hulls (freestyle off)", (not scn.render.use_freestyle) and lev["ink"] == ["hull"] and lev["inkShells"] >= 3, lev)
+ok("a hull shell exists, inked, shadowless", any(o.name.startswith("InkShell_") for o in scn.objects)
+   and any(o.visible_shadow is False for o in scn.objects if o.name.startswith("InkShell_")))
 ok("grain dropped, bloom threshold raised", comp["factors"]["grain"] == 0.0 and comp.get("bloomThreshold", 1.0) > 1.0, comp)
 wev = tp.apply_palette_wash(bpy, "WIDE")
 ok("wash nodes retuned for WIDE", wev["nodes"] >= 2 and wev["wash"] == tp.palette_wash_for("WIDE"), wev)

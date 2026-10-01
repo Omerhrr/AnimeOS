@@ -55,6 +55,7 @@ HEM_BAND = 0.24           # the lower fraction of a cloth piece the hem band pai
 PALETTE_WASH_BY_SHOT = {"EXTREME_CLOSEUP": 0.22, "CLOSEUP": 0.22, "MCU": 0.25, "MEDIUM": 0.32,
                         "LOW_ANGLE": 0.32, "WIDE": 0.45, "ESTABLISHING": 0.5}
 CREASE_DEG = 112.0   # only real folds ink; the sculpted head's soft planes stay clean
+INK_OFFSET = 0.005   # the hull outline's expansion along vertex normals (figure-local units)
 
 
 def resolve_look(project):
@@ -443,39 +444,112 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
             ob["animeos_toon_eased"] = True
             eased.append(ob.name)
 
-    # the ink
+    # ── THE INK (the freestyle law) ──────────────────────────
+    # Blender 5.2.2 aborts headless (SIGABRT, no traceback) inside the
+    # Freestyle stroke path on production scenes - bisected live: ANY
+    # lineset that produces strokes dies mid-render (silhouette, border
+    # and contour each alone), while the same scene with zero strokes
+    # renders end to end, and the same strokes render on a fresh cube.
+    # The ink therefore rides INVERTED HULLS by default - the classic
+    # cel outline: one shell per inked mesh, expanded along its vertex
+    # normals, flat ink only where the shell is backfacing (the rim
+    # that peeks around the silhouette). Pure geometry - no GL, no
+    # freestyle, deterministic. ANIMEOS_INK=freestyle opts a runtime
+    # whose build draws strokes safely back onto the lineset path;
+    # ANIMEOS_INK=off ships the cel shade unlined.
+    import os as _os
+    ink_mode = _os.environ.get("ANIMEOS_INK", "hull").strip().lower()
     r = scn.render
-    r.use_freestyle = True
-    r.line_thickness_mode = "ABSOLUTE"
-    r.line_thickness = INK_PX.get(mode, 1.1)
-    vl = bpy.context.view_layer
-    vl.use_freestyle = True
-    fs = vl.freestyle_settings
-    fs.crease_angle = math.radians(CREASE_DEG)
-    # the ink is its own pass: the comp graph lays it over the finished
-    # grade (build_comp_graph step 10) so mist/bloom never wash it out
-    fs.as_render_pass = True
-    ls = fs.linesets[0] if len(fs.linesets) else fs.linesets.new("AnimeOSInk")
-    ls.select_by_visibility = True
-    ls.select_by_edge_types = True
-    ls.select_silhouette = True
-    ls.select_border = True
-    # no crease ink: the solved cloth's subdivided folds turn every
-    # crease into a jittering speck at preview size - the silhouette
-    # and the part borders carry the drawing
-    ls.select_crease = False
-    ls.select_contour = True
-    ink = hex_to_rgb(INK_HEX)
-    ls.linestyle.color = ink
-    ls.linestyle.thickness = 1.0
-    ls.linestyle.alpha = 0.92
-    # painted decals (the anime face) are already drawn - no ink on
-    # their plane borders
-    no_ink = bpy.data.collections.get("AnimeOSNoInk")
-    if no_ink is not None:
-        ls.select_by_collection = True
-        ls.collection = no_ink
-        ls.collection_negation = "EXCLUSIVE"
+    ink_rgb = hex_to_rgb(INK_HEX)
+    shells = []
+    if ink_mode != "freestyle":
+        r.use_freestyle = False
+    if ink_mode == "hull":
+        ink_mat = bpy.data.materials.get("InkShellMat")
+        if ink_mat is None:
+            ink_mat = bpy.data.materials.new("InkShellMat")
+            ink_mat.use_nodes = True
+            nt = ink_mat.node_tree
+            nt.nodes.clear()
+            out = nt.nodes.new("ShaderNodeOutputMaterial")
+            mix = nt.nodes.new("ShaderNodeMixShader")
+            geo = nt.nodes.new("ShaderNodeNewGeometry")
+            transp = nt.nodes.new("ShaderNodeBsdfTransparent")
+            emis = nt.nodes.new("ShaderNodeEmission")
+            emis.inputs[0].default_value = (*ink_rgb, 1.0)
+            emis.inputs[1].default_value = 1.0
+            nt.links.new(geo.outputs["Backfacing"], mix.inputs[0])
+            nt.links.new(transp.outputs[0], mix.inputs[1])
+            nt.links.new(emis.outputs[0], mix.inputs[2])
+            nt.links.new(mix.outputs[0], out.inputs[0])
+        no_ink = bpy.data.collections.get("AnimeOSNoInk")
+        no_ink_names = set(o.name for o in no_ink.objects) if no_ink is not None else set()
+        for ob in list(scn.objects):
+            if ob.type != "MESH" or ob.name.startswith("InkShell_"):
+                continue
+            if ob.name in no_ink_names or ob.name.startswith(("Ground", "Icosphere", "PhysDebris", "PhysSway")):
+                continue
+            if any(m.type == "CLOTH" for m in ob.modifiers):
+                continue  # a simmed part moves under the solver - the hull would lag it
+            try:
+                shell_me = ob.data.copy()
+                for v in shell_me.vertices:
+                    v.co += v.normal * INK_OFFSET
+                shell = bpy.data.objects.new(f"InkShell_{ob.name}", shell_me)
+                scn.collection.objects.link(shell)
+                shell.matrix_world = ob.matrix_world.copy()
+                shell.parent = ob
+                shell.visible_shadow = False
+                shell.display_type = "WIRE"
+                shell_me.materials.clear()
+                shell_me.materials.append(ink_mat)
+                for m in ob.modifiers:
+                    if m.type == "ARMATURE" and m.object is not None:
+                        arm = shell.modifiers.new(m.name, "ARMATURE")
+                        arm.object = m.object
+                        arm.use_vertex_groups = m.use_vertex_groups
+                shells.append(shell.name)
+            except Exception:  # noqa: BLE001
+                continue
+    else:
+        r.use_freestyle = ink_mode == "freestyle"
+    if r.use_freestyle:
+        r.line_thickness_mode = "ABSOLUTE"
+        r.line_thickness = INK_PX.get(mode, 1.1)
+        vl = bpy.context.view_layer
+        vl.use_freestyle = True
+        fs = vl.freestyle_settings
+        fs.crease_angle = math.radians(CREASE_DEG)
+        # the ink burns into the frame here too: the compositor path is
+        # part of the same broken territory the stroke path lives in
+        fs.as_render_pass = False
+        ls = fs.linesets[0] if len(fs.linesets) else fs.linesets.new("AnimeOSInk")
+        ls.select_by_visibility = True
+        ls.select_by_edge_types = True
+        ls.select_silhouette = True
+        ls.select_border = True
+        # no crease ink: the solved cloth's subdivided folds turn every
+        # crease into a jittering speck at preview size - the silhouette
+        # and the part borders carry the drawing
+        ls.select_crease = False
+        ls.select_contour = True
+        ls.linestyle.color = ink_rgb
+        ls.linestyle.thickness = 1.0
+        ls.linestyle.alpha = 0.92
+        # painted decals (the anime face) are already drawn - no ink on
+        # their plane borders
+        no_ink = bpy.data.collections.get("AnimeOSNoInk")
+        if no_ink is not None:
+            ls.select_by_collection = True
+            ls.collection = no_ink
+            ls.collection_negation = "EXCLUSIVE"
+            # the exclusion set never rides the scene graph: a stale
+            # link from an older build is severed here
+            try:
+                for parent in list(no_ink.users_collection):
+                    parent.children.unlink(no_ink)
+            except Exception:  # noqa: BLE001
+                pass
 
     comp_note = None
     f = comp_profile.get("factors") if isinstance(comp_profile, dict) else None
@@ -492,7 +566,9 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
             f["beams"] = round(float(f.get("beams") or 0.0) * 0.3, 3)
         comp_note = {"dropped": before, "bloomThreshold": TOON_BLOOM_THRESHOLD, "note": "cel frames carry no film grain; the comp hash reflects the toon-adjusted profile"}
     return {"look": "TOON", "lawVersion": TOON_LAW_VERSION, "converted": converted, "keptEmissive": kept,
-            "inkPx": round(r.line_thickness, 2), "ink": ["silhouette", "border", "contour"], "denoised": denoised, "fillsEased": eased, "comp": comp_note}
+            "ink": (["hull"] if ink_mode == "hull" else (["silhouette", "border", "contour"] if ink_mode == "freestyle" else ["off"])),
+            "inkShells": len(shells), "inkPx": round(r.line_thickness, 2) if r.use_freestyle else None,
+            "denoised": denoised, "fillsEased": eased, "comp": comp_note}
 
 
 def palette_wash_for(shot_type):

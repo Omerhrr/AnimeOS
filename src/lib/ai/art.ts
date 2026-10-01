@@ -118,6 +118,7 @@ interface CastMember {
   modelSheetUrl?: string | null;
   modelSheetAt?: Date | null;
   sheetDna?: string | null; // cached sheet-DNA read (iteration 80) - staleness keyed on sheetUrl
+  designSpec?: string | null; // the design crew's landed anime spec (iteration 109) - rides the cast DNA
   states: Array<{
     episodeNumber: number | null;
     clothing: string | null;

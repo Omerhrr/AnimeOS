@@ -473,11 +473,18 @@ def _decal_plane(bpy, scn, name, parent, w, h, mat, head_ob, mirror=False, segs=
 
 def _no_ink(bpy, scn, ob):
     """Painted decals are drawn already - the Freestyle ink must not
-    trace their plane borders (the TOON pass excludes this collection)."""
+    trace their plane borders (the TOON pass excludes this collection).
+
+    THE COLLECTION STAYS FLOATING (the freestyle law): the exclusion
+    set is a bpy.data collection that is NEVER linked under the scene
+    master - Blender 5.2.2's Freestyle aborts (SIGABRT, no traceback)
+    when collections ride the scene graph while a lineset exists. The
+    lineset reads bpy.data membership directly, so the exclusion works
+    untouched; the decals render from the master collection they are
+    already linked to."""
     coll = bpy.data.collections.get("AnimeOSNoInk")
     if coll is None:
         coll = bpy.data.collections.new("AnimeOSNoInk")
-        scn.collection.children.link(coll)
     if ob.name not in coll.objects:
         coll.objects.link(ob)
 

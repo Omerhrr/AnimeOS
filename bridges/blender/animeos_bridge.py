@@ -6554,6 +6554,26 @@ def worker_run(job_file):
                 "note": "no measurable subject - the 106 framing table holds",
             }
 
+        # ── THE SCENE GRAPH STAYS FLAT (the freestyle law) ──
+        #     Defense in depth beside the as_render_pass=False fix:
+        #     every object renders from the master collection, no
+        #     child collections ride the graph into Freestyle's scene
+        #     iteration. Unlinked LATE - after every law has assembled
+        #     its pieces - and a flatten failure degrades honestly
+        #     instead of blocking the night. (Proven safe live: the
+        #     night renders end to end with the flatten in place.)
+        try:
+            master = scn.collection
+            for child in list(master.children):
+                for ob in list(child.objects):
+                    if ob.name not in master.objects:
+                        master.objects.link(ob)
+                master.children.unlink(child)
+        except Exception:  # noqa: BLE001
+            state["graphFlatten"] = "failed - the scene graph rides as assembled"
+        else:
+            state["graphFlatten"] = "flat"
+
         # ── frame loop: camera grammar + lightning strobe per frame ──
         choreo_max_smear = 0.0
         for f in range(1, frames_total + 1):
