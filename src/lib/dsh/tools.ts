@@ -402,6 +402,15 @@ export const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "design_character",
+    description: "THE STUDIO DESIGNS CHARACTERS: deploy the CHARACTER DESIGN CREW on one cast member - an orchestrator running specialist agents, each with its own skill and acceptance test: the SHEET READER (vision) reads the character's model sheet (or their written design when no sheet exists) into an anime design spec (gender, proportions, face shape, eye size/shape/color, hairstyle/bangs/color, outfit type/sleeves/collar/sash); the BUILDER (the studio's Blender) builds the designed anime character - painted face, one skinned body on a real armature, clump hair, lofted garments - and renders a model-sheet turnaround (front, 3/4, side, back, face close-up); the JUDGE (vision) scores the turnaround against the sheet per aspect and names the spec field behind every mismatch; the TUNER moves only those fields. Rounds repeat until the judge clears the bar or the round budget ends; the best round's spec lands on the character and every future render builds from it. Use it when a character is new, when their sheet changes, or when renders read off-model. Slow (minutes per round).",
+    args: {
+      characterName: "string - the cast member's exact name",
+      rounds: "number (optional) - build/judge/tune rounds, 1..6 (default 3)",
+      bar: "number (optional) - the judge's clearing bar 0.4..0.95 (default 0.72)",
+    },
+  },
+  {
     name: "blender_exec",
     description: "THE DESIGNER SEAM: run ONE bpy python script inside the studio's own headless Blender runtime (a short-lived sandboxed worker with a timeout and captured output). This is raw Blender capability, not an integration - the script can build, modify, measure or render anything in the scene graph. Use it for asset refinements the deterministic builder cannot express: a more articulated sleeve, an extra banner row, a measured silhouette tweak. The script receives --out <dir> after -- (sys.argv) for any files it writes; print progress and a final one-line result. Scripts are capped in size and time; a missing runtime refuses honestly until the runtime is provisioned.",
     args: {
@@ -642,6 +651,7 @@ export const TOOL_DEFS: ToolDef[] = [
       styleDirective: "string (optional) - full art style directive, e.g. 'wuxia ink-wash style, gold rim lighting, misty mountain palette'",
       paletteTokens: "string (optional) - colour/mood tokens, e.g. 'jade green, ink black, warm gold highlights'",
       negativePrompt: "string (optional) - extra things to avoid, e.g. 'no modern clothing, no western architecture'",
+      renderLook: "string (optional) - the 3D render look: TOON (cel shading + ink outlines, the default for DONGHUA/ANIME/KOREAN) or PBR (the graded physically-based look); empty string follows the visual style",
     },
   },
   {
@@ -2495,6 +2505,16 @@ async function executeToolInner(
         if (!result.ok) return { status: "ERROR", result: `Voice clone training failed for ${name}: ${result.error}` };
         const r = result.result;
         return { status: "OK", result: `Voice clone trained for ${r.characterName}: voice ${r.voiceId} from ${r.takes} reference take(s) (${(r.totalMs / 1000).toFixed(1)}s of performed audio). Their lines now perform with their own voice wherever the clone provider can render it - a state voice variant still deliberately overrides, and the catalog voice stays the honest fallback when a clone render fails. Their existing takes are NOT re-rendered automatically: run diff_episode_direction or diff_all_episodes and pass reRender:true to move takes onto the new voice.` };
+      }
+
+      case "design_character": {
+        const { runCharacterDesignCrew } = await import("@/lib/design/character-crew");
+        const res = await runCharacterDesignCrew(projectId, String(args.characterName ?? ""), {
+          rounds: args.rounds !== undefined ? Number(args.rounds) : undefined,
+          bar: args.bar !== undefined ? Number(args.bar) : undefined,
+        });
+        const trail = res.steps.map((s) => `${s.agent}${s.round ? ` r${s.round}` : ""}: ${s.ok ? "" : "FAILED "}${s.note}`).join(" | ");
+        return { status: res.ok ? "OK" : "ERROR", result: `${res.line}\n\nCrew trail: ${trail}`.slice(0, 4000) };
       }
 
       case "blender_exec": {
@@ -4479,8 +4499,15 @@ async function executeToolInner(
             data[key] = v.length > 0 ? v.slice(0, 600) : null;
           }
         }
+        if (args.renderLook !== undefined) {
+          const v = String(args.renderLook ?? "").trim().toUpperCase();
+          if (v && v !== "TOON" && v !== "PBR") {
+            return { status: "ERROR", result: "renderLook must be TOON, PBR or an empty string (follow the visual style)." };
+          }
+          data.renderLook = v || null;
+        }
         if (Object.keys(data).length === 0) {
-          return { status: "ERROR", result: "Nothing to change - pass styleDirective, paletteTokens and/or negativePrompt." };
+          return { status: "ERROR", result: "Nothing to change - pass styleDirective, paletteTokens, negativePrompt and/or renderLook." };
         }
         const updated = await db.project.update({ where: { id: project.id }, data });
         await db.productionEvent.create({
@@ -4496,6 +4523,7 @@ async function executeToolInner(
           updated.artStylePrompt ? `style: "${updated.artStylePrompt}"` : null,
           updated.artPalettePrompt ? `palette: "${updated.artPalettePrompt}"` : null,
           updated.artNegativePrompt ? `negatives: "${updated.artNegativePrompt}"` : null,
+          data.renderLook !== undefined ? `render look: ${updated.renderLook ?? "by visual style"}` : null,
         ].filter(Boolean).join(" · ");
         return { status: "OK", result: `Art style direction updated - ${parts}. Every future panel-art and model-sheet prompt in this production now carries it.` };
       }

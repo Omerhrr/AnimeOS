@@ -86,6 +86,6 @@ export const config = {
   // Skip Next internals and the public media directories - those are
   // either static files or image/audio GETs served straight from public/.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|panels/|sheets/|renders/|voices/|auditions/|assets-blender/|subtitles/).*)",
+    "/((?!_next/static|_next/image|favicon.ico|panels/|sheets/|renders/|voices/|auditions/|assets-blender/|subtitles/|designs/).*)",
   ],
 };

@@ -90,6 +90,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (body.fps !== undefined) data.fps = Number(body.fps);
   if (body.subtitleLanguages !== undefined) data.subtitleLanguages = JSON.stringify(body.subtitleLanguages);
   if (body.approvalGate !== undefined) data.approvalGate = Boolean(body.approvalGate);
+  // iteration 108: the 3D render look - TOON | PBR, or "" / null to
+  // follow the visualStyle default
+  if (body.renderLook !== undefined) {
+    const v = String(body.renderLook ?? "").trim().toUpperCase();
+    if (v && v !== "TOON" && v !== "PBR") {
+      return NextResponse.json({ error: "renderLook must be TOON, PBR or empty (follow the visual style)" }, { status: 400 });
+    }
+    data.renderLook = v || null;
+  }
   // Per-production art style tuning (nullable free-text directives)
   for (const key of ["artStylePrompt", "artPalettePrompt", "artNegativePrompt"]) {
     if (body[key] !== undefined) {

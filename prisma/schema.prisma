@@ -28,6 +28,11 @@ model Project {
   artStylePrompt    String? // custom style directive (overrides preset tokens)
   artPalettePrompt  String? // palette / colour-mood tokens
   artNegativePrompt String? // extra negative tokens appended to the negative tail
+  // THE FRAME READS AS ANIME (iteration 108): the 3D render look.
+  // TOON = cel shading + ink outlines (the sheets' own language),
+  // PBR = the graded physically-based look. Null = by visualStyle
+  // (DONGHUA / ANIME / KOREAN render TOON, the rest PBR).
+  renderLook        String?
   status            String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
   approvalGate      Boolean  @default(false) // when on, an APPROVED DSH inspection parks the render at REVIEW until a human approves
   // THE SLATE IS SIGNED (iteration 104): this production's own webhook
@@ -555,6 +560,13 @@ model Character {
   modelSheetUrl    String? // AI-generated character model sheet (served from /sheets/)
   modelSheetPrompt String? // Canonical visual-anchor prompt - reused in every panel art for consistency
   modelSheetAt     DateTime? // when the current sheet/anchor was generated - art-aware continuity staleness anchor
+  // THE STUDIO DESIGNS CHARACTERS (iteration 109): the anime design
+  // spec the design crew landed (character-spec.ts) - every render
+  // builds this character from it; designSheetUrl is the winning
+  // round's turnaround (public/designs/{id}/rN/turn_sheet.png)
+  designSpec       String?
+  designSheetUrl   String?
+  designedAt       DateTime?
   sheetDna         String? // JSON SheetDnaRead - the sheet's measured build DNA (hair/robe/weapon/build hexes), stale when sheetUrl moves (iteration 80)
   parentId         String? // derivative source character
   derivativeType   String? // CLONE | AVATAR | REINCARNATION | POSSESSION | DISGUISE | TRANSFORMATION

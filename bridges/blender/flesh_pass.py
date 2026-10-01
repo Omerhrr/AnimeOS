@@ -82,6 +82,11 @@ def build_flesh_rig(bpy, scn, figure, frames_total):
     for ob in candidates:
         if ob.type != "MESH":
             continue
+        # iteration 109: the designed anime character's rigid parts (the
+        # painted-face head, decals, hair) opt out - a soft-body head
+        # would slide under its own face paint
+        if ob.get("animeos_no_flesh"):
+            continue
         tune = FLESH_REGIONS.get(ob.name)
         if not tune:
             continue

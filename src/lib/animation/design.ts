@@ -37,6 +37,8 @@ export interface CharacterDesignDna {
    *  measured into a palette and planned into bounded material pulls
    *  (only the hero's entry carries one). */
   sheetConformance?: import("@/lib/blender/sheet-palette").SheetConformance;
+  // iteration 109: the design crew's anime spec (character-spec.ts)
+  designSpec?: unknown;
 }
 
 export type TerrainKind = "terrace" | "peak" | "forest" | "gorge" | "temple";

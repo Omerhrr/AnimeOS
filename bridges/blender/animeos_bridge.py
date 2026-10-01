@@ -723,7 +723,7 @@ def measure_subject(root):
         while stack:
             ob = stack.pop()
             stack.extend(ob.children)
-            if ob.type != "MESH":
+            if ob.type != "MESH" or ob.hide_render:
                 continue
             is_head = ob.name == "HeadMesh"
             for c in ob.bound_box:
@@ -752,6 +752,50 @@ def measure_subject(root):
 
 
 SUBJECT_BODY_RADIUS = 0.55  # hits this close to the aim are the subject's own body
+
+HERO_KEY_DAY = "#fff1e2"
+HERO_KEY_NIGHT = "#f3e7e0"   # warm-neutral even under the moon: the face keeps its skin
+HERO_KEY_YAW = 35.0          # degrees off the lens axis (the classic key side)
+HERO_KEY_RISE = 28.0         # degrees above the head
+HERO_KEY_SIZE = 1.1
+
+
+def _grip_law():
+    """The grip contract the anime builder hangs its weapon from (the
+    same GRIP_SPEC / GRIP_ANCHOR / offsets the v4 figure obeys)."""
+    import types
+    return types.SimpleNamespace(GRIP_SPEC=GRIP_SPEC, GRIP_ANCHOR=GRIP_ANCHOR,
+                                 grip_piece_offset=grip_piece_offset)
+
+
+def aim_hero_key(key_ob, cam_loc, head_ob, subject=None):
+    """THE KEY FINDS THE FACE (iteration 108): place the hero key from
+    the LENS, not from a fixed world point - 35 degrees off the camera
+    axis around the head, raised 28 degrees, at a distance scaled by
+    the measured head (a close-up gets a close, soft key; a wide keeps
+    its reach). The TRACK_TO constraint aims it at the head."""
+    import mathutils
+    h = head_ob.matrix_world.translation
+    v = mathutils.Vector((cam_loc[0] - h.x, cam_loc[1] - h.y, 0.0))
+    if v.length < 1e-6:
+        v = mathutils.Vector((0.0, -1.0, 0.0))
+    v.normalize()
+    yaw = math.radians(HERO_KEY_YAW)
+    vx = v.x * math.cos(yaw) - v.y * math.sin(yaw)
+    vy = v.x * math.sin(yaw) + v.y * math.cos(yaw)
+    head_h = float((subject or {}).get("headH") or 0.1)
+    dist = max(0.6, head_h * 9.0)
+    rise = math.radians(HERO_KEY_RISE)
+    # inverse-square: the authored energy was set for the old ~1.8m
+    # placement - a closer key keeps the same irradiance on the face
+    base_e = key_ob.get("baseEnergy")
+    if base_e is None:
+        key_ob["baseEnergy"] = float(key_ob.data.energy)
+        base_e = key_ob["baseEnergy"]
+    key_ob.data.energy = float(base_e) * min(1.0, (dist / 1.8) ** 2)
+    key_ob.location = (h.x + vx * dist * math.cos(rise),
+                       h.y + vy * dist * math.cos(rise),
+                       h.z + dist * math.sin(rise))
 
 
 def _sightline_clear(scn, bpy, origin, target, margin=0.3):
@@ -811,6 +855,87 @@ def solve_sightline(scn, bpy, shot, scene_p, subject):
                 return out
     return {"scale": dist / dist0, "angleOffset": 0.0, "walked": True, "cleared": False, "dist": round(dist, 3),
             "note": "the world owns every ray - the closest solve rides"}
+
+
+PATH_SIGHTLINE_SAMPLES = 16
+PATH_SIGHTLINE_ASIDE = (12.0, -12.0, 24.0, -24.0, 36.0, -36.0, 48.0, -48.0)
+PATH_PUSH_MARGIN = 0.12  # metres the lens keeps in front of an obstacle it is pushed past
+
+
+def _path_pose(shot, scene_p, grammar, t, subject):
+    if grammar:
+        return grammar_camera_pose(shot, scene_p, grammar, t, subject)
+    return camera_pose(shot, scene_p, t, subject)
+
+
+def _path_blocked(scn, bpy, shot, scene_p, grammar, subject, samples):
+    out = []
+    for i in range(samples):
+        t = i / max(1, samples - 1)
+        pos, target, _lens = _path_pose(shot, scene_p, grammar, t, subject)
+        if not _sightline_clear(scn, bpy, pos, target):
+            out.append(round(t, 3))
+    return out
+
+
+def solve_path_sightline(scn, bpy, shot, scene_p, grammar, subject, samples=PATH_SIGHTLINE_SAMPLES):
+    """THE MOVE KNOWS THE WORLD (iteration 108): solve_sightline clears
+    ONE ray from the base camera, but the move then walks a PATH (a PAN
+    swings 24 degrees, an ORBIT 44) and the night's S004 swung into a
+    pillar mid-move - empty plates. The whole path is sampled
+    (16 points through the same pose functions the frame loop calls)
+    and ray-cast to the subject. A blocked path rotates the WHOLE move
+    aside (12..48 degrees both ways, the framing survives) and keeps
+    the offset that clears the most samples; whatever stays blocked
+    is handled per frame by push_past_obstacle. Mutates
+    subject['_angleOffset']; returns the evidence."""
+    base = float(subject.get("_angleOffset") or 0.0)
+    blocked0 = _path_blocked(scn, bpy, shot, scene_p, grammar, subject, samples)
+    ev = {"samples": samples, "blockedBefore": len(blocked0), "blockedAt": blocked0[:8]}
+    if not blocked0:
+        ev.update({"cleared": True, "pathOffset": 0.0, "blockedAfter": 0})
+        return ev
+    best = (len(blocked0), 0.0, blocked0)
+    for deg in PATH_SIGHTLINE_ASIDE:
+        subject["_angleOffset"] = base + deg
+        b = _path_blocked(scn, bpy, shot, scene_p, grammar, subject, samples)
+        if len(b) < best[0]:
+            best = (len(b), deg, b)
+        if not b:
+            break
+    subject["_angleOffset"] = base + best[1]
+    ev.update({"cleared": best[0] == 0, "pathOffset": best[1], "blockedAfter": best[0],
+               "residualAt": best[2][:8]})
+    if best[0]:
+        ev["note"] = "residual blocked samples - the frame loop pushes the lens past the obstacle"
+    return ev
+
+
+def push_past_obstacle(scn, bpy, pos, target):
+    """Per-frame last resort: when the world still owns this frame's
+    ray, cast from the SUBJECT back toward the lens (starting outside
+    the body radius) and park the lens just in front of the first
+    obstacle it meets - the camera sits between the pillar and the
+    hero instead of behind the pillar. Returns (pos, pushed)."""
+    import mathutils
+    if _sightline_clear(scn, bpy, pos, target):
+        return pos, False
+    o = mathutils.Vector(target)
+    c = mathutils.Vector(pos)
+    d = c - o
+    far = d.length
+    if far < 1e-6:
+        return pos, False
+    d.normalize()
+    start = o + d * SUBJECT_BODY_RADIUS
+    dg = bpy.context.evaluated_depsgraph_get()
+    hit, loc, _n, _i, _ob, _m = scn.ray_cast(dg, start, d, distance=max(0.05, far - SUBJECT_BODY_RADIUS))
+    if not hit:
+        return pos, False
+    new = loc - d * PATH_PUSH_MARGIN
+    if (new - o).length < SUBJECT_BODY_RADIUS:
+        return pos, False  # the obstacle hugs the subject - nothing honest to do
+    return [new.x, new.y, new.z], True
 
 
 class _Framing:
@@ -1265,7 +1390,12 @@ def build_secondary_rig(bpy, scn, figure):
         piv.parent = ob.parent
         piv.location = (loc[0], loc[1], loc[2] + dz)
         ob.parent = piv
-        ob.location = (loc[0], loc[1], loc[2] - dz)
+        # iteration 108: the part hangs dz BELOW its pivot in the
+        # pivot's own space. The old (loc.x, loc.y, loc.z - dz) added
+        # the part's offset a SECOND time on top of the pivot's - every
+        # sleeve, skirt panel and hair tail hung at twice its authored
+        # offset (the sleeves read as detached tubes below the shoulder)
+        ob.location = (0.0, 0.0, -dz)
         stiff, damp, gain, maxd = SEC_KINDS[kind]
         chains.append({
             "piv": piv, "ob": ob, "kind": kind, "stiff": stiff, "damp": damp,
@@ -1799,6 +1929,7 @@ def principled_mat(bpy, name, color_hex, roughness=0.8, metallic=0.0):
         b.inputs["Roughness"].default_value = roughness
         if metallic:
             b.inputs["Metallic"].default_value = metallic
+    mat["animeos_dye"] = str(color_hex)
     return mat
 
 
@@ -1814,6 +1945,7 @@ def emission_mat(bpy, name, color_hex, strength):
     em.inputs[1].default_value = strength
     out = nodes.get("Material Output")
     mat.node_tree.links.new(em.outputs[0], out.inputs[0])
+    mat["animeos_kind"] = "emissive"
     return mat
 
 
@@ -2197,6 +2329,10 @@ def _grade_cloth_tree(mat, color_hex, prof, palette=None):
         z_clamp.location = (-100, -80)
         z_clamp.operation = "MULTIPLY"
         z_clamp.inputs[1].default_value = PALETTE_WASH
+        # iteration 108: named so the framing can retune it (a wide
+        # shot's cloth is a few dozen pixels - the cap must rise there)
+        z_clamp.name = "PaletteWash"
+        z_clamp.label = "PaletteWash"
         nt.links.new(z_ramp.outputs["Color"], z_clamp.inputs[0])
         nt.links.new(z_clamp.outputs[0], z_mix.inputs["Fac"])
         nt.links.new(dyed, z_mix.inputs["Color2"])
@@ -5269,7 +5405,10 @@ def build_comp_graph(scn, prof, frames_total):
         try:
             g = tree.nodes.new("CompositorNodeGlare")
             _comp_set_sock(g, "Type", "Bloom")
-            _comp_set_sock(g, "Threshold", 1.0)
+            # iteration 108: the TOON look raises the threshold - pale
+            # cel cloth sits near 1.0 and bloomed into a halo; only the
+            # energy (blades, fx, lanterns) should glow
+            _comp_set_sock(g, "Threshold", float(prof.get("bloomThreshold") or 1.0))
             _comp_set_sock(g, "Size", 8.0)
             _comp_set_sock(g, "Quality", "Medium")
             tree.links.new(cur, _comp_in_sock(g, "Image"))
@@ -5376,6 +5515,27 @@ def build_comp_graph(scn, prof, frames_total):
             landed.append("saturation")
         except Exception:
             skipped.append("lut")
+
+        # 10. THE INK RIDES ON TOP (iteration 108): under the TOON look the
+        #     Freestyle strokes render as their own pass and are laid over
+        #     the FINISHED grade - mist, bloom and the lut lift would
+        #     otherwise wash the ink into the haze it is meant to cut.
+        try:
+            vl0 = scn.view_layers[0]
+            if scn.render.use_freestyle and vl0.use_freestyle and vl0.freestyle_settings.as_render_pass:
+                fs_out = None
+                for o in rl.outputs:
+                    if o.name == "Freestyle":
+                        fs_out = o
+                        break
+                if fs_out is not None:
+                    ao = tree.nodes.new("CompositorNodeAlphaOver")
+                    tree.links.new(cur, _comp_in_sock(ao, "Background"))
+                    tree.links.new(fs_out, _comp_in_sock(ao, "Foreground"))
+                    cur = _comp_out_sock(ao, "Image")
+                    landed.append("ink")
+        except Exception:
+            skipped.append("ink")
 
         tree.links.new(cur, go.inputs[0])
         if not landed:
@@ -5642,16 +5802,58 @@ def worker_run(job_file):
             # v4.1: the library asset IS the designed character when one
             # exists - built once at design time, loaded here with the
             # same rig contract; materials come with it
-            figure = try_load_cast_asset(asset_cast[0] if asset_cast else None)
-            if figure is not None:
+            # THE STUDIO DESIGNS CHARACTERS (iteration 109): under the
+            # ANIME builder (the default for the TOON look) the hero is a
+            # designed anime character - painted face, one skinned body,
+            # a real armature that follows the v3.x joints, clump hair,
+            # lofted garments (anime_character.py). LEGACY keeps the
+            # assembled v4 figure and its library assets.
+            figure = None
+            try:
+                here_dir = os.path.dirname(os.path.abspath(__file__))
+                if here_dir not in sys.path:
+                    sys.path.insert(0, here_dir)
+                import toon_pass as _tp
+                builder = str(project.get("builder") or "").upper() or (
+                    "ANIME" if _tp.resolve_look(project) == "TOON" else "LEGACY")
+            except Exception:  # noqa: BLE001
+                builder = "LEGACY"
+            if builder == "ANIME":
+                try:
+                    import anime_character
+                    figure = anime_character.build_anime_character(bpy, scn, hero, hero_mats, br=_grip_law())
+                    state["figureSource"] = f"anime:v{anime_character.ANIME_LAW_VERSION}"
+                    state["anime"] = {k: v for k, v in figure["anime"].items() if k != "spec"}
+                    state["anime"]["spec"] = figure["anime"]["spec"]
+                except Exception as exc:  # noqa: BLE001
+                    figure = None
+                    state["animeRefused"] = f"anime builder refused: {exc}"[:200]
+            if figure is None:
+                figure = try_load_cast_asset(asset_cast[0] if asset_cast else None)
+            if figure is not None and not state.get("figureSource"):
                 state["figureSource"] = f"asset:{hero.get('name', 'cast')}"
-            else:
+            elif figure is None:
                 # THE HAIR IS GROOMED (iteration 85): the framing owns
                 # the strand pass - close framings carry the full
                 # groom, wide framings keep the volumes
                 figure = build_designed_figure(bpy, scn, hero, hero_mats,
                                                strand_f=groom_strand_factor(str(shot.get("shotType") or "")))
                 state["figureSource"] = "procedural:v4.0-designed"
+            # THE BODY READS AS A CHARACTER (iteration 108): the garment
+            # is one hanfu - fitted bodice, floor-length gown, belled
+            # sleeves - rebuilt in place (names/anchors kept for the
+            # solvers). Runs on procedural AND loaded asset figures.
+            try:
+                here_dir = os.path.dirname(os.path.abspath(__file__))
+                if here_dir not in sys.path:
+                    sys.path.insert(0, here_dir)
+                import toon_pass
+                if isinstance(figure, dict) and str(figure.get("builder") or "").startswith("anime"):
+                    state["anatomy"] = {"applied": False, "note": "the anime builder designs the garment itself"}
+                else:
+                    state["anatomy"] = toon_pass.reshape_anatomy(bpy, scn, figure, hero)
+            except Exception as exc:  # noqa: BLE001
+                state["anatomy"] = {"applied": False, "note": f"anatomy pass refused: {exc}"[:160]}
             state["rig"] = {
                 "version": "v4.1" if state.get("figureSource", "").startswith("asset") else "v4.0-designed",
                 "face": True, "hands": True,
@@ -5814,9 +6016,25 @@ def worker_run(job_file):
                         "blade": hero_mats["blade"],
                         "boots": graded_mat(bpy, "cloth", "BootsMatB", "#241a12", other_mprof),
                     }
-                    other_rig = build_designed_figure(bpy, scn, other, other_mats,
-                                                      strand_f=groom_strand_factor(str(shot.get("shotType") or "")))
-                    state["secondFigureSource"] = "procedural:v4.0-designed"
+                    other_rig = None
+                    if str(state.get("figureSource") or "").startswith("anime"):
+                        try:
+                            import anime_character
+                            other_rig = anime_character.build_anime_character(bpy, scn, other, other_mats, br=_grip_law())
+                            state["secondFigureSource"] = f"anime:v{anime_character.ANIME_LAW_VERSION}"
+                        except Exception as exc:  # noqa: BLE001
+                            other_rig = None
+                            state["animeRefusedB"] = str(exc)[:200]
+                    if other_rig is None:
+                        other_rig = build_designed_figure(bpy, scn, other, other_mats,
+                                                          strand_f=groom_strand_factor(str(shot.get("shotType") or "")))
+                        state["secondFigureSource"] = "procedural:v4.0-designed"
+                    try:
+                        import toon_pass
+                        if not str(other_rig.get("builder") or "").startswith("anime"):
+                            state["anatomyB"] = toon_pass.reshape_anatomy(bpy, scn, other_rig, other)
+                    except Exception as exc:  # noqa: BLE001
+                        state["anatomyB"] = {"applied": False, "note": str(exc)[:160]}
                     # the second figure's shaping rides the state too
                     if isinstance(other_rig, dict) and other_rig.get("silhouette"):
                         state["secondFigureSilhouette"] = other_rig["silhouette"]
@@ -5835,6 +6053,8 @@ def worker_run(job_file):
                 other_rig["root"].location = (0.6, 1.7, 0.0)
                 other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(166))
                 apply_pose(other_rig, "STANCE", "STANCE", 0.0, 0.0)
+                if other_rig.get("syncRig"):
+                    other_rig["syncRig"]()
                 state["secondFigure"] = other.get("name")
         elif pose_start or pose_end:
             legacy_mat = bpy.data.materials.new("SetMat")
@@ -6138,6 +6358,8 @@ def worker_run(job_file):
             light.rotation_euler = (math.radians(-55), math.radians(20 * (i or -1)), 0)
             light.location = ((3.5, -4.0, 2.6) if i == 0 else (-3.0, 3.5, 3.2))
             scn.collection.objects.link(light)
+        hero_key = None
+        head_target = None
         if hero:
             # the HERO KEY: a soft dedicated light on the subject so a
             # night wide never loses the figure in the darkness (the
@@ -6146,12 +6368,27 @@ def worker_run(job_file):
             key_data = bpy.data.lights.new("HeroKey", "AREA")
             key_data.size = 1.6
             key_data.energy = 140.0 if night else 260.0
-            kcol = hero.get("bladeColor", "#cfe0ee") if night else "#f2ede2"
+            # THE KEY FINDS THE FACE (iteration 108): the key is a
+            # warm skin-friendly white at every hour - the night mood
+            # rides the moon sun and the rim, never the face light (the
+            # blade-green key read the head as dark metal). It tracks
+            # the HEAD and is re-placed per frame from the lens (35
+            # degrees off the camera axis, raised) - see aim_hero_key.
+            kcol = HERO_KEY_NIGHT if night else HERO_KEY_DAY
             key_data.color = hex_to_rgb(kcol)
+            key_data.size = HERO_KEY_SIZE
             hero_key = bpy.data.objects.new("HeroKey", key_data)
             hero_key.location = (0.7, -1.6, 1.9)   # front-above the figure (it faces -Y)
             hero_key.rotation_euler = (math.radians(-38), 0, 0)
             scn.collection.objects.link(hero_key)
+            head_target = figure.get("head") if isinstance(figure, dict) else None
+            if head_target is not None:
+                tc = hero_key.constraints.new("TRACK_TO")
+                tc.target = head_target
+                tc.track_axis = "TRACK_NEGATIVE_Z"
+                tc.up_axis = "UP_Y"
+                state["heroKey"] = {"tracks": "head", "color": kcol, "offsetDeg": HERO_KEY_YAW,
+                                    "riseDeg": HERO_KEY_RISE, "lawVersion": 108}
 
         # ── render settings ──
         windows = lightning_windows(job_id, lightning, duration_sec)
@@ -6186,6 +6423,19 @@ def worker_run(job_file):
         #    superseded by law: a comp the loop cannot measure is a
         #    comp that never happened).
         comp = comp_profile(shot)
+        # THE FRAME READS AS ANIME (iteration 108): the production's
+        # look - TOON converts every material to a cel tree, inks the
+        # silhouettes and drops grain/chroma from the comp profile.
+        try:
+            here_dir = os.path.dirname(os.path.abspath(__file__))
+            if here_dir not in sys.path:
+                sys.path.insert(0, here_dir)
+            import toon_pass
+            look = toon_pass.resolve_look(project)
+            state["render"]["look"] = toon_pass.apply_look(bpy, scn, look, mode, hex_to_rgb, comp)
+            state["render"]["paletteWash"] = toon_pass.apply_palette_wash(bpy, shot.get("shotType"))
+        except Exception as exc:  # noqa: BLE001
+            state["render"]["look"] = {"look": "PBR", "note": f"toon pass refused: {exc}"[:160]}
         comp_ev = build_comp_graph(scn, comp, frames_total)
         state["render"]["comp"] = {
             "mode": mode,
@@ -6270,6 +6520,17 @@ def worker_run(job_file):
                     subject_ctx["_angleOffset"] = sightline_ev["angleOffset"]
             except Exception:  # noqa: BLE001
                 sightline_ev = None
+            # THE MOVE KNOWS THE WORLD (iteration 108): the base ray is
+            # one point - the move walks a path. Sample it and rotate
+            # the whole move aside when the world owns any of it.
+            try:
+                path_ev = solve_path_sightline(scn, bpy, shot, scene_p, grammar, subject_ctx)
+                if sightline_ev is None:
+                    sightline_ev = {}
+                sightline_ev["path"] = path_ev
+            except Exception as exc:  # noqa: BLE001
+                if sightline_ev is not None:
+                    sightline_ev["path"] = {"skipped": str(exc)[:120]}
         if subject_ctx is not None:
             fr0 = _Framing(shot, scene_p, subject_ctx)
             st0 = str(shot.get("shotType") or "MEDIUM").upper()
@@ -6309,8 +6570,14 @@ def worker_run(job_file):
                 # THE PERFORMANCE IS KEYED: the program owns the body
                 # this frame (the lens stays the grammar's)
                 pose_s, pose_e, pose_t = choreography_pass.pose_state_at(choreo_prog, t)
+            if subject_ctx is not None:
+                pos, pushed = push_past_obstacle(scn, bpy, pos, target)
+                if pushed:
+                    state["render"].setdefault("pushedFrames", []).append(f)
             cam.data.lens = lens
             cam.location = mathutils.Vector(pos)
+            if hero_key is not None and head_target is not None:
+                aim_hero_key(hero_key, cam.location, head_target, subject_ctx)
             direction = mathutils.Vector(target) - cam.location
             cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
             if choreo_prog:
@@ -6394,6 +6661,10 @@ def worker_run(job_file):
                     break
             sun_data.energy = sun_base + boost
 
+            # the designed character's armature follows the joints the
+            # whole frame's laws just posed (iteration 109)
+            if figure and figure.get("syncRig"):
+                figure["syncRig"]()
             scn.frame_set(f)
             scn.render.filepath = os.path.join(frames_dir, f"f_{f:04d}.png")
             bpy.ops.render.render(write_still=True)

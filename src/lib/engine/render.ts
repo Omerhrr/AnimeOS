@@ -197,7 +197,13 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
           stateClothing: st?.clothing ?? null,
           stateWeapon: st?.weapon ?? null,
         });
-        return adherentDna(regex, sheetDnaFresh(c.sheetDna, c.modelSheetUrl));
+        const dna = adherentDna(regex, sheetDnaFresh(c.sheetDna, c.modelSheetUrl));
+        // iteration 109: the design crew's spec rides the cast DNA - the
+        // worker's anime builder builds THIS character from it
+        if (c.designSpec) {
+          try { return { ...dna, designSpec: JSON.parse(c.designSpec) }; } catch { /* a corrupt spec builds from the DNA */ }
+        }
+        return dna;
       });
 
     // THE SHEET DRESSES THE RENDER (v10.1) - now for EVERY detected cast
@@ -401,6 +407,9 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         visualStyle: project?.visualStyle ?? "DONGHUA",
         resolution: project?.resolution ?? "1920x1080",
         fps: project?.fps ?? 24,
+        // iteration 108: the render look (TOON | PBR); null lets the
+        // worker resolve it from visualStyle (toon_pass.resolve_look)
+        look: project?.renderLook ?? null,
       },
       mode,
     };
