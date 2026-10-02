@@ -54,6 +54,27 @@ const MIN_SHARE = 0.02; // a cluster must own >= 2% of the sheet
 const MIN_SEPARATION = 0.075; // normalized city-block distance between kept clusters
 const CONFORM_FACTOR = 0.35; // the sheet pulls, it does not repaint
 const SKIP_BELOW = 0.1; // already true to the sheet
+// THE PULL NEVER CROSSES THE VALUE CLASS (iteration 115): the palette
+// pull refines HUE and CHROMA toward the sheet's clusters - it must
+// never re-dye a color's VALUE, and it must refuse when the palette
+// cannot see the dye's class at all. The evidence: Lin Yue's sheet
+// palette measured all-pale/teal clusters (the extractor's 4 dominant
+// buckets missed the dark hair region entirely), so the near-black
+// hair dye (#0d0d0d) found its "nearest" cluster at mid-teal
+// (#678a89) and the 0.75 sheet-DNA blend landed ~#516b6a - the
+// closeup's hair rendered PALE TEAL and every hair cell of the 115
+// re-scores read 0-10% against a black-haired sheet. A capped blend
+// still injects the wrong HUE (the third burn's muted slate-teal);
+// the honest law is a REFUSAL: when the nearest cluster sits outside
+// the dye's value class (|Δlum| > the cap), the palette cannot see
+// this dye - the sheet DNA's own measured read stands un-pulled.
+export const PULL_LUM_CAP = 0.15;
+
+/** relative luminance (the Rec.601 the cel tree itself uses) */
+export function relLum(hex: string): number {
+  const [r, g, b] = hexToRgb(hex);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
 
 function clampByte(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v)));
@@ -153,7 +174,14 @@ export function planSheetConformance(
       rows.push({ role, mat, from, to: from, delta: d, skipped: "already true to the sheet" });
       continue;
     }
-    const to = blendHex(from, nearest, factor);
+    let to = blendHex(from, nearest, factor);
+    // THE VALUE GUARD: a nearest cluster outside the dye's value class
+    // means the palette never saw this dye (the extractor missed the
+    // region) - the pull refuses and the measured DNA read stands.
+    if (Math.abs(relLum(nearest) - relLum(from)) > PULL_LUM_CAP) {
+      rows.push({ role, mat, from, to: from, delta: d, skipped: "value guard: no sheet cluster shares the dye's value class - the measured DNA read stands" });
+      continue;
+    }
     rows.push({ role, mat, from, to, delta: hexDist(from, to) });
   }
   return rows;

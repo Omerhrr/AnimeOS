@@ -420,17 +420,60 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None):
     nt.links.new(em.outputs[0], mix.inputs[1])
     nt.links.new(em_lit.outputs[0], mix.inputs[2])
     if kind == "hair":
-        # the anime hair sheen: a tight glossy toon band rides on top
+        # THE SHEEN KEEPS THE DYE'S HUE (iteration 115): the 114 night's
+        # closeup read the black hair as teal-green - the sheen was a
+        # REAL glossy BSDF, so its band carried the SCENE's light colors
+        # (the pale-blue moon sun multiplying the temple's own emissive
+        # cel walls: blue over green = the teal read). THE CEL LAW, kept
+        # to its letter: the lights pick the BAND, never the VALUE - the
+        # glossy toon survives only as the band MEASURER (its output
+        # crosses the same hard edge), and the paint is a SHEEN EMISSION
+        # derived from the dye itself (the anime glint: a lifted,
+        # hue-preserving tint of the hair's own color). The moon decides
+        # WHERE the glint sits; the sheet decides WHAT COLOR it is.
         gl = nt.nodes.new("ShaderNodeBsdfToon")
         gl.component = "GLOSSY"
-        gl.inputs["Color"].default_value = (min(1, rgb[0] * 1.6 + 0.025), min(1, rgb[1] * 1.6 + 0.025), min(1, rgb[2] * 1.6 + 0.035), 1.0)
+        gl.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
         gl.inputs["Size"].default_value = 0.07
         gl.inputs["Smooth"].default_value = 0.02
+        gsep = nt.nodes.new("ShaderNodeSeparateColor")
+        nt.links.new(gl.outputs[0], gsep.inputs[0])
+        g_a = nt.nodes.new("ShaderNodeMath")
+        g_a.operation = "MAXIMUM"
+        nt.links.new(gsep.outputs["Red"], g_a.inputs[0])
+        nt.links.new(gsep.outputs["Green"], g_a.inputs[1])
+        g_b = nt.nodes.new("ShaderNodeMath")
+        g_b.operation = "MAXIMUM"
+        nt.links.new(g_a.outputs[0], g_b.inputs[0])
+        nt.links.new(gsep.outputs["Blue"], g_b.inputs[1])
+        g_c = nt.nodes.new("ShaderNodeMath")
+        g_c.operation = "MINIMUM"
+        g_c.inputs[1].default_value = 1.0
+        nt.links.new(g_b.outputs[0], g_c.inputs[0])
+        # THE SHEEN IS A GLINT (the 115 night's third burn): the glossy
+        # measurer saturates on a smooth hair dome under several large
+        # lights - un-thresholded it paints the WHOLE mass at the lifted
+        # dye (the closeup read a uniform muted teal instead of a dark
+        # mass with a highlight). The glint crosses a hard cel edge: the
+        # band lives only where the specular response is STRONG.
+        g_t = nt.nodes.new("ShaderNodeMath")
+        g_t.operation = "GREATER_THAN"
+        g_t.inputs[1].default_value = SHEEN_GLINT_THRESHOLD
+        nt.links.new(g_c.outputs[0], g_t.inputs[0])
+        sheen_lift = (min(1.0, rgb[0] * 1.6 + 0.025), min(1.0, rgb[1] * 1.6 + 0.025), min(1.0, rgb[2] * 1.6 + 0.035), 1.0)
+        sh_em = nt.nodes.new("ShaderNodeEmission")
+        sh_em.inputs["Color"].default_value = sheen_lift
+        sh_em.inputs["Strength"].default_value = 1.0
+        transp = nt.nodes.new("ShaderNodeBsdfTransparent")
+        sh_mix = nt.nodes.new("ShaderNodeMixShader")
+        nt.links.new(g_t.outputs[0], sh_mix.inputs[0])
+        nt.links.new(transp.outputs[0], sh_mix.inputs[1])
+        nt.links.new(sh_em.outputs[0], sh_mix.inputs[2])
         add2 = nt.nodes.new("ShaderNodeAddShader")
         nt.links.new(mix.outputs[0], add2.inputs[0])
-        nt.links.new(gl.outputs[0], add2.inputs[1])
+        nt.links.new(sh_mix.outputs[0], add2.inputs[1])
         nt.links.new(add2.outputs[0], out.inputs["Surface"])
-        return {"look": "TOON", "bands": "flat+sheen", "floor": round(floor, 3)}
+        return {"look": "TOON", "bands": "flat+dye-sheen", "floor": round(floor, 3)}
     nt.links.new(mix.outputs[0], out.inputs["Surface"])
     return {"look": "TOON", "bands": "flat", "floor": round(floor, 3)}
 
@@ -666,6 +709,7 @@ def apply_palette_wash(bpy, shot_type):
 # ride this. Runs BEFORE the cel conversion so the dye inherits the
 # staged tone.
 SET_STAGE_BY_SHOT = {"EXTREME_CLOSEUP": (0.50, 0.55), "CLOSEUP": (0.55, 0.62), "MCU": (0.75, 0.82)}
+SHEEN_GLINT_THRESHOLD = 0.55
 
 
 def set_stage_for(shot_type):
@@ -699,3 +743,56 @@ def stage_set_for_framing(bpy, shot_type):
                 except Exception:  # noqa: BLE001
                     pass
     return {"shotType": st, "staged": staged, "sat": sat_k, "val": val_k}
+
+
+# ── THE WIDE KEEPS ITS AIR (iteration 115) ────────────────────
+# The 114 distribution named the second staging frontier: the wides
+# read '3D low-poly' (S004/S006 - crisp flat-banded planes stacked
+# at full contrast, every distance the same clarity). The anime wide
+# carries ATMOSPHERIC PERSPECTIVE - the far field groups into the
+# mist tint so the frame reads as planes of air, not CG facets. The
+# house mist (start 6.0 / depth 18.0) was tuned for the tight lens
+# (fog begins past a 1-2 unit subject) and barely reads at wide.
+# The staging deepens the air BEHIND the figure - the 112 ghost law
+# holds (a figure fogs toward a ghost when the mist starts ON it;
+# the framing table puts a WIDE figure at ~4-6 units and an
+# ESTABLISHING figure at ~7-9.5, so the staged starts sit past the
+# figure's own distance and the subject zone stays under ~2%).
+# THE FIRST BURN'S LESSON (the studio's own render judge named it):
+# a SHORT depth saturates the far field into a WALL of flat tint -
+# S001's establishing frame read as 'an empty void, crushed blacks,
+# no depth layering' (review 0.462). Atmospheric perspective is a
+# GRADIENT, not a fog-out: the depth stays LONG (the tint ramps
+# across the whole far field) and the intensity CAPS below full so
+# the planes keep separating. Bounded, deterministic, per-shot -
+# the tint still rides the LUT.
+MIST_STAGE_BY_SHOT = {
+    "ESTABLISHING": (7.0, 26.0, 0.72),
+    "WIDE": (5.5, 16.0, 0.75),
+}
+MIST_HOUSE = (6.0, 18.0, 1.0)
+
+
+def stage_mist_for_framing(bpy, shot_type):
+    """Deepen the depth-mist's reach for the wide framings so the far
+    set groups into the mist tint (atmospheric perspective) - a long
+    gradient with a capped intensity, never a fog-out. Runs AFTER
+    build_comp_graph (which owns mist_settings) and BEFORE the
+    render - the mist pass evaluates at render time, so the staged
+    numbers land in the frame and in the comp's depth mist layer
+    alike. Returns the evidence line for the render state."""
+    st = str(shot_type or "MEDIUM").upper()
+    start, depth, intensity = MIST_STAGE_BY_SHOT.get(st, MIST_HOUSE)
+    scn = getattr(bpy.context, "scene", None)
+    ms = getattr(getattr(scn, "world", None), "mist_settings", None) if scn is not None else None
+    if ms is None or not getattr(ms, "use_mist", False):
+        return {"shotType": st, "note": "no mist pass to stage"}
+    if (start, depth, intensity) == MIST_HOUSE:
+        return {"shotType": st, "start": start, "depth": depth, "intensity": intensity, "note": "the house mist stands"}
+    ms.start = start
+    ms.depth = depth
+    try:
+        ms.intensity = intensity
+    except Exception:  # noqa: BLE001
+        pass
+    return {"shotType": st, "start": start, "depth": depth, "intensity": intensity, "note": "the wide keeps its air"}

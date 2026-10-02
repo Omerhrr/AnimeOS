@@ -3552,6 +3552,18 @@ def build_hair_shade_material(bpy, name, color_hex, shade):
     nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
     mat["animeosKind"] = "hair-curve"
     mat["hairShadeHash"] = shade["hash"]
+    # THE STRANDS CARRY THE DYE (iteration 115): the groom's curve
+    # material rides the SAME dye tag the mesh hair grades carry -
+    # without it the cel conversion's dye read fell through to the
+    # generic grey (0.3, 0.3, 0.32) and the hero-tier strands (the
+    # bangs at a closeup) rendered GREY over the face while the
+    # topknot mesh stayed the sheet's near-black - the 114 re-score
+    # read that seam as 'black hair turning teal-green under the
+    # moon/rim at 0.5m'. The tag routes the strands through the
+    # 'hair-curve' -> 'hair' cel path with the SHEET's own hex: the
+    # lit band = the dye, the sheen derives from the dye, the moon
+    # picks the band, never the value.
+    mat["animeos_dye"] = str(color_hex)
     return mat
 
 
@@ -6572,6 +6584,14 @@ def worker_run(job_file):
         except Exception as exc:  # noqa: BLE001
             state["render"]["look"] = {"look": "PBR", "note": f"toon pass refused: {exc}"[:160]}
         comp_ev = build_comp_graph(scn, comp, frames_total)
+        # THE WIDE KEEPS ITS AIR (iteration 115): the depth-mist stages
+        # per framing AFTER the comp graph (which owns mist_settings) -
+        # the wides group their far field into the tint (atmospheric
+        # perspective), the tight framings keep the house mist.
+        try:
+            state["render"]["mistStage"] = toon_pass.stage_mist_for_framing(bpy, shot.get("shotType"))
+        except Exception as exc:  # noqa: BLE001
+            state["render"]["mistStage"] = {"note": f"mist staging refused: {exc}"[:160]}
         state["render"]["comp"] = {
             "mode": mode,
             "source": "shot wire" if comp["named"] else "house defaults",
