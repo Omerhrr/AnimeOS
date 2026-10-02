@@ -650,3 +650,52 @@ def apply_palette_wash(bpy, shot_type):
                 n.inputs[1].default_value = w
                 tuned += 1
     return {"shotType": str(shot_type or "MEDIUM").upper(), "wash": w, "nodes": tuned}
+
+
+# ── THE SET STAGES FOR THE TIGHT LENS (iteration 114) ─────────
+# The 113 evidence localized the closeup's breakage to the SHOT's
+# integration: at 0.5m the temple's own surfaces (stone, tiles,
+# altar, ground) filled the 85mm frame and the frame's palette read
+# sage-green - the wall out-painted the cast. A cold plate (the
+# ground-truth harness) has no wall behind the eyes, so the same
+# face read beautifully there. The staging law gives the tight
+# framing what every portrait lens gets on a real stage: the set
+# RECEDES - pulled desaturated and darker (bounded, deterministic,
+# per-shot - never per-pixel, never AI-painted). The cast's
+# materials carry no set tag (they build after the set) and never
+# ride this. Runs BEFORE the cel conversion so the dye inherits the
+# staged tone.
+SET_STAGE_BY_SHOT = {"EXTREME_CLOSEUP": (0.50, 0.55), "CLOSEUP": (0.55, 0.62), "MCU": (0.75, 0.82)}
+
+
+def set_stage_for(shot_type):
+    return SET_STAGE_BY_SHOT.get(str(shot_type or "MEDIUM").upper(), (1.0, 1.0))
+
+
+def stage_set_for_framing(bpy, shot_type):
+    """Pull the tagged set surfaces' base color toward flat tone for
+    tight framings: saturation and value scale by the shot type's own
+    factors (hue untouched - the temple stays a temple, just one the
+    eye can leave). Returns the evidence line for the render state."""
+    import colorsys
+    sat_k, val_k = set_stage_for(shot_type)
+    st = str(shot_type or "MEDIUM").upper()
+    if sat_k >= 1.0 and val_k >= 1.0:
+        return {"shotType": st, "staged": 0, "note": "wide framing - the set keeps its tone"}
+    staged = 0
+    for mat in bpy.data.materials:
+        if not mat.get("animeos_set_surface"):
+            continue
+        if not mat.use_nodes or mat.node_tree is None:
+            continue
+        for n in mat.node_tree.nodes:
+            if getattr(n, "type", "") == "BSDF_PRINCIPLED" and "Base Color" in n.inputs:
+                try:
+                    r, g, b, a = n.inputs["Base Color"].default_value
+                    h, s, v = colorsys.rgb_to_hsv(max(0.0, min(1.0, r)), max(0.0, min(1.0, g)), max(0.0, min(1.0, b)))
+                    r2, g2, b2 = colorsys.hsv_to_rgb(h, min(1.0, s * sat_k), max(0.0, v * val_k))
+                    n.inputs["Base Color"].default_value = (r2, g2, b2, a)
+                    staged += 1
+                except Exception:  # noqa: BLE001
+                    pass
+    return {"shotType": st, "staged": staged, "sat": sat_k, "val": val_k}

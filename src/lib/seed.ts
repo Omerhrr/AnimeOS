@@ -213,12 +213,12 @@ export async function ensureSeed() {
   });
 
   const shotDefs = [
-    { number: 1, description: "Establishing shot - Azure Mountain summit, temple ruin in the storm, clouds churning below the peak", shotType: "ESTABLISHING", lens: "24mm", movement: "CRANE", duration: 4.2, lighting: "Moonlight + storm clouds" },
+    { number: 1, description: "Establishing shot - Azure Mountain summit, temple ruin in the storm, clouds churning below the peak; Lin Yue a lone figure on the summit path", shotType: "ESTABLISHING", lens: "24mm", movement: "CRANE", duration: 4.2, lighting: "Moonlight + storm clouds" },
     { number: 2, description: "Lin Yue enters the temple, robes whipping in the wind, rain trailing off his shoulders", shotType: "MEDIUM", lens: "35mm", movement: "TRACKING", duration: 5.0, lighting: "Backlight + interior shadows" },
     { number: 3, description: "Close-up - Lin Yue's eyes narrow; the rain sound dies unnaturally", shotType: "CLOSEUP", lens: "85mm", movement: "STATIC", duration: 2.8, lighting: "Cold key, deep shadow" },
     { number: 4, description: "Reverse shot - a shadow detaches itself from the altar; the Demon Lord's aura crawls across the floor", shotType: "WIDE", lens: "35mm", movement: "PAN", duration: 4.0, lighting: "Aura glow + lightning" },
-    { number: 5, description: "Sword draw - jade blade sings out of its sheath, azure energy coiling up the steel", shotType: "LOW_ANGLE", lens: "50mm", movement: "ORBIT", duration: 4.2, lighting: "Blade emission + rim light" },
-    { number: 6, description: "Impact - first clash, lightning detonates through the broken roof, debris suspended mid-air", shotType: "WIDE", lens: "28mm", movement: "STATIC", duration: 3.6, lighting: "Lightning detonation" },
+    { number: 5, description: "Sword draw - Lin Yue's jade blade sings out of its sheath, azure energy coiling up the steel", shotType: "LOW_ANGLE", lens: "50mm", movement: "ORBIT", duration: 4.2, lighting: "Blade emission + rim light" },
+    { number: 6, description: "Impact - first clash, Lin Yue and Demon Lord Wei collide under the broken roof, lightning detonates through it, debris suspended mid-air", shotType: "WIDE", lens: "28mm", movement: "STATIC", duration: 3.6, lighting: "Lightning detonation" },
   ];
   for (const s of shotDefs) {
     await db.shot.create({ data: { sceneId: scene12.id, ...s, status: "DRAFT" } });

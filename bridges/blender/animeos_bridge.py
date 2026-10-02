@@ -4780,6 +4780,22 @@ def build_designed_set(bpy, scn, env, mats, job_id):
             lb.data.materials.append(emission_mat(bpy, "LanternMat", "#e8a24a", 2.4))
 
     report["pieces"] = len(scn.objects)
+
+    # ── THE SET CARRIES ITS OWN TAG (iteration 114): every material
+    #    that exists NOW is set-owned (the cast builds after the set,
+    #    so its materials are not here yet) - the closeup's staging
+    #    law pulls exactly these surfaces for the tight lens and
+    #    never touches the cast's dye. The pool purge removes the
+    #    data blocks between jobs, so the tag cannot leak. ──
+    tagged = 0
+    for mat in bpy.data.materials:
+        if mat.use_nodes:
+            try:
+                mat["animeos_set_surface"] = True
+                tagged += 1
+            except Exception:  # noqa: BLE001
+                pass
+    report["setSurfaceMats"] = tagged
     return report
 
 
@@ -6503,7 +6519,12 @@ def worker_run(job_file):
         windows = lightning_windows(job_id, lightning, duration_sec)
         scn.render.engine = "CYCLES"
         scn.cycles.device = "CPU"
-        scn.cycles.samples = 48 if mode == "FINAL" else 10
+        # THE CLOSEUP CARRIES MORE GLASS (iteration 114): the tight
+        # framings ride depth of field - the aperture needs samples to
+        # land a clean blur, so a tight PREVIEW renders 24 (the wide
+        # framings keep the 10-sample fast path; FINAL keeps 48).
+        _tight_preview = str(shot.get("shotType") or "MEDIUM").upper() in ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")
+        scn.cycles.samples = 48 if mode == "FINAL" else (24 if _tight_preview else 10)
         scn.cycles.use_denoising = mode == "FINAL"
         # v10.1: the FINAL frame reads like a room - real interreflection
         # (the zero-bounce look flattened every material into plastic);
@@ -6520,7 +6541,7 @@ def worker_run(job_file):
             scn.cycles.glossy_bounces = 0
             scn.cycles.transmission_bounces = 0
             scn.cycles.transparent_max_bounces = 0
-        state["render"] = {"samples": 48 if mode == "FINAL" else 10, "bounces": 4 if mode == "FINAL" else 0}
+        state["render"] = {"samples": scn.cycles.samples, "bounces": 4 if mode == "FINAL" else 0}
 
         # ── THE FRAME IS FINISHED IN COMP (iteration 86): every mode
         #    leaves the compositor finished - the shot's own drama
@@ -6540,6 +6561,11 @@ def worker_run(job_file):
             if here_dir not in sys.path:
                 sys.path.insert(0, here_dir)
             import toon_pass
+            # THE SET STAGES FOR THE TIGHT LENS (iteration 114): the
+            # tagged set surfaces pull toward flat tone BEFORE the cel
+            # conversion - the dye inherits the staged tone, the cast's
+            # materials (untagged, built later) never ride it.
+            state["render"]["setStage"] = toon_pass.stage_set_for_framing(bpy, shot.get("shotType"))
             look = toon_pass.resolve_look(project)
             state["render"]["look"] = toon_pass.apply_look(bpy, scn, look, mode, hex_to_rgb, comp)
             state["render"]["paletteWash"] = toon_pass.apply_palette_wash(bpy, shot.get("shotType"))
@@ -6662,6 +6688,36 @@ def worker_run(job_file):
                 "measured": False,
                 "note": "no measurable subject - the 106 framing table holds",
             }
+
+        # ── THE CLOSEUP OWNS DEPTH (iteration 114): a tight framing
+        #    rides real portrait glass - the focus tracks the face
+        #    plane (the FaceTarget empty rides the head's front, so
+        #    the pull survives every pose and every move) and the set
+        #    behind the face falls into tone. The 113 ground-truth
+        #    read beautifully because a cold plate has no wall two
+        #    feet behind the eyes; the production closeup's palette
+        #    belonged to the temple. Both modes carry the DOF - what
+        #    the measuring loop sees is what ships. ──
+        _st_dof = str(shot.get("shotType") or "MEDIUM").upper()
+        if _st_dof in ("CLOSEUP", "EXTREME_CLOSEUP", "MCU") and figure is not None:
+            try:
+                _dof = cam_data.dof
+                _dof.use_dof = True
+                _dof.aperture_fstop = {"EXTREME_CLOSEUP": 1.8, "CLOSEUP": 2.0}.get(_st_dof, 2.8)
+                if face_target is not None:
+                    _dof.focus_object = face_target
+                    _focus = "face-tracked (FaceTarget)"
+                else:
+                    _dof.focus_distance = round(
+                        float(fr0.dist) if subject_ctx is not None
+                        else float(SHOT_FRAMING.get(_st_dof, SHOT_FRAMING["MEDIUM"])[0]) * float(scene_p.get("cameraDistance", 1.0)), 3)
+                    _focus = "solved distance"
+                state["render"]["camera"]["dof"] = {
+                    "lawVersion": 114, "shotType": _st_dof,
+                    "fstop": _dof.aperture_fstop, "focus": _focus,
+                }
+            except Exception as exc:  # noqa: BLE001
+                state["render"]["camera"]["dof"] = {"refused": str(exc)[:120]}
 
         # ── THE SCENE GRAPH STAYS FLAT (the freestyle law) ──
         #     Defense in depth beside the as_render_pass=False fix:
