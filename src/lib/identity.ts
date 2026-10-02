@@ -193,7 +193,7 @@ function buildIdentityPrompt(sheets: Array<{ name: string }>, filmstripFrames?: 
   // THE SCORE MATCHES THE POSE (iteration 81): a RENDER artifact is a
   // filmstrip of the clip - the model judges the pose-matched frame.
   const artifact = filmstripFrames && filmstripFrames > 1
-    ? `Image 1 is a filmstrip of ${filmstripFrames} frames from the same finished shot, left to right in time order. Judge the character's identity in the frame whose POSE most closely matches the canonical sheet's pose (a model sheet is a neutral standing turnaround); score THAT frame and name it in the note as 'pose frame <index> of ${filmstripFrames}'.`
+    ? `Image 1 is a filmstrip of ${filmstripFrames} frames from the same finished shot, left to right in time order (each frame carries a burned-in corner label naming its position - trust the label). Judge the character's identity in the frame whose POSE most closely matches the canonical sheet's pose (a model sheet is a neutral standing turnaround); score THAT frame and name it in the note by its burned-in label ('frame <k> of ${filmstripFrames}').`
     : "Image 1 is a story panel.";
   return [
     "You are a casting director for an animation production checking character identity.",
@@ -505,6 +505,54 @@ interface RenderPoster {
 
 export const POSE_FRAME_COUNT = 3;
 
+// THE STRIP SAYS WHICH FRAME IT IS (iteration 120): a bold system font
+// stamps each frame's label - the first candidate that exists on disk
+// wins; none found degrades to unlabeled strips (honestly named once
+// per process, never per frame).
+const LABEL_FONTS = [
+  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+  "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+  "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+];
+let labelFont: string | null | undefined;
+
+function findLabelFont(): string | null {
+  if (labelFont !== undefined) return labelFont;
+  labelFont = LABEL_FONTS.find((f) => fs.existsSync(f)) ?? null;
+  return labelFont;
+}
+
+/**
+ * Stamp "frame k of N" (plus the sample's percent mark) into a
+ * frame's top-left corner. The law this serves: the vision judges a
+ * strip left to right and keeps miscounting its own frames ("frame 5
+ * of 3") - a burned-in label is ground truth the model cannot
+ * miscount. Returns the labeled path, or the input path when no font
+ * or ffmpeg fails (the strip still builds - it just stays unlabeled).
+ */
+async function stampFrameLabel(framePath: string, text: string): Promise<string> {
+  const font = findLabelFont();
+  if (!font) return framePath;
+  const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+  const labeled = framePath.replace(/\.jpg$/, ".lbl.jpg");
+  const ok = await new Promise<boolean>((resolve) => {
+    const child = spawn(
+      ff,
+      [
+        "-y", "-i", framePath,
+        "-vf",
+        `drawtext=fontfile=${font}:text='${text}':fontsize=40:fontcolor=white:borderw=4:bordercolor=black@0.85:box=0:x=18:y=18`,
+        "-frames:v", "1", "-q:v", "3", labeled,
+      ],
+      { stdio: ["ignore", "ignore", "ignore"] },
+    );
+    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => resolve(false));
+  });
+  if (ok && fs.existsSync(labeled) && fs.statSync(labeled).size > 0) return labeled;
+  return framePath;
+}
+
 /**
  * Pure: the filmstrip's sample timestamps. Clips long enough for a
  * strip sample at the 22% / 40% / 62% marks (fade-in past, tail
@@ -546,7 +594,7 @@ export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: s
  * montage returns null. The strip is cached under
  * `<jobId>.<cacheName>.jpg` beside the poster.
  */
-export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamps: number[], cacheName = "cues"): Promise<{ dataUrl: string; frames: number } | null> {
+export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamps: number[], cacheName = "cues"): Promise<{ dataUrl: string; frames: number; labeled: boolean } | null> {
   try {
     if (!fs.existsSync(clipAbsPath)) return null;
     if (!Array.isArray(stamps) || stamps.length < 2) return null;
@@ -554,6 +602,7 @@ export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamp
     const postersDir = path.join(process.cwd(), "public", "renders", "posters");
     fs.mkdirSync(postersDir, { recursive: true });
     const frames: string[] = [];
+    let labeled = false;
     for (let i = 0; i < stamps.length; i++) {
       const f = path.join(postersDir, `${jobId}.${cacheName}${i}.jpg`);
       const ok = await new Promise<boolean>((resolve) => {
@@ -566,10 +615,21 @@ export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamp
       if (ok && fs.existsSync(f) && fs.statSync(f).size > 0) frames.push(f);
       else return null; // a partial strip is a lie - degrade honestly
     }
+    // THE STRIP SAYS WHICH FRAME IT IS (iteration 120): burn the
+    // frame's index and sample mark into the corner before the
+    // hstack - the vision layer reads ground truth, not its own count.
+    const stampable = findLabelFont() !== null;
+    const stripFrames: string[] = [];
+    for (let i = 0; i < frames.length; i++) {
+      const text = stampable ? `frame ${i + 1}/${frames.length} - ${stamps[i].toFixed(2)}s` : "";
+      const use = stampable ? await stampFrameLabel(frames[i], text) : frames[i];
+      if (use !== frames[i]) labeled = true;
+      stripFrames.push(use);
+    }
     const out = path.join(postersDir, `${jobId}.${cacheName}.jpg`);
-    const inputs = frames.flatMap((f) => ["-i", f]);
+    const inputs = stripFrames.flatMap((f) => ["-i", f]);
     const ok = await new Promise<boolean>((resolve) => {
-      const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `hstack=inputs=${frames.length}`, "-q:v", "3", out], {
+      const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `hstack=inputs=${stripFrames.length}`, "-q:v", "3", out], {
         stdio: ["ignore", "ignore", "ignore"],
       });
       child.on("close", (code) => resolve(code === 0));
@@ -577,7 +637,7 @@ export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamp
     });
     if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
     const b64 = fs.readFileSync(out).toString("base64");
-    return { dataUrl: `data:image/jpeg;base64,${b64}`, frames: frames.length };
+    return { dataUrl: `data:image/jpeg;base64,${b64}`, frames: frames.length, labeled };
   } catch {
     return null;
   }

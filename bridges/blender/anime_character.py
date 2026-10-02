@@ -46,7 +46,7 @@ import math
 import os
 import sys
 
-ANIME_LAW_VERSION = 119
+ANIME_LAW_VERSION = 120
 EYE_OPEN_FLOOR = 0.45   # a painted eye never squashes below this (a blink still reads)
 
 # ── the design spec ──────────────────────────────────────────
@@ -413,7 +413,55 @@ def paint_nose(w=64, h=64):
     return rgba
 
 
-def decal_material(bpy, name, img):
+def paint_collar_band(w=512, h=96):
+    """THE CHEST EARNS ITS EMBROIDERY (iteration 120): a cloud-scroll
+    border band (the yunwen trim a donghua robe wears) painted the way
+    the face is painted - procedural, deterministic, drawn. Silver
+    thread on transparent ground: the band reads on any robe color.
+    Alpha carries the cloth: dense at the curl strokes, soft at the
+    band's edge."""
+    import numpy as np
+    W, H = w, h
+    y, x = np.mgrid[0:H, 0:W].astype(np.float32)
+    u = (x / (W - 1)) * 2 - 1
+    v = 1 - (y / (H - 1)) * 2
+    rgba = np.zeros((H, W, 4), np.float32)
+    silver = np.array((0.93, 0.91, 0.86), np.float32)
+
+    def over(mask, col, a):
+        m = (np.clip(mask, 0.0, 1.0) * a)[..., None]
+        rgba[..., :3] = rgba[..., :3] * (1 - m) + col * m
+        rgba[..., 3:4] = rgba[..., 3:4] * (1 - m) + m
+
+    def ring(cx, cy, r, wdt):
+        # a CIRCLE on the fabric: the canvas's v-unit is H/W of a
+        # u-unit in pixels, so the v distance carries that factor
+        d = np.abs(np.sqrt((u - cx) ** 2 + ((v - cy) * (H / W)) ** 2) - r)
+        return np.clip(0.5 - d / wdt, 0.0, 1.0)
+
+    # the band's ground: a soft horizontal strip with feathered ends
+    band = np.clip(0.5 - np.abs(v) / 0.62, 0.0, 1.0) * np.clip(0.5 - np.abs(u) / 1.9, 0.0, 1.0)
+    over(band, silver, 0.34)
+    # the cloud scrolls: paired spiral curls along the band, every
+    # 0.28 in u, alternating flip - the classic yunwen rhythm
+    k = 0
+    cu = -0.84
+    while cu <= 0.85:
+        flip = 1.0 if k % 2 == 0 else -1.0
+        c1 = ring(cu, 0.10 * flip, 0.16, 0.05)
+        c2 = ring(cu + 0.09 * flip, -0.14 * flip, 0.11, 0.045)
+        c3 = ring(cu + 0.16 * flip, 0.02 * flip, 0.07, 0.04)
+        over(np.maximum(np.maximum(c1, c2), c3), silver, 0.88)
+        cu += 0.28
+        k += 1
+    # the band's border lines (the trim's own edges)
+    for edge in (0.42, -0.42):
+        line = np.abs(v - edge) - 0.02
+        over(np.clip(0.5 - line / 0.03, 0.0, 1.0) * (np.abs(u) < 0.93), silver, 0.9)
+    return rgba
+
+
+def decal_material(bpy, name, img, strength=0.92):
     """Flat painted decal: emission of the painted color, transparent
     where the paint is not - shadeless (anime faces are drawn, not lit).
     Tagged emissive so the TOON pass leaves it alone."""
@@ -428,7 +476,7 @@ def decal_material(bpy, name, img):
     tex.interpolation = "Linear"
     tex.extension = "CLIP"
     em = nt.nodes.new("ShaderNodeEmission")
-    em.inputs["Strength"].default_value = 0.92
+    em.inputs["Strength"].default_value = strength
     tr = nt.nodes.new("ShaderNodeBsdfTransparent")
     mix = nt.nodes.new("ShaderNodeMixShader")
     nt.links.new(tex.outputs["Color"], em.inputs["Color"])
@@ -554,6 +602,25 @@ def build_head(bpy, scn, spec, head_empty, skin_mat):
     head = _mesh_obj(bpy, scn, "HeadMesh", verts, faces, skin_mat, parent=head_empty)
     head["animeos_no_flesh"] = True
     _subsurf(head, 1)
+    # ── THE HEAD GAINS A FACE (iteration 120): the facial field
+    #    sculpts the skull - brow ridge, eye sockets, the nose bridge
+    #    and tip the profile line reads, cheekbones, the lips, the
+    #    chin, the jaw edges - BEFORE the decal planes are made (the
+    #    paint shrinkwraps onto the sculpted surface live, so the
+    #    drawn features and the form agree). The terminator law is
+    #    untouched: the sculpt moves geometry, the sphere-transferred
+    #    shading normals stay. Evidence rides the head object. ──
+    face_anatomy = None
+    try:
+        _here = os.path.dirname(os.path.abspath(__file__))
+        if _here not in sys.path:
+            sys.path.insert(0, _here)
+        import face_anatomy as _face_anatomy
+
+        face_anatomy = _face_anatomy.apply_face_anatomy(head, spec)
+        head["animeos_face_anatomy"] = _face_anatomy.dump_summary(face_anatomy)
+    except Exception as exc:  # noqa: BLE001
+        face_anatomy = {"error": f"{type(exc).__name__}: {exc}"}
     # ── the anime face terminator: normals transferred from a clean
     #    ellipsoid, so the toon band curves smoothly across the face
     #    instead of tracing the jaw/cheek bumps ──
@@ -587,7 +654,7 @@ def build_head(bpy, scn, spec, head_empty, skin_mat):
                        (0.0, -1.0, 0.0), [0.018, 0.02, 0.012], [0.007, 0.008, 0.006], ring=8)
         ear = _mesh_obj(bpy, scn, f"Ear{'L' if side > 0 else 'R'}", ev, ef, skin_mat, parent=head_empty)
         ear["animeos_no_flesh"] = True
-    return head
+    return head, face_anatomy
 
 
 # ── the body (skin-modifier graph -> one baked mesh) ─────────
@@ -1062,11 +1129,12 @@ def _ring_loft(rings, seg=36, close_bottom=False):
     return verts, faces
 
 
-def build_garments(bpy, scn, spec, mats, rig):
+def build_garments(bpy, scn, spec, mats, rig, spine=None):
     o = spec["outfit"]
     L = _joint_layout(spec)
     w, sw, hp = L["w"], L["sw"], L["hips"]
     made = []
+    wardrobe = {"folds": 0, "trims": [], "embroidery": None}
     robe, accent = mats["robe"], mats["accent"]
 
     # 1. the robe body: collar -> shoulders -> chest -> waist -> hips -> hem
@@ -1093,6 +1161,24 @@ def build_garments(bpy, scn, spec, mats, rig):
             ry = (0.112 + (0.11 * flare) * t ** 1.3) * w
             rings.append((z, rx, ry, 0.012 * t))
     v, f = _ring_loft(rings, seg=40)
+    # ── THE SKIRT GAINS FOLDS (iteration 120): below the waist the
+    #    tube is modulated by two deterministic radial harmonics that
+    #    deepen toward the hem - the vertical cloth folds a skirt owns
+    #    when cloth hangs from a sash. Pure analytic: the same spec
+    #    always lands the same folds, bit for bit. ──
+    folded = 0
+    max_fold = 0.0
+    for i, (x, y, z) in enumerate(v):
+        if z < 1.0:
+            t = min(1.0, max(0.0, (1.0 - z) / max(0.05, 1.0 - hem_z)))
+            ang = math.atan2(y, x)
+            fold = 0.6 * math.cos(6.0 * ang + 0.5) + 0.4 * math.cos(9.0 * ang + 1.9 - 0.55 * t)
+            s = 1.0 + 0.035 * (t ** 1.2) * fold
+            v[i] = (x * s, y * s, z)
+            folded += 1
+            max_fold = max(max_fold, abs(0.035 * (t ** 1.2) * fold))
+    wardrobe["folds"] = folded
+    wardrobe["maxFoldFrac"] = round(max_fold, 4)
     body = _mesh_obj(bpy, scn, "RobeBody", v, f, robe)
     # the collar top closes around the neck
 
@@ -1174,7 +1260,76 @@ def build_garments(bpy, scn, spec, mats, rig):
         sash.modifiers.new("Thick", "SOLIDIFY").thickness = 0.006
         bind_skinned(sash, rig, lambda n, c: n in ("Pelvis", "Spine"))
         made.append("SashBand")
-    return made
+
+    # ── THE WARDROBE CRAFTS ITSELF (iteration 120): the borders a
+    #    donghua costume shop ships - the hem's contrast trim (the
+    #    yuanbian), the cuffs' bands, the chest's embroidered cloud
+    #    scroll. The identity gap's recurring note named the wardrobe
+    #    "simplified" for three nights; the answer is craft, not
+    #    color. ──
+    def band_extent(z0, z1, pad=0.005):
+        pool = [vt for vt in body.data.vertices if z0 <= vt.co.z <= z1]
+        if len(pool) < 8:
+            return None
+        rx = max(abs(vt.co.x) for vt in pool) + pad
+        ry = max(abs(vt.co.y) for vt in pool) + pad
+        cy = sum(vt.co.y for vt in pool) / len(pool)
+        return rx, ry, cy
+
+    # 5. the hem trim: a contrast band riding the robe's own hem
+    #    extent (measured AT the hem ring itself - the loft's rings
+    #    sit ~0.14 apart, a taller band above the hem owns no verts)
+    hem_top = min(hem_z + 0.055, 0.98)
+    ext = band_extent(hem_z - 0.004, hem_z + 0.004, pad=0.006)
+    if ext is not None:
+        rx, ry, cy = ext
+        tv, tf = _ring_loft([
+            (hem_top, rx * 0.985, ry * 0.985, cy),
+            (hem_z + 0.02, rx, ry, cy),
+            (hem_z, rx, ry, cy),
+        ], seg=40)
+        trim = _mesh_obj(bpy, scn, "HemTrim", tv, tf, accent)
+        trim["animeos_no_flesh"] = True
+        trim.modifiers.new("Thick", "SOLIDIFY").thickness = 0.004
+        bind_skinned(trim, rig, lambda n, c: n in ("Pelvis", "Spine") or n.endswith(("Hip", "Knee")))
+        made.append("HemTrim")
+        wardrobe["trims"].append("HemTrim")
+
+    # 6. the cuff bands: a contrast ring at each sleeve's mouth
+    for side, P in ((1.0, "L"), (-1.0, "R")):
+        sx = side * 0.24 * sw
+        if o["sleeves"] == "bell":
+            cz, cy_, cr = 1.03, 0.03, 0.125 * w + 0.006
+        else:
+            cz, cy_, cr = 1.19, 0.0, 0.040 * w + 0.005
+        tv, tf = _ring_loft([(cz + 0.035, cr * 0.94, cr * 0.94, 0.0), (cz, cr, cr, 0.0)], seg=24)
+        cuff = _mesh_obj(bpy, scn, f"CuffBand{P}", tv, tf, accent)
+        cuff["animeos_no_flesh"] = True
+        cuff.modifiers.new("Thick", "SOLIDIFY").thickness = 0.003
+        cuff.location = (sx, cy_, 0.0)
+        bind_skinned(cuff, rig, lambda n, c, P=P: n in (P + "Shoulder", P + "Elbow", "Spine"))
+        made.append(cuff.name)
+        wardrobe["trims"].append(cuff.name)
+
+    # 7. the chest embroidery: the painted cloud-scroll band conformed
+    #    onto the robe's chest (the paint law rides a shrinkwrap, the
+    #    way the face's decals ride the skull)
+    try:
+        band_img = _new_image(bpy, "AnimeChestBand", paint_collar_band())
+        band_m = decal_material(bpy, "ChestBandDecal", band_img, strength=0.72)
+        pivot = bpy.data.objects.new("ChestBandPivot", None)
+        scn.collection.objects.link(pivot)
+        pivot.parent = spine if spine is not None else body
+        # spine-local: the chest's front plane (world z ~1.42)
+        pivot.location = (0.0, -0.055, -0.052) if spine is not None else (0.0, -0.055, 1.418)
+        band = _decal_plane(bpy, scn, "ChestBandMesh", pivot, 0.175, 0.062, band_m, body, segs=12)
+        band.location = (0.0, 0.0, 0.0)
+        made.append("ChestBandMesh")
+        wardrobe["embroidery"] = "ChestBandMesh"
+    except Exception as exc:  # noqa: BLE001
+        wardrobe["embroidery"] = f"refused: {type(exc).__name__}: {exc}"
+
+    return made, wardrobe
 
 
 # ── the weapon (the v3.x grip contract) ─────────────────────
@@ -1204,12 +1359,46 @@ def build_weapon(bpy, scn, br, dna, mats, r_hand):
         blade = _mesh_obj(bpy, scn, "HandBlade", bv, bf, mats["blade"], parent=piv)
         blade.location = br.grip_piece_offset(wtype, spec["guard"] + 0.0055)
         blade.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+        # ── THE BLADE EARNS ITS FORGE (iteration 120): the wrap bands,
+        #    the pommel, the tassel - the sword a swordsmith ships, not
+        #    a bare loft. Pieces ride the SAME grip_piece_offset law
+        #    the guard and the blade obey (the 97 grip contract stays
+        #    the single placement function). ──
+        hilt = spec["hilt"]
+        for k, along in enumerate((-hilt * 0.25, 0.0, hilt * 0.25)):
+            wv, wf = _loft([(-0.004, 0, 0), (0.004, 0, 0)], (0, 1, 0), [0.0148, 0.0148], [0.0148, 0.0148], ring=8)
+            band = _mesh_obj(bpy, scn, f"GripBand{k}", wv, wf, mats["accent"], parent=piv)
+            band.location = br.grip_piece_offset(wtype, along)
+            band.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+        pv2, pf2 = _loft([(-0.005, 0, 0), (0.005, 0, 0)], (0, 1, 0), [0.0115, 0.0115], [0.0115, 0.0115], ring=10)
+        pommel = _mesh_obj(bpy, scn, "BladePommel", pv2, pf2, mats["accent"], parent=piv)
+        pommel.location = br.grip_piece_offset(wtype, -(hilt / 2.0 + 0.008))
+        pommel.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+        for k in range(2):
+            off = (k - 0.5) * 0.006
+            tass_v, tass_f = _loft([(0, 0, 0), (off, -0.02, -0.05), (off * 1.6, -0.012, -0.105), (off * 1.2, 0.004, -0.15)],
+                                   (0, -1, 0), [0.0055, 0.0045, 0.0032, 0.0012], [0.0028, 0.0024, 0.0018, 0.001], ring=6)
+            tass = _mesh_obj(bpy, scn, f"BladeTassel{k}", tass_v, tass_f, mats["accent"], parent=piv)
+            tass.location = br.grip_piece_offset(wtype, -(hilt / 2.0 + 0.012))
+            tass.rotation_euler = (math.radians(tilt), 0.0, 0.0)
     else:
         depth = 1.3 if wtype == "staff" else 1.5
         bv, bf = _loft([(0, 0, -depth / 2), (0, 0, depth / 2)], (0, 1, 0), [0.013, 0.013], [0.013, 0.013], ring=10)
         blade = _mesh_obj(bpy, scn, "HandBlade", bv, bf, mats["boots"], parent=piv)
         blade.location = br.grip_piece_offset(wtype, -spec["hold"])
         blade.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+        # THE SHAFT EARNS ITS CRAFT (iteration 120): the hand wraps and
+        # the end caps - a staff a wanderer carried, not a bare tube
+        for k, along in enumerate((-depth * 0.05, depth * 0.12)):
+            wv, wf = _loft([(-0.004, 0, 0), (0.004, 0, 0)], (0, 1, 0), [0.0158, 0.0158], [0.0158, 0.0158], ring=8)
+            band = _mesh_obj(bpy, scn, f"ShaftBand{k}", wv, wf, mats["accent"], parent=piv)
+            band.location = br.grip_piece_offset(wtype, along - spec["hold"])
+            band.rotation_euler = (math.radians(tilt), 0.0, 0.0)
+        for k, along in enumerate((-depth / 2 - 0.008, depth / 2 + 0.008)):
+            cv_, cf_ = _loft([(-0.006, 0, 0), (0.006, 0, 0)], (0, 1, 0), [0.0105, 0.0105], [0.0105, 0.0105], ring=10)
+            cap = _mesh_obj(bpy, scn, f"ShaftCap{k}", cv_, cf_, mats["accent"], parent=piv)
+            cap.location = br.grip_piece_offset(wtype, along - spec["hold"])
+            cap.rotation_euler = (math.radians(tilt), 0.0, 0.0)
     for ob in piv.children:
         ob["animeos_no_flesh"] = True
     return blade, piv
@@ -1284,11 +1473,11 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
         rec["rest"] = tuple(rec["ob"].matrix_world.translation)
 
     # ── the meshes ──
-    hm = build_head(bpy, scn, spec, head, mats["skin"])
+    hm, face_anatomy = build_head(bpy, scn, spec, head, mats["skin"])
     body = build_body(bpy, scn, spec, mats["skin"], mats["boots"])
     rig = build_rig(bpy, scn, spec, empties, root)
     bind_skinned(body, rig)
-    garments = build_garments(bpy, scn, spec, mats, rig)
+    garments, wardrobe = build_garments(bpy, scn, spec, mats, rig, spine=spine)
     hair = build_hair(bpy, scn, spec, head, mats["hair"])
     if spec["hair"]["accessory"] == "pin":
         build_hair_pin(bpy, scn, head, mats["accent"])
@@ -1366,8 +1555,10 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
             "lawVersion": ANIME_LAW_VERSION,
             "spec": spec,
             "anatomy": anatomy,
+            "faceAnatomy": face_anatomy,
             "body": {"verts": len(body.data.vertices), "bones": len(rig["segments"])},
             "garments": garments,
+            "wardrobe": wardrobe,
             "hair": hair,
             "face": ["EyeLMesh", "EyeRMesh", "BrowLMesh", "BrowRMesh", "MouthMesh", "NoseMesh"],
         },

@@ -104,11 +104,13 @@ export interface DirectedIntent {
 
 /** The filmstrip evidence the review carries (iteration 119): what
  * the inspector actually saw - frames at the DIRECTED cue times, not
- * one arbitrary poster moment. */
+ * one arbitrary poster moment. 120: the frames carry burned-in
+ * position labels when a label font exists. */
 export interface ReviewFilmstrip {
   frames: number;
   cueTimes: number[];
   source: "directed cues" | "pose samples";
+  labeled?: boolean;
 }
 
 /**
@@ -309,9 +311,9 @@ async function visionFrameReview(
   const stripLines: string[] = [];
   if (ctx.strip) {
     stripLines.push(
-      `THE IMAGE IS A FILMSTRIP of ${ctx.strip.frames} frames pulled AT THE DIRECTED CUE TIMES (${ctx.strip.source}), left to right in time order at ${ctx.strip.cueTimes.map((t) => `${Math.round(t * 100)}%`).join(" / ")} of the clip:`,
+      `THE IMAGE IS A FILMSTRIP of ${ctx.strip.frames} frames pulled AT THE DIRECTED CUE TIMES (${ctx.strip.source}), left to right in time order at ${ctx.strip.cueTimes.map((t) => `${Math.round(t * 100)}%`).join(" / ")} of the clip${ctx.strip.labeled ? " (each frame carries a burned-in corner label 'frame k/N' - trust the label, never your own count)" : ""}:`,
       "- judge the PERFORMANCE across the frames (does the action the direction promised actually happen between them: the wind-up, the strike, the landing, the reaction),",
-      "- then judge each frame as dailies (readability, framing, light). A beat the direction promises that NO frame shows is an INTENT issue; name which frame (by position) each issue comes from.",
+      "- then judge each frame as dailies (readability, framing, light). A beat the direction promises that NO frame shows is an INTENT issue; name which frame (by its burned-in label position) each issue comes from.",
     );
   }
   try {
@@ -487,6 +489,7 @@ export async function reviewRenderJob(renderJobId: string, opts?: { useVision?: 
           frames: built.frames,
           cueTimes: stamps.map((t) => Math.round((t / durSec) * 1000) / 1000),
           source: cues.length >= 2 ? "directed cues" : "pose samples",
+          labeled: built.labeled,
         };
         visionImage = built.dataUrl;
       }

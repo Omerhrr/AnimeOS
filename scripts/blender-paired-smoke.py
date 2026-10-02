@@ -38,6 +38,7 @@ if HERE not in sys.path:
 import bpy
 import animeos_bridge as ab
 import choreography_pass as cp
+import physics_pass as pp
 
 scn = bpy.context.scene
 out = {}
@@ -162,6 +163,56 @@ out["first_zero_last_one"] = prog["keys"][0]["at"] == 0.0 and prog["keys"][-1]["
 pose_partner(*cp.pose_state_at(prog, 0.45), 0.45)
 out["deterministic"] = snapshot() == snap_meet
 
+# ── THE PARTNER TAKES THE HIT (iteration 120): the paired body owns
+#    a REACTION-ONLY physics rig - the stagger fires at the bound
+#    beat, away from the striker's mark, and the spring returns the
+#    body to the stand-off mark. The solid world's meshes (KNOCK /
+#    DEBRIS / SWAY) belong to the hero rig - a partner rig handed
+#    them skips them with an honest note. ──
+partner_prog = [{"kind": "REACTION", "intensity": 0.8, "beats": {0}, "target": None, "index": 0}]
+all_kinds_prog = [
+    {"kind": "KNOCK", "intensity": 0.7, "beats": {0}, "target": None, "index": 1},
+    {"kind": "DEBRIS", "intensity": 0.7, "beats": {0}, "target": None, "index": 2},
+    {"kind": "REACTION", "intensity": 0.8, "beats": {0}, "target": None, "index": 3},
+    {"kind": "SWAY", "intensity": 0.7, "beats": {0}, "target": None, "index": 4},
+]
+# 5a. the filter law: a partner rig handed the full vocabulary
+#     compiles REACTION only, honestly named
+pr_all = pp.build_physics_rig(bpy, scn, all_kinds_prog, partner, [], "smoke-filter", kinds_filter={"REACTION"}, strike_from=(0.0, 0.0))
+out["filter_kinds"] = pr_all["kinds"]
+out["filter_notes_name_skips"] = any("KNOCK" in n and "skipped" in n for n in pr_all["notes"])
+
+def mark_offset(rig_rec, mark):
+    r = rig_rec["root"]
+    return math.hypot(r.location.x - mark[0], r.location.y - mark[1])
+
+# 5b. the stagger: at the beat entry the partner's body leaves the
+#     mark AWAY from the striker (the hero stands at the origin),
+#     then the spring returns it
+deltas = []
+max_off = 0.0
+for fr in range(1, 90):
+    pose_partner(*cp.pose_state_at(prog, 0.45), 0.0 + fr / 24.0)   # the mark re-composed every frame
+    pp.apply_physics(pr_all, 0.45, fr / 24.0, 1.0 / 24.0, 0, 0.0, 0.0, fr)   # beat 0 entry fires once
+    off = mark_offset(partner, loc3)
+    deltas.append(off)
+    max_off = max(max_off, off)
+out["stagger_max_offset"] = round(max_off, 4)
+out["stagger_final"] = round(deltas[-1], 4)
+out["stagger_fired"] = max_off > 0.02
+out["stagger_recovered"] = deltas[-1] < 0.012
+out["stagger_published"] = bool(partner.get("_stagger"))
+out["stagger_away_from_hero"] = max_off > 0.02 and pr_all.get("max_offset", 0.0) > 0.0
+
+# 5c. Newton across rigs: the partner rig reads the HERO rig's
+#     same-beat strikes (the shared debris) through strike_src
+hero_phys = pp.build_physics_rig(bpy, scn, [{"kind": "DEBRIS", "intensity": 0.7, "beats": {0}, "target": None, "index": 0}], hero, [], "smoke-debris")
+pp.apply_physics(hero_phys, 0.0, 0.0, 1.0 / 24.0, 0, 0.0, 0.0, 1)   # the debris kicks: strikes recorded, beat-tagged
+pr_src = pp.build_physics_rig(bpy, scn, partner_prog, partner, [], "smoke-src", kinds_filter={"REACTION"}, strike_src=hero_phys)
+pp.apply_physics(pr_src, 0.0, 0.0, 1.0 / 24.0, 0, 0.0, 0.0, 1)
+out["cross_rig_strikes"] = pr_src.get("partner_strikes", 0)
+out["newton_across_rigs"] = pr_src.get("partner_strikes", 0) > 0
+
 print("PAIRED_SMOKE " + json.dumps(out))
 '''
 
@@ -200,6 +251,13 @@ expect("the recoil DIPS (the root motion rides)", out["recoil_dips"],
 expect("the stand-off mark is the STANCE fixed point", out["mark_holds_open"], out.get("open", {}).get("loc"))
 expect("every pose stays at the stand-off (additive, never a teleport)", out["mark_holds_all"])
 expect("the same moment poses bit-exact twice", out["deterministic"])
+expect("THE PARTNER RIG COMPILES REACTION ONLY (the meshes belong to the hero rig)", out["filter_kinds"] == ["REACTION"], out["filter_kinds"])
+expect("the skipped kinds are named honestly", out["filter_notes_name_skips"])
+expect("THE STAGGER FIRES (the body leaves the mark)", out["stagger_fired"], f"max {out['stagger_max_offset']}m")
+expect("the stagger points away from the striker", out["stagger_away_from_hero"])
+expect("the spring RETURNS the body (recovered to the mark)", out["stagger_recovered"], f"final {out['stagger_final']}m")
+expect("the stagger velocity is published (the cloth answers)", out["stagger_published"])
+expect("NEWTON ACROSS RIGS (the partner reads the hero's same-beat strikes)", out["newton_across_rigs"], f"strikes {out['cross_rig_strikes']}")
 
 print(f"\n{'ALL GREEN' if failures == 0 else f'{failures} FAILURES'}")
 sys.exit(1 if failures else 0)

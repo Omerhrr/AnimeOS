@@ -8,7 +8,7 @@
 #      evaluated right-hand vertices with the RShoulder/RElbow empties
 #   3. THE SPEC DRIVES THE DESIGN: two specs (topknot hanfu vs short
 #      tunic) build different hair/garment sets
-#   4. THE WORKER: a TOON job builds figureSource anime:v119 and renders
+#   4. THE WORKER: a TOON job builds figureSource anime:v120 and renders
 #   5. THE TURNAROUND CLI: five views + the stitched sheet + a .blend
 # Runs under BLENDER=/path/to/blender or a Python with the bpy module.
 import json, os, subprocess, sys, tempfile
@@ -142,7 +142,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
     fh.write(runner)
 subprocess.run(cmd(fh.name, os.path.join(BR_DIR, "animeos_bridge.py"), job), capture_output=True, text=True, timeout=1200)
 st = json.load(open(job))
-expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v119"), (st.get("figureSource"), st.get("animeRefused")))
+expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v120"), (st.get("figureSource"), st.get("animeRefused")))
 expect("worker clip rendered", bool(st.get("mp4Path")) and os.path.exists(st.get("mp4Path") or ""), st.get("error"))
 forge = st.get("addons") or {}
 expect("THE FORGE OPENS on the worker (all built-ins, zero failed)",

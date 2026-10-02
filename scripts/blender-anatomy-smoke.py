@@ -134,7 +134,7 @@ expect("the silhouette deltas name the stature fraction",
 expect("bit-exact across rebuilds", out["deterministic"])
 expect("a female spec sculpts softer", out["female_softer"], out["female_max"])
 expect("a heavy spec sculpts stronger", out["heavy_stronger"], out["heavy_max"])
-expect("a full figure builds over the sculpted body", str(out["figure_law"]).startswith("anime-v119"), out["figure_law"])
+expect("a full figure builds over the sculpted body", str(out["figure_law"]).startswith("anime-v120"), out["figure_law"])
 expect("the figure's anatomy evidence rides the build", isinstance(out["figure_anatomy"], dict) and not out["figure_anatomy"].get("error"),
        json.dumps(out["figure_anatomy"])[:200])
 expect("the rig still binds (bones over the sculpted body)", (out["figure_bones"] or 0) >= 13, out["figure_bones"])

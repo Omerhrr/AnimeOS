@@ -508,6 +508,7 @@ export interface LocalJobState {
   // surface them.
   addonsLine?: string | null;
   pairedLine?: string | null;
+  partnerLine?: string | null;
 }
 
 function jobFileFor(jobId: string): string {
@@ -600,6 +601,7 @@ export function pollLocalJob(jobId: string): BridgeProgress {
       mp4Path: state.mp4Path ?? undefined,
       addonsLine: typeof state.addonsLine === "string" ? state.addonsLine : undefined,
       pairedLine: typeof state.pairedLine === "string" ? state.pairedLine : undefined,
+      partnerLine: typeof state.partnerLine === "string" ? state.partnerLine : undefined,
     };
   } catch {
     return { polled: false, error: "no worker state yet" };
@@ -647,6 +649,7 @@ export interface BridgeProgress {
   // worker's own state file and persisted at conclusion.
   addonsLine?: string;
   pairedLine?: string;
+  partnerLine?: string;
 }
 
 /** Poll live progress for a job submitted to Blender (env host over HTTP). */
@@ -656,7 +659,7 @@ export async function pollJobProgress(jobId: string): Promise<BridgeProgress> {
   try {
     const res = await fetchWithTimeout(`http://${status.host}/progress?job_id=${encodeURIComponent(jobId)}`, undefined, 5000);
     if (!res.ok) return { polled: false, error: `Blender /progress responded ${res.status}` };
-    const data = (await res.json()) as { progress?: number; stage?: string; done?: boolean; png_base64?: string; mp4_base64?: string; error?: string; addons_line?: string; paired_line?: string };
+    const data = (await res.json()) as { progress?: number; stage?: string; done?: boolean; png_base64?: string; mp4_base64?: string; error?: string; addons_line?: string; paired_line?: string; partner_line?: string };
     return {
       polled: true,
       progress: typeof data.progress === "number" ? data.progress : undefined,
@@ -667,6 +670,7 @@ export async function pollJobProgress(jobId: string): Promise<BridgeProgress> {
       error: typeof data.error === "string" ? data.error : undefined,
       addonsLine: typeof data.addons_line === "string" ? data.addons_line : undefined,
       pairedLine: typeof data.paired_line === "string" ? data.paired_line : undefined,
+      partnerLine: typeof data.partner_line === "string" ? data.partner_line : undefined,
     };
   } catch (err) {
     return { polled: false, error: err instanceof Error ? err.message : "Blender poll failed" };

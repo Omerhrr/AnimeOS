@@ -44,6 +44,21 @@
 #             this law - the cloth answers the air, the body answers
 #             the violence.
 #
+#   THE PARTNER TAKES THE HIT (v12.1, iteration 120): a paired
+#             performance is ONE violence on TWO bodies - the debris
+#             answers the hero's law alone while the blocked partner
+#             stood like stone. build_physics_rig grew a PARTNER mode
+#             (kinds_filter/strike_src/strike_from): the partner rig
+#             compiles REACTION ONLY (the solid world's meshes belong
+#             to the hero rig - a second rubble ring would be a lie
+#             about one blast) and its impulse names the CLASH as the
+#             violence: the striker's own mark first (strike_from -
+#             a blocked blade lives where the striker stands), then
+#             the hero rig's same-beat strikes (the shared debris),
+#             then the seeded direction. The answer table's recoil
+#             POSE stays the partner's keyframe answer; the stagger
+#             is the physics half of the same answer.
+#
 # The integration law was PROBED before it shipped (the studio probes
 # first): a shallow impact must not micro-vibrate forever - the body
 # grounds, rolls, friction eats it, and it settles (bit-exact across
@@ -297,14 +312,22 @@ def _integrate(body, dt, frame):
     body["max_speed"] = max(body.get("max_speed", 0.0), speed)
 
 
-def build_physics_rig(bpy, scn, programs, figure, prop_anchors, job_id):
+def build_physics_rig(bpy, scn, programs, figure, prop_anchors, job_id, kinds_filter=None, strike_src=None, strike_from=None):
     """Compile the programs into real bodies parented into the scene.
     KNOCK resolves its target honestly: a riding prop anchor matched
     by name (case-insensitive), else the first riding prop (noted),
     else a spawned stone vessel (noted - the beat still lands, the
     stand-in is declared). DEBRIS seeds a ring of rubble. SWAY hangs
     a lantern from an invisible anchor. Returns the rig the frame
-    loop drives."""
+    loop drives.
+
+    THE PARTNER MODE (iteration 120): kinds_filter limits which kinds
+    compile (the partner rig compiles REACTION only - the solid
+    world's meshes belong to the hero rig); strike_src hands the rig
+    another rig whose same-beat strikes answer Newton's third law;
+    strike_from names the striker's own mark (a blocked blade lives
+    where the striker stands) - the partner staggers away from it
+    when the beat's own strikes are silent."""
     notes = []
     rig = {
         "knocks": [],
@@ -320,6 +343,10 @@ def build_physics_rig(bpy, scn, programs, figure, prop_anchors, job_id):
         "kinds": [],
         "all_bound": set(),
         "programs": len(programs),
+        "strike_src": strike_src,
+        "strike_from": tuple(strike_from) if strike_from is not None else None,
+        "partner": kinds_filter is not None,
+        "partner_strikes": 0,
     }
     root = figure.get("root") if isinstance(figure, dict) else None
     root_pos = list(root.location) if root is not None else [0.0, 0.0, 0.0]
@@ -329,6 +356,9 @@ def build_physics_rig(bpy, scn, programs, figure, prop_anchors, job_id):
         kind = prog["kind"]
         inten = prog["intensity"]
         rng = mulberry32(fnv1a(str(job_id)) ^ (0x911 + pi))
+        if kinds_filter is not None and kind not in kinds_filter:
+            notes.append(f"{kind}: not in this rig's law ({', '.join(sorted(kinds_filter))}) - skipped (the solid world's meshes belong to the hero rig)")
+            continue
         rig["all_bound"] |= set(prog["beats"])
 
         if kind == "KNOCK":
@@ -457,6 +487,11 @@ def apply_physics(rig, t, t_sec, dt, beat_idx, wind, vel, frame):
     # ── beat entries: the strikes and the kicks land where the cut lands ──
     if beat_idx != rig["prev_beat"]:
         rig["prev_beat"] = beat_idx
+        # the new beat forgets the last one's strikes (the strikes are
+        # tagged with their beat below so the PARTNER rig can read the
+        # hero's same-beat violence - one blast, two answers)
+        rig["_beat_strikes"] = []
+        rig["_beat_strikes_beat"] = None
         for k in rig["knocks"]:
             if beat_idx not in k["bound"]:
                 continue
@@ -498,6 +533,27 @@ def apply_physics(rig, t, t_sec, dt, beat_idx, wind, vel, frame):
         if r is not None and beat_idx in r["bound"]:
             dx, dy = r["dir"]
             strikes_here = rig.get("_beat_strikes") or []
+            if not strikes_here and rig.get("strike_from") is not None:
+                # THE PARTNER TAKES THE HIT (iteration 120): a blocked
+                # blade lives where the striker stands - the clash's
+                # violence is the striker's own mark when this beat
+                # carries no strike of its own
+                sx_, sy_ = rig["strike_from"][0], rig["strike_from"][1]
+                ux, uy = _unit_xy(r["home_pos"][0] - sx_, r["home_pos"][1] - sy_)
+                if ux or uy:
+                    strikes_here = [{"pos": (sx_, sy_), "speed": 2.2}]
+                    rig["partner_strikes"] += 1
+            if not strikes_here:
+                # Newton's third law across rigs: the HERO rig's
+                # same-beat strikes (the shared debris, the shared
+                # knock) are this beat's violence too - read them with
+                # their beat tag so a LATER beat's stale strikes never
+                # push this one
+                src = rig.get("strike_src")
+                if isinstance(src, dict) and src.get("_beat_strikes_beat") == beat_idx:
+                    strikes_here = src.get("_beat_strikes") or []
+                    if strikes_here:
+                        rig["partner_strikes"] += len(strikes_here)
             if strikes_here:
                 # Newton's third law: recoil AWAY from where the hit came
                 # from, blended with the seeded dodge direction
@@ -512,7 +568,12 @@ def apply_physics(rig, t, t_sec, dt, beat_idx, wind, vel, frame):
             r["settled"] = False
             r["recover_frame"] = None  # a re-stagger forgets the earlier rest
             rig["reactions"] = rig.get("reactions", 0) + 1
-        rig["_beat_strikes"] = []
+        if rig.get("_beat_strikes"):
+            # tag the strikes with their beat: the partner rig reads
+            # the hero's violence ONLY in the beat it landed in (the
+            # list survives the entry - the NEXT beat's entry clears
+            # it, so a later beat never reads stale strikes)
+            rig["_beat_strikes_beat"] = beat_idx
 
     # ── KNOCK + DEBRIS: integrate every body under the probed law ──
     for k in rig["knocks"]:

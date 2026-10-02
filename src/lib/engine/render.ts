@@ -756,7 +756,7 @@ export async function tickRenderJob(jobId: string) {
           where: { id: jobId },
           data: {
             status: "REVIEW", progress: 100,
-            stage: [job.lipNote, prog.stage?.slice(0, 60) || "Blender clip ready", prog.pairedLine?.slice(0, 80)].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
+            stage: [job.lipNote, prog.stage?.slice(0, 60) || "Blender clip ready", prog.pairedLine?.slice(0, 80), prog.partnerLine?.slice(0, 80)].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
             outputUrl: `/renders/${job.id}.mp4`,
             finishedAt: new Date(),
             telemetry: JSON.stringify(tel),
@@ -899,7 +899,7 @@ export async function tickRenderJob(jobId: string) {
             where: { id: jobId },
             data: {
               status: "REVIEW", progress: 100,
-              stage: [job.lipNote, prog.stage?.slice(0, 120) || "Blender render complete", prog.pairedLine?.slice(0, 80)].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
+              stage: [job.lipNote, prog.stage?.slice(0, 120) || "Blender render complete", prog.pairedLine?.slice(0, 80), prog.partnerLine?.slice(0, 80)].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
               ...(hasClip ? { outputUrl: `/renders/${job.id}.mp4` } : {}),
               finishedAt: new Date(),
               telemetry: JSON.stringify(tel),

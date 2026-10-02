@@ -6673,6 +6673,62 @@ def worker_run(job_file):
                 else:
                     state["pairedPerformanceNote"] = f"pairedChoreo refused: {paired_err} - the stand-off holds"
 
+        # ── THE PARTNER TAKES THE HIT (iteration 120): a paired
+        #    performance is ONE violence on TWO bodies - the debris
+        #    answered the hero's law alone while the blocked partner
+        #    stood like stone. When the shot pairs a second figure with
+        #    directed physics, the partner's body owns a REACTION-ONLY
+        #    rig bound at the paired program's STRIKE beats (the
+        #    moments the answer table sells the meet) and staggers
+        #    away from the striker's mark - the physics half of the
+        #    recoil the pose keys already sell. A shot without pairing
+        #    or physics keeps the 119 law honestly. ──
+        phys_rig2 = None
+        if paired_ctx is not None and second_rig is not None and phys_programs:
+            if "physics_pass" not in sys.modules:
+                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                import physics_pass  # noqa: F811
+            strike_beats = set()
+            for pk in paired_ctx["prog"]["keys"]:
+                if pk.get("kind") == "strike":
+                    if grammar:
+                        try:
+                            bi, _b = _beat_at(grammar, float(pk.get("at") or 0.0))
+                        except Exception:  # noqa: BLE001
+                            bi = 0
+                    else:
+                        bi = 0
+                    strike_beats.add(max(0, bi))
+            if not strike_beats:
+                strike_beats = {0}
+            directed_react = [p for p in phys_programs if p["kind"] == "REACTION"]
+            react_inten = max((p["intensity"] for p in directed_react), default=0.55)
+            partner_programs = [{
+                "kind": "REACTION", "intensity": react_inten,
+                "beats": strike_beats, "target": None, "index": 97,
+            }]
+            try:
+                hero_root = figure.get("root") if isinstance(figure, dict) else None
+                strike_from = (float(hero_root.location.x), float(hero_root.location.y)) if hero_root is not None else None
+                phys_rig2 = physics_pass.build_physics_rig(
+                    bpy, scn, partner_programs, second_rig, prop_anchors, job_id,
+                    kinds_filter={"REACTION"}, strike_src=phys_rig, strike_from=strike_from)
+                if phys_rig2["kinds"]:
+                    state["partnerReaction"] = {
+                        "lawVersion": 120,
+                        "partner": paired_ctx["partner"],
+                        "boundBeats": sorted(phys_rig2["all_bound"]),
+                        "intensity": react_inten,
+                    }
+                    if phys_rig2["notes"]:
+                        state["partnerReaction"]["notes"] = phys_rig2["notes"]
+                else:
+                    phys_rig2 = None
+                    state["partnerReactionNote"] = "the partner rig compiled no REACTION law - the 119 stand-off holds"
+            except Exception as exc:  # noqa: BLE001
+                phys_rig2 = None
+                state["partnerReactionNote"] = f"partner rig refused: {type(exc).__name__}: {exc}"
+
         # ── AnimeOS scene params: designed sky when the environment
         #    DNA carries one, legacy fog world otherwise ──
         fog = float(scene_p.get("fogDensity", 0.45))
@@ -7181,6 +7237,13 @@ def worker_run(job_file):
             # the body moves and the cloth answers, never a frame late.
             if phys_rig:
                 physics_pass.apply_physics(phys_rig, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel, f)
+            if phys_rig2:
+                # THE PARTNER TAKES THE HIT (iteration 120): the same
+                # beat clock answers the partner's body - the stagger
+                # lands AFTER the paired pose re-composed the stand-off
+                # mark, so the recoil rides on top of the mark, never
+                # under it
+                physics_pass.apply_physics(phys_rig2, t, t_sec, 1.0 / fps, fbi, fwind, fx_vel, f)
             fagit = MOVE_ENERGY.get(fbeat["move"], 0.3) if grammar else MOVE_ENERGY.get(str(shot.get("movement") or "STATIC").upper(), 0.25)
             if figure:
                 # v7.2: cloth and hair RIDE THE BEATS - the active beat's
@@ -7314,6 +7377,21 @@ def worker_run(job_file):
                     "boundBeats": sorted(r["bound"]),
                 }
 
+        # the partner's answer: the staggers that fired on the paired
+        # body, how far it left its mark and the frame it came back
+        # (honest evidence: a partner that never staggered reports 0)
+        if phys_rig2 is not None:
+            prep2 = state.setdefault("partnerReaction", {"lawVersion": 120})
+            r2 = phys_rig2.get("reaction")
+            if r2 is not None:
+                prep2["reaction"] = {
+                    "reactions": phys_rig2.get("reactions", 0),
+                    "maxOffset": round(phys_rig2.get("max_offset", 0.0), 3),
+                    "maxLean": round(phys_rig2.get("max_lean", 0.0), 1),
+                    "recoverFrame": r2["recover_frame"],
+                    "strikesRead": phys_rig2.get("partner_strikes", 0),
+                }
+
         # ── encode ──
         if choreo_prog:
             # the performance's measured answer: how far the striking
@@ -7373,6 +7451,17 @@ def worker_run(job_file):
             state["pairedLine"] = (
                 f"the duel answers: {pp.get('partner', 'the partner')} "
                 f"({pp.get('strikeBeatsMet', 0)} strike beat(s) met on one clock)"
+            )
+        # THE PARTNER TAKES THE HIT (iteration 120): the stagger's own
+        # evidence line rides beside the duel line - the card names the
+        # recoil the paired body took
+        pr_ev = state.get("partnerReaction") or {}
+        pr_react = pr_ev.get("reaction") or {}
+        if pr_react:
+            state["partnerLine"] = (
+                f"the partner takes the hit: {pr_ev.get('partner', 'the partner')} "
+                f"staggers x{pr_react.get('reactions', 0)} "
+                f"(max {pr_react.get('maxOffset', 0)}m, recover f{pr_react.get('recoverFrame')})"
             )
         state["done"] = True
         flush()
@@ -7841,6 +7930,8 @@ class BridgeServer:
             out["addons_line"] = state["addonsLine"]
         if state.get("pairedLine"):
             out["paired_line"] = state["pairedLine"]
+        if state.get("partnerLine"):
+            out["partner_line"] = state["partnerLine"]
         if out["done"] and not out.get("error") and state.get("mp4Path"):
             if entry["mp4Cache"] is None:
                 try:
