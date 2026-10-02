@@ -41,9 +41,12 @@
 # same character.
 # ─────────────────────────────────────────────────────────────
 
+import json
 import math
+import os
+import sys
 
-ANIME_LAW_VERSION = 113
+ANIME_LAW_VERSION = 118
 EYE_OPEN_FLOOR = 0.45   # a painted eye never squashes below this (a blink still reads)
 
 # ── the design spec ──────────────────────────────────────────
@@ -704,6 +707,23 @@ def build_body(bpy, scn, spec, skin_mat, boots_mat):
             p.material_index = 1
         elif o["type"] != "hanfu" and c.z < 0.97 and abs(c.x) < 0.2:
             p.material_index = 1          # trousers under a tunic / fitted top
+    # ── THE MANNEQUIN GAINS A BODY (iteration 118): the anatomical
+    #    field sculpts the baked skin - pectorals, deltoids, trapezius,
+    #    lats, scapulae, quads, calves - BEFORE binding and BEFORE the
+    #    garment face-kill. The spec's build/gender drive the
+    #    amplitudes; the field is analytic and bit-exact. Evidence
+    #    rides the body object and the return. ──
+    anatomy = None
+    try:
+        _here = os.path.dirname(os.path.abspath(__file__))
+        if _here not in sys.path:
+            sys.path.insert(0, _here)
+        import body_anatomy
+
+        anatomy = body_anatomy.apply_anatomy(body, spec)
+        body["animeos_anatomy"] = body_anatomy.dump_summary(anatomy)
+    except Exception as exc:  # noqa: BLE001
+        anatomy = {"error": f"{type(exc).__name__}: {exc}"}
     # THE GARMENT COVERS THE BODY: faces the clothes hide are removed so
     # no skin pokes through a shoulder seam or a sleeve (the dressed
     # character is one silhouette; the hands, neck and feet stay)
@@ -1323,6 +1343,12 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
         body_sync()
     sync_rig()
 
+    # the anatomy evidence rides the body object (set inside build_body)
+    try:
+        anatomy = json.loads(body.get("animeos_anatomy") or "null")
+    except Exception:  # noqa: BLE001
+        anatomy = None
+
     return {
         "builder": f"anime-v{ANIME_LAW_VERSION}",
         "root": root, "spine": spine, "head": head,
@@ -1339,6 +1365,7 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
         "anime": {
             "lawVersion": ANIME_LAW_VERSION,
             "spec": spec,
+            "anatomy": anatomy,
             "body": {"verts": len(body.data.vertices), "bones": len(rig["segments"])},
             "garments": garments,
             "hair": hair,

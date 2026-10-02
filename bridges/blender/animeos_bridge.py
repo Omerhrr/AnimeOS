@@ -5819,6 +5819,25 @@ def worker_run(job_file):
                 except Exception:  # noqa: BLE001
                     pass
 
+        # ── THE FORGE OPENS (iteration 118): every bundled addon is
+        #    enabled before the first scene build - the purge and the
+        #    pool's factory reset re-close them, so the re-ensure is
+        #    the top of EVERY job (idempotent, ~5 ms warm). Evidence
+        #    rides the state; a forge problem is recorded, never a
+        #    silent close. ──
+        try:
+            _here = os.path.dirname(os.path.abspath(__file__))
+            if _here not in sys.path:
+                sys.path.insert(0, _here)
+            import animeos_addons
+
+            _forge = animeos_addons.ensure_builtins()
+            state["addons"] = _forge
+            state["addonsLine"] = animeos_addons.forge_summary_line(_forge)
+            print(f"[animeos-bridge] {state['addonsLine']}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            state["addons"] = {"error": f"{type(exc).__name__}: {exc}"}
+
         # ── design DNA (v4.0): what the production DESIGNED ──
         cast = (shot.get("cast") or []) if isinstance(shot.get("cast"), list) else []
         env = scene_p.get("environment") if isinstance(scene_p.get("environment"), dict) else None
@@ -7356,6 +7375,18 @@ def pool_ready_path(port):
 
 def pool_worker_main(port):
     import bpy  # noqa: F401 - the WHOLE point: loaded once, warm for the worker's lifetime
+
+    # THE FORGE OPENS AT BOOT (iteration 118): the warm pool starts
+    # with every bundled addon enabled; worker_run re-ensures after
+    # each job's factory purge.
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import animeos_addons
+
+        _forge = animeos_addons.ensure_builtins()
+        print(f"[animeos-bridge] pool worker {animeos_addons.forge_summary_line(_forge)}", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[animeos-bridge] pool worker forge error: {exc}", flush=True)
 
     served = 0
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
