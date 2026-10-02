@@ -232,7 +232,8 @@ def run_render():
            or str(st.get("figureSource") or "").startswith("anime"), (st.get("figureSource"), st.get("anatomy")))
     path = (((st.get("render") or {}).get("presence") or {}).get("sightline") or {}).get("path") or {}
     expect("path walk caught and cleared the pillar", path.get("blockedBefore", 0) > 0 and path.get("cleared"), path)
-    expect("hero key tracks the head", (st.get("heroKey") or {}).get("tracks") == "head", st.get("heroKey"))
+    expect("hero key tracks the face", (st.get("heroKey") or {}).get("tracks") == "face", st.get("heroKey"))
+    expect("shadowless face fill rides the key", ((st.get("heroKey") or {}).get("fill") or {}).get("shadowless") is True, (st.get("heroKey") or {}).get("fill"))
     expect("palette wash tuned for the framing", ((st.get("render") or {}).get("paletteWash") or {}).get("shotType") == "MEDIUM")
 
 

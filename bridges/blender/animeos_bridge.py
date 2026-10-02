@@ -758,6 +758,20 @@ HERO_KEY_NIGHT = "#f3e7e0"   # warm-neutral even under the moon: the face keeps 
 HERO_KEY_YAW = 35.0          # degrees off the lens axis (the classic key side)
 HERO_KEY_RISE = 28.0         # degrees above the head
 HERO_KEY_SIZE = 1.1
+# THE FACE KEEPS ITS LIGHT (iteration 113): the rescore read the face
+# cells at 10-20% - the key's 35-degree yaw throws the cel terminator
+# straight across the eyes (half the face sits in the shadow band and
+# the painted decals glow on a dark plane). The fill rides beside the
+# key - SHADOWLESS so it casts no terminator of its own, and OFF-AXIS
+# + WEAK so the face keeps its anime banding: the empirical night law
+# - a frontal fill at a third of the key flipped the whole face into
+# the lit band and the cel sum (lit + floor) clipped the palest dye
+# to a blown white egg with no face read at all.
+FACE_FILL_YAW = 24.0         # degrees off the lens axis (key-side fill)
+FACE_FILL_RISE = 14.0        # degrees above the face plane
+FACE_FILL_SHARE = 0.12       # the fill's share of the key's per-frame energy
+FACE_FILL_DIST_SCALE = 7.0   # closer than the key (headH multiples)
+FACE_FILL_SIZE = 0.42        # roughly the face plane's width
 
 
 def _grip_law():
@@ -768,14 +782,40 @@ def _grip_law():
                                  grip_piece_offset=grip_piece_offset)
 
 
-def aim_hero_key(key_ob, cam_loc, head_ob, subject=None):
-    """THE KEY FINDS THE FACE (iteration 108): place the hero key from
-    the LENS, not from a fixed world point - 35 degrees off the camera
-    axis around the head, raised 28 degrees, at a distance scaled by
-    the measured head (a close-up gets a close, soft key; a wide keeps
-    its reach). The TRACK_TO constraint aims it at the head."""
+def _aim_face_light(light_ob, cam_loc, anchor_ob, subject, yaw_deg, rise_deg, dist_scale):
+    """Shared placement law for the face lights: `yaw_deg` off the
+    camera axis around the anchor, raised `rise_deg`, at a distance
+    scaled by the measured head. Returns nothing - the TRACK_TO
+    constraint owns the aim; this owns the position."""
     import mathutils
-    h = head_ob.matrix_world.translation
+    h = anchor_ob.matrix_world.translation
+    v = mathutils.Vector((cam_loc[0] - h.x, cam_loc[1] - h.y, 0.0))
+    if v.length < 1e-6:
+        v = mathutils.Vector((0.0, -1.0, 0.0))
+    v.normalize()
+    yaw = math.radians(yaw_deg)
+    vx = v.x * math.cos(yaw) - v.y * math.sin(yaw)
+    vy = v.x * math.sin(yaw) + v.y * math.cos(yaw)
+    head_h = float((subject or {}).get("headH") or 0.1)
+    dist = max(0.5, head_h * dist_scale)
+    rise = math.radians(rise_deg)
+    light_ob.location = (h.x + vx * dist * math.cos(rise),
+                         h.y + vy * dist * math.cos(rise),
+                         h.z + dist * math.sin(rise))
+
+
+def aim_hero_key(key_ob, cam_loc, face_ob, subject=None, fill_ob=None):
+    """THE KEY FINDS THE FACE (iteration 108, retargeted 113): place
+    the hero key from the LENS, not from a fixed world point - 35
+    degrees off the camera axis around the FACE PLANE (the anchor is
+    the FaceTarget empty riding the head's front, not the head's
+    center), raised 28 degrees, at a distance scaled by the measured
+    head (a close-up gets a close, soft key; a wide keeps its reach).
+    The TRACK_TO constraint aims it at the face point. When `fill_ob`
+    rides along, the shadowless frontal fill is placed by the same law
+    and takes its energy from the key's per-frame energy."""
+    import mathutils
+    h = face_ob.matrix_world.translation
     v = mathutils.Vector((cam_loc[0] - h.x, cam_loc[1] - h.y, 0.0))
     if v.length < 1e-6:
         v = mathutils.Vector((0.0, -1.0, 0.0))
@@ -796,6 +836,9 @@ def aim_hero_key(key_ob, cam_loc, head_ob, subject=None):
     key_ob.location = (h.x + vx * dist * math.cos(rise),
                        h.y + vy * dist * math.cos(rise),
                        h.z + dist * math.sin(rise))
+    if fill_ob is not None:
+        _aim_face_light(fill_ob, cam_loc, face_ob, subject, FACE_FILL_YAW, FACE_FILL_RISE, FACE_FILL_DIST_SCALE)
+        fill_ob.data.energy = float(key_ob.data.energy) * FACE_FILL_SHARE
 
 
 def _sightline_clear(scn, bpy, origin, target, margin=0.3):
@@ -981,8 +1024,18 @@ class _Framing:
             fill = SUBJECT_FILL.get(st, 0.7)
             tan_half = 10.125 / float(lens)  # the 36mm sensor, horizontal fit, 16:9
             dist = clamp(size / (fill * 2.0 * tan_half), 0.45, 14.0)
-            h = float(subject.get("chest") or subject["h"] * 0.62) + subject["h"] * 0.08
             aim = "face" if (dist < 1.2 or tight) else "chest"
+            if aim == "face":
+                # THE LEVEL LENS (iteration 113): the closeup's lens rides
+                # the face's own height - the chest-height lens aimed UP
+                # the face read the nostrils, hung the bangs over the eyes
+                # and the push-in steepened the angle every frame (the
+                # night's DSH verdict: 'an anonymous, faceless
+                # silhouette'). A hair above the eye line, tilted down a
+                # few degrees - the portrait angle.
+                h = float(subject.get("face") or subject["h"] * 0.84) + subject["h"] * 0.035
+            else:
+                h = float(subject.get("chest") or subject["h"] * 0.62) + subject["h"] * 0.08
             target = [0.0, 0.0, float(subject.get("face") or subject["h"] * 0.84) if aim == "face" else float(subject.get("chest") or subject["h"] * 0.62)]
         elif framed:
             # prop-scale distance: the designed figure stands ~0.9m tall
@@ -5589,11 +5642,27 @@ def worker_run(job_file):
 
         scn = bpy.context.scene
 
-        # clean slate: Blender's startup Cube/Light/Camera surround the
-        # origin (a 2m box) and would swallow the stand-in set - purge them
+        # clean slate: THE POOL WORKER RENDERS MANY JOBS IN ONE PROCESS
+        # (iteration 113) - the stub purge (Cube/Light/Camera only) let
+        # every previous job's scene ride into the next render: its
+        # figures stood in the new job's frames, its materials dyed the
+        # next build's name-collided .001 data, its set walls hung
+        # behind every closeup (the night's S003 closeup shot through
+        # three jobs of accumulated temple). Purge everything; the
+        # startup Cube/Light/Camera ride out with it, and the orphaned
+        # meshes/materials/images (the old jobs' data blocks) follow.
         for ob in list(scn.objects):
-            if ob.name in ("Cube", "Light", "Camera"):
-                bpy.data.objects.remove(ob, do_unlink=True)
+            bpy.data.objects.remove(ob, do_unlink=True)
+        for block_group in (bpy.data.meshes, bpy.data.materials, bpy.data.images,
+                            bpy.data.lights, bpy.data.cameras, bpy.data.armatures,
+                            bpy.data.collections, bpy.data.worlds, bpy.data.node_groups,
+                            bpy.data.textures):
+            for block in list(block_group):
+                try:
+                    if block.users == 0:
+                        block_group.remove(block)
+                except Exception:  # noqa: BLE001
+                    pass
 
         # ── design DNA (v4.0): what the production DESIGNED ──
         cast = (shot.get("cast") or []) if isinstance(shot.get("cast"), list) else []
@@ -6050,9 +6119,19 @@ def worker_run(job_file):
                         state["secondFigureGroom"] = other_rig["groom"]
                 else:
                     state["secondFigureSource"] = f"asset:{other.get('name', 'cast')}"
+                # THE STAND-OFF SURVIVES THE POSE (iteration 113): apply_pose
+                # OWNS the root (it writes the walk/root motion on every
+                # call), so the stand-off placement lands AFTER the pose
+                # and the sync - before this order the pose wiped the
+                # placement and the second figure stood INSIDE the hero,
+                # its hair curtain filling every closeup frame.
                 other_rig["root"].location = (0.6, 1.7, 0.0)
                 other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(166))
                 apply_pose(other_rig, "STANCE", "STANCE", 0.0, 0.0)
+                # the pose's root write is the stance (0,0,0); re-apply the
+                # stand-off after it so the placement is what renders
+                other_rig["root"].location = (0.6, 1.7, 0.0)
+                other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(166))
                 if other_rig.get("syncRig"):
                     other_rig["syncRig"]()
                 state["secondFigure"] = other.get("name")
@@ -6359,7 +6438,8 @@ def worker_run(job_file):
             light.location = ((3.5, -4.0, 2.6) if i == 0 else (-3.0, 3.5, 3.2))
             scn.collection.objects.link(light)
         hero_key = None
-        head_target = None
+        face_fill = None
+        face_target = None
         if hero:
             # the HERO KEY: a soft dedicated light on the subject so a
             # night wide never loses the figure in the darkness (the
@@ -6368,12 +6448,16 @@ def worker_run(job_file):
             key_data = bpy.data.lights.new("HeroKey", "AREA")
             key_data.size = 1.6
             key_data.energy = 140.0 if night else 260.0
-            # THE KEY FINDS THE FACE (iteration 108): the key is a
-            # warm skin-friendly white at every hour - the night mood
-            # rides the moon sun and the rim, never the face light (the
-            # blade-green key read the head as dark metal). It tracks
-            # the HEAD and is re-placed per frame from the lens (35
-            # degrees off the camera axis, raised) - see aim_hero_key.
+            # THE KEY FINDS THE FACE (iteration 108, retargeted 113): the
+            # key is a warm skin-friendly white at every hour - the night
+            # mood rides the moon sun and the rim, never the face light
+            # (the blade-green key read the head as dark metal). It tracks
+            # the FACE PLANE POINT (a FaceTarget empty rides the head's
+            # front, so the aim survives every pose) and is re-placed per
+            # frame from the lens (35 degrees off the camera axis,
+            # raised) - see aim_hero_key. The shadowless frontal FILL
+            # rides beside it (the face's cel band stays lifted; no
+            # terminator of its own).
             kcol = HERO_KEY_NIGHT if night else HERO_KEY_DAY
             key_data.color = hex_to_rgb(kcol)
             key_data.size = HERO_KEY_SIZE
@@ -6383,12 +6467,37 @@ def worker_run(job_file):
             scn.collection.objects.link(hero_key)
             head_target = figure.get("head") if isinstance(figure, dict) else None
             if head_target is not None:
-                tc = hero_key.constraints.new("TRACK_TO")
-                tc.target = head_target
+                # the face plane's own empty: head-local front center,
+                # at the eye line (the skull's center height is 0.14 in
+                # head space; the face plane rides y -0.10)
+                face_target = bpy.data.objects.new("FaceTarget", None)
+                scn.collection.objects.link(face_target)
+                face_target.parent = head_target
+                face_target.location = (0.0, -0.10, 0.13)
+                face_target.empty_display_size = 0.02
+                fill_data = bpy.data.lights.new("FaceFill", "AREA")
+                fill_data.size = FACE_FILL_SIZE
+                fill_data.energy = float(key_data.energy) * FACE_FILL_SHARE
+                fill_data.color = hex_to_rgb(kcol)
+                try:
+                    fill_data.cycles.cast_shadow = False
+                except Exception:  # noqa: BLE001
+                    pass
+                face_fill = bpy.data.objects.new("FaceFill", fill_data)
+                face_fill.location = (0.3, -1.4, 1.8)
+                scn.collection.objects.link(face_fill)
+                tc = face_fill.constraints.new("TRACK_TO")
+                tc.target = face_target
                 tc.track_axis = "TRACK_NEGATIVE_Z"
                 tc.up_axis = "UP_Y"
-                state["heroKey"] = {"tracks": "head", "color": kcol, "offsetDeg": HERO_KEY_YAW,
-                                    "riseDeg": HERO_KEY_RISE, "lawVersion": 108}
+                ftc = hero_key.constraints.new("TRACK_TO")
+                ftc.target = face_target
+                ftc.track_axis = "TRACK_NEGATIVE_Z"
+                ftc.up_axis = "UP_Y"
+                state["heroKey"] = {"tracks": "face", "color": kcol, "offsetDeg": HERO_KEY_YAW,
+                                    "riseDeg": HERO_KEY_RISE, "fill": {"yawDeg": FACE_FILL_YAW, "riseDeg": FACE_FILL_RISE,
+                                                                       "share": FACE_FILL_SHARE, "shadowless": True},
+                                    "lawVersion": 113}
 
         # ── render settings ──
         windows = lightning_windows(job_id, lightning, duration_sec)
@@ -6596,8 +6705,8 @@ def worker_run(job_file):
                     state["render"].setdefault("pushedFrames", []).append(f)
             cam.data.lens = lens
             cam.location = mathutils.Vector(pos)
-            if hero_key is not None and head_target is not None:
-                aim_hero_key(hero_key, cam.location, head_target, subject_ctx)
+            if hero_key is not None and face_target is not None:
+                aim_hero_key(hero_key, cam.location, face_target, subject_ctx, fill_ob=face_fill)
             direction = mathutils.Vector(target) - cam.location
             cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
             if choreo_prog:
@@ -6610,8 +6719,10 @@ def worker_run(job_file):
             if cam_choreo:
                 # v13.0 the drama rides the aimed lens (after the punch:
                 # the choreo is the shot's own breath, the punch the
-                # strike's kick - both bounded, both deterministic)
-                camera_choreo_pass.apply_choreo(cam, cam_choreo, t, t_sec, direction)
+                # strike's kick - both bounded, both deterministic).
+                # The frame's own reach rides along so the dolly scales
+                # with the lens (the 113 closeup crop law)
+                camera_choreo_pass.apply_choreo(cam, cam_choreo, t, t_sec, direction, dist=direction.length)
             if figure:
                 apply_pose(figure, pose_s, pose_e, pose_t, t_sec,
                            speech=speech_open_at(speech_visemes, t_sec * 1000.0) if speech_visemes else None,

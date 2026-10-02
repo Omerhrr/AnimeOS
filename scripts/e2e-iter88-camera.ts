@@ -208,7 +208,7 @@ async function run() {
   check("A5 the worker carries the TS-matching hash and the ledger line",
     workerSrc.includes("def camera_choreo_hash(c):") && workerSrc.includes('"88|{:.3f}|{:.3f}|{:.3f}|{:.3f}|{:.3f}|v1"') && workerSrc.includes("def camera_choreo_line(c):"));
   check("A6 the worker layers the choreo onto the aimed lens and names the evidence",
-    workerSrc.includes("camera_choreo_pass.apply_choreo(cam, cam_choreo, t, t_sec, direction)")
+    workerSrc.includes("camera_choreo_pass.apply_choreo(cam, cam_choreo, t, t_sec, direction, dist=direction.length)")
     && workerSrc.includes('state["render"]["camera"] = {') && workerSrc.includes('"steady house camera"'));
 
   const passSrc = readFileSync("bridges/blender/camera_choreo.py", "utf8");

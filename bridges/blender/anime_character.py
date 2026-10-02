@@ -43,7 +43,7 @@
 
 import math
 
-ANIME_LAW_VERSION = 109
+ANIME_LAW_VERSION = 113
 EYE_OPEN_FLOOR = 0.45   # a painted eye never squashes below this (a blink still reads)
 
 # ── the design spec ──────────────────────────────────────────
@@ -323,13 +323,16 @@ def paint_eye(spec, size=256):
     almond = np.minimum(top - v, v - bot)
     almond = np.where(np.abs(u) < 0.95, almond, -1.0)
     over(soft(-almond, 0.03), (0.97, 0.96, 0.95))
-    # iris: tall ellipse, clipped by the almond
+    # iris: tall ellipse, clipped by the almond. THE IRIS IS DARK (the
+    # 113 paint law): the old gradient ran bright at the bottom and the
+    # eye read as a pale ring at production distance - the anime iris
+    # is a dark mass with a small bright glint at the bottom.
     ir = np.sqrt((u / 0.5) ** 2 + ((v + 0.02) / 0.74) ** 2)
     iris_col = np.array(_hex_srgb(spec["eyes"]["color"]), np.float32)
-    dark = iris_col * 0.28
-    light = np.clip(iris_col * 1.45 + 0.06, 0, 1)
-    g = np.clip((v + 0.6) / 1.2, 0, 1)[..., None]                 # 0 bottom .. 1 top
-    grad = light * (1 - g) + dark * g
+    dark = iris_col * 0.18
+    light = np.clip(iris_col * 0.9 + 0.10, 0, 1)
+    g = np.clip((v + 0.7) / 0.9, 0, 1)[..., None]                 # 0 above .. 1 at the bottom third
+    grad = dark * (1 - g) + light * g
     iris_mask = soft(ir - 1.0, 0.04) * soft(-almond, 0.03)
     m = iris_mask[..., None]
     rgba[..., :3] = rgba[..., :3] * (1 - m) + grad * m
@@ -342,8 +345,9 @@ def paint_eye(spec, size=256):
     # catch-lights
     for cx, cy, r in ((-0.17, 0.3, 0.15), (0.16, -0.3, 0.07)):
         over(soft(np.sqrt((u - cx) ** 2 + (v - cy) ** 2) - r, 0.03) * soft(-almond, 0.03), (1.0, 1.0, 1.0))
-    # upper lash line (thick, flicks up/out at the outer corner)
-    lash_w = 0.075 * spec["eyes"]["lashes"]
+    # upper lash line (thick, flicks up/out at the outer corner) - the
+    # 113 paint law thickens it: the lash is the eye's ink at distance
+    lash_w = 0.11 * spec["eyes"]["lashes"]
     lash = np.abs(v - top) - lash_w * (1.0 + 0.6 * np.clip(u, 0, 1))
     lash = np.where((u > -0.98) & (u < 0.98), lash, 1.0)
     over(soft(lash, 0.03), (0.10, 0.07, 0.08))
@@ -611,22 +615,33 @@ def build_body_graph(spec):
         for a, b2 in zip(ids, ids[1:]):
             E.append((a, b2))
 
+    # THE MANNEQUIN BREAKS (iteration 113): the torso is not a column -
+    # a body reads through its rhythm: the chest rides forward of the
+    # waist, the waist sits back, the neck settles forward of the
+    # ribcage. The v3.x JOINT ANCHORS are untouched (apply_pose, the leg
+    # IK and the framing math depend on them) - only the skin graph's
+    # profile moves.
     pelvis = v((0, 0, 1.0), 0.125 * w * hp, 0.095 * w)
-    waist = v((0, 0, 1.18), (0.085 if female else 0.1) * w, 0.07 * w)
-    chest = v((0, -0.004, 1.36), 0.105 * w * (sw * 0.9), (0.075 + 0.02 * bust) * w)
-    upper = v((0, 0, 1.53), 0.11 * w * sw, 0.07 * w)
-    neck0 = v((0, 0.004, 1.64), 0.042, 0.04)
-    neck1 = v((0, 0.008, 1.77), 0.036, 0.034)
+    waist = v((0, 0.008, 1.18), (0.085 if female else 0.1) * w, 0.07 * w)
+    chest = v((0, -0.008, 1.36), 0.105 * w * (sw * 0.9), (0.075 + 0.02 * bust) * w)
+    upper = v((0, -0.002, 1.53), 0.11 * w * sw, 0.07 * w)
+    neck0 = v((0, 0.006, 1.64), 0.042, 0.04)
+    neck1 = v((0, 0.012, 1.77), 0.036, 0.034)
     chain([pelvis, waist, chest, upper, neck0, neck1])
     hands = {}
     for side in (1.0, -1.0):
         sx = side * 0.24 * sw
         clav = v((side * 0.13 * sw, 0.0, 1.6), 0.05)
+        # the arm is not a cone: deltoid fullness under the shoulder,
+        # a forearm that tapers after the elbow (the sleeve rides this
+        # profile on the fitted outfits; the bell sleeve covers it)
         sh = v((sx, 0.0, 1.62), 0.046 * w)
+        delt = v((sx, 0.0, 1.50), 0.043 * w)
         el = v((sx, 0.0, 1.37), 0.034 * w)
+        fore = v((sx, 0.0, 1.24), 0.030 * w)
         wr = v((sx, 0.0, 1.12), 0.024)
         palm = v((sx, 0.0, 1.075), 0.03, 0.012)
-        chain([upper, clav, sh, el, wr, palm])
+        chain([upper, clav, sh, delt, el, fore, wr, palm])
         hands[side] = palm
         # fingers (hand-local x offsets mirror the v3.x hand)
         thumb_side = 1.0 if side < 0 else -1.0   # R hand thumb_side +1 in v3.x
@@ -638,11 +653,18 @@ def build_body_graph(spec):
         t0 = v((sx + thumb_side * 0.024, -0.006, 1.085), 0.007)
         t1 = v((sx + thumb_side * 0.032, -0.014, 1.06), 0.006)
         chain([palm, t0, t1])
+        # the leg is the mannequin's loudest tell: a straight cone from
+        # hip to ankle reads as a doll. The law: the thigh carries its
+        # fullness high and tapers INTO the knee, the knee reads as a
+        # joint (a dip, not a tube end), the calf swells below it and
+        # drops hard to a thin ankle.
         hip = v((side * 0.1 * hp, 0.0, 0.98), 0.078 * w * hp)
-        knee = v((side * 0.1 * hp, 0.0, 0.54), 0.05 * w)
+        thigh = v((side * 0.1 * hp, 0.0, 0.72), 0.058 * w)
+        knee = v((side * 0.1 * hp, 0.0, 0.54), 0.048 * w)
+        calf = v((side * 0.1 * hp, -0.006, 0.36), 0.05 * w)
         ankle = v((side * 0.1 * hp, 0.0, 0.1), 0.035)
         toe = v((side * 0.1 * hp, -0.11, 0.035), 0.032, 0.028)
-        chain([pelvis, hip, knee, ankle, toe])
+        chain([pelvis, hip, thigh, knee, calf, ankle, toe])
     return V, E, R
 
 
@@ -842,15 +864,19 @@ def make_sync(bpy, rig, empties_by_key, root):
 
 # ── hair (lofted clumps) ─────────────────────────────────────
 
-def _scalp(theta, phi, off=0.012):
-    """A point on (just above) the cranium, head-empty-local."""
+def _scalp(theta, phi, off=0.012, hs=1.0):
+    """A point on (just above) the cranium, head-empty-local. THE HAIR
+    RIDES THE SKULL (iteration 113): the radii scale with headScale -
+    a 0.9 skull under fixed 1.0-radii hair left the cap and the bang
+    roots floating 10% off the scalp."""
     st, ct = math.sin(theta), math.cos(theta)
-    return (st * math.cos(phi) * (0.117 + off), st * math.sin(phi) * (0.127 + off), ct * (0.133 + off) + 0.14)
+    return (st * math.cos(phi) * (0.117 + off) * hs, st * math.sin(phi) * (0.127 + off) * hs, ct * (0.133 + off) * hs + 0.14)
 
 
 def build_hair(bpy, scn, spec, head_empty, hair_mat):
     h = spec["hair"]
     style, length, vol = h["style"], h["length"], h["volume"]
+    hs = spec["body"]["headScale"]
     made = []
 
     def clump(name, pts, width, thick, up=(0.0, 0.0, 1.0), samples=14, tip=0.12, curl=0.0):
@@ -873,14 +899,20 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
     # the cap: a shell over the cranium so no scalp shows between clumps
     cv, cf = [], []
     rings, segs = 12, 36
-    hairline = 0.62 if style != "short" else 0.66      # theta (radians) where the front hairline sits
+    # THE HAIRLINE SITS ABOVE THE BROWS (iteration 113): the rescore
+    # read a high bald band across the forehead where the bang strands
+    # parted. The cap's front edge drops to just above the brow line so
+    # the gaps between bangs read as the sawtooth of a hairline, not
+    # scalp; the back of the cap drops to the nape (long styles) where
+    # the back mass continues it.
+    hairline = 1.02 if style != "short" else 0.95      # theta (radians) where the front hairline sits
     for r in range(rings + 1):
         for s in range(segs):
             ph = s / segs * math.tau
             front = _clamp(-math.sin(ph), 0, 1)
             th_max = hairline + (1.0 - front) * (1.25 if style != "short" else 0.95)
             th = r / rings * th_max
-            cv.append(_scalp(th, ph, 0.006))
+            cv.append(_scalp(th, ph, 0.006, hs))
     for r in range(rings):
         for s in range(segs):
             a = r * segs + s
@@ -898,16 +930,23 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
         if h["bangs"] == "parted" and abs(u) < 0.2:
             continue
         ph = -math.pi / 2 + u * 0.95
-        root = _scalp(0.25, ph, 0.012)
-        mid = _scalp(0.72, ph + u * 0.05, 0.022)
+        root = _scalp(0.25, ph, 0.012, hs)
+        mid = _scalp(0.72, ph + u * 0.05, 0.022, hs)
         sweep = 0.012 * u
-        tipp = (mid[0] + sweep, mid[1] - 0.01, 0.168 - 0.012 * abs(u) + (0.02 if h["bangs"] == "parted" else 0.0))
-        clump(f"Bang{i}", [root, mid, tipp], 0.04, 0.011, up=(0.0, -1.0, 0.25), curl=0.3 * u)
+        # the tips ride the skull's scale too (the brow line on a 0.9
+        # skull sits at 0.9 x the constant)
+        tipp = (mid[0] + sweep, mid[1] - 0.01, (0.168 - 0.012 * abs(u) + (0.02 if h["bangs"] == "parted" else 0.0)) * hs)
+        # THE BANGS ARE STRANDS (iteration 113): 0.04-wide clumps at
+        # volume 1.3 read as a curtain of tubes buried over the eyes at
+        # closeup distance (the night's S003 closeup: a fat lobe across
+        # every eye). The anime bang is a thin sawtooth strand with AIR
+        # between the strands - half the width, a thinner lens section.
+        clump(f"Bang{i}", [root, mid, tipp], 0.019, 0.006, up=(0.0, -1.0, 0.25), curl=0.3 * u)
 
     # side locks framing the face
     for side, nm in ((1.0, "L"), (-1.0, "R")):
         ph = -math.pi / 2 + side * 1.15
-        root = _scalp(0.5, ph, 0.014)
+        root = _scalp(0.5, ph, 0.014, hs)
         drop = 0.07 + 0.22 * min(1.0, length)
         mid = (side * 0.122, -0.06, 0.08)
         tipp = (side * 0.115, -0.055, 0.08 - drop)
@@ -919,8 +958,8 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
         for i in range(n):
             u = (i / (n - 1)) * 2 - 1
             ph = math.pi / 2 + u * 1.25                      # behind
-            root = _scalp(0.35, ph, 0.012)
-            crown_back = _scalp(1.25, ph, 0.03)
+            root = _scalp(0.35, ph, 0.012, hs)
+            crown_back = _scalp(1.25, ph, 0.03, hs)
             if style == "short":
                 end = (crown_back[0] * 1.05, crown_back[1] * 1.05 + 0.01, 0.03)
                 clump(f"BackClump{i}", [root, crown_back, end], 0.034, 0.01, up=(0, 1, 0))
@@ -932,7 +971,7 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
                 clump(nm, [root, crown_back, midp, end], 0.036, 0.011, up=(0, 1, 0), curl=0.15 * u)
             else:   # ponytail / braid: swept up to the tie point
                 tie = (0.0, 0.11, 0.21)
-                clump(f"BackSweep{i}", [_scalp(0.9, ph, 0.012), _scalp(0.55, ph, 0.02), tie], 0.03, 0.009, up=(0, 1, 0))
+                clump(f"BackSweep{i}", [_scalp(0.9, ph, 0.012, hs), _scalp(0.55, ph, 0.02, hs), tie], 0.03, 0.009, up=(0, 1, 0))
         if style in ("ponytail", "braid"):
             tie = (0.0, 0.11, 0.21)
             drop = 0.2 + 0.6 * length
@@ -952,7 +991,7 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
         for i in range(10):
             u = (i / 9) * 2 - 1
             ph = math.pi / 2 + u * 1.4
-            clump(f"BackSweep{i}", [_scalp(1.3, ph, 0.012), _scalp(0.8, ph, 0.02), (0.0, 0.03, 0.29)],
+            clump(f"BackSweep{i}", [_scalp(1.3, ph, 0.012, hs), _scalp(0.8, ph, 0.02, hs), (0.0, 0.03, 0.29)],
                   0.034, 0.009, up=(0, 1, 0))
         bv, bf = [], []
         R_, segs_b = 0.045, 16
@@ -1204,15 +1243,21 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
         joints[P] = {"sh": sh, "el": el, "hand": hand, "hip": hip, "knee": knee, "fingers": fingers, "thumb": tp}
 
     # face pivots (positions on the NEW head - eyes at the anime line)
+    # THE FACE RIDES THE SKULL (iteration 113): the spec's headScale
+    # shrinks the skull, so every feature constant scales with it - at
+    # fixed constants a 0.9 skull left the brows and eyes floating off
+    # the surface, and the shrinkwrap wrapped them onto the forehead
+    # (the night's closeup read: giant bars over giant rings).
+    hs = spec["body"]["headScale"]
     es = spec["eyes"]["size"]
-    eye_z = 0.128
-    face_y = -0.108
-    eyeL = empty("EyeL", head, (0.05, face_y, eye_z))
-    eyeR = empty("EyeR", head, (-0.05, face_y, eye_z))
-    browL = empty("BrowL", head, (0.05, face_y, eye_z + 0.04 * es))
-    browR = empty("BrowR", head, (-0.05, face_y, eye_z + 0.04 * es))
-    mouth = empty("Mouth", head, (0.0, face_y, 0.062))
-    nose = empty("Nose", head, (0.0, face_y, 0.09))
+    eye_z = 0.128 * hs
+    face_y = -0.108 * hs
+    eyeL = empty("EyeL", head, (0.05 * hs, face_y, eye_z))
+    eyeR = empty("EyeR", head, (-0.05 * hs, face_y, eye_z))
+    browL = empty("BrowL", head, (0.05 * hs, face_y, eye_z + 0.05 * es * hs))
+    browR = empty("BrowR", head, (-0.05 * hs, face_y, eye_z + 0.05 * es * hs))
+    mouth = empty("Mouth", head, (0.0, face_y, 0.062 * hs))
+    nose = empty("Nose", head, (0.0, face_y, 0.09 * hs))
 
     bpy.context.view_layer.update()
     for k, rec in empties.items():
@@ -1246,7 +1291,7 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
     mouth_m = decal_material(bpy, "MouthDecal", mouth_img)
     nose_m = decal_material(bpy, "NoseDecal", nose_img)
     tilt = math.radians(8.0 * spec["eyes"]["tilt"])
-    ew, eh = 0.058 * es, 0.06 * es
+    ew, eh = 0.070 * es, 0.072 * es
     # the rig's eye pivots (eyeL/eyeR) are DRIVERS: apply_pose writes
     # the blink/squint there and sync_rig remaps it onto the decal
     # pivots - a painted anime eye squints, it never collapses to the

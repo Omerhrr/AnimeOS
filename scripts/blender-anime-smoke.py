@@ -8,7 +8,7 @@
 #      evaluated right-hand vertices with the RShoulder/RElbow empties
 #   3. THE SPEC DRIVES THE DESIGN: two specs (topknot hanfu vs short
 #      tunic) build different hair/garment sets
-#   4. THE WORKER: a TOON job builds figureSource anime:v109 and renders
+#   4. THE WORKER: a TOON job builds figureSource anime:v113 and renders
 #   5. THE TURNAROUND CLI: five views + the stitched sheet + a .blend
 # Runs under BLENDER=/path/to/blender or a Python with the bpy module.
 import json, os, subprocess, sys, tempfile
@@ -71,6 +71,33 @@ ok("hair clumps + bun", "HairBun" in names and sum(1 for n in names if n.startsw
 ok("garments", "RobeBody" in names and "AnimeSleeveL" in names and "CollarR" in names)
 body = scn.objects["AnimeBody"]
 ok("covered skin removed (no torso faces under the robe)", not any(abs(p.center.x) < 0.15 and 1.3 < p.center.z < 1.6 for p in body.data.polygons))
+# THE MANNEQUIN BREAKS (iteration 113): the body GRAPH carries the
+# leg/arm profiles - the calf, the thigh fullness, the deltoid, the
+# forearm - so the silhouette reads limbs, not tubes (the baked mesh
+# sheds the covered faces; the graph is the law's surface of record)
+_spec = fig["anime"]["spec"]
+_V, _E, _R = ac.build_body_graph(_spec)
+def _band(lo, hi):
+    return [(v, r) for v, r in zip(_V, _R) if lo < v[2] < hi and abs(v[0]) > 0.02]
+_calf = _band(0.30, 0.42)
+ok("the leg carries a calf vertex at the calf band", len(_calf) >= 2 and max(r[0] for _v2, r in _calf) >= 0.045, _calf[:4])
+_thigh = _band(0.66, 0.78)
+ok("the leg carries thigh fullness above the knee", len(_thigh) >= 2 and max(r[0] for _v2, r in _thigh) > 0.05, _thigh[:4])
+_delt = _band(1.44, 1.56)
+ok("the arm carries a deltoid vertex", len(_delt) >= 2, _delt[:4])
+_fore = _band(1.18, 1.30)
+ok("the arm carries a forearm vertex", len(_fore) >= 2, _fore[:4])
+_eyes = [o for o in scn.objects if o.name in ("EyeLMesh", "EyeRMesh")]
+# dimensions are world-scaled (Root rides 0.45): the 113 law's 0.070
+# local reads ~0.0315 world; the old 0.058 read ~0.0261
+ok("the painted eye grew to the anime width", all(o.dimensions.x >= 0.029 for o in _eyes), [round(o.dimensions.x, 4) for o in _eyes])
+_cap = scn.objects.get("HairCap")
+if _cap:
+    # the front hairline EDGE sits just above the brow line (the 113
+    # law: hairline theta 1.02 -> edge z ~0.213 in head space; the old
+    # 0.62 law left the edge at ~0.252 - a bald band)
+    _front = [v.co.z for v in _cap.data.vertices if v.co.y < -0.06]
+    ok("the cap hairline edge sits above the brows", _front and min(_front) <= 0.225, round(min(_front), 4) if _front else None)
 # 2. the rig follows
 def rhand_pos():
     dg = bpy.context.evaluated_depsgraph_get()
@@ -115,7 +142,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
     fh.write(runner)
 subprocess.run(cmd(fh.name, os.path.join(BR_DIR, "animeos_bridge.py"), job), capture_output=True, text=True, timeout=1200)
 st = json.load(open(job))
-expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v109"), (st.get("figureSource"), st.get("animeRefused")))
+expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v113"), (st.get("figureSource"), st.get("animeRefused")))
 expect("worker clip rendered", bool(st.get("mp4Path")) and os.path.exists(st.get("mp4Path") or ""), st.get("error"))
 
 # 5. the turnaround CLI

@@ -50,12 +50,18 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
-def apply_choreo(cam, prof, t, t_sec, direction):
+def apply_choreo(cam, prof, t, t_sec, direction, dist=None):
     """Layer the drama onto the aimed lens for this frame: the dolly
     travels the view axis with the progress, the dutch + the whip roll
     the camera around its own view axis, the handheld breath moves the
     frame on deterministic frequencies. `direction` is the aim vector
-    (target - location) the grammar/movement just computed."""
+    (target - location) the grammar/movement just computed. `dist` is
+    the framing's solved distance when known: THE DOLLY SCALES WITH
+    THE LENS (iteration 113) - the absolute 0.35-unit travel that reads
+    as a lean on a 3m medium reads as a face-plant on a 0.5m closeup
+    (the night's closeup ended 0.16m from the eyes, the paint cropped
+    past reading). At close range the travel eases toward a fraction
+    of the distance so the drift never crops the subject."""
     if not prof:
         return
     push_in = clamp(float(prof.get("pushIn") or 0.0), 0.0, 1.0)
@@ -67,8 +73,11 @@ def apply_choreo(cam, prof, t, t_sec, direction):
         return
     dir_n = direction.normalized()
 
-    # the dolly: the lens leans in or lets go across the shot
-    travel = DOLLY_UNITS * (push_in - pull_out) * float(t)
+    # the dolly: the lens leans in or lets go across the shot. The
+    # travel eases with the framing distance (a % of the lens's reach,
+    # floored so wide framings keep the authored absolute lean)
+    dist_scale = 1.0 if not dist else clamp(dist / 1.2, 0.25, 1.0)
+    travel = DOLLY_UNITS * dist_scale * (push_in - pull_out) * float(t)
     if abs(travel) > 1e-9:
         cam.location = cam.location + dir_n * travel
 

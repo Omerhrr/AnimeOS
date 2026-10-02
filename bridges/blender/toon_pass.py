@@ -376,7 +376,49 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None):
         nt.links.new(cool.outputs[2], em.inputs["Color"])
     add = nt.nodes.new("ShaderNodeAddShader")
     nt.links.new(toon.outputs[0], add.inputs[0])
-    nt.links.new(em.outputs[0], add.inputs[1])
+    # THE BANDS ARE FLAT COLOR (iteration 113): the night's closeup
+    # read the face as a blown white egg - the Toon BSDF's lit band
+    # scales with the irradiance (key + fill + moon + fills stack at
+    # close range), and lit(>1) [+ the floor] clips the palest dye past
+    # white with no paint visible. THE CEL LAW, STATED AND NOW KEPT:
+    # the lights pick the BAND, never the VALUE - both bands are flat
+    # emissions (the lit band = the dye itself, the shadow band = the
+    # cooled floor), and the toon node survives only as the band
+    # MEASURER: its output's max channel crosses the hard cel edge.
+    # The toon's own output rides the irradiance, so the band measure
+    # normalizes against the dye's brightness.
+    sep = nt.nodes.new("ShaderNodeSeparateColor")
+    nt.links.new(toon.outputs[0], sep.inputs[0])
+    band_a = nt.nodes.new("ShaderNodeMath")
+    band_a.operation = "MAXIMUM"
+    nt.links.new(sep.outputs["Red"], band_a.inputs[0])
+    nt.links.new(sep.outputs["Green"], band_a.inputs[1])
+    band_b = nt.nodes.new("ShaderNodeMath")
+    band_b.operation = "MAXIMUM"
+    nt.links.new(band_a.outputs[0], band_b.inputs[0])
+    nt.links.new(sep.outputs["Blue"], band_b.inputs[1])
+    # normalize by the dye's brightest channel so every dye crosses the
+    # mix at its own edge (a black hair band and a white robe band both
+    # read as full bands)
+    dye_bright = max(max(rgb), 0.001)
+    band_n = nt.nodes.new("ShaderNodeMath")
+    band_n.operation = "MULTIPLY"
+    band_n.inputs[1].default_value = round(1.0 / min(dye_bright, 1.0), 4)
+    nt.links.new(band_b.outputs[0], band_n.inputs[0])
+    band_c = nt.nodes.new("ShaderNodeMath")
+    band_c.operation = "MINIMUM"
+    band_c.inputs[1].default_value = 1.0
+    nt.links.new(band_n.outputs[0], band_c.inputs[0])
+    em_lit = nt.nodes.new("ShaderNodeEmission")
+    em_lit.inputs["Strength"].default_value = 1.0
+    if color_in is not None:
+        nt.links.new(color_in, em_lit.inputs["Color"])
+    else:
+        em_lit.inputs["Color"].default_value = (*rgb, 1.0)
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(band_c.outputs[0], mix.inputs[0])
+    nt.links.new(em.outputs[0], mix.inputs[1])
+    nt.links.new(em_lit.outputs[0], mix.inputs[2])
     if kind == "hair":
         # the anime hair sheen: a tight glossy toon band rides on top
         gl = nt.nodes.new("ShaderNodeBsdfToon")
@@ -385,10 +427,12 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None):
         gl.inputs["Size"].default_value = 0.07
         gl.inputs["Smooth"].default_value = 0.02
         add2 = nt.nodes.new("ShaderNodeAddShader")
-        nt.links.new(add.outputs[0], add2.inputs[0])
+        nt.links.new(mix.outputs[0], add2.inputs[0])
         nt.links.new(gl.outputs[0], add2.inputs[1])
-        add = add2
-    nt.links.new(add.outputs[0], out.inputs["Surface"])
+        nt.links.new(add2.outputs[0], out.inputs["Surface"])
+        return {"look": "TOON", "bands": "flat+sheen", "floor": round(floor, 3)}
+    nt.links.new(mix.outputs[0], out.inputs["Surface"])
+    return {"look": "TOON", "bands": "flat", "floor": round(floor, 3)}
 
 
 def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
@@ -487,6 +531,12 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
         for ob in list(scn.objects):
             if ob.type != "MESH" or ob.name.startswith("InkShell_"):
                 continue
+            # ink follows what renders: a hide_render mesh (the head's
+            # normal proxy - an ellipsoid deliberately LARGER than the
+            # head) must not grow a shell - its closed hull veils the
+            # face in ink (the 113 night's black-face read)
+            if ob.hide_render:
+                continue
             if ob.name in no_ink_names or ob.name.startswith(("Ground", "Icosphere", "PhysDebris", "PhysSway")):
                 continue
             if any(m.type == "CLOTH" for m in ob.modifiers):
@@ -497,8 +547,16 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
                     v.co += v.normal * INK_OFFSET
                 shell = bpy.data.objects.new(f"InkShell_{ob.name}", shell_me)
                 scn.collection.objects.link(shell)
-                shell.matrix_world = ob.matrix_world.copy()
+                # PARENT FIRST, WORLD SECOND (iteration 113): assigning
+                # matrix_world BEFORE the parent made Blender compose
+                # world = parent_world @ basis(=parent_world) - the parent
+                # transform SQUARED - and every inked mesh that hangs
+                # under an empty chain (the head, the cap, the bangs)
+                # floated a knot of ink a third of a meter above the
+                # figure. Parented first, the world assignment resolves
+                # the basis to identity and the shell lands on its mesh.
                 shell.parent = ob
+                shell.matrix_world = ob.matrix_world.copy()
                 shell.visible_shadow = False
                 shell.display_type = "WIRE"
                 shell_me.materials.clear()

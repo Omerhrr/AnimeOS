@@ -90,8 +90,31 @@ def main():
     kd.color = br.hex_to_rgb(br.HERO_KEY_DAY)
     key = bpy.data.objects.new("HeroKey", kd)
     scn.collection.objects.link(key)
+    # THE FACE KEEPS ITS LIGHT (iteration 113): the sheet's views are
+    # judged against the sheet's face - the key anchors on the face
+    # plane point (a FaceTarget empty riding the head's front) and a
+    # shadowless frontal fill lifts the face's cel band in every view.
+    face_target = bpy.data.objects.new("FaceTarget", None)
+    scn.collection.objects.link(face_target)
+    face_target.parent = fig["head"]
+    face_target.location = (0.0, -0.10, 0.13)
+    face_target.empty_display_size = 0.02
+    fd = bpy.data.lights.new("FaceFill", "AREA")
+    fd.size = br.FACE_FILL_SIZE
+    fd.energy = 110.0 * br.FACE_FILL_SHARE
+    fd.color = br.hex_to_rgb(br.HERO_KEY_DAY)
+    try:
+        fd.cycles.cast_shadow = False
+    except Exception:  # noqa: BLE001
+        pass
+    fill = bpy.data.objects.new("FaceFill", fd)
+    scn.collection.objects.link(fill)
+    ftc = fill.constraints.new("TRACK_TO")
+    ftc.target = face_target
+    ftc.track_axis = "TRACK_NEGATIVE_Z"
+    ftc.up_axis = "UP_Y"
     tc = key.constraints.new("TRACK_TO")
-    tc.target = fig["head"]
+    tc.target = face_target
     tc.track_axis = "TRACK_NEGATIVE_Z"
     tc.up_axis = "UP_Y"
     bpy.ops.mesh.primitive_plane_add(size=8)
@@ -119,7 +142,7 @@ def main():
         cd.lens = lens
         d = mathutils.Vector(tgt) - mathutils.Vector(loc)
         cam.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
-        br.aim_hero_key(key, cam.location, fig["head"], {"headH": 0.13})
+        br.aim_hero_key(key, cam.location, face_target, {"headH": 0.13}, fill_ob=fill)
         p = os.path.join(a.out, f"turn_{vw}.png")
         scn.render.filepath = p
         bpy.ops.render.render(write_still=True)
