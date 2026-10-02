@@ -3,7 +3,8 @@ import path from "path";
 import sharp from "sharp";
 import { db } from "@/lib/db";
 import ZAI from "z-ai-web-dev-sdk";
-import { extractRenderPoster } from "@/lib/identity";
+import { extractRenderPoster, buildFilmstripAt, cueSampleTimestamps } from "@/lib/identity";
+import { probeMedia } from "@/lib/bridge/motion";
 
 // ─────────────────────────────────────────────────────────────
 // THE RENDER IS JUDGED (iteration 59 - the learned assist layer)
@@ -92,12 +93,61 @@ export interface RenderVerdict {
   issues: RenderReviewIssue[];
   note: string;
   provider: "vision+local" | "vision" | "local";
+  filmstrip: ReviewFilmstrip | null; // THE INSPECTION SEES THE PERFORMANCE (119)
 }
 
 export interface DirectedIntent {
   grammar: string;
   fx: string[];
   physics: string[];
+}
+
+/** The filmstrip evidence the review carries (iteration 119): what
+ * the inspector actually saw - frames at the DIRECTED cue times, not
+ * one arbitrary poster moment. */
+export interface ReviewFilmstrip {
+  frames: number;
+  cueTimes: number[];
+  source: "directed cues" | "pose samples";
+}
+
+/**
+ * THE CUES ARE THE DIRECTION (iteration 119): the normalized 0..1
+ * moments the shot itself promises - the choreography's key moments
+ * (the wind-up, the strike, the hold, the follow) and its impact
+ * beat, plus the grammar beats' starts. The inspector samples the
+ * clip AT these moments: a keyed performance is judged at the beats
+ * it performs, not at three evenly spaced guesses.
+ */
+export function directedCuesOf(shot: { choreo: string | null; grammar: string | null }): number[] {
+  const cues: number[] = [];
+  try {
+    const c = JSON.parse(shot.choreo || "null") as { keys?: Array<{ at?: number }>; impact?: { at?: number } } | null;
+    if (c && Array.isArray(c.keys)) {
+      for (const k of c.keys) {
+        const at = Number(k?.at);
+        if (Number.isFinite(at) && at > 0 && at < 1) cues.push(at);
+      }
+    }
+    if (c?.impact) {
+      const at = Number(c.impact.at);
+      if (Number.isFinite(at) && at > 0 && at < 1) cues.push(at);
+    }
+  } catch {
+    /* a corrupt choreo column contributes no cues */
+  }
+  try {
+    const g = JSON.parse(shot.grammar || "null") as Array<{ from?: number }> | null;
+    if (Array.isArray(g)) {
+      for (const b of g) {
+        const at = Number(b?.from);
+        if (Number.isFinite(at) && at > 0 && at < 1) cues.push(at);
+      }
+    }
+  } catch {
+    /* a corrupt grammar column contributes no cues */
+  }
+  return cues;
 }
 
 /** Trapezoid score: 1 inside the ideal window, falling linearly to 0 at the zero points. */
@@ -247,6 +297,7 @@ async function visionFrameReview(
     shot: string;
     spec: string;
     intent: DirectedIntent | null;
+    strip: ReviewFilmstrip | null;
   },
 ): Promise<{ ok: boolean; criteria?: Partial<Record<RenderCriterion, number>>; issues?: RenderReviewIssue[]; note?: string; error?: string }> {
   const intentLines: string[] = [];
@@ -254,6 +305,14 @@ async function visionFrameReview(
     if (ctx.intent.grammar) intentLines.push(`DIRECTED GRAMMAR: ${ctx.intent.grammar} (the camera performs these beats across the clip; this frame is one moment of it)`);
     if (ctx.intent.fx.length > 0) intentLines.push(`DIRECTED FX: ${ctx.intent.fx.join(", ")}`);
     if (ctx.intent.physics.length > 0) intentLines.push(`DIRECTED PHYSICS: ${ctx.intent.physics.join(", ")}`);
+  }
+  const stripLines: string[] = [];
+  if (ctx.strip) {
+    stripLines.push(
+      `THE IMAGE IS A FILMSTRIP of ${ctx.strip.frames} frames pulled AT THE DIRECTED CUE TIMES (${ctx.strip.source}), left to right in time order at ${ctx.strip.cueTimes.map((t) => `${Math.round(t * 100)}%`).join(" / ")} of the clip:`,
+      "- judge the PERFORMANCE across the frames (does the action the direction promised actually happen between them: the wind-up, the strike, the landing, the reaction),",
+      "- then judge each frame as dailies (readability, framing, light). A beat the direction promises that NO frame shows is an INTENT issue; name which frame (by position) each issue comes from.",
+    );
   }
   try {
     const zai = await ZAI.create();
@@ -265,12 +324,13 @@ async function visionFrameReview(
             {
               type: "text",
               text: [
-                `You are a senior cinematographer reviewing dailies at a 3D donghua/anime studio: ONE representative frame pulled from a finished Blender render of a directed shot (40% through the clip). Judge it like production dailies, not like a photo.`,
+                `You are a senior cinematographer reviewing dailies at a 3D donghua/anime studio: ${ctx.strip ? `a FILMSTRIP of ${ctx.strip.frames} frames pulled from a finished Blender render of a directed shot` : "ONE representative frame pulled from a finished Blender render of a directed shot (40% through the clip)"}. Judge it like production dailies, not like a photo.`,
                 `PRODUCTION: ${ctx.title} (${ctx.style})`,
                 ctx.scene,
                 ctx.shot,
                 `SPEC: ${ctx.spec}`,
                 ...(intentLines.length > 0 ? intentLines : ["(the shot carries no directed grammar, fx or physics - judge it as directed)"]),
+                ...(stripLines.length > 0 ? stripLines : []),
                 "Score each criterion 0..1:",
                 "- readability (the subject reads clearly against the stage: silhouette, separation, legibility of the action)",
                 "- palette (coherent, purposeful color in the show's register)",
@@ -279,7 +339,9 @@ async function visionFrameReview(
                 "Also list concrete, actionable issues with severity (CRITICAL | MAJOR | MINOR) and kind (EXPOSURE | CONTRAST | READABILITY | PALETTE | INTENT | COMPOSITION | STAGE). STAGE means the frame reads as an empty or near-empty stage when the direction promises presence.",
                 'Reply with STRICT JSON only, no markdown fences:',
                 '{"criteria":{"readability":0.0,"palette":0.0,"intent":0.0,"composition":0.0},"issues":[{"severity":"MINOR","kind":"COMPOSITION","note":"..."}],"note":"one sentence overall"}',
-                "One frame is a sample, not the whole clip: when the frame alone cannot judge something (motion, timing), say so in the note instead of guessing. This is a stylized procedural render - judge DESIGN quality (readability, framing, light logic), not photorealism.",
+                ctx.strip
+                  ? "Frames are samples, not the whole clip: when even the strip cannot judge something, say so in the note instead of guessing. This is a stylized procedural render - judge DESIGN quality (readability, framing, light logic), not photorealism."
+                  : "One frame is a sample, not the whole clip: when the frame alone cannot judge something (motion, timing), say so in the note instead of guessing. This is a stylized procedural render - judge DESIGN quality (readability, framing, light logic), not photorealism.",
               ].join("\n"),
             },
             { type: "image_url", image_url: { url: frameDataUrl } },
@@ -404,17 +466,45 @@ export async function reviewRenderJob(renderJobId: string, opts?: { useVision?: 
   // THE INTENT CONTEXT - what the shot was directed to do.
   const intent = shot ? directedIntentOf(shot) : null;
 
+  // THE INSPECTION SEES THE PERFORMANCE (iteration 119): the vision
+  // layer judges a FILMSTRIP pulled at the shot's DIRECTED cue times
+  // (the choreography's keys and impact, the grammar beats' starts) -
+  // a keyed performance is judged at the beats it performs, not at
+  // one arbitrary poster moment. Degrades honestly: no cues (or a
+  // failed strip) keeps the single poster, and the review names what
+  // it saw.
+  let strip: ReviewFilmstrip | null = null;
+  let visionImage = posterDataUrl;
+  if (shot) {
+    const cues = directedCuesOf(shot);
+    const probe = await probeMedia(clipAbs).catch(() => null);
+    const durSec = Math.max(0.5, Number(probe?.durationSec ?? shot.duration ?? 0));
+    const stamps = cueSampleTimestamps(durSec, cues);
+    if (stamps.length >= 2) {
+      const built = await buildFilmstripAt(clipAbs, job.id, stamps, "cues");
+      if (built) {
+        strip = {
+          frames: built.frames,
+          cueTimes: stamps.map((t) => Math.round((t / durSec) * 1000) / 1000),
+          source: cues.length >= 2 ? "directed cues" : "pose samples",
+        };
+        visionImage = built.dataUrl;
+      }
+    }
+  }
+
   // THE VISION PASS - the learned layer.
   const useVision = opts?.useVision !== false;
   let vision: Awaited<ReturnType<typeof visionFrameReview>> | null = null;
   if (useVision) {
-    vision = await visionFrameReview(posterDataUrl, {
+    vision = await visionFrameReview(visionImage, {
       title: job.shot?.scene?.episode?.season?.project?.title ?? "Production",
       style: job.shot?.scene?.episode?.season?.project?.visualStyle ?? "3D",
       scene: scene ? `SCENE ${scene.number} "${scene.title}" - ${scene.description ?? ""} (${scene.environment?.weather ?? ""}, ${scene.environment?.lighting ?? ""})` : "(scene unlinked)",
       shot: shot ? `SHOT ${String(shot.number).padStart(3, "0")} (attempt ${job.attempt}): ${shot.description}` : `(shot detached) ${job.mode} render`,
       spec: shot ? `type=${shot.shotType}, lens=${shot.lens ?? "default"}, movement=${shot.movement ?? "static"}, duration=${shot.duration}s, lighting=${shot.lighting ?? "default"}` : `mode=${job.mode}`,
       intent,
+      strip,
     });
   }
 
@@ -454,6 +544,7 @@ export async function reviewRenderJob(renderJobId: string, opts?: { useVision?: 
     issues,
     note,
     provider: provider === "none" ? "local" : provider,
+    filmstrip: strip,
   };
 
   // Persist: one review per job, issues recreated under it.
@@ -593,6 +684,8 @@ export function formatPixelEvidence(review: RenderReviewResult["review"]): strin
   const lines: string[] = [];
   lines.push(`PIXEL REVIEW (provider ${review.provider}, overall ${review.overall !== null ? pct(review.overall) : "unmeasured"}, state ${review.state}):`);
   if (crit) lines.push(`  criteria: ${crit}`);
+  if (v.filmstrip) lines.push(`  judged on a FILMSTRIP: ${v.filmstrip.frames} frames at the ${v.filmstrip.source} (${v.filmstrip.cueTimes.map((t) => `${Math.round(t * 100)}%`).join(" / ")} of the clip) - the performance across frames is in evidence`);
+  else lines.push("  judged on ONE poster frame (no directed cues were available for a strip)");
   if (v.metrics) lines.push(`  measured: lumaMean ${v.metrics.lumaMean}, lumaStd ${v.metrics.lumaStd}, satMean ${v.metrics.satMean}, near-black ${(v.metrics.darkFrac * 100).toFixed(1)}%, clipped-white ${(v.metrics.brightFrac * 100).toFixed(1)}%`);
   if (v.intent) {
     if (v.intent.grammar) lines.push(`  directed grammar: ${v.intent.grammar}`);

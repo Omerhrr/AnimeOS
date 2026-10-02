@@ -68,9 +68,10 @@ export const EXPERT_BENCHES: ExpertBench[] = [
     id: "choreographer",
     title: "THE ACTION CHOREOGRAPHER",
     craft: "Compiles a shot's directed action words into the performance its beats perform.",
-    skill: "Stages a fight like a wuxia stunt choreographer: the tell before the strike, the clash that lands ON its sound cue, the lock, the reaction the body owes the violence, the debris the world owes the impact - phrased as grammar beats (LUNGE->SLASH->STANCE), fx (BURST at the impact, TRAIL on the blade) and physics (DEBRIS, REACTION), timed to the shot's own audio cues.",
+    skill: "Stages a fight like a wuxia stunt choreographer: the tell before the strike, the clash that lands ON its sound cue, the lock, the reaction the body owes the violence, the debris the world owes the impact - phrased as grammar beats (LUNGE->SLASH->STANCE), fx (BURST at the impact, TRAIL on the blade) and physics (DEBRIS, REACTION), timed to the shot's own audio cues. THE DUEL IS ONE PERFORMANCE ON TWO BODIES (iteration 119): on a two-cast shot the hero program's strikes are ANSWERED - the hero's SLASH is Wei's BLOCK, the recoil the violence owes lands after the read, one clash one light - the answer table derives the partner's program (src/lib/animation/paired-performance.ts) and the bridge performs it under the stand-off.",
     owns: [
       "the action compiler (src/lib/crew/action-choreographer.ts, iteration 117)",
+      "the paired performance law - the answer table + compilePairedProgram (src/lib/animation/paired-performance.ts, iteration 119)",
     ],
     judge: "does the clip PERFORM its directed action - a clash reads as a clash (poses cut, the burst lands where the cut lands, debris scatters on its cue), never two statues standing apart",
     addons: ["pose_library", "io_anim_bvh"],

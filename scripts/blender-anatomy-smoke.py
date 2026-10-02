@@ -1,11 +1,12 @@
-# Smoke-test THE MANNEQUIN GAINS A BODY (iteration 118) in the REAL
-# Blender: the anatomy field sculpts the baked skin (thousands of
-# vertices moved, all 22 structures landing, a readable max
-# displacement), it is bit-exact across rebuilds (the seed law), it
-# is SMOOTH (form, not noise - the Laplacian does not blow up), the
-# spec's build and gender actually move the amplitudes, and a FULL
-# designed figure still builds, rigs and syncs over the sculpted
-# body. Run:  python3 scripts/blender-anatomy-smoke.py
+# Smoke-test THE MANNEQUIN GAINS A BODY (iterations 118-119) in the
+# REAL Blender: the anatomy field sculpts the baked skin (thousands of
+# vertices moved, all 24 structures landing, a readable max
+# displacement), THE SILHOUETTE LEADS (the outline moves: shoulders
+# widen, the waist carves in), it is bit-exact across rebuilds (the
+# seed law), it is SMOOTH (form, not noise - the Laplacian does not
+# blow up), the spec's build and gender actually move the amplitudes,
+# and a FULL designed figure still builds, rigs and syncs over the
+# sculpted body. Run:  python3 scripts/blender-anatomy-smoke.py
 import json, os, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -113,16 +114,27 @@ with tempfile.TemporaryDirectory(prefix="anime-anatomy-") as tmp:
 
 s1 = out["s1"]
 expect("the field sculpts thousands of vertices", s1.get("vertsMoved", 0) > 3000, s1.get("vertsMoved"))
-expect("all 22 structures land", s1.get("structures") == 22 and len(s1.get("fieldHits") or {}) == 22,
+expect("all 24 structures land", s1.get("structures") == 24 and len(s1.get("fieldHits") or {}) == 24,
        f"{s1.get('structures')} / {len(s1.get('fieldHits') or {})}")
-expect("the displacement is readable", s1.get("maxDisp", 0) > 0.005, s1.get("maxDisp"))
+expect("the displacement is readable at v2 gain", s1.get("maxDisp", 0) > 0.03, s1.get("maxDisp"))
 expect("the field is smooth (form, not noise)",
        abs(s1.get("laplacianAfter", 0) - s1.get("laplacianBefore", 0)) < 5e-5,
        f"{s1.get('laplacianBefore')} -> {s1.get('laplacianAfter')}")
+# THE SILHOUETTE LEADS (119): the outline moved and the waist carved
+sil = s1.get("silhouette") or {}
+expect("the silhouette read rides the evidence",
+       isinstance(sil, dict) and set(sil.keys()) >= {"shoulder", "chest", "waist", "hip", "calf"},
+       json.dumps(sil)[:200])
+expect("the shoulders widen in silhouette", (sil.get("shoulder") or {}).get("delta", 0) > 0.01,
+       json.dumps(sil.get("shoulder")))
+expect("the waist CARVES IN (the obliques pull)", (sil.get("waist") or {}).get("delta", 0) < -0.004,
+       json.dumps(sil.get("waist")))
+expect("the silhouette deltas name the stature fraction",
+       all("pctOfStature" in row for row in sil.values() if isinstance(row, dict)), json.dumps(sil)[:160])
 expect("bit-exact across rebuilds", out["deterministic"])
 expect("a female spec sculpts softer", out["female_softer"], out["female_max"])
 expect("a heavy spec sculpts stronger", out["heavy_stronger"], out["heavy_max"])
-expect("a full figure builds over the sculpted body", str(out["figure_law"]).startswith("anime-v118"), out["figure_law"])
+expect("a full figure builds over the sculpted body", str(out["figure_law"]).startswith("anime-v119"), out["figure_law"])
 expect("the figure's anatomy evidence rides the build", isinstance(out["figure_anatomy"], dict) and not out["figure_anatomy"].get("error"),
        json.dumps(out["figure_anatomy"])[:200])
 expect("the rig still binds (bones over the sculpted body)", (out["figure_bones"] or 0) >= 13, out["figure_bones"])

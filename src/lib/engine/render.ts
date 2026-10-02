@@ -365,6 +365,11 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         // the two-pose slide, with the impact flare + camera punch +
         // the smear (a corrupt column degrades to the plain path)
         ...(shot.choreo ? (() => { try { const c = JSON.parse(shot.choreo); return c && typeof c === "object" && !Array.isArray(c) ? { choreo: c } : {}; } catch { return {}; } })() : {}),
+        // THE PAIRED PERFORMANCE LAW (iteration 119): the second cast
+        // member's ANSWER program rides beside the hero's - the duel
+        // is one performance on two bodies (the hero's slash is his
+        // block). A corrupt column degrades to the static stand-off.
+        ...(shot.pairedChoreo ? (() => { try { const c = JSON.parse(shot.pairedChoreo); return c && typeof c === "object" && !Array.isArray(c) ? { pairedChoreo: c } : {}; } catch { return {}; } })() : {}),
         lighting: shot.lighting,
         duration: shot.duration,
         ...(speech ? { speech: speechPayload(speech) } : {}),
@@ -461,6 +466,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       fx: shot.fx,
       physics: shot.physics,
       choreo: shot.choreo,
+      pairedChoreo: shot.pairedChoreo,
       cloth: shot.cloth ?? null,
       flesh: shot.flesh ?? null,
       speechLines: speech ? (speechPayload(speech)?.lines ?? null) : null,
@@ -740,14 +746,20 @@ export async function tickRenderJob(jobId: string) {
           include: { evaluation: true },
         });
       } else if (fs.existsSync(prog.mp4Path)) {
+        // THE EVIDENCE LANDS WITH THE CLIP (iterations 118/119): the
+        // forge one-liner rides telemetry as a FORGE span and the
+        // paired performance line rides the stage - the queue cards
+        // surface what actually worked on the render.
+        const tel = finishTelemetry(job.telemetry, "BLENDER_LOCAL", job.startedAt, job.durationMs / 1000, "local worker");
+        if (prog.addonsLine) tel.spans.push({ provider: "FORGE", ms: 0, note: prog.addonsLine.slice(0, 160) });
         job = await db.renderJob.update({
           where: { id: jobId },
           data: {
             status: "REVIEW", progress: 100,
-            stage: [job.lipNote, prog.stage?.slice(0, 60) || "Blender clip ready"].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
+            stage: [job.lipNote, prog.stage?.slice(0, 60) || "Blender clip ready", prog.pairedLine?.slice(0, 80)].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
             outputUrl: `/renders/${job.id}.mp4`,
             finishedAt: new Date(),
-            telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER_LOCAL", job.startedAt, job.durationMs / 1000, "local worker")),
+            telemetry: JSON.stringify(tel),
           },
           include: { evaluation: true },
         });
@@ -878,14 +890,19 @@ export async function tickRenderJob(jobId: string) {
           });
         } else {
           const hasClip = Boolean(prog.mp4Base64) && fs.existsSync(path.join(process.cwd(), "public", "renders", `${job.id}.mp4`));
+          // THE EVIDENCE LANDS WITH THE CLIP (iterations 118/119): the
+          // bridge's /progress answer carries the same forge + paired
+          // lines - persist them where the queue cards read.
+          const tel = finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "workstation Cycles");
+          if (prog.addonsLine) tel.spans.push({ provider: "FORGE", ms: 0, note: prog.addonsLine.slice(0, 160) });
           job = await db.renderJob.update({
             where: { id: jobId },
             data: {
               status: "REVIEW", progress: 100,
-              stage: [job.lipNote, prog.stage?.slice(0, 120) || "Blender render complete - awaiting DSH inspection"].filter(Boolean).join(" - ").slice(0, 200),
+              stage: [job.lipNote, prog.stage?.slice(0, 120) || "Blender render complete", prog.pairedLine?.slice(0, 80)].filter(Boolean).join(" - ") + " - awaiting DSH inspection",
               ...(hasClip ? { outputUrl: `/renders/${job.id}.mp4` } : {}),
               finishedAt: new Date(),
-              telemetry: JSON.stringify(finishTelemetry(job.telemetry, "BLENDER", job.startedAt, job.durationMs / 1000, "workstation Cycles")),
+              telemetry: JSON.stringify(tel),
             },
             include: { evaluation: true },
           });

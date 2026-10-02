@@ -70,7 +70,8 @@ import {
   formatTemplateShape, matchArcTemplates, parseArcTemplateSegments,
   type ArcTemplate, type TemplateSegmentReport,
 } from "@/lib/comic/arc-templates";
-import { generateShotPanelArt, generateCharacterModelSheet } from "@/lib/ai/art";
+import { generateShotPanelArt, generateCharacterModelSheet, detectCast } from "@/lib/ai/art";
+import { compilePairedProgram, pairingEarned, pairedPerformanceLine } from "@/lib/animation/paired-performance";
 import { classifyStateDelivery, isDeliveryId } from "@/lib/comic/delivery";
 import { isVoiceId, defaultVoiceFor } from "@/lib/comic/voice-catalog";
 import { resolveAutoDelivery, resolveVoiceCast } from "@/lib/ai/voice-casting";
@@ -843,11 +844,12 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "set_shot_choreography",
-    description: "MAKE THE BODY PERFORM: apply a NAMED choreography program (a design_choreography preset, a built-in - The Combo / The Draw Storm / The Rising Fang - or an inline JSON program) to one shot. The next render of the shot performs the KEYS instead of the two-pose slide: the anticipation winds up, the strike explodes, the hold sells the read, the follow-through settles - the impact frame flares a real light and punches the camera, the striking limb smears on the fastest frames. The keys own the body; the camera grammar still owns the lens and the cloth, flesh and physics still answer the performing body. Direct the lens first (set_shot_grammar) so the performance has a frame worth cutting to. Pass choreo as empty string to clear back to the plain slide.",
+    description: "MAKE THE BODY PERFORM: apply a NAMED choreography program (a design_choreography preset, a built-in - The Combo / The Draw Storm / The Rising Fang - or an inline JSON program) to one shot. The next render of the shot performs the KEYS instead of the two-pose slide: the anticipation winds up, the strike explodes, the hold sells the read, the follow-through settles - the impact frame flares a real light and punches the camera, the striking limb smears on the fastest frames. THE DUEL PERFORMS (iteration 119): on a two-cast shot whose program strikes at the partner, the SECOND figure automatically performs the ANSWER - the hero's SLASH is his BLOCK (the answer table derives the partner's program on one clock; the hero's impact light is the clash's only flare) - so a fight reads as a fight, never two statues standing apart. The keys own the body; the camera grammar still owns the lens and the cloth, flesh and physics still answer the performing body. Direct the lens first (set_shot_grammar) so the performance has a frame worth cutting to. Pass choreo as empty string to clear back to the plain slide (the paired answer clears with it).",
     args: {
       sceneNumber: "number (defaults to latest scene)",
       shotNumber: "number (defaults to shot 1)",
       choreo: "string - a design_choreography preset name, a built-in name (The Combo | The Draw Storm | The Rising Fang), or an inline JSON program; empty string clears",
+      pairedChoreo: "string (optional JSON ChoreoProgram) - an EXPLICIT answer program for the second cast member; omit it on a two-cast strike program to let the answer table derive the duel automatically",
     },
   },
   {
@@ -3882,9 +3884,9 @@ async function executeToolInner(
         if (!shot) return { status: "ERROR", result: `Shot ${String(args.shotNumber ?? 1)} not found in Scene ${scene.number}.` };
         const chArg = String(args.choreo ?? "").trim();
         if (!chArg) {
-          await db.shot.update({ where: { id: shot.id }, data: { choreo: null } });
-          await landDesignEvent(projectId, `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} (back to the two-pose slide)`, { shotId: shot.id });
-          return { status: "OK", result: `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} - the body slides between its start/end poses again.` };
+          await db.shot.update({ where: { id: shot.id }, data: { choreo: null, pairedChoreo: null } });
+          await landDesignEvent(projectId, `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} (back to the two-pose slide; the paired answer clears with it)`, { shotId: shot.id });
+          return { status: "OK", result: `Choreography cleared on Shot ${String(shot.number).padStart(3, "0")} - the body slides between its start/end poses again (and the partner returns to the stand-off stance).` };
         }
         // resolve: saved choreography preset -> built-in -> learned motion flow -> inline program
         const savedCh = await db.designPreset.findUnique({ where: { projectId_kind_name: { projectId, kind: "CHOREOGRAPHY", name: chArg } } });
@@ -3939,6 +3941,48 @@ async function executeToolInner(
           ? (specRaw as { name: string }).name.trim()
           : (savedCh ? chArg : builtinName || flowName);
         const perf = { ...compiledCh.spec, name: perfName, ...(flowName ? { flow: flowName } : {}) };
+        // THE PAIRED PERFORMANCE LAW (iteration 119): on a two-cast
+        // shot the hero program is ONE performance written on two
+        // bodies. The law fills what direction left open:
+        // the partner is WHOM THE WORKER WILL BUILD (the same
+        // description detection the render pass runs - the name is a
+        // whole word), and the answer program is re-derived from THE
+        // hero program every time it changes (a stale answer would be
+        // a lie about the new performance). An explicit pairedChoreo
+        // argument from the creator/DSH wins over the derivation.
+        let pairedNote = "";
+        const pairedCast = detectCast(
+          await db.character.findMany({ where: { projectId }, include: { states: true } }),
+          shot.description,
+        ).slice(0, 2);
+        const explicitPaired = (() => {
+          const raw = String(args.pairedChoreo ?? "").trim();
+          if (!raw) return null;
+          try { return JSON.parse(raw) as Record<string, unknown>; } catch { return undefined; }
+        })();
+        if (explicitPaired === undefined) {
+          return { status: "ERROR", result: "pairedChoreo is not valid JSON - pass a ChoreoProgram object ({keys: [...], impact?, smear?}) or omit it to let the answer table derive the partner's program." };
+        }
+        if (pairedCast.length >= 2 && pairingEarned(compiledCh.spec)) {
+          const partnerName = String(pairedCast[1]?.name ?? "the partner");
+          if (explicitPaired) {
+            const compiledPaired = compileChoreo(explicitPaired, "pairedChoreo");
+            if (!compiledPaired.ok) return { status: "ERROR", result: `The explicit paired program does not compile: ${compiledPaired.error}` };
+            await db.shot.update({ where: { id: shot.id }, data: { pairedChoreo: JSON.stringify({ ...compiledPaired.spec, name: `The Answer (${partnerName})` }) } });
+            pairedNote = ` THE DUEL PERFORMS BY DIRECTION: ${partnerName} performs the explicit answer program (${compiledPaired.spec.keys.length} keys).`;
+          } else {
+            const paired = compilePairedProgram(compiledCh.spec, partnerName);
+            await db.shot.update({ where: { id: shot.id }, data: { pairedChoreo: JSON.stringify(paired.program) } });
+            pairedNote = ` THE DUEL PERFORMS: ${partnerName} answers on one clock (${paired.derivation.length} keys - ${pairedPerformanceLine(compiledCh.spec, partnerName)}).`;
+          }
+        } else {
+          // no partner on the stage, or the program never strikes at
+          // one: the stand-off (or the solo) stays honest - clear any
+          // stale answer program
+          if (shot.pairedChoreo) {
+            await db.shot.update({ where: { id: shot.id }, data: { pairedChoreo: null } });
+          }
+        }
         await db.shot.update({ where: { id: shot.id }, data: { choreo: JSON.stringify(perf) } });
         if (flowName) {
           await db.motionFlow.update({
@@ -3947,8 +3991,8 @@ async function executeToolInner(
           });
         }
         const chShape = compiledCh.spec.keys.map((k) => `${k.pose.toLowerCase()}@${k.at}:${k.kind}`).join(" -> ");
-        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} performs from ${chSource}: ${chShape}`, { shotId: shot.id, choreo: chSource });
-        return { status: "OK", result: `THE BODY PERFORMS on Shot ${String(shot.number).padStart(3, "0")} with ${chSource}: ${chShape}${compiledCh.spec.impact ? ", the impact frame flares a real light and punches the camera" : ""}${compiledCh.spec.smear ? ", the striking limb smears on the fastest frames" : ""}. The next render_shot of this shot performs the keys instead of the two-pose slide - the keys own the body, the camera grammar still owns the lens, and the cloth, flesh and physics still answer the performing body. Direct the lens first (set_shot_grammar) so the performance has a frame worth cutting to.` };
+        await landDesignEvent(projectId, `Shot ${String(shot.number).padStart(3, "0")} performs from ${chSource}: ${chShape}${pairedNote ? " - the duel answers" : ""}`, { shotId: shot.id, choreo: chSource });
+        return { status: "OK", result: `THE BODY PERFORMS on Shot ${String(shot.number).padStart(3, "0")} with ${chSource}: ${chShape}${compiledCh.spec.impact ? ", the impact frame flares a real light and punches the camera" : ""}${compiledCh.spec.smear ? ", the striking limb smears on the fastest frames" : ""}.${pairedNote} The next render_shot of this shot performs the keys instead of the two-pose slide - the keys own the body, the camera grammar still owns the lens, and the cloth, flesh and physics still answer the performing body. Direct the lens first (set_shot_grammar) so the performance has a frame worth cutting to.` };
       }
 
       case "learn_motion_flow": {

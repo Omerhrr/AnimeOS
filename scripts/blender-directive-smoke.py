@@ -61,12 +61,12 @@ RICH = {
     "cloth": 0.75, "flesh": None,
     "speech": {"lines": 2},
     "expression": {"emotion": "alert"}, "comp": {"lut": "moonlit"},
-    "clothDirective": {"garment": "silk"}, "cameraChoreo": None, "choreo": None,
+    "clothDirective": {"garment": "silk"}, "cameraChoreo": None, "choreo": None, "pairedChoreo": None,
 }
-EXPECT_RICH = ("98|mv=STATIC|poses=CROUCH->RISE|dur=1.300|light=moonlit night"
+EXPECT_RICH = ("119|mv=STATIC|poses=CROUCH->RISE|dur=1.300|light=moonlit night"
                "|gr=2:DOLLY_IN+PAN:0.6:1|fx=3:burst+ring|ph=1:knock"
                "|cloth=0.750|flesh=-|speech=2"
-               "|expr=1|comp=1|clothd=1|camchoreo=0|choreo=0|v1")
+               "|expr=1|comp=1|clothd=1|camchoreo=0|choreo=0|paired=0|v2")
 ok("the rich shot's key mirrors the LITERAL expected key field for field",
    m.shot_directive_key(RICH) == EXPECT_RICH, m.shot_directive_key(RICH))
 ok("the rich hash mirrors the sha256-16 formula over that key",
@@ -75,9 +75,9 @@ ok("the rich hash mirrors the sha256-16 formula over that key",
 
 MIN = {"movement": None, "poseStart": None, "poseEnd": None, "duration": 1.0,
        "lighting": None, "grammar": None, "fx": None, "physics": None}
-EXPECT_MIN = ("98|mv=-|poses=-|dur=1.000|light=-|gr=-|fx=-|ph=-"
+EXPECT_MIN = ("119|mv=-|poses=-|dur=1.000|light=-|gr=-|fx=-|ph=-"
               "|cloth=-|flesh=-|speech=-"
-              "|expr=0|comp=0|clothd=0|camchoreo=0|choreo=0|v1")
+              "|expr=0|comp=0|clothd=0|camchoreo=0|choreo=0|paired=0|v2")
 ok("the minimal shot's key degrades to the honest canon",
    m.shot_directive_key(MIN) == EXPECT_MIN, m.shot_directive_key(MIN))
 
@@ -156,10 +156,10 @@ HERO = {
 
 # the INDEPENDENTLY derived directive hash for the directed job's shot
 def indep_key(cast_flag=True):
-    return ("98|mv=STATIC|poses=CROUCH->RISE|dur=1.000|light=moonlit ridge"
+    return ("119|mv=STATIC|poses=CROUCH->RISE|dur=1.000|light=moonlit ridge"
             "|gr=2:DOLLY_IN+PAN:0.5:1|fx=2:burst+ring|ph=1:knock"
             "|cloth=0.750|flesh=-|speech=-"
-            "|expr=1|comp=1|clothd=1|camchoreo=1|choreo=0|v1")
+            "|expr=1|comp=1|clothd=1|camchoreo=1|choreo=0|paired=0|v2")
 
 DIRECTED_SHOT_FIELDS = {
     "number": 1, "description": "Bai Ling coils and rises as the lens pushes",
@@ -232,7 +232,7 @@ if isinstance(sd, dict):
     expect("the worker's derivation matches the studio's hash (the wire is what the studio compiled)",
            sd.get("match") is True and sd.get("hash") == EXPECT_DIRECTED and sd.get("expected") == EXPECT_DIRECTED,
            json.dumps(sd)[:220])
-    expect("the law version rides (98)", sd.get("lawVersion") == 98, json.dumps(sd)[:120])
+    expect("the law version rides (119)", sd.get("lawVersion") == 119, json.dumps(sd)[:120])
     expect("the sections name the intent (2 grammar beats, the pose pair)",
            (sd.get("sections") or {}).get("grammarBeats") == 2
            and (sd.get("sections") or {}).get("poses") == "CROUCH->RISE",

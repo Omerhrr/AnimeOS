@@ -212,14 +212,14 @@ async function run() {
   // ── A. source checks ──
   const lawSrc = readFileSync("src/lib/shot-directive.ts", "utf8");
   check("A1 the directive law stands (version, grammar mirror, compiler, key)",
-    lawSrc.includes("export const SHOT_DIRECTIVE_VERSION = 98")
+    lawSrc.includes("export const SHOT_DIRECTIVE_VERSION = 119")
     && lawSrc.includes("export function normalizeGrammar")
     && lawSrc.includes("export function compileShotDirective")
     && lawSrc.includes("export function shotDirectiveKey"));
 
   const workerSrc = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
   check("A2 the worker mirrors the law (one law, two runtimes at the SHOT level)",
-    workerSrc.includes("SHOT_DIRECTIVE_VERSION = 98")
+    workerSrc.includes("SHOT_DIRECTIVE_VERSION = 119")
     && workerSrc.includes("def shot_directive_key") && workerSrc.includes("def shot_directive_hash")
     && workerSrc.includes("def shot_directive_sections"));
 
@@ -231,7 +231,7 @@ async function run() {
     workerSrc.includes('state["shotDirective"]') && workerSrc.includes('"match": True if _d_expected is None else (_d_hash == _d_expected)'));
 
   // ── B. pure checks ──
-  const anchorKey = "98|mv=STATIC|poses=CROUCH->RISE|dur=1.300|light=moonlit ridge|gr=2:DOLLY_IN+PAN:0.5:1|fx=2:burst+ring|ph=1:knock|cloth=0.750|flesh=-|speech=-|expr=1|comp=1|clothd=1|camchoreo=1|choreo=0|v1";
+  const anchorKey = "119|mv=STATIC|poses=CROUCH->RISE|dur=1.300|light=moonlit ridge|gr=2:DOLLY_IN+PAN:0.5:1|fx=2:burst+ring|ph=1:knock|cloth=0.750|flesh=-|speech=-|expr=1|comp=1|clothd=1|camchoreo=1|choreo=0|paired=0|v2";
   const compiled = compileFor(SHOT1_FIELDS);
   check("B1 the canonical key is the directed intent (hardcoded anchor)",
     compiled.key === anchorKey, compiled.key);
@@ -249,7 +249,7 @@ async function run() {
     compileFor({ ...SHOT1_FIELDS, movement: "ORBIT" }).hash !== compiled.hash
     && compileFor({ ...SHOT1_FIELDS, cloth: 0.5 }).hash !== compiled.hash
     && compileFor({ ...SHOT1_FIELDS, fx: JSON.stringify([{ kind: "aura" }]) }).hash !== compiled.hash);
-  check("B6 the law version rides (98)", SHOT_DIRECTIVE_VERSION === 98);
+  check("B6 the law version rides (119)", SHOT_DIRECTIVE_VERSION === 119);
 
   // ── C. accounts + throwaway production ──
   for (const stale of await db.project.findMany({ where: { title: { contains: MARK } } })) {
@@ -298,9 +298,10 @@ async function run() {
   if (job1.ok && job1.jobId) {
     const state = readJobState(job1.jobId);
     const sd = state.shotDirective;
-    check("D2 the worker built the figure procedurally", state.figureSource === "procedural:v4.0-designed", String(state.figureSource));
-    check("D3 the state names the shotDirective (law version 98, both hashes, match true)",
-      !!sd && sd.lawVersion === 98 && sd.match === true && typeof sd.hash === "string", JSON.stringify(sd ?? null).slice(0, 220));
+    check("D2 the worker built a DESIGNED figure (the 109 anime law builds from the DNA; the 118 forge rides the designed path)",
+      String(state.figureSource ?? "").startsWith("anime:") || state.figureSource === "procedural:v4.0-designed", String(state.figureSource));
+    check("D3 the state names the shotDirective (law version 119, both hashes, match true)",
+      !!sd && sd.lawVersion === 119 && sd.match === true && typeof sd.hash === "string", JSON.stringify(sd ?? null).slice(0, 220));
     check("D4 the directive hash matches the TS law BIT-EXACTLY over the REAL shot row (one law, two runtimes)",
       !!sd && sd.hash === compiled.hash && sd.expected === compiled.hash, `${sd?.hash} vs ${compiled.hash}`);
     check("D5 the sections name the directed intent (2 beats, the pose pair, the fx present)",

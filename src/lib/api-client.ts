@@ -94,6 +94,11 @@ export interface ShotRow {
   grammar?: string | null;
   fx?: string | null;
   physics?: string | null;
+  // KEYFRAME CHOREOGRAPHY (iteration 74) + the PAIRED answer program
+  // (iteration 119): JSON ChoreoProgram columns (the second figure's
+  // half of the duel)
+  choreo?: string | null;
+  pairedChoreo?: string | null;
   duration: number;
   lighting: string | null;
   status: string;

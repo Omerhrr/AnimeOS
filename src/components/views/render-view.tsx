@@ -1050,6 +1050,26 @@ export function RenderView({ project }: { project: StudioProject }) {
                         </span>
                       );
                     })()}
+                    {(() => {
+                      // THE DUEL ANSWERS chip (iteration 119): the shot's
+                      // second cast member performs the answer program
+                      if (!job.shot?.pairedChoreo) return null;
+                      const keys = (() => {
+                        try {
+                          const p = JSON.parse(job.shot!.pairedChoreo!) as { keys?: Array<{ pose?: string }> };
+                          return Array.isArray(p?.keys) ? p.keys.length : 0;
+                        } catch { return 0; }
+                      })();
+                      if (!keys) return null;
+                      return (
+                        <span
+                          className="rounded px-1 py-[1px] text-[8px] font-bold tracking-widest border bg-rose-400/10 border-rose-400/40 text-rose-300"
+                          title={`THE PAIRED PERFORMANCE LAW: the second figure performs the answer program (${keys} keys) on one clock with the hero's - the hero's slash is his block, one clash one light`}
+                        >
+                          DUEL x{keys}
+                        </span>
+                      );
+                    })()}
                     <span
                       title={
                         job.driver === "BLENDER" || job.driver === "BLENDER_LOCAL"

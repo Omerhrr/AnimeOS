@@ -46,7 +46,7 @@ import math
 import os
 import sys
 
-ANIME_LAW_VERSION = 118
+ANIME_LAW_VERSION = 119
 EYE_OPEN_FLOOR = 0.45   # a painted eye never squashes below this (a blink still reads)
 
 # ── the design spec ──────────────────────────────────────────

@@ -89,12 +89,13 @@ async function main() {
   const ac = fs.readFileSync(path.join(process.cwd(), "bridges", "blender", "anime_character.py"), "utf-8");
   expect("build_body calls the anatomy pass", ac.includes("import body_anatomy") && ac.includes("apply_anatomy"));
   expect("the anatomy evidence rides the anime dict", ac.includes('"anatomy": anatomy'));
-  expect("the character law version is 118", ac.includes("ANIME_LAW_VERSION = 118"));
+  expect("the character law version is 119 (the silhouette law rides the same figure)", ac.includes("ANIME_LAW_VERSION = 119"));
   const ba = fs.readFileSync(path.join(process.cwd(), "bridges", "blender", "body_anatomy.py"), "utf-8");
-  // 16 static field sites; the R/L loops carry them to 22 structures
-  // at runtime - the anatomy smoke proves all 22 land in real Blender.
-  expect("the anatomy field carries 16 static sites (22 structures at runtime)",
-    (ba.match(/st\((f?")/g) ?? []).length === 16, (ba.match(/st\((f?")/g) ?? []).length);
+  // 18 static field sites (the 119 silhouette law adds the two
+  // obliques); the R/L loops carry them to 24 structures at runtime -
+  // the anatomy smoke proves all 24 land in real Blender.
+  expect("the anatomy field carries 18 static sites (24 structures at runtime)",
+    (ba.match(/st\((f?")/g) ?? []).length === 18, (ba.match(/st\((f?")/g) ?? []).length);
   expect("the sculptor scales the tool with the body", ba.includes("THE SCULPTOR SCALES THE TOOL WITH THE BODY"));
   const bridge = fs.readFileSync(path.join(process.cwd(), "bridges", "blender", "animeos_bridge.py"), "utf-8");
   expect("the worker opens the forge before the scene build",

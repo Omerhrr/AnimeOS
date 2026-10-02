@@ -531,19 +531,31 @@ export function poseSampleTimestamps(durationSec: number): number[] {
  * The strip is cached per job id beside the poster.
  */
 export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: string): Promise<{ dataUrl: string; frames: number } | null> {
+  // the same honest binary resolution the single poster uses (the
+  // detect cache may be cold - PATH carries the fallback)
+  const probe = await probeMedia(clipAbsPath).catch(() => null);
+  const stamps = poseSampleTimestamps(probe?.durationSec ?? 0);
+  if (stamps.length <= 1) return null;
+  return buildFilmstripAt(clipAbsPath, jobId, stamps, "strip");
+}
+
+/**
+ * THE INSPECTION SEES THE PERFORMANCE (iteration 119): build a
+ * filmstrip at EXPLICIT timestamps. One frame degrades to that frame
+ * alone (null - the caller falls back, honestly named); a failed
+ * montage returns null. The strip is cached under
+ * `<jobId>.<cacheName>.jpg` beside the poster.
+ */
+export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamps: number[], cacheName = "cues"): Promise<{ dataUrl: string; frames: number } | null> {
   try {
     if (!fs.existsSync(clipAbsPath)) return null;
-    // the same honest binary resolution the single poster uses (the
-    // detect cache may be cold - PATH carries the fallback)
+    if (!Array.isArray(stamps) || stamps.length < 2) return null;
     const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
     const postersDir = path.join(process.cwd(), "public", "renders", "posters");
     fs.mkdirSync(postersDir, { recursive: true });
-    const probe = await probeMedia(clipAbsPath);
-    const stamps = poseSampleTimestamps(probe?.durationSec ?? 0);
-    if (stamps.length <= 1) return null;
     const frames: string[] = [];
     for (let i = 0; i < stamps.length; i++) {
-      const f = path.join(postersDir, `${jobId}.strip${i}.jpg`);
+      const f = path.join(postersDir, `${jobId}.${cacheName}${i}.jpg`);
       const ok = await new Promise<boolean>((resolve) => {
         const child = spawn(ff, ["-y", "-ss", stamps[i].toFixed(2), "-i", clipAbsPath, "-frames:v", "1", "-q:v", "3", f], {
           stdio: ["ignore", "ignore", "ignore"],
@@ -552,9 +564,9 @@ export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: s
         child.on("error", () => resolve(false));
       });
       if (ok && fs.existsSync(f) && fs.statSync(f).size > 0) frames.push(f);
-      else return null; // a partial strip is a lie - degrade to the poster
+      else return null; // a partial strip is a lie - degrade honestly
     }
-    const out = path.join(postersDir, `${jobId}.strip.jpg`);
+    const out = path.join(postersDir, `${jobId}.${cacheName}.jpg`);
     const inputs = frames.flatMap((f) => ["-i", f]);
     const ok = await new Promise<boolean>((resolve) => {
       const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `hstack=inputs=${frames.length}`, "-q:v", "3", out], {
@@ -569,6 +581,36 @@ export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: s
   } catch {
     return null;
   }
+}
+
+export const CUE_FRAME_COUNT = 4;
+
+/**
+ * THE CUE TIMES ARE THE LAW (iteration 119): the inspector's sample
+ * timestamps come from the shot's DIRECTED cues - the choreography's
+ * key moments (the wind-up, the strike, the hold) and the grammar
+ * beats' boundaries - normalized 0..1, clamped inside the clip,
+ * deduped (nothing closer than 0.05s apart), capped at
+ * CUE_FRAME_COUNT, and always time-ordered. Fewer than two distinct
+ * cues degrades to the pose-sample marks (the 81 fallback). A cue at
+ * the very tail is pulled 0.1s inside so a frame exists to pull.
+ * Deterministic: the same duration and cues always land the same
+ * stamps.
+ */
+export function cueSampleTimestamps(durationSec: number, cues: number[]): number[] {
+  const dur = Math.max(0.5, Number.isFinite(Number(durationSec)) ? Number(durationSec) : 0.5);
+  const clean = (Array.isArray(cues) ? cues : [])
+    .map((c) => Number(c))
+    .filter((c) => Number.isFinite(c) && c > 0 && c < 1)
+    .sort((a, b) => a - b);
+  if (clean.length < 2) return poseSampleTimestamps(dur);
+  const picked: number[] = [];
+  for (const c of clean) {
+    if (picked.length >= CUE_FRAME_COUNT) break;
+    const t = Math.min(dur - 0.1, Math.max(0.1, dur * c));
+    if (!picked.some((x) => Math.abs(x - t) < 0.05)) picked.push(Math.round(t * 100) / 100);
+  }
+  return picked.sort((a, b) => a - b);
 }
 
 /** The latest finished clip for a shot, as a poster data URL (plus the

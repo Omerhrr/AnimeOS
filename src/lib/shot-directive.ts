@@ -29,7 +29,7 @@
 import { createHash } from "node:crypto";
 import { normalizePose } from "@/lib/animation/poses";
 
-export const SHOT_DIRECTIVE_VERSION = 98;
+export const SHOT_DIRECTIVE_VERSION = 119;
 
 /** The grammar moves the worker's normalize_grammar accepts - the
  * mirror must reject exactly what the worker rejects. (The canonical
@@ -121,6 +121,9 @@ export interface ShotDirectiveSource {
   physics: string | null | undefined;
   /** The raw choreography column (an object when valid). */
   choreo: string | null | undefined;
+  /** The raw PAIRED answer program column (iteration 119) - the
+   * second figure's half of the duel (an object when valid). */
+  pairedChoreo?: string | null | undefined;
   cloth: number | null | undefined;
   flesh: number | null | undefined;
   /** The speech program's line count (null when the shot is silent). */
@@ -152,6 +155,7 @@ export interface ShotDirective {
     clothDirective: number;
     cameraChoreo: number;
     choreo: number;
+    paired: number;
   };
 }
 
@@ -204,6 +208,7 @@ export function shotDirectiveKey(src: ShotDirectiveSource): string {
   const clothd = src.clothDirectivePresent ? 1 : 0;
   const camchoreo = src.cameraChoreoPresent ? 1 : 0;
   const choreo = parseJsonObject(src.choreo) ? 1 : 0;
+  const paired = parseJsonObject(src.pairedChoreo) ? 1 : 0;
 
   return dash(
     `${SHOT_DIRECTIVE_VERSION}` +
@@ -211,7 +216,8 @@ export function shotDirectiveKey(src: ShotDirectiveSource): string {
     `|gr=${gr}|fx=${fx}|ph=${ph}` +
     `|cloth=${cloth}|flesh=${flesh}|speech=${speech}` +
     `|expr=${expr}|comp=${comp}|clothd=${clothd}|camchoreo=${camchoreo}|choreo=${choreo}` +
-    `|v1`,
+    `|paired=${paired}` +
+    `|v2`,
   );
 }
 
@@ -242,6 +248,7 @@ export function compileShotDirective(src: ShotDirectiveSource): ShotDirective {
       clothDirective: src.clothDirectivePresent ? 1 : 0,
       cameraChoreo: src.cameraChoreoPresent ? 1 : 0,
       choreo: parseJsonObject(src.choreo) ? 1 : 0,
+      paired: parseJsonObject(src.pairedChoreo) ? 1 : 0,
     },
   };
 }
@@ -249,5 +256,5 @@ export function compileShotDirective(src: ShotDirectiveSource): ShotDirective {
 /** Human one-liner for the stage log. */
 export function shotDirectiveLine(d: ShotDirective): string {
   const s = d.sections;
-  return `shot directive v98: ${s.poses} ${s.movement} ${s.duration}s - fx ${s.fx} / physics ${s.physics} / grammar ${s.grammar} beats - hash ${d.hash}`;
+  return `shot directive v119: ${s.poses} ${s.movement} ${s.duration}s - fx ${s.fx} / physics ${s.physics} / grammar ${s.grammar} beats${s.paired ? " - the duel answers" : ""} - hash ${d.hash}`;
 }

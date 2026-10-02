@@ -416,6 +416,17 @@ model Shot {
   // the impact frame flares a real light and punches the camera, the
   // striking limb smears on the fastest frames.
   choreo         String? // JSON: ChoreoProgram (see src/lib/animation/choreography.ts)
+  // THE PAIRED PERFORMANCE LAW (iteration 119): the SECOND cast
+  // member's answer program - JSON: ChoreoProgram. The hero's keyed
+  // choreo is ONE performance written on two bodies: the partner
+  // meets the strike ON its key (the hero's SLASH is his BLOCK),
+  // holds the read, takes the recoil, recovers. Derived
+  // automatically from the hero program by the answer table when
+  // set_shot_choreography runs on a two-cast shot (explicit
+  // direction wins); the bridge poses the second figure with it per
+  // frame under the stand-off. Null = the partner holds the stand-off
+  // stance (the honest pre-119 behavior).
+  pairedChoreo   String? // JSON: ChoreoProgram for the second figure (see src/lib/animation/paired-performance.ts)
   // PER-SHOT SOLVER INTENSITY (iteration 68): the CLOTH call - a
   // number 0..1 the director calls on the shot to scale the cloth
   // solver's ANSWER (the directed air, the beat impulse, the stagger

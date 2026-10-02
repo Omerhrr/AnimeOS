@@ -15,6 +15,8 @@ import {
   compileActionDna,
   type ActionBrief,
 } from "@/lib/crew/action-choreographer";
+import { pairedProgramFromGrammar } from "@/lib/animation/paired-performance";
+import { detectCast } from "@/lib/ai/art";
 
 /** The slice of the Shot the consult reads (createRenderJob's loaded
  * row satisfies this shape). */
@@ -33,7 +35,7 @@ export interface ChoreographerShot {
 
 export interface ConsultResult {
   /** The columns the expert filled (empty when it declined). */
-  directed: Array<"grammar" | "fx" | "physics">;
+  directed: Array<"grammar" | "fx" | "physics" | "pairedChoreo">;
   /** The exact column values the expert wrote - the caller patches
    * its OWN in-memory shot row with these so THIS job's payload
    * carries the DNA (the consult never assumed the caller's row
@@ -77,12 +79,42 @@ export async function consultActionChoreographer(
   if (dna.grammar && !has(shot.grammar)) { patch.grammar = dna.grammar; directed.push("grammar"); }
   if (dna.fx && !has(shot.fx)) { patch.fx = dna.fx; directed.push("fx"); }
   if (dna.physics && !has(shot.physics)) { patch.physics = dna.physics; directed.push("physics"); }
+
+  // THE DUEL PERFORMS (iteration 119): when the directed action
+  // strikes and a SECOND cast member stands on the stage, the
+  // choreographer also writes the partner's ANSWER program (the hero's
+  // SLASH is his BLOCK) into the shot's empty pairedChoreo column -
+  // one performance on two bodies, never two statues standing apart.
+  // Explicit direction (set_shot_choreography's paired argument)
+  // outranks the expert per the rank law.
+  let pairedLine: string | null = null;
+  if (dna.grammar) {
+    const hasPaired = (() => {
+      try {
+        const v = (shot as unknown as { pairedChoreo?: string | null }).pairedChoreo;
+        return Boolean(v && JSON.parse(v));
+      } catch { return true; }
+    })();
+    if (!hasPaired) {
+      const castRows = await db.character.findMany({ where: { projectId }, include: { states: true } });
+      const detected = detectCast(castRows, shot.description ?? "").slice(0, 2);
+      if (detected.length >= 2) {
+        const paired = pairedProgramFromGrammar(dna.grammar, detected[1].name);
+        if (paired) {
+          patch.pairedChoreo = JSON.stringify(paired.program);
+          directed.push("pairedChoreo");
+          pairedLine = `THE DUEL PERFORMS: ${detected[1].name} answers on one clock (${paired.program.keys.length} keys - ${paired.derivation.filter((d) => d.includes(":strike")).length} strike beat(s) met)`;
+        }
+      }
+    }
+  }
+
   if (directed.length === 0) return { directed: [], patch: {}, line: null, decline: null };
 
   await db.shot.update({ where: { id: shot.id }, data: patch });
 
   const label = `Shot ${String(shot.number).padStart(3, "0")}`;
-  const summary = `THE CHOREOGRAPHER DIRECTED ${label}: ${dna.line} (filled ${directed.join(", ")}) - compiled from the shot's own words; explicit direction outranks the expert`;
+  const summary = `THE CHOREOGRAPHER DIRECTED ${label}: ${dna.line} (filled ${directed.join(", ")})${pairedLine ? ` - ${pairedLine}` : ""} - compiled from the shot's own words; explicit direction outranks the expert`;
   await db.productionEvent.create({
     data: {
       projectId,

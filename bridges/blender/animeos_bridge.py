@@ -1330,7 +1330,7 @@ def normalize_grammar(raw):
     return beats
 
 
-SHOT_DIRECTIVE_VERSION = 98
+SHOT_DIRECTIVE_VERSION = 119
 
 
 def shot_directive_key(shot):
@@ -1380,10 +1380,12 @@ def shot_directive_key(shot):
     clothd = 1 if shot.get("clothDirective") else 0
     camchoreo = 1 if shot.get("cameraChoreo") else 0
     choreo = 1 if shot.get("choreo") else 0
-    return (f"98|mv={mv}|poses={poses}|dur={dur}|light={light}"
+    paired = 1 if shot.get("pairedChoreo") else 0
+    return (f"119|mv={mv}|poses={poses}|dur={dur}|light={light}"
             f"|gr={gr}|fx={fx}|ph={ph}"
             f"|cloth={cloth}|flesh={flesh}|speech={speech}"
-            f"|expr={expr}|comp={comp}|clothd={clothd}|camchoreo={camchoreo}|choreo={choreo}|v1")
+            f"|expr={expr}|comp={comp}|clothd={clothd}|camchoreo={camchoreo}|choreo={choreo}"
+            f"|paired={paired}|v2")
 
 
 def shot_directive_hash(shot):
@@ -2060,6 +2062,34 @@ def apply_pose(figure, pose_start, pose_end, t, t_sec, speech=None, expr=None):
         figure["gripPivot"].rotation_euler.x = math.radians(lag)
     elif figure.get("blade") is not None:
         figure["blade"].rotation_euler.x = math.radians(-72.0 + lag)
+
+
+def compose_standoff(root, loc3, rot_deg):
+    """THE STAND-OFF SURVIVES THE POSE, PER FRAME (iteration 119).
+
+    apply_pose OWNS the root: every call rewrites root.location with
+    the pose's own offset (rootX forward, rootY + the IK's lift up)
+    in the figure's LOCAL frame. The 113 law re-applied the mark once
+    at blocking for a figure that never moved again; the 119 paired
+    performance poses the second figure EVERY frame, so the mark is
+    re-composed on top of the pose offset every frame - and the pose
+    offset ROTATES with the figure's own facing (a recoil steps back
+    from the hero, not sideways through the set):
+
+        world = mark + R(rot) * local_pose_offset   (+ height, which
+        the Z rotation cannot touch)
+
+    A STANCE pose's offset is ~zero, so an unpaired shot's blocking
+    lands exactly where the 113 law parked it - the law is additive,
+    never a teleport."""
+    px, py, pz = root.location
+    r = math.radians(float(rot_deg))
+    cr, sr = math.cos(r), math.sin(r)
+    root.location = (
+        loc3[0] + px * cr - py * sr,
+        loc3[1] + px * sr + py * cr,
+        loc3[2] + pz,
+    )
 
 
 # ─── design DNA (v4.0): the DESIGNED render pass ─────────────────
@@ -6596,6 +6626,53 @@ def worker_run(job_file):
             else:
                 state["choreoNote"] = f"choreo refused: {choreo_err} - the plain two-pose path performs"
 
+        # ── THE DUEL PERFORMS (iteration 119): THE PAIRED PERFORMANCE
+        #    LAW. A two-character shot is ONE performance written on
+        #    two bodies: the partner answers the hero's keyed program
+        #    on ONE clock - the hero's SLASH is his BLOCK, the recoil
+        #    the violence owes lands after the read, and the hero
+        #    program's impact light stays the clash's only flare (ONE
+        #    CLASH, ONE LIGHT - the partner program carries no impact,
+        #    no smear of its own). The program rides the shot wire
+        #    (pairedChoreo, derived by the answer table in
+        #    src/lib/animation/paired-performance.ts or directed
+        #    explicitly); a shot without one keeps the 113/116 static
+        #    stand-off honestly. ──
+        paired_ctx = None
+        if second_rig is not None:
+            paired_raw = shot.get("pairedChoreo")
+            if isinstance(paired_raw, dict):
+                if "choreography_pass" not in sys.modules:
+                    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                    import choreography_pass  # noqa: F811
+                paired_prog, paired_err = choreography_pass.normalize_choreo(paired_raw)
+                if paired_prog:
+                    partner_name = None
+                    try:
+                        partner_name = str((shot.get("cast") or [None, None])[1].get("name") or None)
+                    except Exception:  # noqa: BLE001
+                        partner_name = None
+                    paired_ctx = {
+                        "prog": paired_prog,
+                        # the stand-off mark the pose must survive -
+                        # set at the blocking above (113/116); the
+                        # per-frame compose re-applies it AFTER every
+                        # pose call
+                        "loc": tuple(loc3),
+                        "rotDeg": float(rot_deg),
+                        "partner": partner_name or state.get("secondFigure") or "the second figure",
+                    }
+                    state["pairedPerformance"] = {
+                        "lawVersion": 119,
+                        "partner": paired_ctx["partner"],
+                        "keys": len(paired_prog["keys"]),
+                        "poseKeys": [k["pose"] for k in paired_prog["keys"]],
+                        "strikeBeatsMet": sum(1 for k in paired_prog["keys"] if k["kind"] == "strike"),
+                        "impact": "rides the hero program (one clash, one light)",
+                    }
+                else:
+                    state["pairedPerformanceNote"] = f"pairedChoreo refused: {paired_err} - the stand-off holds"
+
         # ── AnimeOS scene params: designed sky when the environment
         #    DNA carries one, legacy fog world otherwise ──
         fog = float(scene_p.get("fogDensity", 0.45))
@@ -7065,6 +7142,18 @@ def worker_run(job_file):
                     s = choreography_pass.apply_smear(choreo_prog, figure, f, frames_total)
                     if s > choreo_max_smear:
                         choreo_max_smear = s
+            if paired_ctx is not None and second_rig is not None:
+                # THE DUEL PERFORMS (iteration 119): the partner answers
+                # the hero's keys on ONE clock - the hero's slash is his
+                # block. The pose call owns the partner's root, so the
+                # stand-off mark is re-composed on top of the pose's own
+                # offset every frame (rotated with the partner's facing:
+                # a recoil steps BACK from the hero), then the rig syncs.
+                p_s, p_e, p_t = choreography_pass.pose_state_at(paired_ctx["prog"], t)
+                apply_pose(second_rig, p_s, p_e, p_t, t_sec)
+                compose_standoff(second_rig["root"], paired_ctx["loc"], paired_ctx["rotDeg"])
+                if second_rig.get("syncRig"):
+                    second_rig["syncRig"]()
             # v8.0: THE WORLD ANSWERS THE BEATS - the burst lands where
             # the cut lands, the trail flares with the pose velocity,
             # the aura breathes with the beat's wind call, the motes
@@ -7275,6 +7364,16 @@ def worker_run(job_file):
         state["progress"] = 1.0
         state["stage"] = "Blender: clip ready"
         state["mp4Path"] = out_path
+        # THE EVIDENCE RIDES THE STATE (iterations 118/119): the forge
+        # one-liner and the paired performance summary persist in the
+        # job file the TS tick reads - the queue cards surface them.
+        state["addonsLine"] = state.get("addonsLine")
+        if paired_ctx is not None:
+            pp = state.get("pairedPerformance") or {}
+            state["pairedLine"] = (
+                f"the duel answers: {pp.get('partner', 'the partner')} "
+                f"({pp.get('strikeBeatsMet', 0)} strike beat(s) met on one clock)"
+            )
         state["done"] = True
         flush()
     except Exception as exc:  # noqa: BLE001
@@ -7735,6 +7834,13 @@ class BridgeServer:
         out = {"progress": state.get("progress", 0.0), "stage": state.get("stage", ""), "done": bool(state.get("done"))}
         if state.get("error"):
             out["error"] = state["error"]
+        # THE EVIDENCE RIDES THE STATE (iterations 118/119): the forge
+        # one-liner and the paired performance summary answer the poll
+        # so the TS tick persists them on the job row.
+        if state.get("addonsLine"):
+            out["addons_line"] = state["addonsLine"]
+        if state.get("pairedLine"):
+            out["paired_line"] = state["pairedLine"]
         if out["done"] and not out.get("error") and state.get("mp4Path"):
             if entry["mp4Cache"] is None:
                 try:
