@@ -7,11 +7,17 @@
 // (mean / median / p10 against the 70% release floor) and the REAL
 // publish attempt whose gate must answer verbatim.
 //
+// Iteration 117: THE VERDICT IS THE MEDIAN OF ITS SAMPLES - each
+// shot scores ANIMEOS_SCORE_SAMPLES times (default 3) over the SAME
+// artifact and the per-entry median persists, so one verdict's
+// variance cannot move the distribution the gate reads (116's
+// finding: identical pixels re-rolled -20/-25 between passes).
+//
 // Run AFTER scripts/night111-run.ts reports 6/6 real Blender clips.
 // ─────────────────────────────────────────────────────────────
 
 import { PrismaClient } from "@prisma/client";
-import { scoreShotIdentity } from "../src/lib/identity";
+import { scoreShotIdentity, scoreShotIdentityMedian } from "../src/lib/identity";
 
 const db = new PrismaClient();
 const BASE = "http://localhost:3000";
@@ -19,6 +25,7 @@ const TITLE = "Immortal Path";
 const EMAIL = "director@studio.dev";
 const PASSWORD = "anchored2026";
 const FLOOR = 0.7;
+const SAMPLES = Math.max(1, Math.min(7, Number(process.env.ANIMEOS_SCORE_SAMPLES ?? 3)));
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
 const median = (xs: number[]) => {
@@ -49,8 +56,11 @@ async function main() {
 
   const worsts: number[] = [];
   const refused: string[] = [];
+  console.log(`samples per shot: ${SAMPLES} (the verdict is the per-entry median)`);
   for (const s of shots) {
-    const res = await scoreShotIdentity(s.id, "RENDER");
+    const res = SAMPLES > 1
+      ? await scoreShotIdentityMedian(s.id, "RENDER", SAMPLES)
+      : await scoreShotIdentity(s.id, "RENDER");
     if (res.ok) {
       const v = res.scored.verdict;
       worsts.push(v.worst);

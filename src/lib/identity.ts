@@ -233,7 +233,102 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
   const ctx = await prepareIdentityContext(shot, poster ? { imageData: artData, error: "" } : undefined);
   if (!ctx.ok) return ctx;
 
-  let raw = "";
+  const call = await rawIdentityCall(ctx, strip?.frames);
+  if (!call.ok) return { ok: false, error: call.error };
+  return persistIdentityVerdict(shot, ctx, call.raw, source, poseNote ?? undefined);
+}
+
+/**
+ * THE VERDICT IS THE MEDIAN OF ITS SAMPLES (iteration 117).
+ *
+ * The night of iteration 116 caught the seam: the SAME pixels
+ * re-scored an hour apart re-rolled -20/-25 per cell - one vision
+ * call per shot lets one verdict's variance move the distribution
+ * the publish gate reads. The law: the same artifact goes to the
+ * vision channel N times, every parsable verdict is kept, and the
+ * PERSISTED verdict is the per-entry MEDIAN (similarity and aspects;
+ * each entry's note is the median-closest sample's note). One law,
+ * same tail: the medianed verdict persists through the exact path a
+ * single verdict would, so the gate, the events and the UI read the
+ * same row shape - just a steadier truth.
+ */
+export async function scoreShotIdentityMedian(
+  shotId: string,
+  source: IdentitySource = "RENDER",
+  samples = 3,
+): Promise<{ ok: true; scored: IdentityScoredShot; sampleCount: number } | { ok: false; error: string }> {
+  const shot = await loadIdentityShot(shotId);
+  if (!shot) return { ok: false, error: "Shot not found" };
+  const poster = source === "RENDER" ? await renderPosterForShot(shotId) : null;
+  if (source === "RENDER" && poster === null) {
+    return { ok: false, error: "This shot has no finished render to score yet - render it first" };
+  }
+  const strip = poster ? await extractRenderPosterFilmstrip(poster.clipAbs, poster.jobId) : null;
+  const artData = strip ? strip.dataUrl : poster!.dataUrl;
+  const poseNote: string | null = strip ? `pose-matched over ${strip.frames} frames` : poster ? "single frame (40% mark)" : null;
+  const ctx = await prepareIdentityContext(shot, poster ? { imageData: artData, error: "" } : undefined);
+  if (!ctx.ok) return ctx;
+
+  const names = ctx.sheets.map((s) => s.name);
+  const n = Math.max(1, Math.min(7, Math.round(samples)));
+  const verdicts: IdentityVerdict[] = [];
+  let lastError = "";
+  for (let i = 0; i < n; i++) {
+    const call = await rawIdentityCall(ctx, strip?.frames);
+    if (!call.ok) { lastError = call.error; continue; }
+    const v = parseIdentityVerdict(call.raw, names);
+    if (v) verdicts.push(v);
+    else lastError = "unparsable verdict";
+  }
+  if (verdicts.length === 0) return { ok: false, error: lastError || "no sample returned a verdict" };
+
+  // The median per entry, per aspect; the note rides the
+  // median-closest sample (the entry's own words, not an average).
+  const median = (xs: number[]): number => {
+    const s = [...xs].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+  const entries: IdentityScoreEntry[] = names.map((name) => {
+    const rows = verdicts
+      .map((v) => v.entries.find((e) => e.characterName === name))
+      .filter((e): e is IdentityScoreEntry => !!e);
+    if (rows.length === 0) {
+      return { characterName: name, similarity: 0, aspects: {}, note: "not detected in the panel by the vision model" };
+    }
+    const sim = median(rows.map((r) => r.similarity));
+    const aspects: Partial<Record<IdentityAspect, number>> = {};
+    for (const aspect of IDENTITY_ASPECTS) {
+      const vals = rows.map((r) => r.aspects[aspect]).filter((v): v is number => v !== undefined);
+      if (vals.length > 0) aspects[aspect] = median(vals);
+    }
+    const noteRow = [...rows].sort((a, b) => Math.abs(a.similarity - sim) - Math.abs(b.similarity - sim))[0];
+    return { characterName: name, similarity: sim, aspects, note: noteRow.note };
+  });
+  // Synthesize the canonical verdict body and persist it through the
+  // SAME tail a single verdict rides - one row shape, steadier truth.
+  // (worst recomputes inside the parse, min over the medianed entries.)
+  const note = verdicts[verdicts.length - 1].note;
+  const body = {
+    note,
+    characters: entries.map((e) => ({
+      name: e.characterName,
+      similarity: e.similarity,
+      aspects: e.aspects,
+      note: e.note,
+    })),
+  };
+  const scored = await persistIdentityVerdict(shot, ctx, JSON.stringify(body), source, poseNote ?? undefined);
+  if (!scored.ok) return scored;
+  return { ...scored, sampleCount: verdicts.length };
+}
+
+/** One raw vision call over the prepared context - the single
+ * variance source both the plain and the medianed score share. */
+async function rawIdentityCall(
+  ctx: Extract<Awaited<ReturnType<typeof prepareIdentityContext>>, { ok: true }>,
+  frames: number | undefined,
+): Promise<{ ok: true; raw: string } | { ok: false; error: string }> {
   try {
     const zai = await ZAI.create();
     const res = (await zai.chat.completions.createVision({
@@ -241,7 +336,7 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
         {
           role: "user",
           content: [
-            { type: "text", text: buildIdentityPrompt(ctx.sheets, strip?.frames) },
+            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames) },
             { type: "image_url", image_url: { url: ctx.artData } },
             ...ctx.sheets.map((s) => ({ type: "image_url" as const, image_url: { url: s.data } })),
           ],
@@ -249,11 +344,10 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
       ],
       thinking: { type: "disabled" },
     } as never)) as { choices?: Array<{ message?: { content?: string } }> };
-    raw = res.choices?.[0]?.message?.content ?? "";
+    return { ok: true, raw: res.choices?.[0]?.message?.content ?? "" };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "identity scoring failed" };
   }
-  return persistIdentityVerdict(shot, ctx, raw, source, poseNote ?? undefined);
 }
 
 /**

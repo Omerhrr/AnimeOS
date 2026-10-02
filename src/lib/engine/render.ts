@@ -29,6 +29,7 @@ import { parseCompProfile } from "@/lib/blender/comp";
 import { parseClothDirective } from "@/lib/blender/cloth-directive";
 import { parseCameraChoreo } from "@/lib/blender/camera-choreo";
 import { compileShotDirective } from "@/lib/shot-directive";
+import { consultActionChoreographer } from "@/lib/crew/choreographer-consult";
 import { detectCast } from "@/lib/ai/art";
 import { assetsForRender } from "@/lib/blender/assets";
 import { extractSheetPalette, planSheetConformance, BOOTS_DEFAULT, type SheetConformance } from "@/lib/blender/sheet-palette";
@@ -157,6 +158,37 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         include: { scene: { include: { episode: true, environment: true } }, audioCues: true },
       })
     : null;
+
+  // THE EXPERT CREW'S CONSULT (iteration 117): before the payload
+  // assembles, the ACTION CHOREOGRAPHER reads the shot's own words
+  // and fills its EMPTY action columns (grammar / fx / physics) with
+  // the performance they direct, timed to the shot's audio cues.
+  // Explicit direction outranks the expert per column; a declined
+  // shot (no known action, or silence directed) is left untouched
+  // and unnamed. The in-memory row patches too, so THIS job's
+  // payload carries the DNA.
+  const expert =
+    shot
+      ? await consultActionChoreographer(projectId, {
+          id: shot.id,
+          number: shot.number,
+          description: shot.description,
+          lighting: shot.lighting,
+          movement: shot.movement,
+          duration: shot.duration,
+          grammar: shot.grammar,
+          fx: shot.fx,
+          physics: shot.physics,
+          audioCues: shot.audioCues.map((c) => ({ kind: c.kind, label: c.label, startMs: c.startMs })),
+        }).catch(() => ({ directed: [] as Array<"grammar" | "fx" | "physics">, patch: {} as Record<string, string>, line: null, decline: "the consult failed - the render proceeds undirected" }))
+      : { directed: [], patch: {} as Record<string, string>, line: null, decline: null };
+  // The expert's patch lands on THIS job's row so the payload below
+  // assembles from the directed columns (the next job re-reads the
+  // row and sees explicit direction - the expert never directs the
+  // same shot twice).
+  for (const [k, v] of Object.entries(expert.patch)) {
+    (shot as unknown as Record<string, unknown>)[k] = v;
+  }
 
   // LIP-SYNC: a speaking closeup (SPEECH dialogue + tight framing)
   // performs its lines - the viseme program is derived from the REAL
@@ -549,8 +581,13 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       projectId,
       actor: "SYSTEM",
       type: "RENDER",
-      summary: `Render job ${job.id.slice(-6)} queued - ${mode} attempt ${job.attempt} (${driver}${lipNote ? `, ${lipNote}` : ""})`,
-      payload: JSON.stringify({ jobId: job.id, shotId, mode, driver, ...(lipNote ? { lipSync: lipNote } : {}) }),
+      summary: `Render job ${job.id.slice(-6)} queued - ${mode} attempt ${job.attempt} (${driver}${lipNote ? `, ${lipNote}` : ""})${expert.directed.length > 0 ? ` - ${expert.line}` : ""}`,
+      payload: JSON.stringify({
+        jobId: job.id, shotId, mode, driver,
+        ...(lipNote ? { lipSync: lipNote } : {}),
+        ...(expert.directed.length > 0 ? { choreographer: expert.directed } : {}),
+        ...(expert.decline ? { choreographerDecline: expert.decline } : {}),
+      }),
     },
   });
 

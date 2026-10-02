@@ -32,7 +32,9 @@ import { normalizePose } from "@/lib/animation/poses";
 export const SHOT_DIRECTIVE_VERSION = 98;
 
 /** The grammar moves the worker's normalize_grammar accepts - the
- * mirror must reject exactly what the worker rejects. */
+ * mirror must reject exactly what the worker rejects. (The canonical
+ * TS-side vocabulary lives in @/lib/animation/grammar; this private
+ * copy is the wire mirror.) */
 const GRAMMAR_MOVES = [
   "ORBIT", "PAN", "TRACKING", "CRANE", "DOLLY_IN", "DOLLY_OUT",
   "TILT_UP", "TILT_DOWN", "STATIC",
