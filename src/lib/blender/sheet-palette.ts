@@ -70,6 +70,42 @@ const SKIP_BELOW = 0.1; // already true to the sheet
 // this dye - the sheet DNA's own measured read stands un-pulled.
 export const PULL_LUM_CAP = 0.15;
 
+// THE SKIP EARNS ITS SKIP (iteration 116): "already true to the sheet"
+// must never forgive a VALUE drift. The evidence: Wei's robe DNA
+// (#5b7d7e, mid-teal) stood 0.090 from the sheet's own dark-teal
+// cluster (#476565) - inside SKIP_BELOW, so the pull skipped as
+// "already true" - but the distance WAS a value step (dLum 0.091)
+// and the storm wash read the robe pale; the re-score's worst cell
+// named it (wardrobe 10%: "lacks his specific dark teal color").
+// The skip now holds only when the nearest cluster also shares the
+// dye's value closely; a near distance that is mostly value drift
+// falls through to the (value-guarded) pull.
+export const SKIP_LUM_CAP = 0.05;
+
+// THE EXTRACTOR SEES THE DARK (iteration 116): the dominant-bucket
+// census is a brightness lie - a model sheet's paper and skin own the
+// pixel count, so the dark region (the hair, the boots, the
+// antagonist's wardrobe) never reaches MIN_SHARE and the palette
+// measures blind to it (Lin Yue's black hair measured all-pale/teal
+// through 115; the value guard could only refuse, never refine). The
+// stratified pass: every value class that owns a real share of the
+// sheet contributes its own dominant cluster - the dark class's
+// census is the point. Deterministic: class bounds are fixed, the
+// within-class winner is the largest bucket, at most two join.
+const VALUE_CLASSES: Array<{ name: string; lo: number; hi: number }> = [
+  { name: "dark", lo: 0.0, hi: 0.28 },
+  { name: "mid", lo: 0.28, hi: 0.62 },
+  { name: "bright", lo: 0.62, hi: 1.01 },
+];
+const CLASS_MIN_SHEET_SHARE = 0.05; // the class must be a real region of the sheet
+const CLASS_MIN_CLASS_SHARE = 0.12; // ...and the cluster a real part of its class
+const STRATIFIED_MAX = 2; // the dominant census stays the palette's spine
+
+/** relative luminance from raw channels (the Rec.601 the cel tree uses) */
+function lumOf(r: number, g: number, b: number): number {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
 /** relative luminance (the Rec.601 the cel tree itself uses) */
 export function relLum(hex: string): number {
   const [r, g, b] = hexToRgb(hex);
@@ -117,6 +153,10 @@ export async function extractSheetPalette(png: Buffer, max = 5): Promise<string[
   const channels = info.channels;
   const total = info.width * info.height;
   const buckets = new Map<number, { n: number; r: number; g: number; b: number }>();
+  // the stratified census rides the same walk: per-pixel value class,
+  // per-class bucket tally (class -> bucket key -> summed pixels)
+  const classTotals = VALUE_CLASSES.map(() => 0);
+  const classBuckets: Array<Map<number, { n: number; r: number; g: number; b: number }>> = VALUE_CLASSES.map(() => new Map());
   for (let i = 0; i < total; i++) {
     const r = data[i * channels];
     const g = data[i * channels + 1];
@@ -128,6 +168,20 @@ export async function extractSheetPalette(png: Buffer, max = 5): Promise<string[
     cur.g += g;
     cur.b += b;
     buckets.set(key, cur);
+    const lum = lumOf(r, g, b);
+    for (let ci = 0; ci < VALUE_CLASSES.length; ci++) {
+      const cls = VALUE_CLASSES[ci];
+      if (lum >= cls.lo && lum < cls.hi) {
+        classTotals[ci] += 1;
+        const cb = classBuckets[ci].get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+        cb.n += 1;
+        cb.r += r;
+        cb.g += g;
+        cb.b += b;
+        classBuckets[ci].set(key, cb);
+        break;
+      }
+    }
   }
   const sorted = [...buckets.values()]
     .map((v) => ({ n: v.n, hex: rgbToHex(v.r / v.n, v.g / v.n, v.b / v.n) }))
@@ -138,6 +192,26 @@ export async function extractSheetPalette(png: Buffer, max = 5): Promise<string[
     if (cand.n / total < MIN_SHARE) break;
     if (picked.some((p) => hexDist(p, cand.hex) < MIN_SEPARATION)) continue;
     picked.push(cand.hex);
+  }
+  // THE STRATIFIED PASS (iteration 116): the classes the dominance
+  // missed earn their cluster - dark first (the law's point), the
+  // winner is the class's own dominant bucket, held to the same
+  // separation discipline as the dominant census.
+  let stratified = 0;
+  for (let ci = 0; ci < VALUE_CLASSES.length && stratified < STRATIFIED_MAX; ci++) {
+    const share = total > 0 ? classTotals[ci] / total : 0;
+    if (share < CLASS_MIN_SHEET_SHARE) continue;
+    let best: { n: number; hex: string } | null = null;
+    for (const v of classBuckets[ci].values()) {
+      if (v.n / Math.max(1, classTotals[ci]) < CLASS_MIN_CLASS_SHARE) continue;
+      const hex = rgbToHex(v.r / v.n, v.g / v.n, v.b / v.n);
+      if (picked.some((p) => hexDist(p, hex) < MIN_SEPARATION)) continue;
+      if (best === null || v.n > best.n) best = { n: v.n, hex };
+    }
+    if (best !== null) {
+      picked.push(best.hex);
+      stratified += 1;
+    }
   }
   return picked;
 }
@@ -171,8 +245,15 @@ export function planSheetConformance(
     }
     const d = hexDist(from, nearest);
     if (d < skipBelow) {
-      rows.push({ role, mat, from, to: from, delta: d, skipped: "already true to the sheet" });
-      continue;
+      // THE SKIP EARNS ITS SKIP (iteration 116): the skip holds only
+      // when the nearest cluster shares the dye's value closely - a
+      // near distance that is mostly value drift is not "already
+      // true", it is the sheet one value step away, and the pull
+      // proceeds (guarded by the value class below).
+      if (Math.abs(relLum(nearest) - relLum(from)) <= SKIP_LUM_CAP) {
+        rows.push({ role, mat, from, to: from, delta: d, skipped: "already true to the sheet" });
+        continue;
+      }
     }
     let to = blendHex(from, nearest, factor);
     // THE VALUE GUARD: a nearest cluster outside the dye's value class

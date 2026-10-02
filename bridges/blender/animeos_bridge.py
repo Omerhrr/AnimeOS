@@ -136,6 +136,91 @@ SHOT_FRAMING = {
     "EXTREME_CLOSEUP":  (0.28, 100, 1.55),
 }
 
+# ── THE TWO-SHOT BLOCKS BOTH (iteration 116) ──────────────────
+# The 115 night's worst cell moved off the closeup onto the antagonist's
+# wide: E7 Sc12 S006 (the 28mm two-shot) read Wei 20% / wardrobe 10%,
+# and the frame itself told why - the hero solved the framing from his
+# own measured box while the second figure stood at a HARDCODED
+# (0.6, 1.7) behind-right of him, rendering a dark-on-dark smudge at
+# the frame's right edge. The blocking was never directed; it was a
+# constant. The law: a wide two-shot BLOCKS the stand-off from the
+# lens - the second figure crosses to the lens-perpendicular through
+# the hero (both figures read in profile, the classic duel staging),
+# the gap is the framing's stand-off distance, the figure FACES the
+# hero - and the camera solves from the PAIR's union box, not the
+# hero's. The tight framings keep the 113 stand-off exactly (the
+# closeup's hair-curtain lesson: the second figure must stand OUT of
+# a tight frame, and 113's placement already earned that night's
+# closeup frontier).
+TWO_SHOT_FRAMINGS = ("WS", "WIDE", "ESTABLISHING", "LOW_ANGLE")
+STANDOFF_GAP = {"ESTABLISHING": 2.2, "WIDE": 1.6, "LOW_ANGLE": 1.4, "WS": 1.6}
+PAIR_FILL_W = 0.62   # the pair's share of frame WIDTH the wide solve promises
+
+# THE STAND-OFF READS (iteration 116): a dark wardrobe on a night set
+# is a silhouette without an edge - the blocking puts Wei in frame,
+# the rim gives him his outline. A moon-tinted rim from behind the
+# second figure, off the lens axis: under TOON the band draws the cel
+# edge the wardrobe's own value cannot give against a storm wall.
+STANDOFF_RIM_NIGHT = "#cfd8e8"   # the moon's own tint - the edge is moon-kissed
+STANDOFF_RIM_DAY = "#e8eef8"
+STANDOFF_RIM_SHARE = 0.35        # of the hero key's base energy
+STANDOFF_RIM_YAW = 155.0         # degrees off the to-camera vector: behind, past the profile edge
+STANDOFF_RIM_RISE = 18.0
+
+
+def base_camera_angle(shot_payload):
+    """THE FRONT ARC'S BASE ANGLE - one formula, two callers: the
+    framing context and the two-shot blocking derive the same arc, so
+    the stand-off is blocked for the lens that actually shoots it."""
+    return -20.0 + 7.0 * ((shot_payload.get("number") or 1) % 7)
+
+
+def standoff_placement(framing, base_angle_deg, hero_h):
+    """THE TWO-SHOT BLOCKS BOTH: the second figure stands across the
+    hero on the lens-perpendicular through the hero's position. The
+    lens sits at hero + dist*(sin a, -cos a) (the front arc), so the
+    perpendicular is (cos a, sin a) - both figures land on the same
+    depth plane and read in profile. The gap is the framing's
+    stand-off distance scaled by the hero's measured height; the
+    figure FACES the hero (the rig's native facing is -Y at zero
+    rotation). Returns (location, z_rotation_degrees)."""
+    a = math.radians(base_angle_deg)
+    gap = STANDOFF_GAP.get(str(framing or "").upper(), 1.4) * (float(hero_h or 0.9) / 0.9)
+    px, py = math.cos(a), math.sin(a)
+    loc = (px * gap, py * gap, 0.0)
+    # face the hero: (sin th, -cos th) must equal (-px, -py)
+    rot = math.degrees(math.atan2(-px, py))
+    return loc, rot
+
+
+def pair_context(a, b):
+    """THE PAIR IS THE SUBJECT (iteration 116): the two-shot's framing
+    solves from the UNION of both figures' measured boxes - the aim is
+    the pair's midpoint chest and the distance also solves the width
+    across the lens (the height solve alone framed the hero and left
+    the antagonist at the frame edge)."""
+    a_lo_x, a_hi_x = float(a["cx"]) - float(a["spanX"]) / 2.0, float(a["cx"]) + float(a["spanX"]) / 2.0
+    a_lo_y, a_hi_y = float(a["cy"]) - float(a["spanY"]) / 2.0, float(a["cy"]) + float(a["spanY"]) / 2.0
+    b_lo_x, b_hi_x = float(b["cx"]) - float(b["spanX"]) / 2.0, float(b["cx"]) + float(b["spanX"]) / 2.0
+    b_lo_y, b_hi_y = float(b["cy"]) - float(b["spanY"]) / 2.0, float(b["cy"]) + float(b["spanY"]) / 2.0
+    lo_x, hi_x = min(a_lo_x, b_lo_x), max(a_hi_x, b_hi_x)
+    lo_y, hi_y = min(a_lo_y, b_lo_y), max(a_hi_y, b_hi_y)
+    lo_z = min(float(a["floor"]), float(b["floor"]))
+    hi_z = max(float(a["floor"]) + float(a["h"]), float(b["floor"]) + float(b["h"]))
+    height = max(0.1, hi_z - lo_z)
+    return {
+        "h": round(height, 4),
+        "headH": round(max(float(a["headH"]), float(b["headH"])), 4),
+        "face": round(max(float(a["face"]), float(b["face"])), 4),
+        "chest": round(lo_z + height * 0.66, 4),
+        "floor": round(lo_z, 4),
+        "cx": round((lo_x + hi_x) / 2.0, 4),
+        "cy": round((lo_y + hi_y) / 2.0, 4),
+        "spanX": round(hi_x - lo_x, 4),
+        "spanY": round(hi_y - lo_y, 4),
+        "pair": True,
+    }
+
 def fnv1a(s):
     h = 2166136261
     for ch in s:
@@ -725,7 +810,15 @@ def measure_subject(root):
             stack.extend(ob.children)
             if ob.type != "MESH" or ob.hide_render:
                 continue
-            is_head = ob.name == "HeadMesh"
+            # THE SECOND FIGURE MEASURES TOO (iteration 116): the head
+            # match is a NAME-FAMILY match - a scene that already owns
+            # "HeadMesh" names the second build's head "HeadMesh.001",
+            # and the exact match measured every second figure None (the
+            # 116 night's pair framing never engaged on S006 until this;
+            # the hero measured, the antagonist did not exist to the
+            # presence law). Blender's duplicate suffix is the family
+            # separator - split it off.
+            is_head = ob.name.split(".")[0] == "HeadMesh"
             for c in ob.bound_box:
                 w = ob.matrix_world @ mathutils.Vector(c)
                 for i in range(3):
@@ -746,6 +839,13 @@ def measure_subject(root):
             "face": round((hlo[2] + hhi[2]) / 2.0 + head_h * 0.05, 4),
             "chest": round(lo[2] + height * 0.66, 4),
             "floor": round(lo[2], 4),
+            # THE PAIR IS THE SUBJECT (iteration 116): the world X/Y
+            # center + spans ride along so a two-shot can union both
+            # figures' boxes into one framing subject
+            "cx": round((lo[0] + hi[0]) / 2.0, 4),
+            "cy": round((lo[1] + hi[1]) / 2.0, 4),
+            "spanX": round(hi[0] - lo[0], 4),
+            "spanY": round(hi[1] - lo[1], 4),
         }
     except Exception:  # noqa: BLE001
         return None
@@ -878,11 +978,11 @@ def solve_sightline(scn, bpy, shot, scene_p, subject):
     angle offset (degrees), both named in the evidence."""
     fr = _Framing(shot, scene_p, subject)
     dist0 = fr.dist
-    pos = _solve_position(dist0, fr.h, fr.angle, 0.0)
+    pos = _solve_position(dist0, fr.h, fr.angle, 0.0, fr.origin)
     if _sightline_clear(scn, bpy, pos, fr.target):
         return {"scale": 1.0, "angleOffset": 0.0, "walked": False, "cleared": True, "dist": round(dist0, 3)}
     for deg in (12.0, -12.0, 24.0, -24.0, 36.0, -36.0):
-        pos = _solve_position(dist0, fr.h, fr.angle + deg, 0.0)
+        pos = _solve_position(dist0, fr.h, fr.angle + deg, 0.0, fr.origin)
         if _sightline_clear(scn, bpy, pos, fr.target):
             return {"scale": 1.0, "angleOffset": deg, "walked": False, "cleared": True, "dist": round(dist0, 3), "steppedAside": deg}
     dist = dist0
@@ -890,7 +990,7 @@ def solve_sightline(scn, bpy, shot, scene_p, subject):
     for _ in range(4):
         dist = max(floor, dist * 0.85)
         for deg in (0.0, 12.0, -12.0, 24.0, -24.0, 36.0, -36.0):
-            pos = _solve_position(dist, fr.h, fr.angle + deg, 0.0)
+            pos = _solve_position(dist, fr.h, fr.angle + deg, 0.0, fr.origin)
             if _sightline_clear(scn, bpy, pos, fr.target):
                 out = {"scale": dist / dist0, "angleOffset": deg, "walked": True, "cleared": True, "dist": round(dist, 3)}
                 if deg:
@@ -1003,6 +1103,7 @@ class _Framing:
         h = height
         target = [0.0, 0.0, height * 0.75]
         fill = None
+        self.origin = [0.0, 0.0]
         if framed and isinstance(subject, dict) and subject.get("h"):
             # ── THE PRESENCE LAW (iteration 107): the lens SOLVES the
             #    distance from the subject's MEASURED box - the shot
@@ -1020,23 +1121,45 @@ class _Framing:
             #    fallback when nothing was measured. ──
             st = str(shot_payload.get("shotType", "MEDIUM")).upper()
             tight = st in ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")
-            size = float(subject.get("headH") or subject["h"]) if tight else float(subject["h"])
+            # THE PAIR IS THE SUBJECT (iteration 116): a two-shot context
+            # never solves as a tight face frame - the union box IS the
+            # subject and the aim is the pair's midpoint
+            pair = bool(subject.get("pair")) if isinstance(subject, dict) else False
+            size = float(subject.get("headH") or subject["h"]) if (tight and not pair) else float(subject["h"])
             fill = SUBJECT_FILL.get(st, 0.7)
             tan_half = 10.125 / float(lens)  # the 36mm sensor, horizontal fit, 16:9
             dist = clamp(size / (fill * 2.0 * tan_half), 0.45, 14.0)
-            aim = "face" if (dist < 1.2 or tight) else "chest"
-            if aim == "face":
-                # THE LEVEL LENS (iteration 113): the closeup's lens rides
-                # the face's own height - the chest-height lens aimed UP
-                # the face read the nostrils, hung the bangs over the eyes
-                # and the push-in steepened the angle every frame (the
-                # night's DSH verdict: 'an anonymous, faceless
-                # silhouette'). A hair above the eye line, tilted down a
-                # few degrees - the portrait angle.
-                h = float(subject.get("face") or subject["h"] * 0.84) + subject["h"] * 0.035
+            if pair:
+                # THE PAIR IS THE SUBJECT: the height solve above frames
+                # the figures' TALLEST - the binding dimension of a two-shot
+                # is the WIDTH across the lens, so the pair also solves the
+                # width (the horizontal half-angle: the 36mm sensor's own
+                # 18mm half) and keeps the wider of the two.
+                a = math.radians(base_camera_angle(shot_payload))
+                across = (float(subject.get("spanX") or 0.0) * abs(math.cos(a))
+                          + float(subject.get("spanY") or 0.0) * abs(math.sin(a)))
+                if across > 0.2:
+                    dist_w = across / (PAIR_FILL_W * 2.0 * (18.0 / float(lens)))
+                    dist = clamp(max(dist, dist_w), 0.45, 16.0)
+                chest = float(subject.get("chest") or subject["h"] * 0.62)
+                target = [float(subject.get("cx") or 0.0), float(subject.get("cy") or 0.0), chest]
+                h = chest + subject["h"] * 0.08
+                self.origin = [float(subject.get("cx") or 0.0), float(subject.get("cy") or 0.0)]
             else:
-                h = float(subject.get("chest") or subject["h"] * 0.62) + subject["h"] * 0.08
-            target = [0.0, 0.0, float(subject.get("face") or subject["h"] * 0.84) if aim == "face" else float(subject.get("chest") or subject["h"] * 0.62)]
+                aim = "face" if (dist < 1.2 or tight) else "chest"
+                if aim == "face":
+                    # THE LEVEL LENS (iteration 113): the closeup's lens rides
+                    # the face's own height - the chest-height lens aimed UP
+                    # the face read the nostrils, hung the bangs over the eyes
+                    # and the push-in steepened the angle every frame (the
+                    # night's DSH verdict: 'an anonymous, faceless
+                    # silhouette'). A hair above the eye line, tilted down a
+                    # few degrees - the portrait angle.
+                    h = float(subject.get("face") or subject["h"] * 0.84) + subject["h"] * 0.035
+                else:
+                    h = float(subject.get("chest") or subject["h"] * 0.62) + subject["h"] * 0.08
+                target = [0.0, 0.0, float(subject.get("face") or subject["h"] * 0.84) if aim == "face" else float(subject.get("chest") or subject["h"] * 0.62)]
+                self.origin = [0.0, 0.0]
         elif framed:
             # prop-scale distance: the designed figure stands ~0.9m tall
             # (0.45x), and the lens table was tuned for full-scale sets -
@@ -1067,7 +1190,7 @@ class _Framing:
             # STEP-ASIDE (iteration 107) rides the subject box - a world
             # body that owned the ray at every depth moves the base
             # angle aside by the walked offset.
-            angle_deg = -20.0 + 7.0 * ((shot_payload.get("number") or 1) % 7)
+            angle_deg = base_camera_angle(shot_payload)
             if isinstance(subject, dict) and subject.get("_angleOffset"):
                 angle_deg += float(subject["_angleOffset"])
             angle = angle_deg
@@ -1128,15 +1251,19 @@ def _pose_follow(shot_payload, fr, radius, t):
     return radius
 
 
-def _solve_position(radius, h, angle_deg, lateral):
+def _solve_position(radius, h, angle_deg, lateral, origin=None):
     """THE ANGLE CONTRACT IS DEGREES (iteration 107's find): the move
     vocabulary speaks degrees (ORBIT's 44-degree swing, PAN's 24), the
     framed base angle speaks degrees - but _Framing stored RADIANS and
     this converted them AGAIN, silently flattening every framed shot's
     camera to ~-1.2 degrees (dead front-on, the -100-degree spread's
-    variety cancelled). One unit, end to end: degrees."""
+    variety cancelled). One unit, end to end: degrees. THE PAIR IS THE
+    SUBJECT (iteration 116): the orbit's origin is the framing's own
+    - the hero's position for single shots, the pair's midpoint for a
+    two-shot (default keeps the historical world origin)."""
     rad = math.radians(angle_deg)
-    return [radius * math.sin(rad) + lateral, -radius * math.cos(rad), h]
+    ox, oy = (origin or (0.0, 0.0))
+    return [ox + radius * math.sin(rad) + lateral, oy - radius * math.cos(rad), h]
 
 
 def camera_pose(shot_payload, scene_payload, t, subject=None):
@@ -1151,7 +1278,7 @@ def camera_pose(shot_payload, scene_payload, t, subject=None):
         movement = "STATIC"
     radius, h, angle, lateral, target, lens = apply_camera_move(movement, t, fr)
     radius = _pose_follow(shot_payload, fr, radius, t)
-    pos = _solve_position(radius, h, angle, lateral)
+    pos = _solve_position(radius, h, angle, lateral, fr.origin)
     if movement == "STATIC":
         pos[2] += math.sin(t * math.pi * 2) * 0.015  # breathing lock-off
     return pos, target, lens
@@ -1326,7 +1453,7 @@ def grammar_camera_pose(shot_payload, scene_payload, grammar, t, subject=None):
             rx = lerp_pose(shot_payload.get("poseStart"), shot_payload.get("poseEnd"), t)[0]
             radius += rx * 0.42
 
-    pos = _solve_position(radius, h, angle, lateral)
+    pos = _solve_position(radius, h, angle, lateral, fr.origin)
     if beat["move"] == "STATIC":
         pos[2] += math.sin(t * math.pi * 2) * 0.015  # breathing lock-off
     return pos, target, lens
@@ -5857,6 +5984,7 @@ def worker_run(job_file):
             "sections": shot_directive_sections(shot),
         }
         figure = None
+        second_rig = None  # THE TWO-SHOT BLOCKS BOTH (iteration 116): the second figure's rig, for the pair framing + the stand-off rim
         eclip = None  # THE FACE PERFORMS THE BEAT: the hero's clip (None = pose-driven)
         speech_visemes = parse_speech(shot)
         state["posesRequested"] = [str(shot.get("poseStart")), str(shot.get("poseEnd"))]
@@ -6053,50 +6181,13 @@ def worker_run(job_file):
             #    built procedurally or loaded as the designed asset (the
             #    hero's materials carry plain names, the second figure's
             #    carry the B suffix: RobeMatB/AccentMatB/HairMatB/BootsMatB).
-            #    The recipes' other parameters stay untouched. Skipped
-            #    rows are named honestly in the per-member identity state. ──
+            #    THE SHEET DRESSES BOTH, AFTER BOTH BUILT (iteration 116):
+            #    the application ran BEFORE the second figure's build, so
+            #    every B row skipped "no such material on the stage" -
+            #    the antagonist's sheet pull never landed through 114 and
+            #    115 (his wardrobe scored 10-25% all along). The loop
+            #    moved below the second figure's build + placement.
             cast_p = shot.get("cast") or []
-            for cast_idx in range(min(len(cast_p), 2)):
-                conf = cast_p[cast_idx].get("sheetConformance") if isinstance(cast_p[cast_idx], dict) else None
-                if not (isinstance(conf, dict) and conf.get("rows")):
-                    continue
-                suffix = "" if cast_idx == 0 else "B"
-                applied, skipped = [], []
-                for row in conf["rows"]:
-                    if not isinstance(row, dict):
-                        continue
-                    mat_name = str(row.get("mat") or "") + suffix
-                    mat = bpy.data.materials.get(mat_name)
-                    if mat is None:
-                        skipped.append({"mat": mat_name, "skipped": "no such material on the stage"})
-                        continue
-                    # THE SURFACE IS GRADED (iteration 83): a graded
-                    # material's DYE re-sets (the whole tree rebuilds
-                    # from the new hex - one law, one dye); THE SHEET'S
-                    # RANGE (iteration 107): the measured palette rides
-                    # the rebuild, so the pixels carry the sheet's own
-                    # ramp ends, not one blended dye. A legacy flat
-                    # material recolors its Base Color as before.
-                    if not regrade_material(mat, str(row.get("to") or "#000000"), conf.get("palette")):
-                        skipped.append({"mat": mat_name, "skipped": "no principled node"})
-                        continue
-                    if row.get("skipped"):
-                        skipped.append({"mat": mat_name, "skipped": str(row.get("skipped"))})
-                    else:
-                        applied.append({
-                            "mat": mat_name,
-                            "from": row.get("from"),
-                            "to": row.get("to"),
-                            "delta": round(float(row.get("delta") or 0.0), 3),
-                        })
-                if applied or skipped:
-                    state["identity" if cast_idx == 0 else "identityB"] = {
-                        "sheet": conf.get("characterName"),
-                        "palette": conf.get("palette") or [],
-                        "conformed": applied,
-                        "skipped": skipped,
-                        "law": conf.get("note") or "the sheet is color law over the DNA defaults; recipe parameters untouched",
-                    }
             # a second detected character stands off across the set,
             # facing the hero (static stance - blocking depth)
             if len(cast) > 1:
@@ -6153,16 +6244,86 @@ def worker_run(job_file):
                 # and the sync - before this order the pose wiped the
                 # placement and the second figure stood INSIDE the hero,
                 # its hair curtain filling every closeup frame.
-                other_rig["root"].location = (0.6, 1.7, 0.0)
-                other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(166))
+                # THE TWO-SHOT BLOCKS BOTH (iteration 116): the wide
+                # framings block the stand-off from the LENS - the figure
+                # crosses to the lens-perpendicular through the hero and
+                # FACES him (both read in profile, the duel staging);
+                # the tight framings keep the 113 stand-off exactly.
+                second_rig = other_rig
+                st_up = str(shot.get("shotType") or "").upper()
+                if st_up in TWO_SHOT_FRAMINGS:
+                    try:
+                        hero_m = measure_subject(figure.get("root")) if figure is not None else None
+                    except Exception:  # noqa: BLE001
+                        hero_m = None
+                    _loc, _rot = standoff_placement(st_up, base_camera_angle(shot), float((hero_m or {}).get("h") or 0.9))
+                    loc3, rot_deg = (_loc[0], _loc[1], 0.0), _rot
+                else:
+                    loc3, rot_deg = (0.6, 1.7, 0.0), 166.0
+                other_rig["root"].location = loc3
+                other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(rot_deg))
                 apply_pose(other_rig, "STANCE", "STANCE", 0.0, 0.0)
                 # the pose's root write is the stance (0,0,0); re-apply the
                 # stand-off after it so the placement is what renders
-                other_rig["root"].location = (0.6, 1.7, 0.0)
-                other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(166))
+                other_rig["root"].location = loc3
+                other_rig["root"].rotation_euler = (0.0, 0.0, math.radians(rot_deg))
                 if other_rig.get("syncRig"):
                     other_rig["syncRig"]()
                 state["secondFigure"] = other.get("name")
+                state["secondFigureBlocking"] = (
+                    {"law": "two-shot-116", "framing": st_up,
+                     "loc": [round(loc3[0], 3), round(loc3[1], 3)], "rotDeg": round(rot_deg, 1),
+                     "gap": round(math.hypot(loc3[0], loc3[1]), 3), "facesHero": True}
+                    if st_up in TWO_SHOT_FRAMINGS else
+                    {"law": "standoff-113", "loc": [0.6, 1.7], "rotDeg": 166.0}
+                )
+            # ── THE SHEET DRESSES BOTH, AFTER BOTH BUILT (iteration 116):
+            #    the moved application loop - the hero's rows applied here
+            #    before too, but the second figure's B materials only
+            #    EXIST below his build; the sheet's color law now lands on
+            #    every cast member it names. The recipes' other parameters
+            #    stay untouched; skipped rows are named honestly. ──
+            for cast_idx in range(min(len(cast_p), 2)):
+                conf = cast_p[cast_idx].get("sheetConformance") if isinstance(cast_p[cast_idx], dict) else None
+                if not (isinstance(conf, dict) and conf.get("rows")):
+                    continue
+                suffix = "" if cast_idx == 0 else "B"
+                applied, skipped = [], []
+                for row in conf["rows"]:
+                    if not isinstance(row, dict):
+                        continue
+                    mat_name = str(row.get("mat") or "") + suffix
+                    mat = bpy.data.materials.get(mat_name)
+                    if mat is None:
+                        skipped.append({"mat": mat_name, "skipped": "no such material on the stage"})
+                        continue
+                    # THE SURFACE IS GRADED (iteration 83): a graded
+                    # material's DYE re-sets (the whole tree rebuilds
+                    # from the new hex - one law, one dye); THE SHEET'S
+                    # RANGE (iteration 107): the measured palette rides
+                    # the rebuild, so the pixels carry the sheet's own
+                    # ramp ends, not one blended dye. A legacy flat
+                    # material recolors its Base Color as before.
+                    if not regrade_material(mat, str(row.get("to") or "#000000"), conf.get("palette")):
+                        skipped.append({"mat": mat_name, "skipped": "no principled node"})
+                        continue
+                    if row.get("skipped"):
+                        skipped.append({"mat": mat_name, "skipped": str(row.get("skipped"))})
+                    else:
+                        applied.append({
+                            "mat": mat_name,
+                            "from": row.get("from"),
+                            "to": row.get("to"),
+                            "delta": round(float(row.get("delta") or 0.0), 3),
+                        })
+                if applied or skipped:
+                    state["identity" if cast_idx == 0 else "identityB"] = {
+                        "sheet": conf.get("characterName"),
+                        "palette": conf.get("palette") or [],
+                        "conformed": applied,
+                        "skipped": skipped,
+                        "law": conf.get("note") or "the sheet is color law over the DNA defaults; recipe parameters untouched",
+                    }
         elif pose_start or pose_end:
             legacy_mat = bpy.data.materials.new("SetMat")
             legacy_mat.use_nodes = True
@@ -6527,6 +6688,50 @@ def worker_run(job_file):
                                                                        "share": FACE_FILL_SHARE, "shadowless": True},
                                     "lawVersion": 113}
 
+        # ── THE STAND-OFF READS (iteration 116): a dark wardrobe on a
+        #    night set is a silhouette without an edge - the 115 frame
+        #    rendered the antagonist a dark-on-dark smudge at the 28mm
+        #    wide. The second figure of a wide two-shot gets a dedicated
+        #    moon-tinted rim from BEHIND him, off the lens axis: under
+        #    TOON the band draws the cel edge the wardrobe's own value
+        #    cannot give against a storm wall. Static placement (the
+        #    rim serves the stand-off, a static or slow shot); the
+        #    TRACK_TO owns the aim at the figure's head. ──
+        if second_rig is not None and str(shot.get("shotType") or "").upper() in TWO_SHOT_FRAMINGS:
+            try:
+                import mathutils
+                bpy.context.view_layer.update()
+                second_head = second_rig.get("head") if isinstance(second_rig, dict) else None
+                if second_head is not None:
+                    hp = second_head.matrix_world.translation
+                    a = math.radians(base_camera_angle(shot))
+                    to_cam = mathutils.Vector((math.sin(a), -math.cos(a), 0.0))
+                    yaw = math.radians(STANDOFF_RIM_YAW)
+                    ca, sa = math.cos(yaw), math.sin(yaw)
+                    d = mathutils.Vector((to_cam.x * ca - to_cam.y * sa, to_cam.x * sa + to_cam.y * ca, 0.0))
+                    rise = math.radians(STANDOFF_RIM_RISE)
+                    dist = 1.4
+                    rim_data = bpy.data.lights.new("StandoffRim", "AREA")
+                    rim_data.size = 0.9
+                    rim_data.energy = (140.0 if night else 260.0) * STANDOFF_RIM_SHARE
+                    rim_data.color = hex_to_rgb(STANDOFF_RIM_NIGHT if night else STANDOFF_RIM_DAY)
+                    rim_ob = bpy.data.objects.new("StandoffRim", rim_data)
+                    rim_ob.location = (hp.x + d.x * dist, hp.y + d.y * dist, hp.z + dist * math.sin(rise))
+                    scn.collection.objects.link(rim_ob)
+                    rim_target = bpy.data.objects.new("StandoffRimTarget", None)
+                    scn.collection.objects.link(rim_target)
+                    rim_target.parent = second_head
+                    rim_target.location = (0.0, 0.0, 0.02)
+                    rtc = rim_ob.constraints.new("TRACK_TO")
+                    rtc.target = rim_target
+                    rtc.track_axis = "TRACK_NEGATIVE_Z"
+                    rtc.up_axis = "UP_Y"
+                    state["standoffRim"] = {"yawDeg": STANDOFF_RIM_YAW, "riseDeg": STANDOFF_RIM_RISE,
+                                            "share": STANDOFF_RIM_SHARE, "energy": rim_data.energy,
+                                            "night": bool(night), "color": STANDOFF_RIM_NIGHT if night else STANDOFF_RIM_DAY}
+            except Exception as exc:  # noqa: BLE001
+                state["standoffRim"] = {"skipped": str(exc)[:160]}
+
         # ── render settings ──
         windows = lightning_windows(job_id, lightning, duration_sec)
         scn.render.engine = "CYCLES"
@@ -6659,6 +6864,34 @@ def worker_run(job_file):
                 subject_ctx = measure_subject(figure.get("root"))
             except Exception:  # noqa: BLE001
                 subject_ctx = None
+        # THE FACE LIGHTS SERVE THE HERO (iteration 116): the key/fill
+        # aim and scale ride the HERO's own box even when the camera
+        # frames the pair (the pair's headH would mis-scale the key).
+        hero_ctx = subject_ctx
+        # THE PAIR IS THE SUBJECT (iteration 116): a wide two-shot
+        # measures BOTH figures and hands the framing their union box -
+        # the aim lands the pair's midpoint and the distance solves the
+        # width across the lens, so the antagonist is IN the frame the
+        # presence law promises, not at its edge.
+        two_shot_ev = None
+        if (second_rig is not None and subject_ctx is not None
+                and str(shot.get("shotType") or "").upper() in TWO_SHOT_FRAMINGS):
+            try:
+                bpy.context.view_layer.update()
+                other_ctx = measure_subject(second_rig.get("root"))
+                if other_ctx is not None:
+                    pair = pair_context(subject_ctx, other_ctx)
+                    cast_names = [str((c or {}).get("name") or "cast") for c in (shot.get("cast") or [])[:2]]
+                    two_shot_ev = {
+                        "framing": str(shot.get("shotType") or "").upper(),
+                        "members": cast_names or ["hero", "second"],
+                        "pairSpanX": pair["spanX"], "pairSpanY": pair["spanY"],
+                        "midX": pair["cx"], "midY": pair["cy"],
+                    }
+                    subject_ctx = pair
+            except Exception as exc:  # noqa: BLE001
+                two_shot_ev = {"skipped": str(exc)[:160]}
+            state["twoShot"] = two_shot_ev
         sightline_ev = None
         if subject_ctx is not None:
             # THE LENS OWNS ITS SIGHTLINE (iteration 107): the solve
@@ -6701,6 +6934,8 @@ def worker_run(job_file):
             }
             if sightline_ev is not None:
                 presence_ev["sightline"] = sightline_ev
+            if two_shot_ev is not None:
+                presence_ev["twoShot"] = two_shot_ev
             state["render"]["presence"] = presence_ev
         else:
             state["render"]["presence"] = {
@@ -6782,7 +7017,9 @@ def worker_run(job_file):
             cam.data.lens = lens
             cam.location = mathutils.Vector(pos)
             if hero_key is not None and face_target is not None:
-                aim_hero_key(hero_key, cam.location, face_target, subject_ctx, fill_ob=face_fill)
+                aim_hero_key(hero_key, cam.location, face_target,
+                             hero_ctx if two_shot_ev is not None else subject_ctx,
+                             fill_ob=face_fill)
             direction = mathutils.Vector(target) - cam.location
             cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
             if choreo_prog:
