@@ -2211,3 +2211,39 @@ Stage Summary:
 - The re-score night ran on the 121 build and the gate held BELOW verbatim - the distribution confirmed on a fresh production (47/35/35), the face named the frontier, the paired duel shot the strongest read.
 - Three durable laws landed: the committed byte-exact restore (the production is reproducible), the designed turnaround answering the framing reference first (the 121 law alive where the night runs), and the one-import law (the paired path un-killed).
 - The next honest work order: the mannequin-anatomy law + the face key light ladder rung - the face cells are the only cells still in the floor's way.
+
+---
+Task ID: iteration-123 (retroactive - the entry the session owed; the discipline restored by 124)
+Agent: Super Z (main agent)
+Task: THE JUDGE SEES THE FACE - the render hands the scorer the face's own address, the pixels gain the resolution rung, the nose is redrawn as a line, the shading proxy wears the face. Full record: commit b6a601a's message + README item 29.
+
+Work Log:
+- The probe before the pen (scripts/probe-face-fill.py): face fill ON vs OFF rendered PIXEL-IDENTICAL at production framings - the oval was a SCALE failure, not a paint failure.
+- The face's own address (animeos_bridge.py): head_screen_boxes projects each cast member's head into screen space at the pose-sample marks through the frame's own camera (deterministic craft, no AI); evidence rides state.render.faceBoxes, lawVersion 123.
+- The face-crop strip (src/lib/identity.ts): crops the SAME frames the filmstrip judged, upscales to 224px, one labeled row per member; the prompt's law: FACE scores on the crops FIRST, the filmstrip keeps hair/wardrobe/weapon/palette/style.
+- The resolution rung: preview cap 512 -> 640. The nose is a line (paint_nose redrawn at 128px on a 19mm plane). The anatomized proxy: the shading proxy wears the SAME 16-structure facial field - the cel band curves over a FACE.
+- Proofs: blender-craft123-smoke 16 checks ALL GREEN (bit-exact twice), blender-anime smoke ALL GREEN (THE JUDGE SEES THE FACE), e2e-iter123-face 32 checks ALL GREEN, e2e-iter121/120/119/118/117 ALL GREEN, src tsc 0 errors.
+- The full-loop proof: real API render S006 paired WIDE at v123, the REAL strip built, ONE real vision re-score - Lin Yue face 0.2 -> 0.5, Wei 0.2 -> 0.4; the honest trade named: palette 0.9 -> 0.4 (the wide's deep ramp + mist reads desaturated). The re-score night on the 123 build left waiting on the director's proceed.
+
+Stage Summary:
+- Four durable laws landed: the face's own address, the face-crop strip, the resolution rung, the face's drawn language. Commit b6a601a pushed; remote verified.
+
+---
+Task ID: iteration-124
+Agent: Super Z (main agent)
+Task: THE NIGHT ANSWERS THE FACE QUESTION - the re-score night on the 123 build (the director's proceed): reset -> drain 6/6 real Blender clips at the 123 laws -> median-of-3 re-score with the face-crop strip in play -> the distribution vs the 70% floor -> the REAL publish gate.
+
+Work Log:
+- Reconciliation: HEAD b6a601a (123, pushed), tree clean; the sandbox warm (dev server on the explicit DATABASE_URL + ANIMEOS_INK=hull; the Blender pool resident started 11:38, AFTER the last bridge edit - the 123 laws live in the pool).
+- THE TOOL (scripts/detached-night123.mjs): the double-fork detach per the 122 ops law; phases reset|drain|rescore.
+- RESET: 7 jobs + 7 clips + 6 RENDER scores cleared; 6 shots to REVIEW.
+- DRAIN (POOL=1, UI-driven tick): 6/6 REAL Blender clips in ~42 min - all six job files at 640x360 (the resolution rung), 3 pose-marks each, face boxes for the cast everywhere; face paint STAGED at the ESTABLISHING shot (12 meshes) and honestly refused at MEDIUM/CLOSEUP; the style ramp rode per shot (0.46/0.80/0.02 wide -> 0.62/1.0/0.04 close - the 121 STYLE law answering the framing).
+- RE-SCORE (median of 3): scored 6 refused 0, "+ face crops judged" rides EVERY note - the judge SAW the face on all six. DISTRIBUTION: mean 41% / median 35% / p10 20% vs floor 70% - BELOW (6/6 under; 122 was 47/35/35, 4/6 under). The REAL gate refused verbatim.
+- THE FACE QUESTION ANSWERED: the face READS - S003 CLOSEUP face 80%; S006 paired WIDE face 40/50% where 122 read 20% on the same shot family. The crops moved the face cells at both ends of the scale.
+- THE TRADE, MEDIAN-CONFIRMED: the wides' palette/style collapsed (S001 35% with palette 20% "low-poly 3D"; S004 35% palette 20%; S005 20%) - the full-loop proof's single-sample trade holds across the median of 3: the deepened wide ramp (floorScale 0.80) + mist reads desaturated/simplified.
+- The confound named: 122 -> 123 changed both pixels (512->640) and prompt (the strips); the cells that moved UP are the cells the strips serve, the cells that moved DOWN are the cells the ramp touches - consistent with the named trade.
+- THE FRONTIER HAS MOVED: from the face to the wide's material read. Next work order is the director's steer: the wide-end shadow floor, the mist grading, or the judge's palette expectation at establishing scale.
+- Gates: src tsc 0 errors; the night is the iteration's E2E (6/6 real clips + 18 real vision calls + the REAL gate). Seam noted, unharmed: proof-iter123-fullloop.ts's log-line block carries 3 tsc errors outside the src gate.
+
+Stage Summary:
+- The 123 build is NIGHT-TESTED: the face crops work, and their cost is named. The distribution question now fronts the wide's material read - the ramp's shadow floor at establishing scale.
