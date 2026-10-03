@@ -184,10 +184,20 @@ export function framingViewFor(shotType: string | null | undefined): "close" | "
 
 /** The sibling per-view render next to the stitched sheet (only the
  * generated turnarounds carry views on disk - an uploaded sheet has
- * none and the stitched sheet alone rides). */
-function framingViewUrl(modelSheetUrl: string, view: string): string | null {
-  if (!/turn_sheet\.png$/.test(modelSheetUrl)) return null;
-  return modelSheetUrl.replace(/turn_sheet\.png$/, `turn_${view}.png`);
+ * none and the stitched sheet alone rides).
+ *
+ * THE DESIGNED TURNAROUND ANSWERS FIRST (iteration 122): the render
+ * pipeline constructs the character through the design crew's landed
+ * build (designSheetUrl), so the like-for-like framing reference is
+ * THAT turnaround's own view - the anchored image-gen sheet stays the
+ * canonical art, but its flat full-frame never carries the views.
+ * A cast member whose design never landed (or an uploaded sheet)
+ * falls to the model-sheet check exactly as before. */
+function framingViewUrl(c: { modelSheetUrl?: string | null; designSheetUrl?: string | null }, view: string): string | null {
+  for (const url of [c.designSheetUrl, c.modelSheetUrl]) {
+    if (url && /turn_sheet\.png$/.test(url)) return url.replace(/turn_sheet\.png$/, `turn_${view}.png`);
+  }
+  return null;
 }
 
 export interface IdentitySheet {
@@ -227,7 +237,7 @@ async function prepareIdentityContext(
     .map((c): IdentitySheet | null => {
       const data = publicImageAsDataUrl(c.modelSheetUrl as string);
       if (!data) return null;
-      const viewUrl = framingViewUrl(c.modelSheetUrl as string, framingView);
+      const viewUrl = framingViewUrl(c, framingView);
       const viewData = viewUrl ? publicImageAsDataUrl(viewUrl) : null;
       return { name: c.name, data, ...(viewData ? { framingRef: { view: framingView, data: viewData } } : {}) };
     })

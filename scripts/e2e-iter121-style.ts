@@ -126,6 +126,24 @@ async function main() {
     identity.includes("turn_sheet\\.png$"), "the guard");
   expect("the raw call rides the framing reference images",
     identity.includes("s.framingRef ? [{ type: \"image_url\" as const, image_url: { url: s.framingRef.data } }] : []"), "the attach");
+
+  // ── 8. THE DESIGNED TURNAROUND ANSWERS FIRST (iteration 122) ──
+  // the render pipeline constructs the character through the design
+  // crew's landed build, so the like-for-like reference is THAT
+  // turnaround's own view - the standing production's anchored
+  // image-gen sheets never carry views on their own URL, which left
+  // the framing reference dead in the exact place the night runs.
+  expect("the framing reference resolves design-first (designSheetUrl before modelSheetUrl)",
+    identity.includes("for (const url of [c.designSheetUrl, c.modelSheetUrl])"), "the order");
+  expect("the view resolver takes the cast member (not a bare url)",
+    identity.includes("framingViewUrl(c, framingView)"), "the call");
+  expect("the cast member type carries the designed turnaround",
+    read("src/lib/ai/art.ts").includes("designSheetUrl?: string | null"), "the field");
+  const linViews = ROOT + "/public/designs/cmuq1s4i00007ppgsjqryw9r5/r2";
+  const weiViews = ROOT + "/public/designs/cmuqieinq000cpxz7lp5ohq41/r2";
+  const viewsOk = (dir: string) => ["close", "three", "front"].every((v) => fs.existsSync(`${dir}/turn_${v}.png`));
+  expect("the COMMITTED Lin Yue turnaround carries the three framing views on disk", viewsOk(linViews), linViews);
+  expect("the COMMITTED Wei turnaround carries the three framing views on disk", viewsOk(weiViews), weiViews);
 }
 
 main().then(() => {

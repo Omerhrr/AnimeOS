@@ -6604,11 +6604,19 @@ def worker_run(job_file):
         #    the striking limb smears on the fastest frames. The keys
         #    own the body; the grammar still owns the lens, the
         #    solvers still answer the velocity. ──
+        # ONE IMPORT, BOTH BLOCKS (iteration 122): the conditional
+        # imports made choreography_pass a FUNCTION-LOCAL name bound
+        # on some paths only - a resident worker that already rendered
+        # an inline-choreo shot carries the module in sys.modules, so
+        # the paired block skips its import and reads an UNBOUND local
+        # (S006 died exactly there: "cannot access local variable
+        # 'choreography_pass'"). The import binds unconditionally;
+        # the module import itself is idempotent and cheap.
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import choreography_pass
         choreo_prog = None
         choreo_raw = shot.get("choreo")
         if isinstance(choreo_raw, dict):
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            import choreography_pass
             choreo_prog, choreo_err = choreography_pass.normalize_choreo(choreo_raw)
             if choreo_prog:
                 ch_impacts = choreography_pass.impact_frames(choreo_prog, frames_total) if frames_total else []
@@ -6642,9 +6650,8 @@ def worker_run(job_file):
         if second_rig is not None:
             paired_raw = shot.get("pairedChoreo")
             if isinstance(paired_raw, dict):
-                if "choreography_pass" not in sys.modules:
-                    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-                    import choreography_pass  # noqa: F811
+                # the pass is imported unconditionally above (ONE
+                # IMPORT, BOTH BLOCKS) - the paired block just reads it
                 paired_prog, paired_err = choreography_pass.normalize_choreo(paired_raw)
                 if paired_prog:
                     partner_name = None
