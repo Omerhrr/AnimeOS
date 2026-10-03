@@ -33,9 +33,10 @@
 # garment is right under either look).
 # ─────────────────────────────────────────────────────────────
 
+import colorsys
 import math
 
-TOON_LAW_VERSION = 125
+TOON_LAW_VERSION = 126
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # cel tree tuning
@@ -86,6 +87,65 @@ def style_ramp_for(shot_type):
     """The framing's toon ramp: (lit-band size, shadow floor scale,
     band smoothness). MEDIUM and tighter default to the earned look."""
     return STYLE_RAMP_BY_SHOT.get(str(shot_type or "MEDIUM").upper(), (TOON_SIZE, 1.0, TOON_SMOOTH))
+
+
+# ── THE PAINTERLY STYLE RUNG (iteration 126) ────────────────
+# The 125 night's rescore named the ceiling: the STYLE cell at scale
+# reads the wide framings as 'simplified 2D cutout' / 'flat vector
+# art' / 'low-poly' (10-40 everywhere the figure is small). The 121
+# ramp's answer is the right GRAPHIC decision (narrow band, deep
+# shadow, hard edge) but its bands are STILL FLAT FIELDS - and a
+# field of constant color at 200px wide IS vector art. A painted
+# frame's fields are not constant: the brush varies the value INSIDE
+# the band in patchy, deliberate steps. The rung adds exactly that -
+# a deterministic tri-tone brush layer inside each cel band (a noise
+# field on the mesh's own Generated coordinates, quantized to three
+# constant steps, mixing the band color between a sunk and a lifted
+# patch). The bands keep their hard edges (the 121 law intact - the
+# measurer never sees this); their INTERIORS breathe like brushwork.
+# Depth answers the framing (the painterly rung is a WIDE-end rung:
+# the earned close look is canon and stays untouched), and the swing
+# scales with it - bounded, never gradient dirt, never per-pixel
+# noise (the steps ARE the brush).
+PAINTERLY_BY_SHOT = {"LOW_ANGLE": 0.40, "WIDE": 0.55, "ESTABLISHING": 0.70}
+PAINTERLY_SWING = 0.12        # max value swing at depth 1.0 (per patch step)
+PAINTERLY_NOISE_SCALE = 2.6   # large patch fields, not grain
+
+
+def painterly_depth_for(shot_type):
+    """The framing's painterly depth (0.0 = the canon cel look)."""
+    return PAINTERLY_BY_SHOT.get(str(shot_type or "MEDIUM").upper(), 0.0)
+
+
+def _keep_chroma(rgb, keep):
+    """THE FIGURE-MATERIAL GRADE EXEMPTION's brush (iteration 126):
+    saturation banks by `keep` (bounded 1.0), value and hue untouched
+    - the authored VALUE survives, the HUE survives, the CHROMA reads
+    through the wash. HLS saturation saturates at 1.0, so the bank is
+    bounded by construction."""
+    if keep <= 1.0:
+        return rgb
+    h, _l, s = colorsys.rgb_to_hls(*[min(1.0, max(0.0, c)) for c in rgb[:3]])
+    r, g, b = colorsys.hls_to_rgb(h, _l, min(1.0, s * keep))
+    return (r, g, b)
+
+
+# ── THE FIGURE-MATERIAL GRADE EXEMPTION (iteration 126) ─────
+# The 125 night's A/B named the driver: S005 rode the DIRECTED
+# moonlight grade (sat 1.0, gray-blue mistTint) and its figure read
+# S=0.43 while the SAME figure under tribulation (sat 1.12) read
+# 0.72-0.80 - the gray wash drains the COSTUME's chroma with the set.
+# The grade itself is the director's world and is NOT overridden (the
+# 125 law stands); the exemption is MATERIAL-side: under a gray wash
+# class the figure's own cel dyes BANK chroma before the grade lands
+# - saturation scaled per material kind, bounded, hue and value
+# untouched - so the costume still reads its authored color under the
+# night wash. The tagged set surfaces (animeos_set_surface) keep the
+# full wash - the world grays, the cast keeps its chroma. The other
+# grades carry chroma headroom already (tribulation 1.12, dawn/neutral
+# 1.06) and take no exemption.
+GRADE_CHROMA_WASH = {"moonlight": True}
+FIGURE_CHROMA_KEEP = {"skin": 1.10, "hair": 1.22, "cloth": 1.28}
 
 
 # (2) THE LINE WEIGHT SOLVES FROM THE FRAMING. The hull offset was a
@@ -372,10 +432,12 @@ def _palette_mid(mat):
     return members[len(members) // 2]
 
 
-def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None):
+def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0):
     """The cel tree. ramp = (lit-band size, shadow floor scale, band
     smoothness) - THE STYLE LAW's framing answer (iteration 121); None
-    keeps the earned constants (the turnaround's fixed cams)."""
+    keeps the earned constants (the turnaround's fixed cams).
+    painterly = the 126 rung's brush depth (0.0 = the canon flat
+    bands; the wide framings breathe)."""
     nt = mat.node_tree
     # NEVER clear the tree: other passes hold live node references
     # (the wrinkle normals' Strength is driven per frame) - a freed
@@ -486,6 +548,62 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None):
         nt.links.new(color_in, em_lit.inputs["Color"])
     else:
         em_lit.inputs["Color"].default_value = (*rgb, 1.0)
+    if painterly > 0:
+        # THE PAINTERLY STYLE RUNG (iteration 126): the band interiors
+        # breathe - one noise field on the mesh's own Generated coords
+        # (patches RIDE the fabric, no crawl), quantized to three
+        # constant steps (the brush, not a gradient), driving each
+        # band's color between a sunk and a lifted patch. The measurer
+        # chain reads the TOON node only - the bands' hard edges never
+        # see this layer (the 121 law intact).
+        swing = min(0.5, PAINTERLY_SWING * float(painterly))
+        ptc = nt.nodes.new("ShaderNodeTexCoord")
+        pn = nt.nodes.new("ShaderNodeTexNoise")
+        pn.name = "PainterlyNoise"
+        pn.label = "PainterlyNoise"
+        pn.inputs["Scale"].default_value = PAINTERLY_NOISE_SCALE
+        pn.inputs["Detail"].default_value = 1.6
+        pn.inputs["Roughness"].default_value = 0.55
+        pn.inputs["Distortion"].default_value = 0.8
+        nt.links.new(ptc.outputs["Generated"], pn.inputs["Vector"])
+        pst = nt.nodes.new("ShaderNodeValToRGB")
+        pst.name = "PainterlyRamp"
+        pst.label = "PainterlyRamp"
+        pst.color_ramp.interpolation = "CONSTANT"
+        _e0 = pst.color_ramp.elements[0]
+        _e0.position = 0.33
+        _e0.color = (0.0, 0.0, 0.0, 1.0)
+        _e1 = pst.color_ramp.elements[1]
+        _e1.position = 0.66
+        _e1.color = (0.5, 0.5, 0.5, 1.0)
+        _e2 = pst.color_ramp.elements.new(0.99)
+        _e2.color = (1.0, 1.0, 1.0, 1.0)
+        nt.links.new(pn.outputs["Fac"], pst.inputs["Fac"])
+        psep = nt.nodes.new("ShaderNodeSeparateColor")
+        nt.links.new(pst.outputs["Color"], psep.inputs[0])
+
+        def _brush_wrap(target_em, base_rgb, src_socket):
+            # re-route the band's paint through the brush mix:
+            # factor = the stepped field, A = the sunk patch,
+            # B = the lifted patch (the lift clamps at 1.0 - a pale
+            # dye's lifted patch stays the dye; the sunk patch carries
+            # the brush there)
+            pm = nt.nodes.new("ShaderNodeMix")
+            pm.data_type = "RGBA"
+            pm.name = "PainterlyMix"
+            pm.label = "PainterlyMix"
+            pm.inputs[6].default_value = (base_rgb[0] * (1.0 - swing), base_rgb[1] * (1.0 - swing), base_rgb[2] * (1.0 - swing), 1.0)
+            pm.inputs[7].default_value = (min(1.0, base_rgb[0] * (1.0 + swing)), min(1.0, base_rgb[1] * (1.0 + swing)), min(1.0, base_rgb[2] * (1.0 + swing)), 1.0)
+            nt.links.new(psep.outputs["Red"], pm.inputs[0])
+            if src_socket is not None:
+                nt.links.new(src_socket, pm.inputs[6])
+            for l in list(target_em.inputs["Color"].links):
+                nt.links.remove(l)
+            nt.links.new(pm.outputs[2], target_em.inputs["Color"])
+
+        shadow_base = (rgb[0] * SHADOW_COOL[0], rgb[1] * SHADOW_COOL[1], rgb[2] * SHADOW_COOL[2])
+        _brush_wrap(em, shadow_base, cool.outputs[2] if color_in is not None else None)
+        _brush_wrap(em_lit, rgb, color_in)
     mix = nt.nodes.new("ShaderNodeMixShader")
     nt.links.new(band_c.outputs[0], mix.inputs[0])
     nt.links.new(em.outputs[0], mix.inputs[1])
@@ -560,8 +678,16 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
     if look != "TOON":
         return {"look": "PBR", "lawVersion": TOON_LAW_VERSION}
     ramp = style_ramp_for(framing_ctx.get("shotType")) if isinstance(framing_ctx, dict) else None
+    p_depth = painterly_depth_for(framing_ctx.get("shotType")) if isinstance(framing_ctx, dict) else 0.0
     ink_offset = ink_offset_for(framing_ctx, mode)
     converted, kept = 0, 0
+    # THE FIGURE-MATERIAL GRADE EXEMPTION (iteration 126): the shot's
+    # own color script names the wash class - under a gray wash the
+    # figure's cel dyes bank chroma before the grade lands; the tagged
+    # set surfaces (built before the cast) never ride it.
+    _lut = str(comp_profile.get("lut") or "") if isinstance(comp_profile, dict) else ""
+    _wash = GRADE_CHROMA_WASH.get(_lut)
+    exempted, set_excluded = 0, 0
     for mat in list(bpy.data.materials):
         if not mat.use_nodes or mat.node_tree is None or mat.users == 0:
             continue
@@ -574,7 +700,16 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             continue
         if not kind:
             kind = "skin" if "skin" in name else ("hair" if "hair" in name else "cloth")
-        _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp)
+        _keep = 1.0
+        if _wash:
+            if mat.get("animeos_set_surface"):
+                set_excluded += 1
+            else:
+                _keep = FIGURE_CHROMA_KEEP.get(kind, 1.0)
+                if _keep > 1.0:
+                    rgb = _keep_chroma(rgb, _keep)
+                    exempted += 1
+        _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp, painterly=p_depth)
         mat["animeos_toon"] = True
         converted += 1
 
@@ -748,7 +883,9 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             "styleRamp": (None if ramp is None else {"size": ramp[0], "floorScale": ramp[1], "smooth": ramp[2], "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper()}),
             "inkOffset": ink_offset,
             "inkTargetPx": HULL_INK_PX.get(str(mode or "PREVIEW").upper(), HULL_INK_PX["PREVIEW"]) if isinstance(framing_ctx, dict) else None,
-            "denoised": denoised, "fillsEased": eased, "comp": comp_note}
+            "denoised": denoised, "fillsEased": eased, "comp": comp_note,
+            "painterlyRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "painted": converted}),
+            "gradeExemption": (None if not _wash else {"lut": _lut, "keep": FIGURE_CHROMA_KEEP, "boosted": exempted, "setExcluded": set_excluded})}
 
 
 def palette_wash_for(shot_type):

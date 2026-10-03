@@ -64,8 +64,9 @@ async function main() {
     bridge.includes('out.append({"name": str(name), "box": None})'), "the null");
 
   // ── 2. THE RESOLUTION RUNG ──
-  expect("the preview cap steps to 640 (the wide face gains pixels)",
-    bridge.includes('cap = 1280 if mode == "FINAL" else 640'), "the cap");
+  expect("the preview cap steps to 640 (the wide face gains pixels; the 126 ladder carries it)",
+    bridge.includes("PREVIEW_CAP = 640")
+      && bridge.includes('return ESTABLISHING_CAP if str(shot_type or "").upper() == "ESTABLISHING" else PREVIEW_CAP'), "the cap");
 
   // ── 3. THE NOSE IS A LINE (the decal craft) ──
   const ac = read("bridges/blender/anime_character.py");

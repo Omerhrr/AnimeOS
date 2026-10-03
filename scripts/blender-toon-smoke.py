@@ -228,6 +228,108 @@ ok("the decal emissions push to full strength",
 fig_a["syncRig"]()
 r2 = max(abs(v.co.x) for v in eye.data.vertices)
 ok("a rig sync does not undo the mesh scale", abs(r2 - r1) < 1e-6, (r1, r2))
+# 9. THE THREE RUNGS (iteration 126): the painterly style rung, the
+# figure-material grade exemption, the establishing-scale rung.
+ok("the painterly depth answers the framing (the wide end breathes, the canon close look stays)",
+   tp.painterly_depth_for("ESTABLISHING") == 0.70 and tp.painterly_depth_for("WIDE") == 0.55
+   and tp.painterly_depth_for("LOW_ANGLE") == 0.40 and tp.painterly_depth_for("MEDIUM") == 0.0
+   and tp.painterly_depth_for("CLOSEUP") == 0.0,
+   [tp.painterly_depth_for(k) for k in ("ESTABLISHING", "WIDE", "LOW_ANGLE", "MEDIUM", "CLOSEUP")])
+# the brush rides the real cel tree
+pbrush = bpy.data.materials.new("PainterlyProbe")
+pbrush.use_nodes = True
+pbrush.node_tree.nodes.clear()
+pbrush.node_tree.nodes.new("ShaderNodeOutputMaterial")
+tp._cel_tree(pbrush, m.hex_to_rgb("#3f8f78"), "cloth", m.hex_to_rgb, ramp=tp.style_ramp_for("ESTABLISHING"), painterly=0.7)
+pn_names = [n.name for n in pbrush.node_tree.nodes]
+ok("the painterly probe carries the brush layer",
+   "PainterlyNoise" in pn_names and "PainterlyRamp" in pn_names
+   and sum(1 for n in pbrush.node_tree.nodes if n.name.startswith("PainterlyMix")) == 2, pn_names)
+p_ramp = pbrush.node_tree.nodes["PainterlyRamp"]
+ok("the brush field is three constant steps (the brush, not a gradient)",
+   p_ramp.color_ramp.interpolation == "CONSTANT" and len(p_ramp.color_ramp.elements) == 3,
+   (p_ramp.color_ramp.interpolation, len(p_ramp.color_ramp.elements)))
+ok("the brush rides both bands (lit + shadow wrapped)",
+   sum(1 for n in pbrush.node_tree.nodes if n.type == "EMISSION"
+       and any(l.from_node.name.startswith("PainterlyMix") for l in n.inputs["Color"].links)) == 2,
+   [(n.name, [l.from_node.name for l in n.inputs["Color"].links]) for n in pbrush.node_tree.nodes if n.type == "EMISSION"])
+ok("the measurer never sees the brush (the hard band edges intact)",
+   all(abs(n.inputs["Size"].default_value - 0.46) < 1e-6 and abs(n.inputs["Smooth"].default_value - 0.02) < 1e-6
+       for n in pbrush.node_tree.nodes if n.type == "BSDF_TOON"),
+   [(n.inputs["Size"].default_value, n.inputs["Smooth"].default_value) for n in pbrush.node_tree.nodes if n.type == "BSDF_TOON"])
+pflat = bpy.data.materials.new("FlatProbe")
+pflat.use_nodes = True
+pflat.node_tree.nodes.clear()
+pflat.node_tree.nodes.new("ShaderNodeOutputMaterial")
+tp._cel_tree(pflat, m.hex_to_rgb("#3f8f78"), "cloth", m.hex_to_rgb, ramp=tp.style_ramp_for("CLOSEUP"))
+ok("the canon cel look stays flat (no brush at depth 0)",
+   not any(n.name.startswith("Painterly") for n in pflat.node_tree.nodes), [n.name for n in pflat.node_tree.nodes])
+# the figure-material grade exemption: numeric law + tagged-scene proof
+import colorsys as _cs
+_auth = m.hex_to_rgb("#3f8f78")
+_banked = tp._keep_chroma(_auth, 1.28)
+_h0, _l0, _s0 = _cs.rgb_to_hls(*_auth)
+_h1, _l1, _s1 = _cs.rgb_to_hls(*_banked)
+ok("chroma banks, hue and value survive",
+   abs(_h1 - _h0) < 1e-9 and abs(_l1 - _l0) < 1e-9 and _s1 > _s0 and abs(_s1 - min(1.0, _s0 * 1.28)) < 1e-9,
+   (_s0, _s1))
+ok("the bank is bounded (S never leaves 0..1)", 0.0 <= _s1 <= 1.0, _s1)
+ok("keep <= 1.0 is the identity",
+   tp._keep_chroma((0.2, 0.4, 0.6), 1.0) == (0.2, 0.4, 0.6) and tp._keep_chroma((0.2, 0.4, 0.6), 0.9) == (0.2, 0.4, 0.6),
+   "identity")
+robe126 = m.graded_mat(bpy, "cloth", "X126Robe", "#3f8f78", prof, palette=pal)
+stone126 = m.graded_mat(bpy, "cloth", "X126Stone", "#6b6b60", prof)
+stone126["animeos_set_surface"] = True
+hair126 = m.graded_mat(bpy, "hair", "X126Hair", "#7a3b1f", prof)
+# apply_look's loop skips userless datablocks - the probes ride fake
+# users (no mesh needed) so the wash-class law can see them
+for _mt in (robe126, stone126, hair126):
+    _mt.use_fake_user = True
+dye126 = {}
+for _mt in (robe126, stone126, hair126):
+    _r, _k = tp._dye_of(_mt, m.hex_to_rgb)
+    dye126[_mt.name] = _r
+look126 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                        {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
+                        framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
+ok("the look names the 126 evidence",
+   look126.get("lawVersion") == 126 and (look126.get("painterlyRung") or {}).get("depth") == 0.70
+   and (look126.get("painterlyRung") or {}).get("painted", 0) > 0, look126.get("painterlyRung"))
+ge = look126.get("gradeExemption") or {}
+ok("the exemption answers the gray wash, never the chroma-rich grades",
+   ge.get("lut") == "moonlight" and ge.get("boosted", 0) >= 2 and ge.get("setExcluded", 0) >= 1, ge)
+
+def _has_patch(mat, base, swing):
+    """one PainterlyMix whose patch pair derives from `base` (the sunk
+    A + the lifted B at the framing's swing) - the node-level truth of
+    WHICH dye the brush is wrapping"""
+    want_a = tuple(c * (1.0 - swing) for c in base[:3])
+    want_b = tuple(min(1.0, c * (1.0 + swing)) for c in base[:3])
+    for n in mat.node_tree.nodes:
+        if n.name.startswith("PainterlyMix"):
+            a = tuple(n.inputs[6].default_value[:3])
+            b = tuple(n.inputs[7].default_value[:3])
+            if all(abs(a[i] - want_a[i]) < 1e-6 for i in range(3)) and all(abs(b[i] - want_b[i]) < 1e-6 for i in range(3)):
+                return True
+    return False
+
+_swing = 0.12 * 0.7
+for _name, _keep in (("X126Robe", 1.28), ("X126Hair", 1.22)):
+    _auth_rgb = dye126[_name]
+    _boosted = tp._keep_chroma(_auth_rgb, _keep)
+    ok(f"{_name} banks chroma x{_keep} under moonlight (the brush wraps the BANKED dye)",
+       _has_patch(bpy.data.materials[_name], _boosted, _swing)
+       and not _has_patch(bpy.data.materials[_name], _auth_rgb, _swing), (_name, _auth_rgb, _boosted))
+_stone_auth = dye126["X126Stone"]
+_stone_boost = tp._keep_chroma(_stone_auth, 1.28)
+ok("the tagged set keeps the full wash (the world grays, unbanked)",
+   _has_patch(bpy.data.materials["X126Stone"], _stone_auth, _swing)
+   and not _has_patch(bpy.data.materials["X126Stone"], _stone_boost, _swing), "X126Stone")
+ok("the establishing rung rides the ladder",
+   m.preview_cap_for("ESTABLISHING", "PREVIEW") == 1024 and m.preview_cap_for("WIDE", "PREVIEW") == 640
+   and m.preview_cap_for("CLOSEUP", "PREVIEW") == 640 and m.preview_cap_for(None, "PREVIEW") == 640
+   and m.preview_cap_for("ESTABLISHING", "FINAL") == 1280,
+   [(s, mo, m.preview_cap_for(s, mo)) for s, mo in (("ESTABLISHING", "PREVIEW"), ("WIDE", "PREVIEW"), ("ESTABLISHING", "FINAL"))])
 print("DIRECT_FAILS " + json.dumps(fails))
 '''
 

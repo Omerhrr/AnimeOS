@@ -4003,6 +4003,24 @@ COMP_LUTS = {
     "neutral": {"lift": (0.98, 0.985, 1.02, 1.0), "gain": (1.03, 1.0, 0.965, 1.0), "sat": 1.06, "mistTint": (0.36, 0.4, 0.46, 1.0)},
 }
 
+# ── THE RESOLUTION RUNG LADDER (iterations 123 + 126) ─────────
+# 512 was the 122 night's floor (a WIDE face at ~10px); 640 is the
+# 123 preview rung every framing rides; 1024 is the 126 ESTABLISHING
+# rung (the 125 night's wall: a ~30px establishing figure fed the
+# judge mush even through the crops); 1280 stays FINAL.
+PREVIEW_CAP = 640
+ESTABLISHING_CAP = 1024
+FINAL_CAP = 1280
+
+
+def preview_cap_for(shot_type, mode):
+    """The rung ladder: FINAL renders at the FINAL cap; a PREVIEW of
+    the ESTABLISHING framing rides the establishing rung; every other
+    preview keeps the 640 rung."""
+    if str(mode or "PREVIEW").upper() == "FINAL":
+        return FINAL_CAP
+    return ESTABLISHING_CAP if str(shot_type or "").upper() == "ESTABLISHING" else PREVIEW_CAP
+
 
 def comp_profile(shot):
     """THE FRAME IS FINISHED IN COMP (iteration 86): validate + clamp
@@ -5909,7 +5927,17 @@ def worker_run(job_file):
         # 640: every cell gains pixels (the line weight, the decal paint,
         # the palette's own gradient), the cost class moves ~1.56x and
         # the ledger reads it honestly per frame.
-        cap = 1280 if mode == "FINAL" else 640
+        # THE ESTABLISHING-SCALE RUNG (iteration 126): the 125 night
+        # pinned the wide end's WALL - the ESTABLISHING figure renders
+        # ~30px tall at the 640 rung and even the figure crops are mush
+        # there (S001 25%, the night's floor). The rung ladder gains a
+        # third rung: the establishing framing previews at 1024 - the
+        # figure gains ~1.6x linear (the crops feed the judge real
+        # texels, the painterly brush has pixels to breathe in), the
+        # cost class moves ~2.56x on the establishing shots ONLY, and
+        # the ledger reads it honestly per frame. The tight framings
+        # keep the 640 rung; FINAL stays 1280.
+        cap = preview_cap_for(shot.get("shotType"), mode)
         scale = min(1.0, cap / max(res_w, res_h))
         out_w = max(16, round(res_w * scale / 2) * 2)
         out_h = max(16, round(res_h * scale / 2) * 2)

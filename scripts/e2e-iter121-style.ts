@@ -54,12 +54,12 @@ async function main() {
 
   // ── 3. THE STYLE LAW LIVES IN THE TOON PASS (source truth) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("the toon pass declares the style law version", tp.includes("TOON_LAW_VERSION = 125"), "v125");
+  expect("the toon pass declares the style law version", tp.includes("TOON_LAW_VERSION = 126"), "v126");
   expect("the toon ramp table answers every framing",
     tp.includes("STYLE_RAMP_BY_SHOT") && tp.includes('"ESTABLISHING":    (0.46, 0.80, 0.020)')
     && tp.includes('"WIDE":            (0.50, 0.85, 0.025)')
     && tp.includes('"CLOSEUP":         (0.62, 1.00, 0.040)'), "the ramp table");
-  expect("the cel tree takes the ramp", tp.includes("def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None)"), "_cel_tree");
+  expect("the cel tree takes the ramp", tp.includes("def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0)"), "_cel_tree");
   expect("the ramp scales the shadow floor", tp.includes("(SKIN_FLOOR if kind == \"skin\" else SHADOW_FLOOR) * r_floor_k"), "floor");
   expect("the line weight solves from the framing",
     tp.includes("def ink_offset_for(framing_ctx, mode)") && tp.includes("HULL_INK_PX")

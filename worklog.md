@@ -2268,3 +2268,22 @@ Work Log:
 Stage Summary:
 - Two durable laws landed: the figure-crop strip (the palette's own address - the cells moved at every readable scale) and the mist staging's last gap (the cap law holds for every framing). The honest numbering rides the prompt.
 - The probe stayed behind as a tool; the A/B named the true driver (the directed grade) and the next rung.
+
+---
+Task ID: iteration-126
+Agent: Super Z (main agent)
+Task: THE THREE RUNGS - the director's full steer (the figure-material grade exemption, the establishing-scale rung, the painterly style rung) implemented, proved, and night-tested on the 125 build.
+
+Work Log:
+- The figure-material grade exemption (toon_pass.py): _keep_chroma banks HLS saturation per material kind (skin 1.10 / hair 1.22 / cloth 1.28, bounded, hue+value untouched) under GRADE_CHROMA_WASH = {moonlight} only; the tagged set surfaces (animeos_set_surface) keep the full wash; the grade itself NOT overridden (the 125 law stands). Evidence rides the look: gradeExemption {lut, boosted, setExcluded}.
+- The establishing-scale rung (animeos_bridge.py): the rung ladder 640 / ESTABLISHING_CAP 1024 / FINAL_CAP 1280 via preview_cap_for(shotType, mode); the worker rides the ladder; the framing ctx still reads the shot's real output width (the ink solves at the new rung).
+- The painterly style rung (toon_pass.py): PAINTERLY_BY_SHOT {LOW_ANGLE 0.40, WIDE 0.55, ESTABLISHING 0.70} (MEDIUM+ canon), PAINTERLY_SWING 0.12; a tri-tone brush layer inside each cel band (noise on Generated coords -> 3 CONSTANT steps -> PainterlyMix sunk/lifted wrap of BOTH band emissions); the measurer chain never sees the brush. Evidence: painterlyRung {depth, painted}. TOON_LAW_VERSION 125 -> 126.
+- Proofs: e2e-iter126-rungs ALL GREEN (incl. a real plain-python3 module probe); blender-toon-smoke section 9 ALL GREEN (real-Blender node-level brush/bank/ladder proof; two fix-ups on the way: Blender auto-renames duplicate node names -> prefix counts; userless probe mats need use_fake_user for apply_look to see them); e2e-iter125/123/121/120/119/118/117 ALL GREEN (the 121/125 version pins and the 123 cap pin advanced legitimately); toon + anime + craft123 + comp + paired + camera + anatomy smokes ALL GREEN; src tsc 0 errors; eslint clean.
+- The 126 night (detached-night126.mjs, no stale resident alive -> fresh pool carried the 126 laws): reset 6 jobs + 6 clips + 6 RENDER scores; drain 6/6 REAL Blender clips in ~44 min - S001 ESTABLISHING at 1024x576 (~7.6s/frame), the rest at 640x360; evidence rode every job (S001 painterly 0.7/13 + exemption 10 boosted/3 set under moonlight; S004/S006 0.55 WIDE; S005 0.40 LOW_ANGLE; S005 neutral + S006 tribulation correctly no exemption; face boxes all six).
+- The rescore (median of 3, both strips riding): scored 6 refused 0; DISTRIBUTION mean 43 / median 35 / p10 25 vs the 70% floor - verdict BELOW (5/6 under), the REAL gate refused verbatim (worst S004 25%). The aggregate is EXACTLY the 125 distribution.
+- The honest moves: S001 face 40% (the 1024 rung fed the crops real texels - the establishing face broke its wall; S001 25 -> 30); S006 held 60/60 (palette 70-80).
+- The frontier named by the notes: S004 style 10% "severe style downgrade to a low-fidelity 3D render"; S005 palette 10% "a plain white robe instead of the detailed light green" - THE PALE-DYE VALUE WALL: a multiplicative saturation bank cannot rescue a near-white VALUE; the tri-tone brush at +/-8.4% is invisible at scale. Next work order: value-aware chroma (S-floor / L-aware bank) and a stronger painterly statement at scale.
+
+Stage Summary:
+- All three rungs landed, rode the night, and are law (v126); the establishing face reads at last.
+- The gate still refuses: the remaining under cells are the pale-dye value read and the style-at-scale read - named with the judge's own words, ready for the director's next steer.
