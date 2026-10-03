@@ -8,7 +8,7 @@
 #      evaluated right-hand vertices with the RShoulder/RElbow empties
 #   3. THE SPEC DRIVES THE DESIGN: two specs (topknot hanfu vs short
 #      tunic) build different hair/garment sets
-#   4. THE WORKER: a TOON job builds figureSource anime:v120 and renders
+#   4. THE WORKER: a TOON job builds figureSource anime:v123 and renders
 #   5. THE TURNAROUND CLI: five views + the stitched sheet + a .blend
 # Runs under BLENDER=/path/to/blender or a Python with the bpy module.
 import json, os, subprocess, sys, tempfile
@@ -142,7 +142,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
     fh.write(runner)
 subprocess.run(cmd(fh.name, os.path.join(BR_DIR, "animeos_bridge.py"), job), capture_output=True, text=True, timeout=1200)
 st = json.load(open(job))
-expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v120"), (st.get("figureSource"), st.get("animeRefused")))
+expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v123"), (st.get("figureSource"), st.get("animeRefused")))
 expect("worker clip rendered", bool(st.get("mp4Path")) and os.path.exists(st.get("mp4Path") or ""), st.get("error"))
 forge = st.get("addons") or {}
 expect("THE FORGE OPENS on the worker (all built-ins, zero failed)",
@@ -151,6 +151,10 @@ expect("THE FORGE OPENS on the worker (all built-ins, zero failed)",
 expect("the anatomy evidence rides the worker state", isinstance((st.get("anime") or {}).get("anatomy"), dict)
        and (st.get("anime") or {}).get("anatomy", {}).get("vertsMoved", 0) > 1000,
        ((st.get("anime") or {}).get("anatomy") or {}).get("vertsMoved"))
+fb = ((st.get("render") or {}).get("faceBoxes") or {})
+_fb_ok = isinstance(fb.get("cast"), list) and len(fb.get("cast", [])) >= 1 \
+    and any(b for b in ((fb.get("cast") or [{}])[0].get("boxes") or []) if b)
+expect("THE JUDGE SEES THE FACE (head boxes project at the marks)", fb.get("lawVersion") == 123 and _fb_ok, fb)
 
 # 5. the turnaround CLI
 td = tempfile.mkdtemp(prefix="anime-turn-")

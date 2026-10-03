@@ -250,7 +250,7 @@ async function prepareIdentityContext(
 /** THE SHEET ANSWERS IN THE SHOT'S FRAMING (iteration 121) - exported
  * for the e2e: the prompt is a law, its image manifest and framing
  * contract are asserted. */
-export function buildIdentityPrompt(sheets: Array<{ name: string; framingRef?: { view: string } }>, filmstripFrames?: number, framingView?: string): string {
+export function buildIdentityPrompt(sheets: Array<{ name: string; framingRef?: { view: string } }>, filmstripFrames?: number, framingView?: string, faceStrip?: { members: string[]; frames: number }): string {
   let n = 2;
   const manifest = sheets
     .map((s) => {
@@ -272,10 +272,16 @@ export function buildIdentityPrompt(sheets: Array<{ name: string; framingRef?: {
   const framing = framingView
     ? `This shot is framed as a ${framingView}-scale view. The framing reference image(s) show each character at a comparable framing - prefer them for close comparisons. Judge each aspect ONLY on what this shot's framing reveals: a head-and-shoulders framing cannot show the full wardrobe and an establishing wide cannot show the face - omit an aspect the framing cannot show rather than scoring it low, and say 'framing hides <aspect>' in the note when you omit.`
     : "";
+  // THE JUDGE SEES THE FACE (iteration 123): the face crop strip rides
+  // beside the full frames - the face aspect scores on the crops first.
+  const faceLaw = faceStrip
+    ? `Image 2 is the FACE CROP strip for ${faceStrip.members.join(" and ")} (one row per character, one labeled cell per filmstrip frame, '<name> f<k>'): each crop pulls that character's face from the SAME frames you see in Image 1, upscaled to readable size. Score the FACE aspect from these crops FIRST - they resolve what the full frame's scale cannot (a face that reads featureless in a wide frame may read clearly in its crop). The full filmstrip owns hair, wardrobe, weapon, palette and style. If a crop still cannot resolve the face, say 'face unresolved at this framing' and fall back to the full frame honestly.`
+    : "";
   return [
     "You are a casting director for an animation production checking character identity.",
     `${artifact} ${manifest}.`,
     framing,
+    faceLaw,
     "For EACH named character, judge how closely the panel's depiction matches their canonical sheet and score similarity from 0 to 1, plus a score per aspect: face, hair, wardrobe, weapon, palette, style (0 to 1 each, only when the aspect is visible - omit aspects that cannot be judged).",
     "Reply with STRICT JSON only, no markdown fences:",
     '{"note": "one sentence about the panel", "characters": [{"name": "<sheet name>", "similarity": 0.0, "aspects": {"face": 0.0, "hair": 0.0}, "note": "what matches or drifted"}]}',
@@ -307,11 +313,19 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
   // the stored note names which artifact was judged.
   const strip = poster ? await extractRenderPosterFilmstrip(poster.clipAbs, poster.jobId) : null;
   const artData = strip ? strip.dataUrl : poster!.dataUrl;
-  const poseNote: string | null = strip ? `pose-matched over ${strip.frames} frames` : poster ? "single frame (40% mark)" : null;
+  // THE JUDGE SEES THE FACE (iteration 123): the render's own face
+  // boxes + the strip's own frames -> the labeled face-crop strip. A
+  // job without boxes (an older render, a motion stand-in) degrades
+  // to the full strip alone, honestly.
+  const faceBoxes = poster && strip ? readRenderFaceBoxes(poster.jobId) : null;
+  const faceStrip = poster && strip && faceBoxes ? await extractFaceCropStrip(poster.jobId, faceBoxes, strip.framePaths ?? []) : null;
+  const poseNote: string | null = strip
+    ? `pose-matched over ${strip.frames} frames${faceStrip ? " + face crops judged" : ""}`
+    : poster ? "single frame (40% mark)" : null;
   const ctx = await prepareIdentityContext(shot, poster ? { imageData: artData, error: "" } : undefined);
   if (!ctx.ok) return ctx;
 
-  const call = await rawIdentityCall(ctx, strip?.frames);
+  const call = await rawIdentityCall(ctx, strip?.frames, faceStrip);
   if (!call.ok) return { ok: false, error: call.error };
   return persistIdentityVerdict(shot, ctx, call.raw, source, poseNote ?? undefined);
 }
@@ -343,7 +357,11 @@ export async function scoreShotIdentityMedian(
   }
   const strip = poster ? await extractRenderPosterFilmstrip(poster.clipAbs, poster.jobId) : null;
   const artData = strip ? strip.dataUrl : poster!.dataUrl;
-  const poseNote: string | null = strip ? `pose-matched over ${strip.frames} frames` : poster ? "single frame (40% mark)" : null;
+  const faceBoxes = poster && strip ? readRenderFaceBoxes(poster.jobId) : null;
+  const faceStrip = poster && strip && faceBoxes ? await extractFaceCropStrip(poster.jobId, faceBoxes, strip.framePaths ?? []) : null;
+  const poseNote: string | null = strip
+    ? `pose-matched over ${strip.frames} frames${faceStrip ? " + face crops judged" : ""}`
+    : poster ? "single frame (40% mark)" : null;
   const ctx = await prepareIdentityContext(shot, poster ? { imageData: artData, error: "" } : undefined);
   if (!ctx.ok) return ctx;
 
@@ -352,7 +370,7 @@ export async function scoreShotIdentityMedian(
   const verdicts: IdentityVerdict[] = [];
   let lastError = "";
   for (let i = 0; i < n; i++) {
-    const call = await rawIdentityCall(ctx, strip?.frames);
+    const call = await rawIdentityCall(ctx, strip?.frames, faceStrip);
     if (!call.ok) { lastError = call.error; continue; }
     const v = parseIdentityVerdict(call.raw, names);
     if (v) verdicts.push(v);
@@ -406,6 +424,7 @@ export async function scoreShotIdentityMedian(
 async function rawIdentityCall(
   ctx: Extract<Awaited<ReturnType<typeof prepareIdentityContext>>, { ok: true }>,
   frames: number | undefined,
+  faceStrip?: { dataUrl: string; members: string[]; frames: number } | null,
 ): Promise<{ ok: true; raw: string } | { ok: false; error: string }> {
   try {
     const zai = await ZAI.create();
@@ -414,8 +433,11 @@ async function rawIdentityCall(
         {
           role: "user",
           content: [
-            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames, ctx.framingView) },
+            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames, ctx.framingView, faceStrip ? { members: faceStrip.members, frames: faceStrip.frames } : undefined) },
             { type: "image_url", image_url: { url: ctx.artData } },
+            // THE JUDGE SEES THE FACE (iteration 123): the face crop
+            // strip rides right after the full frames
+            ...(faceStrip ? [{ type: "image_url" as const, image_url: { url: faceStrip.dataUrl } }] : []),
             // each sheet rides its framing-matched view right after it
             // (THE SHEET ANSWERS IN THE SHOT'S FRAMING, iteration 121)
             ...ctx.sheets.flatMap((s) => [
@@ -661,7 +683,7 @@ export function poseSampleTimestamps(durationSec: number): number[] {
  * null (the caller falls back to the single poster, honestly named).
  * The strip is cached per job id beside the poster.
  */
-export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: string): Promise<{ dataUrl: string; frames: number } | null> {
+export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: string): Promise<{ dataUrl: string; frames: number; framePaths?: string[] } | null> {
   // the same honest binary resolution the single poster uses (the
   // detect cache may be cold - PATH carries the fallback)
   const probe = await probeMedia(clipAbsPath).catch(() => null);
@@ -677,7 +699,7 @@ export async function extractRenderPosterFilmstrip(clipAbsPath: string, jobId: s
  * montage returns null. The strip is cached under
  * `<jobId>.<cacheName>.jpg` beside the poster.
  */
-export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamps: number[], cacheName = "cues"): Promise<{ dataUrl: string; frames: number; labeled: boolean } | null> {
+export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamps: number[], cacheName = "cues"): Promise<{ dataUrl: string; frames: number; labeled: boolean; framePaths: string[] } | null> {
   try {
     if (!fs.existsSync(clipAbsPath)) return null;
     if (!Array.isArray(stamps) || stamps.length < 2) return null;
@@ -720,10 +742,173 @@ export async function buildFilmstripAt(clipAbsPath: string, jobId: string, stamp
     });
     if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
     const b64 = fs.readFileSync(out).toString("base64");
-    return { dataUrl: `data:image/jpeg;base64,${b64}`, frames: frames.length, labeled };
+    return { dataUrl: `data:image/jpeg;base64,${b64}`, frames: frames.length, labeled, framePaths: frames };
   } catch {
     return null;
   }
+}
+
+/** THE JUDGE SEES THE FACE (iteration 123). The render evidence's own
+ * face boxes (the bridge projects each cast head at the pose-sample
+ * marks - deterministic world_to_camera_view, no detection) + the
+ * frames the filmstrip already extracted -> one labeled crop strip:
+ * one row per cast member, one cell per mark, each crop upscaled to a
+ * readable height. The vision model finally sees the face at MEDIUM /
+ * WIDE / ESTABLISHING where the full frame parks it at ~10-30px.
+ * Degrades honestly to null (the caller rides the full strip alone).
+ * Pure craft data over craft pixels - the AI is the eye, never the
+ * hand. */
+export interface RenderFaceBoxes {
+  marks: number[];
+  resX: number;
+  resY: number;
+  frames: Array<number | null>;
+  cast: Array<{ name: string; boxes: Array<[number, number, number, number] | null> }>;
+}
+
+/**
+ * Read the face boxes a render left in its job file (the job file IS
+ * the state - the worker rewrites it in place, `render` rides at the
+ * top level; the same file the tick and the staleness tools read,
+ * iteration 105's law). Validates the shape; anything unexpected
+ * degrades to null.
+ */
+export function readRenderFaceBoxes(jobId: string): RenderFaceBoxes | null {
+  try {
+    const p = path.join(process.cwd(), "public", "renders", `.job-${jobId}.json`);
+    if (!fs.existsSync(p)) return null;
+    const job = JSON.parse(fs.readFileSync(p, "utf-8")) as { render?: { faceBoxes?: unknown }; state?: { render?: { faceBoxes?: unknown } } };
+    // the worker writes `render` at the top level; a `state` wrapper
+    // (the e2e fixture shape) reads too - one reader, both shapes
+    const fb = (((job.render ?? job.state?.render) ?? {}) as { faceBoxes?: RenderFaceBoxes }).faceBoxes;
+    if (!fb || !Array.isArray(fb.marks) || fb.marks.length < 2) return null;
+    if (!Array.isArray(fb.cast) || fb.cast.length === 0) return null;
+    if (!Number.isFinite(fb.resX) || !Number.isFinite(fb.resY) || fb.resX < 8 || fb.resY < 8) return null;
+    for (const c of fb.cast) {
+      if (!c || typeof c.name !== "string" || !Array.isArray(c.boxes) || c.boxes.length !== fb.marks.length) return null;
+      for (const b of c.boxes) {
+        if (b === null) continue;
+        if (!Array.isArray(b) || b.length !== 4 || b.some((v) => !Number.isFinite(v))) return null;
+        if (b[2] <= b[0] || b[3] <= b[1]) return null;
+      }
+    }
+    return fb;
+  } catch {
+    return null;
+  }
+}
+
+/** Crop one (frame, box) cell to a readable height. */
+function cropFaceCell(framePath: string, outPath: string, box: [number, number, number, number], resX: number, resY: number): Promise<boolean> {
+  const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+  const [x0, y0, x1, y1] = box;
+  const w = Math.max(2, Math.min(resX - x0, x1 - x0));
+  const h = Math.max(2, Math.min(resY - y0, y1 - y0));
+  return new Promise<boolean>((resolve) => {
+    const child = spawn(
+      ff,
+      ["-y", "-i", framePath, "-vf", `crop=${w}:${h}:${x0}:${y0},scale=-2:224`, "-frames:v", "1", "-q:v", "3", outPath],
+      { stdio: ["ignore", "ignore", "ignore"] },
+    );
+    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => resolve(false));
+  });
+}
+
+/**
+ * Build the face-crop strip from the boxes + the filmstrip's own frame
+ * files (the SAME frames the full strip judged - one truth, two
+ * scales). Rows per cast member, cells per mark, labeled '<name> f<k>'.
+ */
+export async function extractFaceCropStrip(
+  jobId: string,
+  boxes: RenderFaceBoxes,
+  framePaths: string[],
+): Promise<{ dataUrl: string; members: string[]; frames: number } | null> {
+  try {
+    if (framePaths.length < 2 || boxes.cast.length === 0) return null;
+    const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+    const postersDir = path.join(process.cwd(), "public", "renders", "posters");
+    fs.mkdirSync(postersDir, { recursive: true });
+    const rows: Array<Array<string>> = [];
+    const members: string[] = [];
+    for (const c of boxes.cast) {
+      const cells: string[] = [];
+      for (let k = 0; k < c.boxes.length; k++) {
+        const b = c.boxes[k];
+        const src = framePaths[k];
+        if (b === null || !src || !fs.existsSync(src)) continue;
+        const cell = path.join(postersDir, `${jobId}.face-${members.length}-${k}.jpg`);
+        if (!(await cropFaceCell(src, cell, b, boxes.resX, boxes.resY))) continue;
+        if (!fs.existsSync(cell) || fs.statSync(cell).size === 0) continue;
+        const labeled = await stampFrameLabel(cell, `${c.name} f${k + 1}`);
+        cells.push(labeled);
+      }
+      if (cells.length > 0) {
+        rows.push(cells);
+        members.push(c.name);
+      }
+    }
+    if (rows.length === 0) return null;
+    // hstack each row, pad rows to the widest, vstack the rows
+    const rowPaths: string[] = [];
+    for (let r = 0; r < rows.length; r++) {
+      const out = path.join(postersDir, `${jobId}.face-row${r}.jpg`);
+      const inputs = rows[r].flatMap((f) => ["-i", f]);
+      const ok = await new Promise<boolean>((resolve) => {
+        const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `hstack=inputs=${rows[r].length}`, "-q:v", "3", out], {
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        child.on("close", (code) => resolve(code === 0));
+        child.on("error", () => resolve(false));
+      });
+      if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
+      rowPaths.push(out);
+    }
+    const out = path.join(postersDir, `${jobId}.facestrip.jpg`);
+    let ok: boolean;
+    if (rowPaths.length === 1) {
+      fs.copyFileSync(rowPaths[0], out);
+      ok = fs.existsSync(out) && fs.statSync(out).size > 0;
+    } else {
+      // vstack requires equal widths: pad every row to the widest row's
+      // width with black (no distortion - cells keep their aspect; a
+      // row that lost a cell to an off-frame head just ends early).
+      const widths = await Promise.all(rowPaths.map((p) => rowWidth(p)));
+      const target = Math.max(...widths);
+      if (target <= 0) return null;
+      const inputs = rowPaths.flatMap((f) => ["-i", f]);
+      const chains = rowPaths.map((_, i) => `[${i}:v]pad=${target}:224:0:0:black[r${i}]`).join(";");
+      const stack = rowPaths.map((_, i) => `[r${i}]`).join("") + `vstack=inputs=${rowPaths.length}`;
+      ok = await new Promise<boolean>((resolve) => {
+        const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `${chains};${stack}`, "-q:v", "3", out], {
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        child.on("close", (code) => resolve(code === 0));
+        child.on("error", () => resolve(false));
+      });
+    }
+    if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
+    const b64 = fs.readFileSync(out).toString("base64");
+    return { dataUrl: `data:image/jpeg;base64,${b64}`, members, frames: Math.max(boxes.marks.length, 1) };
+  } catch {
+    return null;
+  }
+}
+
+/** PNG/JPEG width probe via ffprobe (fallback: assume 672). */
+async function rowWidth(p: string): Promise<number> {
+  const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+  return new Promise<number>((resolve) => {
+    const child = spawn(ff, ["-hide_banner", "-i", p], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stderr.on("data", (d) => { out += String(d); });
+    child.on("close", () => {
+      const m = /(\d{2,5})x(\d{2,5})/.exec(out);
+      resolve(m ? parseInt(m[1], 10) : 0);
+    });
+    child.on("error", () => resolve(0));
+  });
 }
 
 export const CUE_FRAME_COUNT = 4;

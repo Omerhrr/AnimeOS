@@ -15,7 +15,7 @@
 #   3. THE BLADE EARNS ITS FORGE: the sword ships wrap bands, a
 #      pommel and a tassel on the 97 grip contract; the staff ships
 #      wraps and end caps.
-#   4. THE LAW VERSION RIDES: the builder declares anime:v120.
+#   4. THE LAW VERSION RIDES: the builder declares anime:v123.
 # Run:  python3 scripts/blender-craft120-smoke.py
 import hashlib
 import json, math, os, subprocess, sys, tempfile
@@ -175,6 +175,12 @@ out["chin_proud"] = (prof.get("chin") or {}).get("proudMm", 0.0)
 out["face_profile_reads"] = out["nose_proud"] > 1.0 and out["nosetip_proud"] > 1.0 and out["brow_proud"] > 0.5 and out["chin_proud"] > 0.5
 out["face_moved"] = (fa.get("vertsMoved") or 0) > 100 and 0.0005 < (fa.get("maxDisp") or 0.0) < 0.02
 
+# THE ANATOMIZED PROXY: the shading proxy wears the same facial field
+_pxa = (anime.get("faceProxyAnatomy") or {})
+out["proxy_anatomy"] = _pxa
+out["proxy_wears_face"] = bool(isinstance(_pxa, dict) and (_pxa.get("vertsMoved") or 0) > 100
+                               and 0.0002 < (_pxa.get("maxDisp") or 0.0) < 0.02)
+
 def head_hash():
     hm = bpy.data.objects.get("HeadMesh")
     dg = bpy.context.evaluated_depsgraph_get()
@@ -244,7 +250,7 @@ with tempfile.TemporaryDirectory(prefix="anime-craft120-") as tmp:
         sys.exit(1)
     out = json.loads(line[len("CRAFT120_SMOKE "):])
 
-expect("the builder declares anime:v120", out["lawVersion"] == 120, out["lawVersion"])
+expect("the builder declares anime:v123", out["lawVersion"] == 123, out["lawVersion"])
 expect("THE SKIRT GAINS FOLDS (evidence rides the figure)", out["folds_applied"], json.dumps(out.get("wardrobe", {}))[:200])
 expect("the folds READ on the mesh (harmonics 6/9 speak on the skirt, silent on the chest)",
        out["folds_read"], f"skirt {out['skirt_fold_harmonics']} vs chest {out['chest_fold_harmonics']}")
@@ -259,6 +265,8 @@ expect("THE PROFILE READS (nose bridge, tip, brow, chin stand proud)",
        out["face_profile_reads"],
        f"brow {out['brow_proud']} / bridge {out['nose_proud']} / tip {out['nosetip_proud']} / chin {out['chin_proud']} mm")
 expect("the same spec sculpts the same face (bit-exact)", out["face_bit_exact"])
+expect("THE SHADING PROXY WEARS THE FACE (the toon band sees the anatomy)",
+       out["proxy_wears_face"], json.dumps({k: out["proxy_anatomy"].get(k) for k in ("vertsMoved", "maxDisp", "error") if isinstance(out["proxy_anatomy"], dict)}))
 expect("THE SPEC DRIVES THE CARVE (a male brow stands prouder)", out["face_spec_driven"],
        f"{out['brow_proud']} vs {out['brow_proud_female']} mm")
 expect("THE SWORD SHIPS ITS FORGE (bands, pommel, tassel)", out["sword_craft"])

@@ -46,7 +46,7 @@ import math
 import os
 import sys
 
-ANIME_LAW_VERSION = 120
+ANIME_LAW_VERSION = 123
 EYE_OPEN_FLOOR = 0.45   # a painted eye never squashes below this (a blink still reads)
 
 # ── the design spec ──────────────────────────────────────────
@@ -401,15 +401,35 @@ def paint_mouth(spec, w=128, h=128):
     return rgba
 
 
-def paint_nose(w=64, h=64):
+def paint_nose(w=128, h=128):
+    """THE NOSE IS A LINE, NOT A BLOB (iteration 123): the 122 night's
+    closeup read the old soft ellipse as a broken dashed stroke (a
+    64px texture stretched over the carved bridge, alpha 0.55 - it
+    sampled into dashes and vanished at production distance), and at
+    medium the nose vanished entirely. The anime nose is DRAWN: one
+    continuous line down the bridge's lower half, a tick at the tip,
+    a faint shadow under the base - crisp alpha, soft ends, reads at
+    both scales."""
     import numpy as np
     y, x = np.mgrid[0:h, 0:w].astype(np.float32)
     u = (x / (w - 1)) * 2 - 1
-    v = 1 - (y / (h - 1)) * 2
+    v = 1 - (y / (h - 1)) * 2          # +1 top (bridge), -1 bottom (base)
     rgba = np.zeros((h, w, 4), np.float32)
-    d = np.sqrt(((u - 0.15) / 0.35) ** 2 + ((v + 0.2) / 0.18) ** 2) - 1.0
-    rgba[..., :3] = (0.55, 0.36, 0.32)
-    rgba[..., 3] = np.clip(0.5 - d / 0.3, 0, 1) * 0.55
+    col = (0.42, 0.26, 0.24)
+    # the bridge line: slightly off-center (the anime nose line rides
+    # one side), from v 0.35 down to the tip at v -0.35, thin
+    line_x = 0.06
+    d_line = np.abs(u - line_x) - 0.045
+    a_line = np.clip(0.5 - d_line / 0.16, 0, 1) * np.clip((v - (-0.38)) / 0.1, 0, 1) * np.clip((0.42 - v) / 0.1, 0, 1)
+    # the tip tick: a short horizontal stroke under the line's end
+    d_tick = np.sqrt(((u - line_x) / 0.34) ** 2 + ((v + 0.42) / 0.07) ** 2) - 1.0
+    a_tick = np.clip(0.5 - d_tick / 0.2, 0, 1)
+    # the base shadow: a soft wide arc under the tip (the form's hint)
+    d_base = np.sqrt((u / 0.5) ** 2 + ((v + 0.62) / 0.16) ** 2) - 1.0
+    a_base = np.clip(0.5 - d_base / 0.3, 0, 1) * 0.4
+    a = np.maximum(a_line * 0.85, np.maximum(a_tick * 0.9, a_base))
+    rgba[..., :3] = col
+    rgba[..., 3] = a
     return rgba
 
 
@@ -611,14 +631,15 @@ def build_head(bpy, scn, spec, head_empty, skin_mat):
     #    untouched: the sculpt moves geometry, the sphere-transferred
     #    shading normals stay. Evidence rides the head object. ──
     face_anatomy = None
+    _face_anatomy_mod = None
     try:
         _here = os.path.dirname(os.path.abspath(__file__))
         if _here not in sys.path:
             sys.path.insert(0, _here)
-        import face_anatomy as _face_anatomy
+        import face_anatomy as _face_anatomy_mod
 
-        face_anatomy = _face_anatomy.apply_face_anatomy(head, spec)
-        head["animeos_face_anatomy"] = _face_anatomy.dump_summary(face_anatomy)
+        face_anatomy = _face_anatomy_mod.apply_face_anatomy(head, spec)
+        head["animeos_face_anatomy"] = _face_anatomy_mod.dump_summary(face_anatomy)
     except Exception as exc:  # noqa: BLE001
         face_anatomy = {"error": f"{type(exc).__name__}: {exc}"}
     # ── the anime face terminator: normals transferred from a clean
@@ -639,6 +660,23 @@ def build_head(bpy, scn, spec, head_empty, skin_mat):
     proxy.hide_render = True
     proxy.hide_viewport = False
     proxy["animeos_no_flesh"] = True
+    # THE ANATOMIZED PROXY (iteration 123): the shading proxy wore a
+    # clean ellipsoid's normals, so the toon band could NOT see the
+    # face the mesh wears - a sculpted nose cast no cel break, a
+    # carved brow shaded flat (the 122 night's closeup read the paint
+    # but not the form). The proxy now wears the SAME facial field the
+    # skull wears: the transferred normals carry the brow ridge, the
+    # nose bridge and the lips into the toon band (the anime shading
+    # break where anatomy lives) while the cheeks stay smooth spheres.
+    # The terminator LAW is intact - the band still curves smoothly;
+    # it curves over the FACE now, not over an egg.
+    proxy_anatomy = None
+    try:
+        proxy_anatomy = _face_anatomy_mod.apply_face_anatomy(proxy, spec) if _face_anatomy_mod is not None else None
+        if isinstance(proxy_anatomy, dict) and "error" not in proxy_anatomy:
+            head["animeos_face_proxy_anatomy"] = _face_anatomy_mod.dump_summary(proxy_anatomy)
+    except Exception as _exc:  # noqa: BLE001
+        proxy_anatomy = {"error": f"{type(_exc).__name__}: {_exc}"}
     try:
         dt = head.modifiers.new("FaceNormals", "DATA_TRANSFER")
         dt.object = proxy
@@ -654,7 +692,7 @@ def build_head(bpy, scn, spec, head_empty, skin_mat):
                        (0.0, -1.0, 0.0), [0.018, 0.02, 0.012], [0.007, 0.008, 0.006], ring=8)
         ear = _mesh_obj(bpy, scn, f"Ear{'L' if side > 0 else 'R'}", ev, ef, skin_mat, parent=head_empty)
         ear["animeos_no_flesh"] = True
-    return head, face_anatomy
+    return head, face_anatomy, proxy_anatomy
 
 
 # ── the body (skin-modifier graph -> one baked mesh) ─────────
@@ -1473,7 +1511,7 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
         rec["rest"] = tuple(rec["ob"].matrix_world.translation)
 
     # ── the meshes ──
-    hm, face_anatomy = build_head(bpy, scn, spec, head, mats["skin"])
+    hm, face_anatomy, proxy_anatomy = build_head(bpy, scn, spec, head, mats["skin"])
     body = build_body(bpy, scn, spec, mats["skin"], mats["boots"])
     rig = build_rig(bpy, scn, spec, empties, root)
     bind_skinned(body, rig)
@@ -1515,7 +1553,11 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
     bR = _decal_plane(bpy, scn, "BrowRMesh", browR, 0.05 * es, 0.0125, brow_m, hm, mirror=True, segs=6)
     mw = 0.03 * spec["mouth"]["width"]
     mm = _decal_plane(bpy, scn, "MouthMesh", mouth, mw, mw, mouth_m, hm, segs=6)
-    nm_ = _decal_plane(bpy, scn, "NoseMesh", nose, 0.016, 0.016, nose_m, hm, segs=4)
+    # THE NOSE PLANE ANSWERS ITS TEXTURE (iteration 123): 128px of
+    # drawn line needs more than 16mm at 4 segments to shrinkwrap the
+    # carved bridge without aliasing - 19mm at 6 segments samples the
+    # line clean (the dashes the closeup read are dead)
+    nm_ = _decal_plane(bpy, scn, "NoseMesh", nose, 0.019, 0.019, nose_m, hm, segs=6)
     for d in (eL, eR, bL, bR, mm, nm_):
         d.location = (0.0, 0.0, 0.0)
 
@@ -1556,6 +1598,7 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
             "spec": spec,
             "anatomy": anatomy,
             "faceAnatomy": face_anatomy,
+            "faceProxyAnatomy": proxy_anatomy,
             "body": {"verts": len(body.data.vertices), "bones": len(rig["segments"])},
             "garments": garments,
             "wardrobe": wardrobe,
