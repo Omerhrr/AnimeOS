@@ -180,8 +180,11 @@ async function main() {
     prompt.includes("Image 2 is the FACE CROP strip for Lin Yue and Demon Lord Wei"), prompt.split("\n")[3]);
   expect("the face aspect scores on the crops FIRST (the full frame's scale cannot resolve a face)",
     prompt.includes("Score the FACE aspect from these crops FIRST"), "the law");
-  expect("the full frames keep the other aspects (hair, wardrobe, weapon, palette, style)",
-    prompt.includes("The full filmstrip owns hair, wardrobe, weapon, palette and style."), "the split");
+  expect("the full frames keep the other aspects (the 125 split: palette/wardrobe ride the figure crops when they ride)",
+    buildIdentityPrompt(sheets, 3, "front",
+      { members: ["Lin Yue", "Demon Lord Wei"], frames: 3 },
+      { members: ["Lin Yue", "Demon Lord Wei"], frames: 3 },
+    ).includes("The full filmstrip keeps composition, style at scale, hair, weapon."), "the split");
   expect("an unresolvable crop falls back honestly (never invented, never penalized)",
     prompt.includes("face unresolved at this framing"), "the fallback");
   const noFace = buildIdentityPrompt(sheets, 3, "front");

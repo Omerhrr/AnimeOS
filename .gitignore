@@ -118,3 +118,4 @@ public/headbake/*.png
 
 # the audio-render cache (iteration 102)
 .cache
+probe-iter125/*.png

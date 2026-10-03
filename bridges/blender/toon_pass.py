@@ -35,7 +35,7 @@
 
 import math
 
-TOON_LAW_VERSION = 121
+TOON_LAW_VERSION = 125
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # cel tree tuning
@@ -848,6 +848,18 @@ def stage_set_for_framing(bpy, shot_type):
 MIST_STAGE_BY_SHOT = {
     "ESTABLISHING": (7.0, 26.0, 0.72),
     "WIDE": (5.5, 16.0, 0.75),
+    # THE LOW_ANGLE SEAM (iteration 125): the 115 law staged the two
+    # framings it named and left LOW_ANGLE on the HOUSE mist - full
+    # intensity 1.0, the exact fog-out the cap was invented to prevent.
+    # The 124 night's probe measured it: S005's whole frame reads
+    # S=0.43 (every other shot 0.72-0.80, the same figure), the judge
+    # scored the night's worst cell (palette 20 / style 10, 'a 3D drift
+    # from the 2D paint') on pixels that were genuinely gray. The
+    # framing table puts a LOW_ANGLE figure at ~3-4 units, so start 5.0
+    # sits past the figure (the 112 ghost law holds - the mist never
+    # starts ON the subject) and the far field fogs under the SAME cap
+    # the staged wides carry. Bounded, deterministic, per-shot.
+    "LOW_ANGLE": (5.0, 14.0, 0.72),
 }
 MIST_HOUSE = (6.0, 18.0, 1.0)
 

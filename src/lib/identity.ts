@@ -250,8 +250,20 @@ async function prepareIdentityContext(
 /** THE SHEET ANSWERS IN THE SHOT'S FRAMING (iteration 121) - exported
  * for the e2e: the prompt is a law, its image manifest and framing
  * contract are asserted. */
-export function buildIdentityPrompt(sheets: Array<{ name: string; framingRef?: { view: string } }>, filmstripFrames?: number, framingView?: string, faceStrip?: { members: string[]; frames: number }): string {
+export function buildIdentityPrompt(
+  sheets: Array<{ name: string; framingRef?: { view: string } }>,
+  filmstripFrames?: number,
+  framingView?: string,
+  faceStrip?: { members: string[]; frames: number },
+  figureStrip?: { members: string[]; frames: number },
+): string {
+  // the image manifest numbers HONESTLY (the 125 seam: the face strip
+  // rode as the actual second image while the sheets still claimed
+  // "Image 2" - with the figure strip riding too the drift would
+  // only grow; the strips own their numbers, the sheets follow)
   let n = 2;
+  const faceStripNo = faceStrip ? n++ : 0;
+  const figureStripNo = figureStrip ? n++ : 0;
   const manifest = sheets
     .map((s) => {
       const sheet = `Image ${n}: canonical model sheet for ${s.name}`;
@@ -275,13 +287,20 @@ export function buildIdentityPrompt(sheets: Array<{ name: string; framingRef?: {
   // THE JUDGE SEES THE FACE (iteration 123): the face crop strip rides
   // beside the full frames - the face aspect scores on the crops first.
   const faceLaw = faceStrip
-    ? `Image 2 is the FACE CROP strip for ${faceStrip.members.join(" and ")} (one row per character, one labeled cell per filmstrip frame, '<name> f<k>'): each crop pulls that character's face from the SAME frames you see in Image 1, upscaled to readable size. Score the FACE aspect from these crops FIRST - they resolve what the full frame's scale cannot (a face that reads featureless in a wide frame may read clearly in its crop). The full filmstrip owns hair, wardrobe, weapon, palette and style. If a crop still cannot resolve the face, say 'face unresolved at this framing' and fall back to the full frame honestly.`
+    ? `Image ${faceStripNo} is the FACE CROP strip for ${faceStrip.members.join(" and ")} (one row per character, one labeled cell per filmstrip frame, '<name> f<k>'): each crop pulls that character's face from the SAME frames you see in Image 1, upscaled to readable size. Score the FACE aspect from these crops FIRST - they resolve what the full frame's scale cannot (a face that reads featureless in a wide frame may read clearly in its crop). If a crop still cannot resolve the face, say 'face unresolved at this framing' and fall back to the full frame honestly.`
+    : "";
+  // THE PALETTE GETS ITS ADDRESS (iteration 125): the figure crop strip
+  // rides beside the face's - the costume's colors and cut score on the
+  // bands, the full frame keeps composition and style at scale.
+  const figureLaw = figureStrip
+    ? `Image ${figureStripNo} is the FIGURE CROP strip for ${figureStrip.members.join(" and ")} (one row per character, one labeled cell per filmstrip frame, '<name> f<k>'): each crop pulls that character's full figure band (head to hem) from the SAME frames you see in Image 1, upscaled to readable size. Score the PALETTE and WARDROBE aspects from these figure crops FIRST - the costume's colors and cut resolve in the band what the full frame's scale washes out (a robe that reads as a flat shape in a wide frame shows its true colors in its crop). The full filmstrip keeps composition, style at scale, hair, weapon. If a crop still cannot resolve the costume, say 'figure unresolved at this framing' and fall back to the full frame honestly.`
     : "";
   return [
     "You are a casting director for an animation production checking character identity.",
     `${artifact} ${manifest}.`,
     framing,
     faceLaw,
+    figureLaw,
     "For EACH named character, judge how closely the panel's depiction matches their canonical sheet and score similarity from 0 to 1, plus a score per aspect: face, hair, wardrobe, weapon, palette, style (0 to 1 each, only when the aspect is visible - omit aspects that cannot be judged).",
     "Reply with STRICT JSON only, no markdown fences:",
     '{"note": "one sentence about the panel", "characters": [{"name": "<sheet name>", "similarity": 0.0, "aspects": {"face": 0.0, "hair": 0.0}, "note": "what matches or drifted"}]}',
@@ -319,13 +338,19 @@ export async function scoreShotIdentity(shotId: string, source: IdentitySource =
   // to the full strip alone, honestly.
   const faceBoxes = poster && strip ? readRenderFaceBoxes(poster.jobId) : null;
   const faceStrip = poster && strip && faceBoxes ? await extractFaceCropStrip(poster.jobId, faceBoxes, strip.framePaths ?? []) : null;
+  // THE PALETTE GETS ITS ADDRESS (iteration 125): the same boxes extend
+  // to figure bands - the costume's own crop strip rides beside the
+  // face's, because the 124 night measured the wides' palette collapse
+  // on figure chroma that matched the 70%-palette control (the scale
+  // wall, not the paint).
+  const figureStrip = poster && strip && faceBoxes ? await extractFigureCropStrip(poster.jobId, faceBoxes, strip.framePaths ?? []) : null;
   const poseNote: string | null = strip
-    ? `pose-matched over ${strip.frames} frames${faceStrip ? " + face crops judged" : ""}`
+    ? `pose-matched over ${strip.frames} frames${faceStrip ? " + face crops judged" : ""}${figureStrip ? " + figure crops judged" : ""}`
     : poster ? "single frame (40% mark)" : null;
   const ctx = await prepareIdentityContext(shot, poster ? { imageData: artData, error: "" } : undefined);
   if (!ctx.ok) return ctx;
 
-  const call = await rawIdentityCall(ctx, strip?.frames, faceStrip);
+  const call = await rawIdentityCall(ctx, strip?.frames, faceStrip, figureStrip);
   if (!call.ok) return { ok: false, error: call.error };
   return persistIdentityVerdict(shot, ctx, call.raw, source, poseNote ?? undefined);
 }
@@ -359,8 +384,9 @@ export async function scoreShotIdentityMedian(
   const artData = strip ? strip.dataUrl : poster!.dataUrl;
   const faceBoxes = poster && strip ? readRenderFaceBoxes(poster.jobId) : null;
   const faceStrip = poster && strip && faceBoxes ? await extractFaceCropStrip(poster.jobId, faceBoxes, strip.framePaths ?? []) : null;
+  const figureStrip = poster && strip && faceBoxes ? await extractFigureCropStrip(poster.jobId, faceBoxes, strip.framePaths ?? []) : null;
   const poseNote: string | null = strip
-    ? `pose-matched over ${strip.frames} frames${faceStrip ? " + face crops judged" : ""}`
+    ? `pose-matched over ${strip.frames} frames${faceStrip ? " + face crops judged" : ""}${figureStrip ? " + figure crops judged" : ""}`
     : poster ? "single frame (40% mark)" : null;
   const ctx = await prepareIdentityContext(shot, poster ? { imageData: artData, error: "" } : undefined);
   if (!ctx.ok) return ctx;
@@ -370,7 +396,7 @@ export async function scoreShotIdentityMedian(
   const verdicts: IdentityVerdict[] = [];
   let lastError = "";
   for (let i = 0; i < n; i++) {
-    const call = await rawIdentityCall(ctx, strip?.frames, faceStrip);
+    const call = await rawIdentityCall(ctx, strip?.frames, faceStrip, figureStrip);
     if (!call.ok) { lastError = call.error; continue; }
     const v = parseIdentityVerdict(call.raw, names);
     if (v) verdicts.push(v);
@@ -425,6 +451,7 @@ async function rawIdentityCall(
   ctx: Extract<Awaited<ReturnType<typeof prepareIdentityContext>>, { ok: true }>,
   frames: number | undefined,
   faceStrip?: { dataUrl: string; members: string[]; frames: number } | null,
+  figureStrip?: { dataUrl: string; members: string[]; frames: number } | null,
 ): Promise<{ ok: true; raw: string } | { ok: false; error: string }> {
   try {
     const zai = await ZAI.create();
@@ -433,11 +460,14 @@ async function rawIdentityCall(
         {
           role: "user",
           content: [
-            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames, ctx.framingView, faceStrip ? { members: faceStrip.members, frames: faceStrip.frames } : undefined) },
+            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames, ctx.framingView, faceStrip ? { members: faceStrip.members, frames: faceStrip.frames } : undefined, figureStrip ? { members: figureStrip.members, frames: figureStrip.frames } : undefined) },
             { type: "image_url", image_url: { url: ctx.artData } },
             // THE JUDGE SEES THE FACE (iteration 123): the face crop
             // strip rides right after the full frames
             ...(faceStrip ? [{ type: "image_url" as const, image_url: { url: faceStrip.dataUrl } }] : []),
+            // THE PALETTE GETS ITS ADDRESS (iteration 125): the figure
+            // crop strip rides right after the face's
+            ...(figureStrip ? [{ type: "image_url" as const, image_url: { url: figureStrip.dataUrl } }] : []),
             // each sheet rides its framing-matched view right after it
             // (THE SHEET ANSWERS IN THE SHOT'S FRAMING, iteration 121)
             ...ctx.sheets.flatMap((s) => [
@@ -874,6 +904,138 @@ export async function extractFaceCropStrip(
       // vstack requires equal widths: pad every row to the widest row's
       // width with black (no distortion - cells keep their aspect; a
       // row that lost a cell to an off-frame head just ends early).
+      const widths = await Promise.all(rowPaths.map((p) => rowWidth(p)));
+      const target = Math.max(...widths);
+      if (target <= 0) return null;
+      const inputs = rowPaths.flatMap((f) => ["-i", f]);
+      const chains = rowPaths.map((_, i) => `[${i}:v]pad=${target}:224:0:0:black[r${i}]`).join(";");
+      const stack = rowPaths.map((_, i) => `[r${i}]`).join("") + `vstack=inputs=${rowPaths.length}`;
+      ok = await new Promise<boolean>((resolve) => {
+        const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `${chains};${stack}`, "-q:v", "3", out], {
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        child.on("close", (code) => resolve(code === 0));
+        child.on("error", () => resolve(false));
+      });
+    }
+    if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
+    const b64 = fs.readFileSync(out).toString("base64");
+    return { dataUrl: `data:image/jpeg;base64,${b64}`, members, frames: Math.max(boxes.marks.length, 1) };
+  } catch {
+    return null;
+  }
+}
+
+/** THE FIGURE BAND IS A LAW (iteration 125, exported for the e2e):
+ * the face box extends DOWN to the hem - five head-heights of body
+ * below the box, +/-30% of the box's width for the robe's sweep,
+ * clipped to the frame. Deterministic craft data derived from the
+ * render's own projected boxes - no detection, no AI. */
+export function figureBandFor(
+  box: [number, number, number, number],
+  resX: number,
+  resY: number,
+): [number, number, number, number] {
+  const [x0, y0, x1, y1] = box;
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (!(w > 0) || !(h > 0)) return [0, 0, 0, 0];
+  const bx0 = Math.max(0, Math.round(x0 - 0.3 * w));
+  const bx1 = Math.min(resX, Math.round(x1 + 0.3 * w));
+  const by0 = Math.max(0, Math.round(y0));
+  const by1 = Math.min(resY, Math.round(y1 + 5.0 * h));
+  if (bx1 - bx0 < 2 || by1 - by0 < 2) return [0, 0, 0, 0];
+  return [bx0, by0, bx1, by1];
+}
+
+/** One figure-band crop, upscaled to a readable height (the face
+ * cell's law, one band taller). */
+function renderFigureCell(framePath: string, outPath: string, band: [number, number, number, number]): Promise<boolean> {
+  const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+  const [x0, y0, x1, y1] = band;
+  const w = Math.max(2, x1 - x0);
+  const h = Math.max(2, y1 - y0);
+  return new Promise<boolean>((resolve) => {
+    const child = spawn(
+      ff,
+      ["-y", "-i", framePath, "-vf", `crop=${w}:${h}:${x0}:${y0},scale=-2:224`, "-frames:v", "1", "-q:v", "3", outPath],
+      { stdio: ["ignore", "ignore", "ignore"] },
+    );
+    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => resolve(false));
+  });
+}
+
+/**
+ * THE PALETTE GETS ITS ADDRESS (iteration 125). The 124 night named
+ * the trade: the face crops moved the face cells while the wides'
+ * palette/wardrobe cells collapsed (S001/S004 palette 20%) on frames
+ * whose figure chroma MEASURED healthy - the probe put the figure's
+ * own saturation at 0.58-0.64, matching the 70%-palette control, so
+ * the collapse was the SCALE wall at the judge's eye, not the paint
+ * (a 30px figure in a tinted wash cannot carry a costume). The same
+ * move the face earned: each cast member's head box extends to a
+ * full-figure band (figureBandFor), crops from the SAME frames the
+ * filmstrip judged (one truth, three scales), upscales to readable
+ * height, labels '<name> f<k>', one row per member - rows padded,
+ * never distorted. A job without boxes (an older render, a stand-in)
+ * degrades to the full strip alone, honestly.
+ */
+export async function extractFigureCropStrip(
+  jobId: string,
+  boxes: RenderFaceBoxes,
+  framePaths: string[],
+): Promise<{ dataUrl: string; members: string[]; frames: number } | null> {
+  try {
+    if (framePaths.length < 2 || boxes.cast.length === 0) return null;
+    const ff = (ffmpegPath() as string | null) ?? "ffmpeg";
+    const postersDir = path.join(process.cwd(), "public", "renders", "posters");
+    fs.mkdirSync(postersDir, { recursive: true });
+    const rows: Array<Array<string>> = [];
+    const members: string[] = [];
+    for (const c of boxes.cast) {
+      const cells: string[] = [];
+      for (let k = 0; k < c.boxes.length; k++) {
+        const b = c.boxes[k];
+        const src = framePaths[k];
+        if (b === null || !src || !fs.existsSync(src)) continue;
+        const band = figureBandFor(b, boxes.resX, boxes.resY);
+        if (band[2] - band[0] < 2 || band[3] - band[1] < 2) continue;
+        const cell = path.join(postersDir, `${jobId}.figure-${members.length}-${k}.jpg`);
+        if (!(await renderFigureCell(src, cell, band))) continue;
+        if (!fs.existsSync(cell) || fs.statSync(cell).size === 0) continue;
+        const labeled = await stampFrameLabel(cell, `${c.name} f${k + 1}`);
+        cells.push(labeled);
+      }
+      if (cells.length > 0) {
+        rows.push(cells);
+        members.push(c.name);
+      }
+    }
+    if (rows.length === 0) return null;
+    // hstack each row, pad rows to the widest, vstack the rows (the
+    // face strip's exact assembly - the e2e caught the row-width
+    // regex once; the law keeps it)
+    const rowPaths: string[] = [];
+    for (let r = 0; r < rows.length; r++) {
+      const out = path.join(postersDir, `${jobId}.figure-row${r}.jpg`);
+      const inputs = rows[r].flatMap((f) => ["-i", f]);
+      const ok = await new Promise<boolean>((resolve) => {
+        const child = spawn(ff, ["-y", ...inputs, "-filter_complex", `hstack=inputs=${rows[r].length}`, "-q:v", "3", out], {
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        child.on("close", (code) => resolve(code === 0));
+        child.on("error", () => resolve(false));
+      });
+      if (!ok || !fs.existsSync(out) || fs.statSync(out).size === 0) return null;
+      rowPaths.push(out);
+    }
+    const out = path.join(postersDir, `${jobId}.figurestrip.jpg`);
+    let ok: boolean;
+    if (rowPaths.length === 1) {
+      fs.copyFileSync(rowPaths[0], out);
+      ok = fs.existsSync(out) && fs.statSync(out).size > 0;
+    } else {
       const widths = await Promise.all(rowPaths.map((p) => rowWidth(p)));
       const target = Math.max(...widths);
       if (target <= 0) return null;
