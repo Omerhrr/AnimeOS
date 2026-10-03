@@ -35,7 +35,7 @@
 
 import math
 
-TOON_LAW_VERSION = 108
+TOON_LAW_VERSION = 121
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # cel tree tuning
@@ -56,6 +56,73 @@ PALETTE_WASH_BY_SHOT = {"EXTREME_CLOSEUP": 0.22, "CLOSEUP": 0.22, "MCU": 0.25, "
                         "LOW_ANGLE": 0.32, "WIDE": 0.45, "ESTABLISHING": 0.5}
 CREASE_DEG = 112.0   # only real folds ink; the sculpted head's soft planes stay clean
 INK_OFFSET = 0.005   # the hull outline's expansion along vertex normals (figure-local units)
+
+# ── THE STYLE LAW (iteration 121): TOON RAMPS + LINE WEIGHT ────
+# The 120 night's distribution named the ceiling: the STYLE cell
+# ("3D low-poly", "simplified geometry") - the face/wardrobe/palette
+# cells all cleared it, the style read did not. The re-scores named
+# the two levers and both are LAWS OF THE FRAMING, not constants:
+#
+# (1) THE TOON RAMP ANSWERS THE FRAMING. A drawn frame's bands are a
+#     graphic decision: as the figure shrinks toward establishing
+#     scale, the lit band NARROWS and the shadow DEEPENS - the drawn,
+#     high-contrast read - while the tight framings keep the earned
+#     close look exactly (the 113/115 tuning is canon there). The
+#     table is (toon size, shadow floor scale, band smoothness): the
+#     band edge also hardens with distance (a 3px band cannot afford
+#     a soft edge - it reads as mud; a hard edge reads as ink).
+STYLE_RAMP_BY_SHOT = {
+    "EXTREME_CLOSEUP": (0.62, 1.00, 0.040),
+    "CLOSEUP":         (0.62, 1.00, 0.040),
+    "MCU":             (0.62, 1.00, 0.040),
+    "MEDIUM":          (0.58, 0.95, 0.035),
+    "LOW_ANGLE":       (0.55, 0.92, 0.030),
+    "WIDE":            (0.50, 0.85, 0.025),
+    "ESTABLISHING":    (0.46, 0.80, 0.020),
+}
+
+
+def style_ramp_for(shot_type):
+    """The framing's toon ramp: (lit-band size, shadow floor scale,
+    band smoothness). MEDIUM and tighter default to the earned look."""
+    return STYLE_RAMP_BY_SHOT.get(str(shot_type or "MEDIUM").upper(), (TOON_SIZE, 1.0, TOON_SMOOTH))
+
+
+# (2) THE LINE WEIGHT SOLVES FROM THE FRAMING. The hull offset was a
+#     constant 0.005 figure-local units - at the closeup's 0.5m that
+#     is ~12px of ink (a heavy brush), and at the establishing's 2.3m
+#     it is ~0.7px (SUB-PIXEL: the ink vanishes and the wide reads
+#     "3D low-poly" - exactly the cell that would not move). Anime
+#     line weight is a call about the LINE ON SCREEN, so the law
+#     solves the world offset that renders the target pixel width at
+#     the shot's own distance/lens/resolution:
+#         px_per_world = res_x * lens / (dist * SENSOR_MM)
+#         offset = target_px / px_per_world
+#     bounded - never a blob, never invisible. The freestyle path
+#     keeps INK_PX (its thickness is already screen-space).
+HULL_INK_PX = {"PREVIEW": 1.4, "FINAL": 2.2}
+SENSOR_MM = 36.0                  # Blender's default horizontal sensor
+INK_OFFSET_BOUNDS = (0.0012, 0.024)
+FIGURE_H = 0.9                    # the designed figure's law height (root 0.45 scale)
+
+
+def ink_offset_for(framing_ctx, mode):
+    """The hull expansion that renders the shot's target ink width in
+    pixels. framing_ctx carries dist (world), lens (mm) and resX (px);
+    a missing context (the turnaround's fixed cams) keeps the classic
+    constant."""
+    if not isinstance(framing_ctx, dict):
+        return INK_OFFSET
+    try:
+        dist = max(float(framing_ctx["dist"]), 0.05)
+        lens = max(float(framing_ctx["lens"]), 1.0)
+        res_x = max(float(framing_ctx["resX"]), 16.0)
+        px_per_world = res_x * lens / (dist * SENSOR_MM)
+        target = HULL_INK_PX.get(str(mode or "PREVIEW").upper(), HULL_INK_PX["PREVIEW"])
+        off = target / max(px_per_world, 1e-6)
+        return round(min(max(off, INK_OFFSET_BOUNDS[0]), INK_OFFSET_BOUNDS[1]), 5)
+    except Exception:  # noqa: BLE001
+        return INK_OFFSET
 
 
 def resolve_look(project):
@@ -305,7 +372,10 @@ def _palette_mid(mat):
     return members[len(members) // 2]
 
 
-def _cel_tree(mat, rgb, kind, hex_to_rgb=None):
+def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None):
+    """The cel tree. ramp = (lit-band size, shadow floor scale, band
+    smoothness) - THE STYLE LAW's framing answer (iteration 121); None
+    keeps the earned constants (the turnaround's fixed cams)."""
     nt = mat.node_tree
     # NEVER clear the tree: other passes hold live node references
     # (the wrinkle normals' Strength is driven per frame) - a freed
@@ -353,10 +423,11 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None):
         nt.links.new(k.outputs[0], mx.inputs[0])
         color_in = mx.outputs[2]
         nt.links.new(color_in, toon.inputs["Color"])
-    toon.inputs["Size"].default_value = TOON_SIZE
-    toon.inputs["Smooth"].default_value = TOON_SMOOTH
+    r_size, r_floor_k, r_smooth = ramp if ramp else (TOON_SIZE, 1.0, TOON_SMOOTH)
+    toon.inputs["Size"].default_value = r_size
+    toon.inputs["Smooth"].default_value = r_smooth
     em = nt.nodes.new("ShaderNodeEmission")
-    floor = SKIN_FLOOR if kind == "skin" else SHADOW_FLOOR
+    floor = (SKIN_FLOOR if kind == "skin" else SHADOW_FLOOR) * r_floor_k
     lum = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
     if kind != "skin" and lum > 0.35:
         # a pale dye (white hanfu) at the full floor glows and blooms -
@@ -478,13 +549,18 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None):
     return {"look": "TOON", "bands": "flat", "floor": round(floor, 3)}
 
 
-def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
+def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=None):
     """Convert the scene to the production's look. TOON: every
     non-emissive material becomes a cel tree, Freestyle inks the
     silhouettes/borders/creases, and the grain/chroma comp layers are
-    zeroed (mutates comp_profile when given). Returns the evidence."""
+    zeroed (mutates comp_profile when given). framing_ctx (the worker's
+    framing context: shotType/dist/lens/resX) carries THE STYLE LAW -
+    the toon ramp answers the framing and the hull line weight solves
+    from the shot's own pixels-per-world. Returns the evidence."""
     if look != "TOON":
         return {"look": "PBR", "lawVersion": TOON_LAW_VERSION}
+    ramp = style_ramp_for(framing_ctx.get("shotType")) if isinstance(framing_ctx, dict) else None
+    ink_offset = ink_offset_for(framing_ctx, mode)
     converted, kept = 0, 0
     for mat in list(bpy.data.materials):
         if not mat.use_nodes or mat.node_tree is None or mat.users == 0:
@@ -498,7 +574,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
             continue
         if not kind:
             kind = "skin" if "skin" in name else ("hair" if "hair" in name else "cloth")
-        _cel_tree(mat, rgb, kind, hex_to_rgb)
+        _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp)
         mat["animeos_toon"] = True
         converted += 1
 
@@ -587,7 +663,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
             try:
                 shell_me = ob.data.copy()
                 for v in shell_me.vertices:
-                    v.co += v.normal * INK_OFFSET
+                    v.co += v.normal * ink_offset
                 shell = bpy.data.objects.new(f"InkShell_{ob.name}", shell_me)
                 scn.collection.objects.link(shell)
                 # PARENT FIRST, WORLD SECOND (iteration 113): assigning
@@ -669,6 +745,9 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None):
     return {"look": "TOON", "lawVersion": TOON_LAW_VERSION, "converted": converted, "keptEmissive": kept,
             "ink": (["hull"] if ink_mode == "hull" else (["silhouette", "border", "contour"] if ink_mode == "freestyle" else ["off"])),
             "inkShells": len(shells), "inkPx": round(r.line_thickness, 2) if r.use_freestyle else None,
+            "styleRamp": (None if ramp is None else {"size": ramp[0], "floorScale": ramp[1], "smooth": ramp[2], "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper()}),
+            "inkOffset": ink_offset,
+            "inkTargetPx": HULL_INK_PX.get(str(mode or "PREVIEW").upper(), HULL_INK_PX["PREVIEW"]) if isinstance(framing_ctx, dict) else None,
             "denoised": denoised, "fillsEased": eased, "comp": comp_note}
 
 
@@ -796,3 +875,87 @@ def stage_mist_for_framing(bpy, shot_type):
     except Exception:  # noqa: BLE001
         pass
     return {"shotType": st, "start": start, "depth": depth, "intensity": intensity, "note": "the wide keeps its air"}
+
+
+# ── THE FACE PAINT ANSWERS THE ESTABLISHING SCALE (iteration 121) ──
+# The 113 laws tuned the painted face for the framing distance that
+# reads it (the 0.5m closeup: 0.070 eye decals, dark irises, the
+# sawtooth hairline). At the other end of the table the same paint
+# VANISHES: at the establishing's 2.3m the whole head is ~20px and the
+# eye decals land under 1px of frame - the face reads as a blank egg
+# and the identity judge reads "face lacks detail". The anime answer
+# is a known craft move: at wide scale the face SIMPLIFIES but the
+# features read DARKER AND LARGER relative to the head (the wide-shot
+# face is not the closeup face scaled down - it is re-drawn). The law
+# carries that move as a framing table: at WIDE and wider the decal
+# planes vertex-scale up (never the object - sync_rig owns the eye
+# decals' object scale for the blink) and the decal emissions push to
+# full strength, bounded, deterministic, per-shot. MEDIUM and tighter
+# keep the 113 tuned values exactly (the closeup's earned look is
+# canon - the staging refuses to touch it).
+FACE_PAINT_BY_SHOT = {
+    "ESTABLISHING": {"eye": 1.45, "brow": 1.30, "mouth": 1.15, "nose": 1.10, "strength": 1.0},
+    "WIDE":         {"eye": 1.30, "brow": 1.18, "mouth": 1.08, "nose": 1.05, "strength": 1.0},
+    "LOW_ANGLE":    {"eye": 1.18, "brow": 1.10, "mouth": 1.04, "nose": 1.0, "strength": 0.98},
+}
+FACE_PAINT_MESHES = {
+    "eye": ("EyeLMesh", "EyeRMesh"),
+    "brow": ("BrowLMesh", "BrowRMesh"),
+    "mouth": ("MouthMesh",),
+    "nose": ("NoseMesh",),
+}
+
+
+def face_paint_stage_for(shot_type):
+    """The framing's face-paint stage: None outside the wide family
+    (the tight framings keep the 113 tuned paint exactly)."""
+    return FACE_PAINT_BY_SHOT.get(str(shot_type or "MEDIUM").upper())
+
+
+def stage_face_paint_for_framing(bpy, shot_type):
+    """THE FACE PAINT ANSWERS THE ESTABLISHING SCALE: vertex-scale the
+    painted face's decal planes and push their emission strength for
+    the wide framings (the mesh data scale - sync_rig owns the eye
+    decals' OBJECT scale for the blink and must not be touched; the
+    shrinkwrap re-projects the scaled plane onto the head). Returns
+    the evidence line for the render state."""
+    st = str(shot_type or "MEDIUM").upper()
+    stage = face_paint_stage_for(st)
+    if stage is None:
+        return {"shotType": st, "staged": 0, "note": "tight framing - the 113 face paint stands"}
+    staged, mats = [], set()
+    by_name = {}
+    for ob in bpy.data.objects:
+        if ob.type == "MESH":
+            by_name.setdefault(ob.name.split(".")[0], []).append(ob)
+    for part, names in FACE_PAINT_MESHES.items():
+        k = float(stage.get(part, 1.0))
+        for nm in names:
+            for ob in by_name.get(nm, ()):
+                try:
+                    for v in ob.data.vertices:
+                        v.co = (v.co[0] * k, v.co[1] * k, v.co[2] * k)
+                    staged.append(nm)
+                    for mslot in ob.material_slots:
+                        if mslot.material is not None:
+                            mats.add(mslot.material.name)
+                except Exception:  # noqa: BLE001
+                    continue
+    pushed = 0
+    want = float(stage.get("strength", 1.0))
+    for mat in bpy.data.materials:
+        if mat.name not in mats or not mat.use_nodes or mat.node_tree is None:
+            continue
+        for n in mat.node_tree.nodes:
+            if n.type == "EMISSION":
+                try:
+                    # the push only ever LIFTS toward the stage's floor
+                    # (a decal already at full strength keeps it)
+                    n.inputs["Strength"].default_value = max(float(n.inputs["Strength"].default_value), want)
+                    pushed += 1
+                except Exception:  # noqa: BLE001
+                    continue
+    return {"shotType": st, "staged": len(staged), "meshes": sorted(set(staged)),
+            "scale": {k: v for k, v in stage.items() if k != "strength"},
+            "strengthPushed": pushed,
+            "note": "the face paint reads at establishing scale" if staged else "no painted face present"}

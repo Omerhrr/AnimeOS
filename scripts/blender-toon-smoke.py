@@ -166,6 +166,68 @@ ok("wash nodes retuned for WIDE", wev["nodes"] >= 2 and wev["wash"] == tp.palett
 ok("resolve_look: DONGHUA -> TOON, WESTERN -> PBR, explicit wins",
    tp.resolve_look({"visualStyle": "DONGHUA"}) == "TOON" and tp.resolve_look({"visualStyle": "WESTERN"}) == "PBR"
    and tp.resolve_look({"visualStyle": "DONGHUA", "look": "PBR"}) == "PBR")
+
+# 6. THE STYLE LAW (iteration 121): the toon ramp answers the framing
+ramp_c, ramp_w, ramp_e = tp.style_ramp_for("CLOSEUP"), tp.style_ramp_for("WIDE"), tp.style_ramp_for("ESTABLISHING")
+ok("the tight framings keep the earned ramp", ramp_c == (tp.TOON_SIZE, 1.0, tp.TOON_SMOOTH), ramp_c)
+ok("the ramp narrows and deepens and hardens toward establishing",
+   ramp_e[0] < ramp_w[0] < ramp_c[0] and ramp_e[1] < ramp_w[1] < ramp_c[1] and ramp_e[2] < ramp_w[2] < ramp_c[2],
+   (ramp_c, ramp_w, ramp_e))
+# the line weight solves from the framing's own pixels-per-world
+off_e = tp.ink_offset_for({"dist": 2.6 * 0.9, "lens": 24, "resX": 512}, "PREVIEW")
+exp_e = 1.4 / (512 * 24 / (2.6 * 0.9 * 36.0))
+ok("the establishing ink solves to its target px", abs(off_e - exp_e) < 0.001, (off_e, exp_e))
+ok("the solved offset stays inside the bounds at both ends",
+   tp.INK_OFFSET_BOUNDS[0] <= tp.ink_offset_for({"dist": 0.495, "lens": 85, "resX": 512}, "FINAL") <= tp.INK_OFFSET_BOUNDS[1]
+   and tp.INK_OFFSET_BOUNDS[0] <= off_e <= tp.INK_OFFSET_BOUNDS[1], off_e)
+ok("the world offset rises with distance (the on-screen ink holds its width)",
+   tp.ink_offset_for({"dist": 2.34, "lens": 24, "resX": 512}, "PREVIEW") < tp.ink_offset_for({"dist": 5.0, "lens": 24, "resX": 512}, "PREVIEW"))
+ok("a missing context keeps the classic offset", tp.ink_offset_for(None, "PREVIEW") == tp.INK_OFFSET)
+
+# 7. the ramp rides the real cel tree (a probe through _cel_tree)
+probe = bpy.data.materials.new("RampProbe")
+probe.use_nodes = True
+probe.node_tree.nodes.clear()
+probe.node_tree.nodes.new("ShaderNodeOutputMaterial")
+tp._cel_tree(probe, m.hex_to_rgb("#1a3a34"), "cloth", m.hex_to_rgb, ramp=tp.style_ramp_for("ESTABLISHING"))
+p_toon = [n for n in probe.node_tree.nodes if n.type == "BSDF_TOON"]
+ok("the probe's band rides the establishing ramp",
+   p_toon and abs(p_toon[0].inputs["Size"].default_value - 0.46) < 1e-6 and abs(p_toon[0].inputs["Smooth"].default_value - 0.02) < 1e-6,
+   [(n.inputs["Size"].default_value, n.inputs["Smooth"].default_value) for n in p_toon])
+ok("the probe's floor deepens by the ramp's scale",
+   any(abs(n.inputs["Strength"].default_value - tp.SHADOW_FLOOR * 0.8) < 1e-6
+       for n in probe.node_tree.nodes if n.type == "EMISSION"),
+   [n.inputs["Strength"].default_value for n in probe.node_tree.nodes if n.type == "EMISSION"])
+
+# 8. THE FACE PAINT ANSWERS THE ESTABLISHING SCALE (iteration 121)
+# A clean stage: the legacy figure shares the decal names (its own
+# reshape law scales those objects), so the anime face is measured
+# alone - the staging must read ITS decals only.
+for ob in list(scn.objects):
+    bpy.data.objects.remove(ob, do_unlink=True)
+for me in [m for m in bpy.data.meshes if m.users == 0]:
+    bpy.data.meshes.remove(me)
+import anime_character as ac
+fig_a = ac.build_anime_character(bpy, scn, dna, mats, br=m._grip_law())
+fig_a["syncRig"]()
+fp_tight = tp.stage_face_paint_for_framing(bpy, "CLOSEUP")
+ok("the tight framing keeps the 113 face paint", fp_tight["staged"] == 0, fp_tight)
+eye = bpy.data.objects.get("EyeLMesh") or bpy.data.objects.get("EyeLMesh.001")
+ok("the anime face carries its decals", eye is not None, [o.name for o in scn.objects if "EyeL" in o.name][:6])
+r0 = max(abs(v.co.x) for v in eye.data.vertices)
+fp_wide = tp.stage_face_paint_for_framing(bpy, "ESTABLISHING")
+r1 = max(abs(v.co.x) for v in eye.data.vertices)
+ok("the establishing staging vertex-scales the six decal meshes x1.45",
+   fp_wide["staged"] == 6 and len(fp_wide["meshes"]) == 6 and abs(r1 - r0 * 1.45) < 1e-6, (fp_wide, r0, r1))
+ok("the decal object scale stays the rig's (sync_rig owns the blink)", eye.scale[0] == 1.0 and eye.scale[1] == 1.0, tuple(eye.scale))
+eye_mat = bpy.data.materials.get("EyeDecal")
+ok("the decal emissions push to full strength",
+   eye_mat is not None and all(n.inputs["Strength"].default_value >= 1.0
+                               for n in eye_mat.node_tree.nodes if n.type == "EMISSION"),
+   [n.inputs["Strength"].default_value for n in (eye_mat.node_tree.nodes if eye_mat else []) if n.type == "EMISSION"])
+fig_a["syncRig"]()
+r2 = max(abs(v.co.x) for v in eye.data.vertices)
+ok("a rig sync does not undo the mesh scale", abs(r2 - r1) < 1e-6, (r1, r2))
 print("DIRECT_FAILS " + json.dumps(fails))
 '''
 
@@ -235,11 +297,23 @@ def run_render():
     expect("hero key tracks the face", (st.get("heroKey") or {}).get("tracks") == "face", st.get("heroKey"))
     expect("shadowless face fill rides the key", ((st.get("heroKey") or {}).get("fill") or {}).get("shadowless") is True, (st.get("heroKey") or {}).get("fill"))
     expect("palette wash tuned for the framing", ((st.get("render") or {}).get("paletteWash") or {}).get("shotType") == "MEDIUM")
+    # THE STYLE LAW (iteration 121): the ramp answers the framing and
+    # the hull ink solves from the shot's own pixels-per-world
+    look121 = st.get("render") or {}
+    ramp = (look121.get("look") or {}).get("styleRamp") or {}
+    expect("the MEDIUM ramp rides the worker", ramp.get("shotType") == "MEDIUM" and abs(ramp.get("size", 0) - 0.58) < 1e-6
+           and abs(ramp.get("floorScale", 0) - 0.95) < 1e-6 and abs(ramp.get("smooth", 0) - 0.035) < 1e-6, ramp)
+    ink_off = (look121.get("look") or {}).get("inkOffset")
+    expect("the hull ink solves from the framing (in bounds)",
+           isinstance(ink_off, (int, float)) and 0.0012 <= ink_off <= 0.024, ink_off)
+    expect("the ink target names its px", (look121.get("look") or {}).get("inkTargetPx") == 1.4, (look121.get("look") or {}).get("inkTargetPx"))
+    fp = look121.get("facePaint") or {}
+    expect("the face paint staging rides (MEDIUM keeps the 113 paint)", fp.get("shotType") == "MEDIUM" and fp.get("staged") == 0, fp)
 
 
 if HALF in ("all", "direct"):
     run_direct()
 if HALF in ("all", "render"):
     run_render()
-print(f"\n{'ALL GREEN' if failures == 0 else 'FAILURES'} - toon smoke (iteration 108)")
+print(f"\n{'ALL GREEN' if failures == 0 else 'FAILURES'} - toon smoke (iteration 121)")
 sys.exit(0 if failures == 0 else 1)

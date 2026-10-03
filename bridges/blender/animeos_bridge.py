@@ -6935,8 +6935,29 @@ def worker_run(job_file):
             # conversion - the dye inherits the staged tone, the cast's
             # materials (untagged, built later) never ride it.
             state["render"]["setStage"] = toon_pass.stage_set_for_framing(bpy, shot.get("shotType"))
+            # THE FACE PAINT ANSWERS THE ESTABLISHING SCALE (iteration
+            # 121): at wide the painted face's decals vertex-scale up
+            # and their emissions push to full strength - the wide-shot
+            # face is re-drawn, not scaled down; tight framings keep
+            # the 113 tuned paint exactly.
+            try:
+                state["render"]["facePaint"] = toon_pass.stage_face_paint_for_framing(bpy, shot.get("shotType"))
+            except Exception as exc:  # noqa: BLE001
+                state["render"]["facePaint"] = {"note": f"face paint staging refused: {exc}"[:160]}
             look = toon_pass.resolve_look(project)
-            state["render"]["look"] = toon_pass.apply_look(bpy, scn, look, mode, hex_to_rgb, comp)
+            # THE STYLE LAW (iteration 121): the framing context -
+            # shotType, the framing table's own distance (multiplier x
+            # the figure's law height), lens and the shot's real output
+            # width - carries the toon ramp (the lit band narrows, the
+            # shadow deepens, the edge hardens toward establishing) and
+            # the hull line weight's solved world offset (the ink
+            # renders at its target pixel width at EVERY framing - the
+            # wide's sub-pixel vanishing ink was the style cell's read).
+            _f_mult, _f_lens, _f_h = SHOT_FRAMING.get(
+                str(shot.get("shotType") or "MEDIUM").upper(), SHOT_FRAMING["MEDIUM"])
+            framing_ctx = {"shotType": shot.get("shotType"), "dist": _f_mult * toon_pass.FIGURE_H,
+                           "lens": _f_lens, "resX": out_w}
+            state["render"]["look"] = toon_pass.apply_look(bpy, scn, look, mode, hex_to_rgb, comp, framing_ctx=framing_ctx)
             state["render"]["paletteWash"] = toon_pass.apply_palette_wash(bpy, shot.get("shotType"))
         except Exception as exc:  # noqa: BLE001
             state["render"]["look"] = {"look": "PBR", "note": f"toon pass refused: {exc}"[:160]}

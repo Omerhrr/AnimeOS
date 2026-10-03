@@ -155,11 +155,53 @@ async function loadIdentityShot(shotId: string) {
   });
 }
 
+// ── THE SHEET ANSWERS IN THE SHOT'S FRAMING (iteration 121) ─────
+// A canonical model sheet is a full-body standing turnaround (five
+// views stitched side by side); a shot is FRAMED. Judging a
+// head-and-shoulders clip against only the full-body sheet made the
+// judge score the FRAMING, not the character (S002's wardrobe 0% -
+// "the framing shows head+shoulders"; the wides read their sheets as
+// thin strips). The turnaround's five views already render to disk
+// next to the stitched sheet, so the law attaches the view whose
+// framing matches the shot's (the like-for-like reference) and the
+// prompt states the framing contract: an aspect the framing cannot
+// show is OMITTED, never scored low.
+const FRAMING_SHEET_VIEW: Record<string, "close" | "three" | "front"> = {
+  EXTREME_CLOSEUP: "close",
+  CLOSEUP: "close",
+  MCU: "close",
+  MEDIUM: "three",
+  LOW_ANGLE: "front",
+  WIDE: "front",
+  ESTABLISHING: "front",
+  WS: "front",
+};
+
+/** The turnaround view whose framing matches the shot's framing. */
+export function framingViewFor(shotType: string | null | undefined): "close" | "three" | "front" {
+  return FRAMING_SHEET_VIEW[String(shotType ?? "MEDIUM").toUpperCase()] ?? "front";
+}
+
+/** The sibling per-view render next to the stitched sheet (only the
+ * generated turnarounds carry views on disk - an uploaded sheet has
+ * none and the stitched sheet alone rides). */
+function framingViewUrl(modelSheetUrl: string, view: string): string | null {
+  if (!/turn_sheet\.png$/.test(modelSheetUrl)) return null;
+  return modelSheetUrl.replace(/turn_sheet\.png$/, `turn_${view}.png`);
+}
+
+export interface IdentitySheet {
+  name: string;
+  data: string;
+  framingRef?: { view: string; data: string };
+}
+
 /**
  * Guard + image loading shared by the real and raw paths: resolves
  * the sheeted cast and data-URLs the artifact under judgment (the
  * panel art by default, or a caller-supplied render poster) plus
- * every sheet.
+ * every sheet - each sheet riding its framing-matched view when that
+ * view exists on disk.
  */
 async function prepareIdentityContext(
   shot: IdentityShot,
@@ -180,29 +222,55 @@ async function prepareIdentityContext(
     if (!data) return { ok: false as const, error: "Panel art is missing on disk" };
     artData = data;
   }
+  const framingView = framingViewFor((shot as { shotType?: string | null }).shotType);
   const sheets = cast
-    .map((c) => ({ name: c.name, data: publicImageAsDataUrl(c.modelSheetUrl as string) }))
-    .filter((s): s is { name: string; data: string } => Boolean(s.data));
+    .map((c): IdentitySheet | null => {
+      const data = publicImageAsDataUrl(c.modelSheetUrl as string);
+      if (!data) return null;
+      const viewUrl = framingViewUrl(c.modelSheetUrl as string, framingView);
+      const viewData = viewUrl ? publicImageAsDataUrl(viewUrl) : null;
+      return { name: c.name, data, ...(viewData ? { framingRef: { view: framingView, data: viewData } } : {}) };
+    })
+    .filter((s): s is IdentitySheet => s !== null);
   if (sheets.length === 0) return { ok: false as const, error: "Model sheets are missing on disk" };
   const shotRef = `E${episode.number} Sc${shot.scene.number} S${String(shot.number).padStart(3, "0")}`;
-  return { ok: true as const, episode, project, sheets, artData, shotRef };
+  return { ok: true as const, episode, project, sheets, artData, shotRef, framingView };
 }
 
-function buildIdentityPrompt(sheets: Array<{ name: string }>, filmstripFrames?: number): string {
-  const manifest = sheets.map((s, i) => `Image ${i + 2}: canonical model sheet for ${s.name}`).join(", ");
+/** THE SHEET ANSWERS IN THE SHOT'S FRAMING (iteration 121) - exported
+ * for the e2e: the prompt is a law, its image manifest and framing
+ * contract are asserted. */
+export function buildIdentityPrompt(sheets: Array<{ name: string; framingRef?: { view: string } }>, filmstripFrames?: number, framingView?: string): string {
+  let n = 2;
+  const manifest = sheets
+    .map((s) => {
+      const sheet = `Image ${n}: canonical model sheet for ${s.name}`;
+      n += 1;
+      const ref = s.framingRef ? `; Image ${n}: ${s.name}'s ${s.framingRef.view} view from the same sheet (the like-for-like framing for this shot)` : "";
+      n += s.framingRef ? 1 : 0;
+      return sheet + ref;
+    })
+    .join(", ");
   // THE SCORE MATCHES THE POSE (iteration 81): a RENDER artifact is a
   // filmstrip of the clip - the model judges the pose-matched frame.
   const artifact = filmstripFrames && filmstripFrames > 1
     ? `Image 1 is a filmstrip of ${filmstripFrames} frames from the same finished shot, left to right in time order (each frame carries a burned-in corner label naming its position - trust the label). Judge the character's identity in the frame whose POSE most closely matches the canonical sheet's pose (a model sheet is a neutral standing turnaround); score THAT frame and name it in the note by its burned-in label ('frame <k> of ${filmstripFrames}').`
     : "Image 1 is a story panel.";
+  // THE FRAMING CONTRACT (iteration 121): the judge scores the
+  // character, never the framing - an aspect the framing cannot show
+  // is omitted, not penalized.
+  const framing = framingView
+    ? `This shot is framed as a ${framingView}-scale view. The framing reference image(s) show each character at a comparable framing - prefer them for close comparisons. Judge each aspect ONLY on what this shot's framing reveals: a head-and-shoulders framing cannot show the full wardrobe and an establishing wide cannot show the face - omit an aspect the framing cannot show rather than scoring it low, and say 'framing hides <aspect>' in the note when you omit.`
+    : "";
   return [
     "You are a casting director for an animation production checking character identity.",
     `${artifact} ${manifest}.`,
+    framing,
     "For EACH named character, judge how closely the panel's depiction matches their canonical sheet and score similarity from 0 to 1, plus a score per aspect: face, hair, wardrobe, weapon, palette, style (0 to 1 each, only when the aspect is visible - omit aspects that cannot be judged).",
     "Reply with STRICT JSON only, no markdown fences:",
     '{"note": "one sentence about the panel", "characters": [{"name": "<sheet name>", "similarity": 0.0, "aspects": {"face": 0.0, "hair": 0.0}, "note": "what matches or drifted"}]}',
     "Judge only what is visible: a weapon kept off-frame is not a drift, a recolored blade is.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 /**
@@ -336,9 +404,14 @@ async function rawIdentityCall(
         {
           role: "user",
           content: [
-            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames) },
+            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames, ctx.framingView) },
             { type: "image_url", image_url: { url: ctx.artData } },
-            ...ctx.sheets.map((s) => ({ type: "image_url" as const, image_url: { url: s.data } })),
+            // each sheet rides its framing-matched view right after it
+            // (THE SHEET ANSWERS IN THE SHOT'S FRAMING, iteration 121)
+            ...ctx.sheets.flatMap((s) => [
+              { type: "image_url" as const, image_url: { url: s.data } },
+              ...(s.framingRef ? [{ type: "image_url" as const, image_url: { url: s.framingRef.data } }] : []),
+            ]),
           ],
         },
       ],
