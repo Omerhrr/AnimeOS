@@ -4,6 +4,7 @@ import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { safeJsonParse } from "@/lib/types";
 import { POSE_GLOSS } from "@/lib/animation/poses";
+import { characterDesignDna } from "@/lib/animation/design";
 import { filterCastByDescription } from "@/lib/cast-token";
 
 // ─────────────────────────────────────────────────────────────
@@ -306,6 +307,94 @@ export async function generateShotPanelArt(shotId: string, formatInput: unknown,
 
 // ─── Character model sheets ─────────────────────────────────
 
+// THE SHEET DEPICTS THE DESIGN (iteration 129): the 128 night named
+// the sheet-vs-design tension - the sheet is WHAT THE JUDGE COMPARES
+// AGAINST, yet its own image drifted from the committed design dyes
+// (the style token's default palette painted jade-teal+gold over every
+// figure: Wei's sheet read pale green+grey where the committed design
+// says dark plum #3a2230 + gold #a8842c, and the 128 anchor had to
+// keep rescuing the RENDER from the sheet's own mistake). The sheet
+// prompt now carries the design text's OWN compile (the same
+// characterDesignDna the render's conformance anchor rides) as
+// EXPLICIT color law, stated after the anchor so the character's
+// committed dyes override any default style palette for this figure.
+
+/** Coarse deterministic color naming for the dye clause: the same hex
+ * always lands the same words (pure, no randomness). Value words and
+ * hue families only - honest at the coarse grain, and the exact hex
+ * rides beside every name so the image channel gets both. */
+export function describeDye(hex: string): string {
+  const h = hex.replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(full.slice(0, 6) || "000000", 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const v = max, d = max - min;
+  const s = max === 0 ? 0 : d / max;
+  if (v < 0.12) return "near-black";
+  if (s < 0.1) return v > 0.86 ? "near-white" : "grey";
+  let hue: number;
+  if (max === r) hue = 60 * (((g - b) / d) % 6);
+  else if (max === g) hue = 60 * (2 + (b - r) / d);
+  else hue = 60 * (4 + (r - g) / d);
+  if (hue < 0) hue += 360;
+  if (hue >= 15 && hue < 64 && s > 0.5 && v >= 0.25 && v < 0.6) return "brown";
+  if (hue >= 180 && hue < 260 && s < 0.3) return v < 0.5 ? "deep slate blue" : "slate blue";
+  const family =
+    hue < 15 || hue >= 346 ? "crimson"
+    : hue < 30 ? "rust"
+    : hue < 64 ? "gold"
+    : hue < 150 ? "green"
+    : hue < 200 ? "jade-teal"
+    : hue < 250 ? "azure blue"
+    : hue < 290 ? "violet"
+    : "plum";
+  const value = v < 0.25 ? "dark " : v < 0.5 ? "deep " : v < 0.75 ? "" : "pale ";
+  return `${value}${family}`;
+}
+
+export interface SheetDesignDyes {
+  robe?: string;
+  accent?: string;
+  hair?: string;
+  hairStyle?: string;
+}
+
+/** The dye clause: the committed design's own colors stated as hard
+ * law for this figure. Null when the design carries no dyes at all. */
+export function sheetDesignDyeClause(dyes: SheetDesignDyes): string | null {
+  const parts: string[] = [];
+  if (dyes.robe) parts.push(`robe ${describeDye(dyes.robe)} ${dyes.robe}`);
+  if (dyes.accent) parts.push(`trim and accent ${describeDye(dyes.accent)} ${dyes.accent}`);
+  if (dyes.hair) parts.push(`hair ${describeDye(dyes.hair)} ${dyes.hair}`);
+  if (dyes.hairStyle) parts.push(`hair worn in a ${dyes.hairStyle}`);
+  if (parts.length === 0) return null;
+  return `COSTUME COLOR LAW (the committed design dyes - these exact colors override any default style palette for this figure): ${parts.join(", ")}`;
+}
+
+export interface SheetPromptInput {
+  styleTokens: string;
+  name: string;
+  anchor: string;
+  dyeClause: string | null;
+}
+
+/** The sheet prompt's assembly (pure): the standing 122 form, with the
+ * dye clause riding after the anchor when the design carries dyes. */
+export function buildSheetPrompt(input: SheetPromptInput): string {
+  return [
+    input.styleTokens,
+    `character reference model sheet of ${input.name}`,
+    "turnaround sheet with full-body front view, three-quarter view and side profile of the SAME character",
+    "identical face, hairstyle and outfit in every view, neutral A-pose",
+    input.anchor,
+    input.dyeClause,
+    "plain light neutral studio background, flat even lighting, full body visible head to toe",
+    "professional character design sheet, high quality, detailed",
+    "no text, no labels, no watermark, single sheet",
+  ].filter(Boolean).join(", ");
+}
+
 function parseAppearance(raw: string | null): Record<string, string> {
   if (!raw) return {};
   const v = safeJsonParse<Record<string, unknown>>(raw, {});
@@ -356,16 +445,28 @@ export async function generateCharacterModelSheet(characterId: string) {
   );
   const styleTokens = productionStyleTokens(character.project);
 
-  const sheetPrompt = [
-    styleTokens,
-    `character reference model sheet of ${character.name}`,
-    "turnaround sheet with full-body front view, three-quarter view and side profile of the SAME character",
-    "identical face, hairstyle and outfit in every view, neutral A-pose",
-    anchor,
-    "plain light neutral studio background, flat even lighting, full body visible head to toe",
-    "professional character design sheet, high quality, detailed",
-    "no text, no labels, no watermark, single sheet",
-  ].filter(Boolean).join(", ");
+  // THE SHEET DEPICTS THE DESIGN (iteration 129): compile the design
+  // text with the SAME compile the render's conformance anchor rides
+  // (render.ts compiles the identical fields), and state the dyes as
+  // color law in the sheet prompt - the sheet must DEPICT the
+  // committed design, not the style token's default palette.
+  const design = characterDesignDna({
+    name: character.name,
+    role: character.role,
+    appearance: character.appearance,
+    modelSheetPrompt: character.modelSheetPrompt,
+    stateClothing: latestState?.clothing ?? null,
+    stateWeapon: latestState?.weapon ?? null,
+  });
+  const dyes: SheetDesignDyes = {
+    robe: design.robeColor,
+    accent: design.robeAccent,
+    hair: design.hairColor,
+    hairStyle: design.hairStyle,
+  };
+  const dyeClause = sheetDesignDyeClause(dyes);
+
+  const sheetPrompt = buildSheetPrompt({ styleTokens, name: character.name, anchor, dyeClause });
 
   const base64 = await renderImage(sheetPrompt, "1024x1024");
 
@@ -380,7 +481,7 @@ export async function generateCharacterModelSheet(characterId: string) {
     data: { modelSheetUrl, modelSheetPrompt: anchor, modelSheetAt: now },
   });
 
-  return { modelSheetUrl, prompt: sheetPrompt.slice(0, 1200), anchor };
+  return { modelSheetUrl, prompt: sheetPrompt.slice(0, 1200), anchor, dyes, dyeClause };
 }
 
 // ─── SDK call with retry ────────────────────────────────────

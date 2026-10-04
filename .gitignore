@@ -122,3 +122,6 @@ probe-iter125/*.png
 
 # the 127 value probe frames (regenerable)
 probe127/
+
+# the 128 probe frames (regenerable)
+probe128/
