@@ -262,10 +262,15 @@ p_ramp = pbrush.node_tree.nodes["PainterlyRamp"]
 ok("the brush field is three constant steps (the brush, not a gradient)",
    p_ramp.color_ramp.interpolation == "CONSTANT" and len(p_ramp.color_ramp.elements) == 3,
    (p_ramp.color_ramp.interpolation, len(p_ramp.color_ramp.elements)))
-ok("the brush rides both bands (lit + shadow wrapped)",
+ok("the brush rides both bands (lit + shadow wrapped, the 128 weave composing after it)",
    sum(1 for n in pbrush.node_tree.nodes if n.type == "EMISSION"
-       and any(l.from_node.name.startswith("PainterlyMix") for l in n.inputs["Color"].links)) == 2,
+       and any(l.from_node.name.startswith(("PainterlyMix", "EmbroideryMix")) for l in n.inputs["Color"].links)) == 2,
    [(n.name, [l.from_node.name for l in n.inputs["Color"].links]) for n in pbrush.node_tree.nodes if n.type == "EMISSION"])
+_emis_srcs = [l.from_node.name for n in pbrush.node_tree.nodes if n.type == "EMISSION" for l in n.inputs["Color"].links]
+_emb_nodes = {n.name: n for n in pbrush.node_tree.nodes if n.name.startswith("EmbroideryMix")}
+ok("the weave composes AFTER the brush (each EmbroideryMix's live color rides from a PainterlyMix)",
+   all(any(l.from_node.name.startswith("PainterlyMix") for l in _emb_nodes[k].inputs[7].links) for k in _emb_nodes)
+   and all(s.startswith("EmbroideryMix") for s in _emis_srcs), (_emis_srcs, list(_emb_nodes)))
 ok("the measurer never sees the brush (the hard band edges intact)",
    all(abs(n.inputs["Size"].default_value - 0.46) < 1e-6 and abs(n.inputs["Smooth"].default_value - 0.02) < 1e-6
        for n in pbrush.node_tree.nodes if n.type == "BSDF_TOON"),
@@ -306,8 +311,8 @@ for _mt in (robe127, stone127, hair127, pale127):
 look127 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
-ok("the look names the 127 evidence",
-   look127.get("lawVersion") == 127 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
+ok("the look names the 128 evidence",
+   look127.get("lawVersion") == 128 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
    and (look127.get("painterlyRung") or {}).get("painted", 0) > 0, look127.get("painterlyRung"))
 ok("the painterly rung names its swing (the 127 statement at the establishing depth)",
    abs((look127.get("painterlyRung") or {}).get("swing", 0.0) - tp.painterly_swing_for(0.70)) < 1e-6,
@@ -434,6 +439,88 @@ ok("the wide-end branch banks the pale robe under a NON-wash grade (the evidence
 ok("the wide-banked robe's brush wraps the BANKED (lifted) dye",
    _has_patch(bpy.data.materials["X127WideRobe"], tp._pale_bank(m.hex_to_rgb("#9bbcb3"), 1.0), tp.painterly_swing_for(0.55)),
    "X127WideRobe")
+
+# ── SECTION 11 (iteration 128 - THE DESIGN DYE IS THE ANCHOR + THE
+#    EMBROIDERY RUNG): the conformance's own dye answer and the trim's
+#    weave at the node level. The X128 mats ride the ANCHORED robe dye
+#    (#4a8177 - where the design anchor lands the sheet-read #9bbcb3):
+#    the robe weaves inside its hem band, the accent trim weaves its
+#    whole surface, the skin and the set never weave, the measurer
+#    chain never sees the weave, and the MEDIUM canon stays unpainted.
+def _emb_mixes(mat):
+    return [n for n in mat.node_tree.nodes if n.name.startswith("EmbroideryMix")]
+
+def _factor_chain_has(mat, pred):
+    """walk UP the EmbroideryMix factor chain - the wave's mask is the
+    node-level truth of WHERE the weave lives"""
+    for n in mat.node_tree.nodes:
+        if n.name.startswith("EmbroideryMix"):
+            seen, stack = 0, [l.from_node for l in n.inputs[0].links]
+            while stack and seen < 64:
+                cur = stack.pop(); seen += 1
+                if pred(cur):
+                    return True
+                for inp in cur.inputs:
+                    stack.extend(l.from_node for l in inp.links)
+    return False
+
+def _thread_ok(mat, base):
+    want = tp.embroidery_thread_for(base)
+    mixes = _emb_mixes(mat)
+    return bool(mixes) and all(any(abs(n.inputs[6].default_value[i] - want[i]) < 1e-6 for n in mixes) for i in range(3))
+
+def _weave_rides_emissions_only(mat):
+    mixes = _emb_mixes(mat)
+    if not mixes:
+        return False
+    for n in mixes:
+        for l in n.outputs[2].links:
+            if l.to_node.type != "EMISSION":
+                return False
+    return True
+
+_hem_pred = lambda nd: nd.type == "MATH" and nd.operation == "LESS_THAN" and abs(nd.inputs[1].default_value - tp.HEM_BAND) < 1e-6  # the sockets are float32 - the house 1e-6
+_str_pred = lambda nd: nd.name.startswith("EmbroideryStrength")
+
+rob128 = m.graded_mat(bpy, "cloth", "X128Robe", "#4a8177", prof, palette=pal)
+acc128 = m.graded_mat(bpy, "cloth", "X128AccentMat", "#3f8f7a", prof)
+skn128 = m.graded_mat(bpy, "skin", "X128Skin", "#d9b48f", prof)
+set128 = m.graded_mat(bpy, "cloth", "X128SetCloth", "#5a6b70", prof)
+set128["animeos_set_surface"] = True
+for _mt in (rob128, acc128, skn128, set128):
+    _mt.use_fake_user = True
+look128 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                        {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+                        framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
+er128 = look128.get("embroideryRung") or {}
+ok("the look names the 128 evidence (the rung rides at WIDE with both addresses and its dials)",
+   look128.get("lawVersion") == 128 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
+   and er128.get("strength") == tp.EMBROIDERY_STRENGTH and er128.get("threadLift") == tp.EMBROIDERY_THREAD_LIFT
+   and er128.get("stitch") == tp.EMBROIDERY_STITCH, er128)
+_auth_rob = tp._dye_of(rob128, m.hex_to_rgb)[0]
+_auth_acc = tp._dye_of(acc128, m.hex_to_rgb)[0]
+ok("the anchored robe's weave lives inside the hem band only (a LESS_THAN hem mask gates the wave factor)",
+   _emb_mixes(rob128) and _factor_chain_has(rob128, _hem_pred), "X128Robe")
+ok("the trim weaves its WHOLE surface (the factor rides the strength node directly, no hem gate)",
+   _emb_mixes(acc128) and _factor_chain_has(acc128, _str_pred) and not _factor_chain_has(acc128, _hem_pred), "X128AccentMat")
+ok("the weave's thread answers the band's own dye (the lit band's thread = the dye lifted; the shadow band's = the cooled dye lifted)",
+   _thread_ok(rob128, _auth_rob) and _thread_ok(acc128, _auth_acc), (tuple(round(v, 4) for v in tp.embroidery_thread_for(_auth_rob)), tuple(round(v, 4) for v in tp.embroidery_thread_for(_auth_acc))))
+ok("the skin never weaves (the face's paleness IS the character)",
+   not _emb_mixes(skn128), "X128Skin")
+ok("the set's own cloth never weaves (the world is not embroidered)",
+   not _emb_mixes(set128), "X128SetCloth")
+ok("the weave rides INSIDE the band emissions only (the 121 hard band edges stand - the measurer chain blind)",
+   _weave_rides_emissions_only(rob128) and _weave_rides_emissions_only(acc128), "the 121 law intact")
+ok("the anchored robe's brush still wraps the anchored dye (the brush and the weave compose)",
+   _has_patch(rob128, _auth_rob, tp.painterly_swing_for(0.55)), "X128Robe")
+med128 = m.graded_mat(bpy, "cloth", "X128MedRobe", "#4a8177", prof, palette=pal)
+med128.use_fake_user = True
+look_med = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                         {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+                         framing_ctx={"shotType": "MEDIUM", "dist": 3.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
+ok("the MEDIUM canon stays unpainted (no brush, no weave - the earned close look stands)",
+   (look_med.get("painterlyRung") or {}).get("depth", 0) == 0 and look_med.get("embroideryRung") is None
+   and not _emb_mixes(med128), (look_med.get("embroideryRung"), look_med.get("painterlyRung")))
 print("DIRECT_FAILS " + json.dumps(fails))
 '''
 

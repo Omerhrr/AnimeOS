@@ -36,7 +36,7 @@
 import colorsys
 import math
 
-TOON_LAW_VERSION = 127
+TOON_LAW_VERSION = 128
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # cel tree tuning
@@ -129,6 +129,50 @@ PAINTERLY_SWING_GAIN = 0.30   # the swing rises with the framing's depth
 PAINTERLY_PALE_LUM = 0.60     # past this linear luminance the lift is a dry-brush
 PAINTERLY_PALE_LIFT = 0.85    # how hard the dry-brush pulls (x swing)
 PAINTERLY_NOISE_SCALE = 2.6   # large patch fields, not grain
+
+
+# ── THE EMBROIDERY RUNG (iteration 128) ──────────────────────
+# The 127 night's rescore named the style ceiling in the judge's own
+# words: "a simplified low-poly 3D model that lacks the intricate gold
+# embroidery". The canon's trim ADDRESS already exists - the sash
+# band, the hem trim, the accent pieces all wear the accent dye - but
+# at the wide framings a flat accent band reads as PAINT, not as
+# thread. The rung weaves the trim: at the painted framings (the
+# brush's own wide-end scope - the earned close look stays canon)
+# every accent-dyed cloth material gains a STITCH WAVE inside its cel
+# bands, and every robe-scale cloth gains the same weave inside its
+# hem band region (the yuanbian a donghua robe ships with). The wave:
+# two sines on the mesh's own Generated coords (patches ride the
+# fabric, no crawl), quantized to three CONSTANT steps - the 126
+# discipline, never a gradient, never per-pixel noise. The THREAD
+# tone answers the band's own dye, lifted (the metallic-thread read:
+# every channel pulls up by EMBROIDERY_THREAD_LIFT with a warm push -
+# gold thread on the gold accent, bright jade thread on the jade),
+# hue-faithful, bounded. The weave rides INSIDE the band emissions,
+# AFTER the painterly brush wrap so the two statements compose (the
+# brush breathes the band, the embroidery weaves the trim) - the
+# measurer chain never sees it and the 121 hard band edges stand.
+EMBROIDERY_STITCH = 21.0      # the wave's frequency on Generated coords
+EMBROIDERY_STRENGTH = 0.55    # how far the wave's high step rides the thread
+EMBROIDERY_THREAD_LIFT = 1.42 # the thread's lift over its band's dye
+EMBROIDERY_THREAD_WARM = 0.05 # the warm push (the gold-thread read)
+TRIM_MAT_MARKS = ("accent",)  # the trim's material-name address
+
+
+def embroidery_thread_for(rgb):
+    """The thread tone for a band whose dye is `rgb` (linear): every
+    channel lifts by EMBROIDERY_THREAD_LIFT, red gains the warm push
+    and blue pays half of it back - the metallic-thread read, bounded
+    into the unit cube, hue-faithful."""
+    out = []
+    for i, c in enumerate(rgb[:3]):
+        v = c * EMBROIDERY_THREAD_LIFT
+        if i == 0:
+            v += EMBROIDERY_THREAD_WARM
+        elif i == 2:
+            v -= EMBROIDERY_THREAD_WARM * 0.5
+        out.append(min(1.0, max(0.0, v)))
+    return tuple(out)
 
 
 def painterly_swing_for(depth):
@@ -526,12 +570,14 @@ def _palette_mid(mat):
     return members[len(members) // 2]
 
 
-def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0):
+def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=False):
     """The cel tree. ramp = (lit-band size, shadow floor scale, band
     smoothness) - THE STYLE LAW's framing answer (iteration 121); None
     keeps the earned constants (the turnaround's fixed cams).
     painterly = the 126 rung's brush depth (0.0 = the canon flat
-    bands; the wide framings breathe)."""
+    bands; the wide framings breathe). trim = the 128 embroidery
+    rung's address: the accent-dyed trim weaves across its WHOLE
+    surface; robe-scale cloth weaves inside the hem band region."""
     nt = mat.node_tree
     # NEVER clear the tree: other passes hold live node references
     # (the wrinkle normals' Strength is driven per frame) - a freed
@@ -715,6 +761,110 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0):
         shadow_base = (rgb[0] * SHADOW_COOL[0], rgb[1] * SHADOW_COOL[1], rgb[2] * SHADOW_COOL[2])
         _brush_wrap(em, shadow_base, cool.outputs[2] if color_in is not None else None)
         _brush_wrap(em_lit, rgb, color_in)
+
+        if kind == "cloth" and not mat.get("animeos_set_surface"):
+            # THE EMBROIDERY RUNG (iteration 128): the trim weaves - one
+            # stitch wave on the mesh's own Generated coords, quantized to
+            # three CONSTANT steps, masking each band between the live
+            # brushed color and the THREAD tone (this band's own dye
+            # lifted). The accent-dyed trim (the sash, the hem trim, the
+            # accent pieces) weaves across its whole surface; robe-scale
+            # cloth weaves inside the hem band region only (the yuanbian).
+            # CLOTH ONLY - the skin never weaves (the face's paleness IS
+            # the character) and the hair never weaves - and the tagged
+            # set never weaves (the world is not embroidered). The weave
+            # rides AFTER the brush (the two statements compose) and
+            # INSIDE the band emissions - the measurer chain never sees
+            # it (the 121 hard band edges stand).
+            em_tc = nt.nodes.new("ShaderNodeTexCoord")
+            em_sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+            nt.links.new(em_tc.outputs["Generated"], em_sep.inputs[0])
+            w_ax = nt.nodes.new("ShaderNodeMath")
+            w_ax.operation = "MULTIPLY"
+            w_ax.inputs[1].default_value = EMBROIDERY_STITCH
+            nt.links.new(em_sep.outputs["X"], w_ax.inputs[0])
+            w_az = nt.nodes.new("ShaderNodeMath")
+            w_az.operation = "MULTIPLY"
+            w_az.inputs[1].default_value = EMBROIDERY_STITCH
+            nt.links.new(em_sep.outputs["Z"], w_az.inputs[0])
+            w_sa = nt.nodes.new("ShaderNodeMath")
+            w_sa.operation = "SINE"
+            nt.links.new(w_ax.outputs[0], w_sa.inputs[0])
+            w_sb = nt.nodes.new("ShaderNodeMath")
+            w_sb.operation = "SINE"
+            nt.links.new(w_az.outputs[0], w_sb.inputs[0])
+            w_mu = nt.nodes.new("ShaderNodeMath")
+            w_mu.operation = "MULTIPLY"
+            nt.links.new(w_sa.outputs[0], w_mu.inputs[0])
+            nt.links.new(w_sb.outputs[0], w_mu.inputs[1])
+            w_h = nt.nodes.new("ShaderNodeMath")
+            w_h.operation = "MULTIPLY"   # -1..1 -> -0.5..0.5
+            w_h.inputs[1].default_value = 0.5
+            nt.links.new(w_mu.outputs[0], w_h.inputs[0])
+            w_u = nt.nodes.new("ShaderNodeMath")
+            w_u.operation = "ADD"        # -> 0..1
+            w_u.inputs[1].default_value = 0.5
+            nt.links.new(w_h.outputs[0], w_u.inputs[0])
+            est = nt.nodes.new("ShaderNodeValToRGB")
+            est.name = "EmbroideryRamp"
+            est.label = "EmbroideryRamp"
+            est.color_ramp.interpolation = "CONSTANT"
+            _e0 = est.color_ramp.elements[0]
+            _e0.position = 0.34
+            _e0.color = (0.0, 0.0, 0.0, 1.0)
+            _e1 = est.color_ramp.elements[1]
+            _e1.position = 0.67
+            _e1.color = (0.5, 0.5, 0.5, 1.0)
+            _e2 = est.color_ramp.elements.new(0.99)
+            _e2.color = (1.0, 1.0, 1.0, 1.0)
+            nt.links.new(w_u.outputs[0], est.inputs["Fac"])
+            ered = nt.nodes.new("ShaderNodeSeparateColor")
+            nt.links.new(est.outputs["Color"], ered.inputs[0])
+            e_k = nt.nodes.new("ShaderNodeMath")
+            e_k.operation = "MULTIPLY"   # the step x the rung's strength
+            e_k.name = "EmbroideryStrength"
+            e_k.label = "EmbroideryStrength"
+            e_k.inputs[1].default_value = EMBROIDERY_STRENGTH
+            nt.links.new(ered.outputs["Red"], e_k.inputs[0])
+            e_f = e_k
+            if not trim:
+                # robe-scale cloth: the weave lives inside the hem band
+                # region only - the yuanbian, not a patterned bolt
+                hem = nt.nodes.new("ShaderNodeMath")
+                hem.operation = "LESS_THAN"
+                hem.inputs[1].default_value = HEM_BAND
+                nt.links.new(em_sep.outputs["Z"], hem.inputs[0])
+                e_fm = nt.nodes.new("ShaderNodeMath")
+                e_fm.operation = "MULTIPLY"
+                nt.links.new(e_k.outputs[0], e_fm.inputs[0])
+                nt.links.new(hem.outputs[0], e_fm.inputs[1])
+                e_f = e_fm
+
+            def _embroidery_wrap(target_em, base_rgb):
+                # re-route the band's paint through the weave mix: factor
+                # = the stepped stitch wave (x the hem mask on robe
+                # cloth), A = the THREAD tone (this band's own dye
+                # lifted - the metallic-thread read), B = the live
+                # brushed color. The wave's high steps carry the
+                # thread; the low steps keep the brush's breathing.
+                thread = embroidery_thread_for(base_rgb)
+                exm = nt.nodes.new("ShaderNodeMix")
+                exm.data_type = "RGBA"
+                exm.name = "EmbroideryMix"
+                exm.label = "EmbroideryMix"
+                exm.inputs[6].default_value = (thread[0], thread[1], thread[2], 1.0)
+                src = target_em.inputs["Color"].links[0].from_socket if target_em.inputs["Color"].links else None
+                if src is not None:
+                    nt.links.new(src, exm.inputs[7])
+                else:
+                    exm.inputs[7].default_value = (*base_rgb, 1.0)
+                nt.links.new(e_f.outputs[0], exm.inputs[0])
+                for l in list(target_em.inputs["Color"].links):
+                    nt.links.remove(l)
+                nt.links.new(exm.outputs[2], target_em.inputs["Color"])
+
+            _embroidery_wrap(em, shadow_base)
+            _embroidery_wrap(em_lit, rgb)
     mix = nt.nodes.new("ShaderNodeMixShader")
     nt.links.new(band_c.outputs[0], mix.inputs[0])
     nt.links.new(em.outputs[0], mix.inputs[1])
@@ -806,6 +956,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
     _lut = str(comp_profile.get("lut") or "") if isinstance(comp_profile, dict) else ""
     _wash = GRADE_CHROMA_WASH.get(_lut)
     exempted, set_excluded, pale_banked = 0, 0, 0
+    emb_trims, emb_hems = 0, 0
     for mat in list(bpy.data.materials):
         if not mat.use_nodes or mat.node_tree is None or mat.users == 0:
             continue
@@ -836,7 +987,19 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             # overridden here - the dye's own readability moves)
             rgb = _pale_bank(rgb, 1.0)
             pale_banked += 1
-        _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp, painterly=p_depth)
+        # THE EMBROIDERY RUNG's address (iteration 128): the accent-dyed
+        # trim (the sash, the hem trim, the accent pieces) weaves across
+        # its whole surface; robe-scale cloth weaves inside the hem band
+        # region. The set's own cloths never weave (the world is not
+        # embroidered); the count names both addresses honestly.
+        is_trim = False
+        if p_depth > 0 and kind == "cloth" and not mat.get("animeos_set_surface"):
+            is_trim = any(m in name for m in TRIM_MAT_MARKS)
+            if is_trim:
+                emb_trims += 1
+            else:
+                emb_hems += 1
+        _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp, painterly=p_depth, trim=is_trim)
         mat["animeos_toon"] = True
         converted += 1
 
@@ -1012,6 +1175,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             "inkTargetPx": HULL_INK_PX.get(str(mode or "PREVIEW").upper(), HULL_INK_PX["PREVIEW"]) if isinstance(framing_ctx, dict) else None,
             "denoised": denoised, "fillsEased": eased, "comp": comp_note,
             "painterlyRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "painted": converted, "swing": round(painterly_swing_for(p_depth), 3), "paleBanked": pale_banked}),
+            "embroideryRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "trims": emb_trims, "hems": emb_hems, "strength": EMBROIDERY_STRENGTH, "threadLift": EMBROIDERY_THREAD_LIFT, "stitch": EMBROIDERY_STITCH}),
             "gradeExemption": (None if not _wash else {"lut": _lut, "keep": FIGURE_CHROMA_KEEP, "boosted": exempted, "setExcluded": set_excluded, "paleBanked": pale_banked})}
 
 

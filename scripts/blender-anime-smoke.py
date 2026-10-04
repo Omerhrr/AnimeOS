@@ -145,9 +145,12 @@ st = json.load(open(job))
 expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v123"), (st.get("figureSource"), st.get("animeRefused")))
 expect("worker clip rendered", bool(st.get("mp4Path")) and os.path.exists(st.get("mp4Path") or ""), st.get("error"))
 forge = st.get("addons") or {}
-expect("THE FORGE OPENS on the worker (all built-ins, zero failed)",
-       (forge.get("alreadyOn", []) and (len(forge.get("alreadyOn", [])) + len(forge.get("enabledNow", [])) + len(forge.get("availableCore", []))) == 13
-        and not forge.get("failed")), (forge.get("alreadyOn"), forge.get("failed")))
+import json as _json
+_catalog = sorted(_json.loads('["cycles","rigify","pose_library","node_wrangler","io_anim_bvh","io_scene_fbx","io_scene_gltf2","io_mesh_uv_layout","io_curve_svg","bl_pkg","hydra_storm","ui_translate","viewport_vr_preview"]'))
+_open = set(forge.get("alreadyOn", [])) | set(forge.get("enabledNow", [])) | set(forge.get("availableCore", []))
+expect("THE FORGE OPENS on the worker (every catalog built-in open, zero failed)",
+       bool(forge.get("alreadyOn", [])) and _catalog and all(c in _open for c in _catalog) and not forge.get("failed"),
+       (sorted(_open - set(_catalog)), forge.get("failed")))
 expect("the anatomy evidence rides the worker state", isinstance((st.get("anime") or {}).get("anatomy"), dict)
        and (st.get("anime") or {}).get("anatomy", {}).get("vertsMoved", 0) > 1000,
        ((st.get("anime") or {}).get("anatomy") or {}).get("vertsMoved"))

@@ -29,6 +29,7 @@ export interface SheetConformanceRow {
   to: string;
   delta: number;
   skipped?: string;
+  anchored?: string;
 }
 
 export interface SheetConformance {
@@ -48,6 +49,21 @@ const ROLE_MATS: Array<{ role: string; mat: string }> = [
   { role: "hair", mat: "HairMat" },
   { role: "boots", mat: "BootsMat" },
 ];
+
+// THE DESIGN DYE IS THE ANCHOR (iteration 128): the 127 night's
+// frontier named the conformance's own dye - the sheet reader measured
+// #9bbcb3 off the sheet's own render while the committed design says
+// #2f6d63, and the conformance built the sheet's mistake into the
+// cast. The sheet is a DEPICTION of the design; when its pixels
+// contradict the committed design dye's VALUE CLASS, the depiction is
+// the drifted artifact and the design's dye leads: the riding dye
+// pulls back toward the committed design (the adherent factor - the
+// same bound "close the remaining drift" always used), the row is
+// named, and the drifted sheet's palette cannot refine what it
+// mis-depicts. A sheet read inside the design's value class is an
+// honest depiction and the standing law (skip + the value-guarded
+// pull) keeps the sheet as color law, untouched.
+export const DESIGN_ANCHOR_FACTOR = 0.75;
 
 const QUANT_SHIFT = 4; // 16 levels per channel - coarse but stable
 const MIN_SHARE = 0.02; // a cluster must own >= 2% of the sheet
@@ -221,12 +237,16 @@ export async function extractSheetPalette(png: Buffer, max = 5): Promise<string[
  * cluster; a color already true to the sheet (distance < SKIP_BELOW)
  * is skipped and named; the rest blend CONFORM_FACTOR toward the
  * cluster - the sheet's truth, bounded so the design survives.
+ * `design` (iteration 128) carries the committed design dyes: a
+ * riding dye outside its design dye's value class is the sheet's own
+ * render drift - the design anchors the row and names it.
  */
 export function planSheetConformance(
   colors: { robe?: string; accent?: string; hair?: string; boots?: string },
   palette: string[],
   factor = CONFORM_FACTOR,
   skipBelow = SKIP_BELOW,
+  design?: { robe?: string; accent?: string; hair?: string; boots?: string },
 ): SheetConformanceRow[] {
   const rows: SheetConformanceRow[] = [];
   if (!palette.length) {
@@ -239,6 +259,28 @@ export function planSheetConformance(
   for (const { role, mat } of ROLE_MATS) {
     const from = colors[role as keyof typeof colors];
     if (!from) continue;
+    // THE DESIGN DYE IS THE ANCHOR (iteration 128): a riding dye that
+    // sits outside the committed design dye's value class is the
+    // sheet's own render drift - the design's dye leads and the
+    // sheet's palette (measured off the same drifted pixels) stands
+    // down for this role.
+    const designDye = design?.[role as keyof typeof design];
+    if (
+      designDye &&
+      designDye.startsWith("#") &&
+      Math.abs(relLum(from) - relLum(designDye)) > PULL_LUM_CAP
+    ) {
+      const to = blendHex(from, designDye, DESIGN_ANCHOR_FACTOR);
+      rows.push({
+        role,
+        mat,
+        from,
+        to,
+        delta: hexDist(from, to),
+        anchored: `design anchor: the sheet's own render reads ${from} but the committed design says ${designDye} - the design's dye leads`,
+      });
+      continue;
+    }
     let nearest = palette[0];
     for (const p of palette) {
       if (hexDist(from, p) < hexDist(from, nearest)) nearest = p;

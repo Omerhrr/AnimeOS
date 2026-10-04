@@ -83,6 +83,21 @@ ok("the full graph lands every layer (ao, mist, speed, bloom, beams, chroma, gra
    and any(x.startswith("grain(") for x in ev["layers"]), json.dumps(ev))
 ok("the AOV passes ride (mist, vector, ao)", all(x in ev["aovs"] for x in ("mist", "vector", "ao")), json.dumps(ev["aovs"]))
 ok("nothing skipped on the healthy path", ev["skipped"] == [], json.dumps(ev["skipped"]))
+# THE FAC-DRIVE LAW (iteration 128): the map-range-driven mixes (the
+# mist's fog and the grain's field band) must carry the drive ON THE
+# BUILD'S OWN SOCKET NAME - 4.x's CompositorNodeMixRGB names it 'Fac'
+# and the 5.x ShaderNodeMix names it 'Factor'. An unlinked Fac on the
+# MIST mix leaves the 1.0 default and paints EVERY frame with the
+# mistTint - the 128 night's flat gray wash (mean stdev ~1), caught
+# by the eye before the pen.
+_tree = scn.node_tree if scn.use_nodes else None
+_mist_mixes = [n for n in _tree.nodes if n.bl_idname in ("CompositorNodeMixRGB", "ShaderNodeMix")
+               and getattr(n, "blend_type", "") == "MIX"]
+ok("the mist mix's fac is DRIVEN by the map range (the build's own socket name)",
+   _mist_mixes and all(n.inputs.get("Fac").is_linked if n.inputs.get("Fac") else
+                       any(s.is_linked for s in n.inputs if s.name == "Factor")
+                       for n in _mist_mixes),
+   [(n.bl_idname, n.inputs.get("Fac").is_linked if n.inputs.get("Fac") else "no-Fac") for n in _mist_mixes])
 prof_quiet = m.comp_profile({})
 ev_quiet = m.build_comp_graph(scn, prof_quiet, 24)
 ok("a quiet profile skips the streak layers (speed, beams) honestly",

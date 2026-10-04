@@ -217,6 +217,10 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
     const episodeNumber = shot.scene.episode.number;
     const castRows = await db.character.findMany({ where: { projectId }, include: { states: true } });
     const detected = detectCast(castRows, shot.description).slice(0, 2);
+    // THE DESIGN DYE IS THE ANCHOR (iteration 128): each member's design
+    // text compile is the committed design intent - kept beside the cast
+    // DNA so the conformance can reconcile the sheet's read against it.
+    const castDesigns: Array<{ robe?: string; accent?: string; hair?: string }> = [];
     const cast = detected.map((c) => {
         const st = [...c.states]
           .filter((s) => s.episodeNumber === null || s.episodeNumber <= episodeNumber)
@@ -229,6 +233,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
           stateClothing: st?.clothing ?? null,
           stateWeapon: st?.weapon ?? null,
         });
+        castDesigns.push({ robe: regex.robeColor, accent: regex.robeAccent, hair: regex.hairColor });
         const dna = adherentDna(regex, sheetDnaFresh(c.sheetDna, c.modelSheetUrl));
         // iteration 109: the design crew's spec rides the cast DNA - the
         // worker's anime builder builds THIS character from it
@@ -255,11 +260,22 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
       if (!fs.existsSync(sheetPath)) continue;
       try {
         const palette = await extractSheetPalette(await fs.promises.readFile(sheetPath));
+        // THE DESIGN DYE IS THE ANCHOR (iteration 128): the design
+        // text's own compile is the committed design intent - the
+        // same compile the design crew's turnarounds were built and
+        // judged from. The sheet's read rides the conformance as
+        // before, but a riding dye that sits outside the design
+        // dye's value class is the sheet's own render drift - the
+        // design anchors that row (named on the row) instead of the
+        // conformance building the sheet's mistake into the cast.
         const rows = planSheetConformance(
           { robe: memberDna.robeColor, accent: memberDna.robeAccent, hair: memberDna.hairColor, boots: BOOTS_DEFAULT },
           palette,
           memberDna.conformFactor,
+          undefined,
+          castDesigns[i] ?? {},
         );
+        const anchoredCount = rows.filter((r) => r.anchored).length;
         cast[i] = {
           ...memberDna,
           sheetConformance: {
@@ -272,6 +288,9 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
                 : "the canonical sheet is color law over the DNA defaults - a bounded pull, recipe parameters untouched",
           },
         };
+        if (anchoredCount > 0) {
+          cast[i].sheetConformance!.note += `; the design anchor led on ${anchoredCount} drifted row(s) - the committed design's dye outranks the sheet's own render`;
+        }
       } catch {
         // an unreadable sheet is honestly absent for this member
       }

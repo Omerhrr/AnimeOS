@@ -5529,7 +5529,13 @@ def _comp_rgba_in(node, name):
     EVERY data type (a float A comes BEFORE the color A in the input
     list), and a color link that lands on the float socket leaves the
     color socket at its default gray - the mix outputs a FLAT CONSTANT
-    and the frame washes to it (the iter86 smoke caught the wash)."""
+    and the frame washes to it (the iter86 smoke caught the wash).
+    4.x's CompositorNodeMixRGB names both color inputs 'Image' - A and
+    B resolve BY ORDER there."""
+    if name in ("A", "B") and node.bl_idname == "CompositorNodeMixRGB":
+        rgba = [s for s in node.inputs if s.type == "RGBA"]
+        if rgba:
+            return rgba[0] if name == "A" else (rgba[1] if len(rgba) > 1 else rgba[0])
     for s in node.inputs:
         if s.name == name and s.type == "RGBA":
             return s
@@ -5549,7 +5555,17 @@ def _comp_rgba_set(node, name, value):
     """Set the RGBA input socket's default BY TYPE - the Mix node's
     shape-resolved set lands a 4-tuple on the VECTOR socket first (bpy
     accepts the extra component) and the color socket keeps its gray
-    default - the wash the smoke caught."""
+    default - the wash the smoke caught. A/B resolve by order on 4.x's
+    MixRGB (both color inputs are named 'Image' there)."""
+    if name in ("A", "B") and node.bl_idname == "CompositorNodeMixRGB":
+        rgba = [s for s in node.inputs if s.type == "RGBA"]
+        if rgba:
+            s = rgba[0] if name == "A" else (rgba[1] if len(rgba) > 1 else rgba[0])
+            try:
+                s.default_value = value
+                return True
+            except Exception:
+                return False
     for s in node.inputs:
         if s.name == name and s.type == "RGBA":
             try:
@@ -5560,27 +5576,38 @@ def _comp_rgba_set(node, name, value):
     return False
 
 
+def _comp_node(tree, *types):
+    """The tolerant creator: the compositor's node palette moved
+    between builds (5.x renders the SHADER nodes in the compositor and
+    dropped the comp variants; 4.x refuses the Shader nodes and lost
+    the noise node entirely). The first type that lands wins."""
+    for t in types:
+        try:
+            return tree.nodes.new(t)
+        except Exception:
+            continue
+    return None
+
+
 def _comp_mix(tree, blend, fac):
-    """The 5.x mix: ShaderNodeMix in RGBA mode (the CompositorNodeMixRGB
-    family is GONE from the compositor). The node READS the VECTOR
-    Factor socket in RGBA mode (the float Factor link is ignored - the
-    5.2.2 quirk the layer bisect caught), so BOTH Factor sockets carry
-    the value. Returns (node, COLOR out_socket)."""
-    m = tree.nodes.new("ShaderNodeMix")
-    m.data_type = "RGBA"
+    """The mix: 5.x composites with ShaderNodeMix in RGBA mode (the
+    node READS the VECTOR Factor socket in RGBA mode - the 5.2.2 quirk
+    the layer bisect caught - so BOTH Factor sockets carry the value);
+    4.x composites with CompositorNodeMixRGB (Fac + the two color
+    inputs). Returns (node, COLOR out_socket)."""
+    m = _comp_node(tree, "ShaderNodeMix", "CompositorNodeMixRGB")
+    if m is None:
+        raise RuntimeError("no mix node in this build's compositor")
+    if m.bl_idname == "ShaderNodeMix":
+        m.data_type = "RGBA"
     try:
         m.blend_type = blend
     except Exception:
         pass
     for s in m.inputs:
-        if s.name == "Factor" and s.type == "VALUE":
+        if s.name in ("Factor", "Fac") and s.type in ("VALUE", "VECTOR"):
             try:
-                s.default_value = fac
-            except Exception:
-                pass
-        if s.name == "Factor" and s.type == "VECTOR":
-            try:
-                s.default_value = (fac, fac, fac)
+                s.default_value = fac if s.type == "VALUE" else (fac, fac, fac)
             except Exception:
                 pass
     return m, _comp_rgba_out(m, "Result")
@@ -5588,13 +5615,39 @@ def _comp_mix(tree, blend, fac):
 
 def _comp_mix_factor(m, sock_out):
     """Drive a Mix node's factor from a socket - linked into BOTH the
-    float and the vector Factor (the node reads the vector one)."""
+    float and the vector Factor (the node reads the vector one). 4.x's
+    CompositorNodeMixRGB names the socket 'Fac' - the drive must land
+    on BOTH builds or a fac-1.0 default paints the whole frame with
+    the mix's B input (the 128 night's gray wash, caught by the eye
+    before the pen: every frame sat at stdev ~1 around the mistTint)."""
     for s in m.inputs:
-        if s.name == "Factor" and s.type in ("VALUE", "VECTOR"):
+        if s.name in ("Factor", "Fac") and s.type in ("VALUE", "VECTOR"):
             try:
                 m.id_data.links.new(sock_out, s)
             except Exception:
                 pass
+
+
+def _grain_image(bpy):
+    """The 4.x grain field: this build's compositor lost the noise
+    node AND refuses the shader nodes, so the grain rides a
+    DETERMINISTIC generated image - a fixed-seed LCG (no clock, no
+    random(), the same bytes every build), band-limited to the same
+    0.35..0.65 the map range reads. Cached on the blend."""
+    img = bpy.data.images.get("AnimeOSGrainField")
+    if img is not None:
+        return img
+    W = H = 256
+    img = bpy.data.images.new("AnimeOSGrainField", W, H, alpha=False)
+    seed = 0x5EED25
+    px = [0.0] * (W * H * 4)
+    for i in range(W * H):
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+        v = 0.35 + 0.3 * ((seed >> 7) % 100000) / 100000.0
+        px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v
+        px[i * 4 + 3] = 1.0
+    img.pixels.foreach_set(px)
+    return img
 
 
 def build_comp_graph(scn, prof, frames_total):
@@ -5658,30 +5711,49 @@ def build_comp_graph(scn, prof, frames_total):
         except Exception:
             pass
         # 5.x: the scene's compositor is a CompositorNodeTree on
-        # compositing_node_group; 4.x kept Scene.node_tree. The old
-        # Composite output node is GONE in 5.x - the output is an
-        # interface socket + a NodeGroupOutput node.
-        tree = None
+        # compositing_node_group; 4.x kept Scene.node_tree (and it only
+        # exists once use_nodes is on). The old Composite output node
+        # is GONE in 5.x - the output is an interface socket + a
+        # NodeGroupOutput node; 4.x renders THROUGH
+        # CompositorNodeComposite. The probe decides, the chain is one.
+        _group_scn = True
         try:
-            tree = scn.compositing_node_group
+            scn.compositing_node_group  # noqa: B018 - the probe IS the check
         except Exception:
-            tree = None
-        if tree is None:
+            _group_scn = False
+        tree = None
+        if _group_scn:
+            try:
+                tree = scn.compositing_node_group
+            except Exception:
+                tree = None
+        else:
+            try:
+                scn.use_nodes = True
+            except Exception:
+                pass
             try:
                 tree = scn.node_tree
             except Exception:
                 tree = None
         if tree is None:
             tree = bpy.data.node_groups.new("AnimeOSComp", "CompositorNodeTree")
-            scn.compositing_node_group = tree
+            try:
+                scn.compositing_node_group = tree
+            except Exception:
+                try:
+                    scn.node_tree = tree
+                except Exception:
+                    pass
         tree.nodes.clear()
-        try:
-            if not any(s.name == "Image" and s.in_out == "OUTPUT" for s in tree.interface.items_tree):
-                tree.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-        except Exception:
-            pass
+        if _group_scn:
+            try:
+                if not any(s.name == "Image" and s.in_out == "OUTPUT" for s in tree.interface.items_tree):
+                    tree.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+            except Exception:
+                pass
         rl = tree.nodes.new("CompositorNodeRLayers")
-        go = tree.nodes.new("NodeGroupOutput")
+        go = tree.nodes.new("NodeGroupOutput") if _group_scn else tree.nodes.new("CompositorNodeComposite")
         f = prof["factors"]
         lut = COMP_LUTS[prof["lut"]]
         cur = _comp_out_sock(rl, "Image")
@@ -5690,7 +5762,7 @@ def build_comp_graph(scn, prof, frames_total):
         #    (the pass is BLURRED first: a 10-sample preview AO is splotch,
         #    and splotch over the whole frame reads as decay, not shadow)
         try:
-            ao = rl.outputs.get("Ambient Occlusion")
+            ao = rl.outputs.get("Ambient Occlusion") or rl.outputs.get("AO")
             if ao is not None:
                 abl = tree.nodes.new("CompositorNodeBlur")
                 _comp_set_sock(abl, "Size", (10.0, 10.0, 0.0))
@@ -5711,7 +5783,9 @@ def build_comp_graph(scn, prof, frames_total):
         try:
             mist = rl.outputs.get("Mist")
             if mist is not None:
-                mr = tree.nodes.new("ShaderNodeMapRange")
+                mr = _comp_node(tree, "CompositorNodeMapRange", "ShaderNodeMapRange")
+                if mr is None:
+                    raise RuntimeError("no map-range node in this build's compositor")
                 _comp_set_sock(mr, "To Max", round(0.15 + 0.65 * f["mist"], 3))
                 tree.links.new(mist, _comp_in_sock(mr, "Value"))
                 m, mo = _comp_mix(tree, "MIX", 1.0)
@@ -5759,14 +5833,26 @@ def build_comp_graph(scn, prof, frames_total):
             try:
                 g2 = tree.nodes.new("CompositorNodeGlare")
                 if _comp_set_sock(g2, "Type", "Streaks"):
+                    # 5.x exposes the glare shape as input sockets
                     _comp_set_sock(g2, "Threshold", 0.85)
                     _comp_set_sock(g2, "Streaks", 6)
                     _comp_set_sock(g2, "Streaks Angle", 0.4)
                     _comp_set_sock(g2, "Fade", 0.82)
                     _comp_set_sock(g2, "Size", 8.0)
-                    tree.links.new(cur, _comp_in_sock(g2, "Image"))
-                    cur = _comp_out_sock(g2, "Image")
-                    landed.append("beams")
+                else:
+                    # 4.x keeps the shape on the NODE's properties (no
+                    # Type socket) - the same statement, the same lands
+                    try:
+                        g2.glare_type = "STREAKS"
+                        g2.threshold = 0.85
+                        g2.streaks = 6
+                        g2.angle_offset = 0.4
+                        g2.fade = 0.82
+                    except Exception:
+                        pass
+                tree.links.new(cur, _comp_in_sock(g2, "Image"))
+                cur = _comp_out_sock(g2, "Image")
+                landed.append("beams")
             except Exception:
                 skipped.append("beams")
 
@@ -5781,34 +5867,45 @@ def build_comp_graph(scn, prof, frames_total):
             skipped.append("chroma")
 
         # 7. grain - 4D noise over the frame clock (crawling, not a
-        #    dirty lens: the Time node slides the W slice per frame)
+        #    dirty lens: the Time node slides the W slice per frame).
+        #    4.x lost the compositor noise node and refuses the shader
+        #    nodes - there the field is the DETERMINISTIC generated
+        #    image and the grain lands honestly static.
         try:
-            nz = tree.nodes.new("ShaderNodeTexNoise")
-            try:
-                nz.noise_dimensions = "4D"
-            except Exception:
-                pass
-            _comp_set_sock(nz, "Scale", 900.0)
-            _comp_set_sock(nz, "Detail", 2.0)
-            mr2 = tree.nodes.new("ShaderNodeMapRange")
+            nz = _comp_node(tree, "ShaderNodeTexNoise")
+            anim = False
+            if nz is not None:
+                try:
+                    nz.noise_dimensions = "4D"
+                except Exception:
+                    pass
+                _comp_set_sock(nz, "Scale", 900.0)
+                _comp_set_sock(nz, "Detail", 2.0)
+                src_out = _comp_out_sock(nz, "Factor")
+                try:
+                    tm = tree.nodes.new("CompositorNodeTime")
+                    _comp_set_sock(tm, "Start Frame", 1)
+                    _comp_set_sock(tm, "End Frame", max(2, int(frames_total)))
+                    mm = _comp_node(tree, "CompositorNodeMath", "ShaderNodeMath")
+                    mm.operation = "MULTIPLY"
+                    mm.inputs[1].default_value = 37.7
+                    tree.links.new(_comp_out_sock(tm, "Factor"), mm.inputs[0])
+                    tree.links.new(_comp_out_sock(mm, "Value"), _comp_in_sock(nz, "W"))
+                    anim = str(getattr(nz, "noise_dimensions", "3D")) == "4D"
+                except Exception:
+                    anim = False
+            else:
+                ni = tree.nodes.new("CompositorNodeImage")
+                ni.image = _grain_image(bpy)
+                src_out = _comp_out_sock(ni, "Image")
+            mr2 = _comp_node(tree, "CompositorNodeMapRange", "ShaderNodeMapRange")
+            if mr2 is None:
+                raise RuntimeError("no map-range node in this build's compositor")
             _comp_set_sock(mr2, "From Min", 0.35)
             _comp_set_sock(mr2, "From Max", 0.65)
             _comp_set_sock(mr2, "To Min", 0.4)
             _comp_set_sock(mr2, "To Max", 0.6)
-            tree.links.new(_comp_out_sock(nz, "Factor"), _comp_in_sock(mr2, "Value"))
-            anim = False
-            try:
-                tm = tree.nodes.new("CompositorNodeTime")
-                _comp_set_sock(tm, "Start Frame", 1)
-                _comp_set_sock(tm, "End Frame", max(2, int(frames_total)))
-                mm = tree.nodes.new("ShaderNodeMath")
-                mm.operation = "MULTIPLY"
-                mm.inputs[1].default_value = 37.7
-                tree.links.new(_comp_out_sock(tm, "Factor"), mm.inputs[0])
-                tree.links.new(_comp_out_sock(mm, "Value"), _comp_in_sock(nz, "W"))
-                anim = str(getattr(nz, "noise_dimensions", "3D")) == "4D"
-            except Exception:
-                anim = False
+            tree.links.new(src_out, _comp_in_sock(mr2, "Value"))
             m, mo = _comp_mix(tree, "OVERLAY", round(0.05 + 0.12 * f["grain"], 3))
             tree.links.new(cur, _comp_rgba_in(m, "A"))
             tree.links.new(_comp_out_sock(mr2, "Result"), _comp_rgba_in(m, "B"))
@@ -6481,6 +6578,10 @@ def worker_run(job_file):
                             "from": row.get("from"),
                             "to": row.get("to"),
                             "delta": round(float(row.get("delta") or 0.0), 3),
+                            # THE DESIGN DYE IS THE ANCHOR (iteration 128):
+                            # an anchored row's naming rides the evidence -
+                            # the drift the design outranked is on the record.
+                            **({"anchored": str(row.get("anchored"))} if row.get("anchored") else {}),
                         })
                 if applied or skipped:
                     state["identity" if cast_idx == 0 else "identityB"] = {
