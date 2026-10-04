@@ -65,6 +65,76 @@ const ROLE_MATS: Array<{ role: string; mat: string }> = [
 // pull) keeps the sheet as color law, untouched.
 export const DESIGN_ANCHOR_FACTOR = 0.75;
 
+// THE DYE'S HUE CLASS (iteration 130): the 115 value class reads VALUE
+// only - and the 129 night caught the blind spot red-handed. Lin's
+// re-anchored sheet painted the robe BLUE (#285578) under a dye clause
+// that said 'deep jade-teal #2f6d63': the value classes matched (dLum
+// 0.067), so the sheet acceptance passed AND the honest-read anchor
+// stood down - the build carried the blue into every wide framing and
+// the judge named it ('palette uses blue instead of the canonical
+// teal/green', S002 palette 70 -> 20). A dye's class is VALUE and HUE:
+// the hue reads on the HSV color circle, gated by a chroma floor - the
+// weak-hued dyes (greys, slates, near-blacks) have no hue to judge and
+// the value class stands alone for them, exactly as the 115/116 laws
+// left them.
+export const DESIGN_HUE_BAND = 0.08; // a fraction of the color circle (~29 degrees)
+export const HUE_CHROMA_FLOOR = 0.25; // HSV saturation below which hue is noise
+
+/** hue on the HSV color circle in degrees [0, 360); 0 when achromatic */
+export function hueOf(hex: string): number {
+  const [r, g, b] = hexToRgb(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  if (d === 0) return 0;
+  let h: number;
+  if (max === r) h = 60 * (((g - b) / d) % 6);
+  else if (max === g) h = 60 * ((b - r) / d + 2);
+  else h = 60 * ((r - g) / d + 4);
+  return h < 0 ? h + 360 : h;
+}
+
+/** HSV saturation - the dye's chroma strength (the hue judge's gate) */
+export function satOf(hex: string): number {
+  const [r, g, b] = hexToRgb(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  return max === 0 ? 0 : (max - min) / max;
+}
+
+/** distance on the color circle as a fraction of it: [0, 0.5] */
+export function hueDist(a: string, b: string): number {
+  const d = Math.abs(hueOf(a) - hueOf(b)) / 360;
+  return Math.min(d, 1 - d);
+}
+
+export interface DyeClassRead {
+  out: boolean; // the drift verdict the anchor acts on
+  valueOut: boolean; // outside the design's value class (the 115 measure)
+  hueOut: boolean; // outside the design's hue family (the 130 measure)
+  dLum: number; // the measured value step
+  dHue: number | null; // the measured hue step (null when hue is not judged)
+  judgedHue: boolean; // both dyes carry enough chroma for a hue reading
+}
+
+/**
+ * THE DYE'S CLASS (iteration 130) - the shared drift measure: a riding
+ * dye is OUT of its committed design dye's class when the value step
+ * crosses the 115 cap OR the hue family drifts past the 130 band (the
+ * hue judged only where both dyes carry real chroma - below the floor
+ * the hue is noise and the value class stands alone). The render path
+ * and the sheet acceptance both read this one measure, so a sheet the
+ * acceptance refuses is exactly a sheet the anchor would rescue.
+ */
+export function designDyeClass(from: string, designDye: string): DyeClassRead {
+  const dLum = Math.abs(relLum(from) - relLum(designDye));
+  const valueOut = Math.abs(relLum(from) - relLum(designDye)) > PULL_LUM_CAP;
+  const judgedHue = satOf(from) >= HUE_CHROMA_FLOOR && satOf(designDye) >= HUE_CHROMA_FLOOR;
+  const dHue = judgedHue ? hueDist(from, designDye) : null;
+  const hueOut = dHue !== null && dHue > DESIGN_HUE_BAND;
+  return { out: valueOut || hueOut, valueOut, hueOut, dLum, dHue, judgedHue };
+}
+
 const QUANT_SHIFT = 4; // 16 levels per channel - coarse but stable
 const MIN_SHARE = 0.02; // a cluster must own >= 2% of the sheet
 const MIN_SEPARATION = 0.075; // normalized city-block distance between kept clusters
@@ -238,8 +308,10 @@ export async function extractSheetPalette(png: Buffer, max = 5): Promise<string[
  * is skipped and named; the rest blend CONFORM_FACTOR toward the
  * cluster - the sheet's truth, bounded so the design survives.
  * `design` (iteration 128) carries the committed design dyes: a
- * riding dye outside its design dye's value class is the sheet's own
- * render drift - the design anchors the row and names it.
+ * riding dye outside its design dye's class is the sheet's own
+ * render drift - the design anchors the row and names it. The class
+ * is VALUE and HUE (iteration 130): the shared designDyeClass measure
+ * judges the 115 value step and the 130 hue family together.
  */
 export function planSheetConformance(
   colors: { robe?: string; accent?: string; hair?: string; boots?: string },
@@ -260,24 +332,26 @@ export function planSheetConformance(
     const from = colors[role as keyof typeof colors];
     if (!from) continue;
     // THE DESIGN DYE IS THE ANCHOR (iteration 128): a riding dye that
-    // sits outside the committed design dye's value class is the
-    // sheet's own render drift - the design's dye leads and the
-    // sheet's palette (measured off the same drifted pixels) stands
-    // down for this role.
+    // sits outside the committed design dye's class is the sheet's own
+    // render drift - the design's dye leads and the sheet's palette
+    // (measured off the same drifted pixels) stands down for this role.
+    // The class is VALUE and HUE (iteration 130) - the shared measure.
     const designDye = design?.[role as keyof typeof design];
-    if (
-      designDye &&
-      designDye.startsWith("#") &&
-      Math.abs(relLum(from) - relLum(designDye)) > PULL_LUM_CAP
-    ) {
+    const dyeClass = designDye && designDye.startsWith("#") ? designDyeClass(from, designDye) : null;
+    if (dyeClass?.out && designDye) {
       const to = blendHex(from, designDye, DESIGN_ANCHOR_FACTOR);
+      const classes = dyeClass.valueOut && dyeClass.hueOut
+        ? "the value and hue classes"
+        : dyeClass.hueOut
+          ? "the hue class"
+          : "the value class";
       rows.push({
         role,
         mat,
         from,
         to,
         delta: hexDist(from, to),
-        anchored: `design anchor: the sheet's own render reads ${from} but the committed design says ${designDye} - the design's dye leads`,
+        anchored: `design anchor: the sheet's own render reads ${from} but the committed design says ${designDye} - the design's dye leads (${classes})`,
       });
       continue;
     }
