@@ -205,8 +205,8 @@ async function main() {
 
   // ── 3. THE BRIDGE STANDS UNTOUCHED (no law-change restart owed) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("TOON_LAW_VERSION stands at 128 (no bridge change this iteration)",
-    tp.includes("TOON_LAW_VERSION = 128"), "v128");
+  expect("TOON_LAW_VERSION advanced legitimately to 129 (the 131 face-style route)",
+    tp.includes("TOON_LAW_VERSION = 129"), "v128");
 
   finish();
 }

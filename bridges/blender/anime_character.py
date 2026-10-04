@@ -46,7 +46,44 @@ import math
 import os
 import sys
 
-ANIME_LAW_VERSION = 123
+ANIME_LAW_VERSION = 124
+
+# ── THE STRAND FALLS (iteration 131) ────────────────────────
+# The 130 night's notes read the figure twice: 'the face and hair
+# lack the sharp details' (S004) and the probe's own eye named the
+# tell - the hanging hair strands read as RIGID WIRES: straight
+# lofted tubes at constant width, no bow, no air, no taper. Drawn
+# hair falls in CURVES: each strand bows with its own gentle
+# S-sway, the tips taper to a point, and clumps separate with air
+# between them. The law: a deterministic fall for every hanging
+# strand - a seeded bow (phase by strand index, never random) on
+# the two fall axes, a sharper tip taper, and the face-framing side
+# locks split into TWO fall strands per side so the hairline reads
+# strands, not rods. The secondary solver's spring names ride
+# unchanged (the springs sway the tip; the fall is the rest shape
+# they sway from).
+STRAND_SWAY_AMP = 0.011     # the bow's peak lateral offset (head-local units)
+STRAND_SWAY_PHASE = 1.9     # the deterministic phase step per strand index
+STRAND_TIP_TAPER = 0.32     # the hanging strands' tip profile (sharper than the 0.12 default)
+
+
+def strand_fall(pts, k, axes=(0, 1)):
+    """Bow a hanging strand's spine with a deterministic S-sway: each
+    interior point offsets along the fall's perpendicular axes by
+    STRAND_SWAY_AMP x sin(pi x t + phase(k)), phase stepping per
+    strand index - two strands never repeat one curve. Returns the
+    bowed spine (the input list is untouched)."""
+    n = len(pts)
+    out = []
+    ph = STRAND_SWAY_PHASE * ((k % 3) + 1)
+    for i, p in enumerate(pts):
+        t = i / max(1, n - 1)
+        w = math.sin(math.pi * t * 0.9 + ph) if 0.0 < t < 1.0 else 0.0
+        q = list(p)
+        for ax in axes:
+            q[ax] += STRAND_SWAY_AMP * w * (1.0 if ax == 0 else -0.6)
+        out.append(tuple(q))
+    return out
 EYE_OPEN_FLOOR = 0.45   # a painted eye never squashes below this (a blink still reads)
 
 # ── the design spec ──────────────────────────────────────────
@@ -1068,14 +1105,23 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
         # between the strands - half the width, a thinner lens section.
         clump(f"Bang{i}", [root, mid, tipp], 0.019, 0.006, up=(0.0, -1.0, 0.25), curl=0.3 * u)
 
-    # side locks framing the face
+    # side locks framing the face - THE STRAND FALLS (iteration 131):
+    # TWO fall strands per side (air between them - the hairline reads
+    # strands, not rods), each bowed by the deterministic S-sway with
+    # its own phase, tips tapering sharp. The old single straight rod
+    # (one clump, constant width, no bow) is the wire read the 130
+    # notes named.
     for side, nm in ((1.0, "L"), (-1.0, "R")):
         ph = -math.pi / 2 + side * 1.15
         root = _scalp(0.5, ph, 0.014, hs)
         drop = 0.07 + 0.22 * min(1.0, length)
-        mid = (side * 0.122, -0.06, 0.08)
-        tipp = (side * 0.115, -0.055, 0.08 - drop)
-        clump(f"SideLock{nm}", [root, mid, tipp], 0.034, 0.011, up=(side, 0.0, 0.0))
+        for k in range(2):
+            y_off = -0.004 - 0.006 * k
+            mid = (side * (0.122 - 0.008 * k), -0.06 + y_off, 0.08)
+            tipp = (side * (0.115 - 0.006 * k), -0.055 + y_off, 0.08 - drop)
+            spine = strand_fall([root, mid, (side * (0.120 - 0.007 * k), -0.058 + y_off, 0.08 - drop * 0.45), tipp], k)
+            clump(f"SideLock{nm}{k}", spine, 0.030 - 0.006 * k, 0.010 - 0.002 * k,
+                  up=(side, 0.0, 0.0), tip=STRAND_TIP_TAPER)
 
     # the back mass
     if style in ("long", "braid", "ponytail") or style == "short":
@@ -1134,11 +1180,14 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
         bun["animeos_no_flesh"] = True
         _subsurf(bun, 1)
         made.append("HairBun")
-        # a few long strands falling from the bun behind (they swing)
+        # a few long strands falling from the bun behind (they swing) -
+        # THE STRAND FALLS: the rest shape bows with the deterministic
+        # sway (the springs sway the tip; the fall is what they sway
+        # from) and the tips taper sharp
         for k in range(3):
             off = (k - 1) * 0.02
-            clump(f"HairTail{k}", [(off, 0.05, 0.3), (off * 1.5, 0.11, 0.22), (off * 2, 0.13, 0.05), (off * 2, 0.12, -0.25 * length)],
-                  0.024, 0.008, up=(0, 1, 0))
+            spine = strand_fall([(off, 0.05, 0.3), (off * 1.5, 0.11, 0.22), (off * 2, 0.13, 0.05), (off * 2, 0.12, -0.25 * length)], k, axes=(0,))
+            clump(f"HairTail{k}", spine, 0.024, 0.008, up=(0, 1, 0), tip=STRAND_TIP_TAPER)
     return made
 
 
@@ -1580,6 +1629,10 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
     except Exception:  # noqa: BLE001
         anatomy = None
 
+    # THE STRAND FALLS: the evidence counts the hanging strands the
+    # sway bowed (the side locks now split two per side + the bun tails)
+    hair_strand_count = sum(1 for nm in hair if nm.startswith(("SideLock", "HairTail")))
+
     return {
         "builder": f"anime-v{ANIME_LAW_VERSION}",
         "root": root, "spine": spine, "head": head,
@@ -1603,6 +1656,8 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
             "garments": garments,
             "wardrobe": wardrobe,
             "hair": hair,
+            "hairStrandSway": {"lawVersion": "strand-fall-v1", "amp": STRAND_SWAY_AMP,
+                               "taper": STRAND_TIP_TAPER, "strands": hair_strand_count},
             "face": ["EyeLMesh", "EyeRMesh", "BrowLMesh", "BrowRMesh", "MouthMesh", "NoseMesh"],
         },
     }

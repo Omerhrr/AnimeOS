@@ -141,7 +141,7 @@ async function main() {
   const fs = await import("fs");
   const read = (p: string) => fs.readFileSync(p, "utf-8");
   const ac = read("bridges/blender/anime_character.py");
-  expect("the character law version advanced past 119 (the craft rides the figure)", ac.includes("ANIME_LAW_VERSION = 123"));
+  expect("the character law version advanced past 119 (the craft rides the figure)", ac.includes("ANIME_LAW_VERSION = 124"));
   const ba = read("bridges/blender/body_anatomy.py");
   expect("the anatomy law is v2 with the silhouette gain", ba.includes('ANATOMY_LAW_VERSION = "anatomy-v2"') && ba.includes("_SILHOUETTE_GAIN = 2.2"));
   expect("the waist is CARVED (negative oblique fields)", ba.includes('waist_amp = -0.016'));

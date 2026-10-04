@@ -74,8 +74,8 @@ async function main() {
     ac.includes("def paint_nose(w=128, h=128):") && ac.includes("THE NOSE IS A LINE, NOT A BLOB"), "the paint");
   expect("the nose plane answers its texture (19mm at 6 segments)",
     ac.includes('_decal_plane(bpy, scn, "NoseMesh", nose, 0.019, 0.019, nose_m, hm, segs=6)'), "the plane");
-  expect("the builder declares v123",
-    ac.includes("ANIME_LAW_VERSION = 123"), "the pin");
+  expect("the builder declares v124",
+    ac.includes("ANIME_LAW_VERSION = 124"), "the pin");
 
   // ── 4. THE ANATOMIZED PROXY (the toon band sees the face) ──
   expect("the shading proxy wears the facial field (the transferred normals carry the anatomy)",

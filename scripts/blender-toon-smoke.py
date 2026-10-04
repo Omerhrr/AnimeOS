@@ -312,7 +312,7 @@ look127 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
 ok("the look names the 128 evidence",
-   look127.get("lawVersion") == 128 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
+   look127.get("lawVersion") == 129 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
    and (look127.get("painterlyRung") or {}).get("painted", 0) > 0, look127.get("painterlyRung"))
 ok("the painterly rung names its swing (the 127 statement at the establishing depth)",
    abs((look127.get("painterlyRung") or {}).get("swing", 0.0) - tp.painterly_swing_for(0.70)) < 1e-6,
@@ -353,8 +353,8 @@ for _name, _keep in (("X127Robe", 1.28), ("X127Hair", 1.22)):
        and not _has_patch(bpy.data.materials[_name], _auth_rgb, _swing), (_name, _auth_rgb, _boosted))
 _stone_auth = dye127["X127Stone"]
 _stone_boost = tp._keep_chroma(_stone_auth, 1.28, "cloth")
-ok("the tagged set keeps the full wash (the world grays, unbanked)",
-   _has_patch(bpy.data.materials["X127Stone"], _stone_auth, _swing)
+ok("the tagged set keeps the full wash (the world grays, unbanked - and its brush rides the SET swing)",
+   _has_patch(bpy.data.materials["X127Stone"], _stone_auth, _swing * tp.PAINTERLY_SET_GAIN)
    and not _has_patch(bpy.data.materials["X127Stone"], _stone_boost, _swing), "X127Stone")
 ok("the establishing rung rides the ladder",
    m.preview_cap_for("ESTABLISHING", "PREVIEW") == 1024 and m.preview_cap_for("WIDE", "PREVIEW") == 640
@@ -494,7 +494,7 @@ look128 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
 er128 = look128.get("embroideryRung") or {}
 ok("the look names the 128 evidence (the rung rides at WIDE with both addresses and its dials)",
-   look128.get("lawVersion") == 128 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
+   look128.get("lawVersion") == 129 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
    and er128.get("strength") == tp.EMBROIDERY_STRENGTH and er128.get("threadLift") == tp.EMBROIDERY_THREAD_LIFT
    and er128.get("stitch") == tp.EMBROIDERY_STITCH, er128)
 _auth_rob = tp._dye_of(rob128, m.hex_to_rgb)[0]
@@ -521,6 +521,65 @@ look_med = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
 ok("the MEDIUM canon stays unpainted (no brush, no weave - the earned close look stands)",
    (look_med.get("painterlyRung") or {}).get("depth", 0) == 0 and look_med.get("embroideryRung") is None
    and not _emb_mixes(med128), (look_med.get("embroideryRung"), look_med.get("painterlyRung")))
+
+# ── iteration 131: THE DARK MASS READS + THE SET'S OWN BRUSH ──
+hair131 = m.graded_mat(bpy, "hair", "X131Hair", "#1a1a1a", prof)
+hair131.use_fake_user = True
+look131 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                        {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+                        framing_ctx={"shotType": "CLOSEUP", "dist": 0.7 * tp.FIGURE_H, "lens": 85.0, "resX": 640})
+_mass = tp.hair_mass_dye(m.hex_to_rgb("#1a1a1a"))
+def _em_color(mat, idx):
+    for n in mat.node_tree.nodes:
+        if n.type == "EMISSION":
+            c = n.inputs["Color"].default_value
+            if idx == 0:
+                return (round(c[0], 4), round(c[1], 4), round(c[2], 4))
+            idx -= 1
+    return None
+ok("the near-black hair's bands derive from the MASS dye (the lit band reads the lifted dark, hue preserved)",
+   look131.get("hairMass") is not None and _mass is not None
+   and _em_color(hair131, 1) == (round(_mass[0], 4), round(_mass[1], 4), round(_mass[2], 4)),
+   (look131.get("hairMass"), _em_color(hair131, 1), _mass))
+_glint = tp.hair_glint_from_mass(_mass)
+ok("the mass-derived glint's additive floor is NEUTRAL (the 115 floor's blue lean dies on the dark masses)",
+   abs(_glint[0] - _glint[1]) < 1e-9 and _glint[2] > _glint[0] - 1e-9 and abs(_glint[0] - _glint[2]) < 0.005,
+   (tuple(round(v, 4) for v in _glint),))
+_mid_hair = m.graded_mat(bpy, "hair", "X131MidHair", "#6a4a32", prof)
+_mid_hair.use_fake_user = True
+tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+              {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+              framing_ctx={"shotType": "CLOSEUP", "dist": 0.7 * tp.FIGURE_H, "lens": 85.0, "resX": 640})
+ok("a mid-tone hair dye keeps the earned read (no mass lift past the dark wall)",
+   _em_color(_mid_hair, 1) == (round(m.hex_to_rgb("#6a4a32")[0], 4), round(m.hex_to_rgb("#6a4a32")[1], 4), round(m.hex_to_rgb("#6a4a32")[2], 4)),
+   _em_color(_mid_hair, 1))
+set131 = m.graded_mat(bpy, "cloth", "X131SetCloth", "#3a4a52", prof)
+set131["animeos_set_surface"] = True
+set131.use_fake_user = True
+look131w = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                         {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+                         framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
+def _noise_src(mat):
+    for n in mat.node_tree.nodes:
+        if n.name == "PainterlyNoise":
+            for l in n.inputs["Vector"].links:
+                return l.from_node.type, round(float(n.inputs["Scale"].default_value), 3)
+    return None
+ok("THE SET'S OWN BRUSH reads world coordinates at the set scale (the naked flats breathe)",
+   _noise_src(set131) == ("NEW_GEOMETRY", tp.PAINTERLY_SET_SCALE)
+   and (look131w.get("painterlyRung") or {}).get("setBrush") is True
+   and abs((look131w.get("painterlyRung") or {}).get("setSwing", 0) - round(tp.painterly_swing_for(0.55) * tp.PAINTERLY_SET_GAIN, 3)) < 1e-6,
+   (_noise_src(set131), look131w.get("painterlyRung")))
+ok("the figure's brush keeps the 126 Generated coords (the patches RIDE the fabric)",
+   _noise_src(acc128) == ("TEX_COORD", tp.PAINTERLY_NOISE_SCALE), (_noise_src(acc128),))
+# THE STRAND FALLS (the anime builder's hanging strands bow)
+import anime_character as _ac
+_p1 = _ac.strand_fall([(0.0, 0.0, 0.3), (0.0, 0.0, 0.1), (0.0, 0.0, -0.1)], 0)
+_p1b = _ac.strand_fall([(0.0, 0.0, 0.3), (0.0, 0.0, 0.1), (0.0, 0.0, -0.1)], 0)
+_p2 = _ac.strand_fall([(0.0, 0.0, 0.3), (0.0, 0.0, 0.1), (0.0, 0.0, -0.1)], 1)
+ok("the strand fall is deterministic per index and distinct across strands",
+   _p1 == _p1b and _p1 != _p2 and abs(_p1[1][0]) <= _ac.STRAND_SWAY_AMP + 1e-9
+   and _p1[0][0] == 0.0 and _p1[-1][0] == 0.0, (_p1[1], _p2[1]))
 print("DIRECT_FAILS " + json.dumps(fails))
 '''
 
@@ -601,7 +660,20 @@ def run_render():
            isinstance(ink_off, (int, float)) and 0.0012 <= ink_off <= 0.024, ink_off)
     expect("the ink target names its px", (look121.get("look") or {}).get("inkTargetPx") == 1.4, (look121.get("look") or {}).get("inkTargetPx"))
     fp = look121.get("facePaint") or {}
-    expect("the face paint staging rides (MEDIUM keeps the 113 paint)", fp.get("shotType") == "MEDIUM" and fp.get("staged") == 0, fp)
+    # iteration 131: the MEDIUM FACE RUNG - the staging table follows
+    # the DISTANCE, not the label (MEDIUM renders a ~35px head); the
+    # mild stage rides six decal meshes at 1.12/1.06/1.03/1.00 with the
+    # emission pushed to 0.95, while the tight framings still refuse.
+    expect("the face paint staging rides (the 131 MEDIUM rung: six meshes at the mild stage)",
+           fp.get("shotType") == "MEDIUM" and fp.get("staged") == 6
+           and abs((fp.get("scale") or {}).get("eye", 0) - 1.12) < 1e-6
+           and abs(fp.get("strengthPushed", 0) - 4) <= 6
+           and "the face paint reads" in str(fp.get("note")), fp)
+    expect("the 131 dark mass reads on the near-black hair (the closeup's indigo answer)",
+           isinstance((look121.get("look") or {}).get("hairMass"), dict)
+           and (look121.get("look") or {}).get("hairMass", {}).get("lifted", 0) >= 1
+           and 0.03 <= (look121.get("look") or {}).get("hairMass", {}).get("lum", 0) <= 0.05,
+           (look121.get("look") or {}).get("hairMass"))
 
 
 if HALF in ("all", "direct"):
