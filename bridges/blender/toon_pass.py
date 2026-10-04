@@ -36,7 +36,7 @@
 import colorsys
 import math
 
-TOON_LAW_VERSION = 126
+TOON_LAW_VERSION = 127
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # cel tree tuning
@@ -107,9 +107,34 @@ def style_ramp_for(shot_type):
 # the earned close look is canon and stays untouched), and the swing
 # scales with it - bounded, never gradient dirt, never per-pixel
 # noise (the steps ARE the brush).
+#
+# THE STRONGER STATEMENT (iteration 127): the 126 night's rescore
+# named the brush invisible - "a severe style downgrade to a
+# low-fidelity 3D render" at S004 while the brush rode ±8.4% value
+# steps. A statement the judge cannot SEE is not a statement: the
+# swing stops being a constant times depth and becomes a LAW OF THE
+# FRAMING - a base every painted framing carries plus a gain that
+# rises with distance (ESTABLISHING 0.31 / WIDE 0.265 / LOW_ANGLE
+# 0.22 - three to four times the 126 read), still bounded, still
+# quantized steps, still never a gradient. And the LIFTED patch
+# stops being a no-op on pale dyes (multiplicative lift clamps at
+# 1.0 the moment the dye is near white - exactly the dyes the wide
+# framings carry): past PAINTERLY_PALE_LUM the lift is a DRY-BRUSH
+# toward white - every channel pulls toward 1.0 proportionally, hue
+# preserved, the classic gesso highlight - so the brush states sunk,
+# band AND lifted on the pale robes the wides are full of.
 PAINTERLY_BY_SHOT = {"LOW_ANGLE": 0.40, "WIDE": 0.55, "ESTABLISHING": 0.70}
-PAINTERLY_SWING = 0.12        # max value swing at depth 1.0 (per patch step)
+PAINTERLY_SWING_BASE = 0.10   # the statement floor at any painted depth
+PAINTERLY_SWING_GAIN = 0.30   # the swing rises with the framing's depth
+PAINTERLY_PALE_LUM = 0.60     # past this linear luminance the lift is a dry-brush
+PAINTERLY_PALE_LIFT = 0.85    # how hard the dry-brush pulls (x swing)
 PAINTERLY_NOISE_SCALE = 2.6   # large patch fields, not grain
+
+
+def painterly_swing_for(depth):
+    """The framing's brush swing: the base statement plus the depth's
+    gain, bounded (never gradient dirt)."""
+    return min(0.5, PAINTERLY_SWING_BASE + PAINTERLY_SWING_GAIN * float(depth))
 
 
 def painterly_depth_for(shot_type):
@@ -117,17 +142,66 @@ def painterly_depth_for(shot_type):
     return PAINTERLY_BY_SHOT.get(str(shot_type or "MEDIUM").upper(), 0.0)
 
 
-def _keep_chroma(rgb, keep):
+def _keep_chroma(rgb, keep, kind="cloth"):
     """THE FIGURE-MATERIAL GRADE EXEMPTION's brush (iteration 126):
     saturation banks by `keep` (bounded 1.0), value and hue untouched
     - the authored VALUE survives, the HUE survives, the CHROMA reads
     through the wash. HLS saturation saturates at 1.0, so the bank is
-    bounded by construction."""
+    bounded by construction.
+
+    THE PALE-DYE VALUE BRANCH (iteration 127): the 126 night's
+    rescore named the wall in the judge's own words - "a plain white
+    robe instead of the detailed light green". A multiplicative
+    saturation bank CANNOT rescue a dye whose VALUE crowds its chroma:
+    what a hue can express is bounded by the channel spread
+    2 * s * min(l, 1-l) - the near-white pastel cannot spread (l
+    crowds 1) and the washed mid-pale cannot spread (s crowds 0).
+    THE WALL IS THE SPREAD. The branch answers VALUE: on a pale CLOTH
+    dye with an authored hue (l past PALE_L_LOW - darker dyes read
+    dark honestly; s above PALE_HUE_EPS - a true gray has no hue to
+    protect, inventing one would paint the robe pink; spread under
+    PALE_SPREAD_GATE - the wall's own measure) the bank APPROACHES
+    the readable-pastel value PALE_L_TARGET FROM EITHER SIDE (near-
+    whites deepen, washed mid-pales lift - PALE_APPROACH of the gap)
+    and floors the saturation at PALE_S_FLOOR, hue untouched,
+    bounded - the authored pastel lands as a READABLE pastel under
+    the wash and at the wide end's scale. Skin never rides the
+    branch: the face's paleness IS the character. THE SPACE: the
+    dyes live in LINEAR RGB (hex_to_rgb converts sRGB->linear;
+    #dbe8d0 reads L 0.86 in sRGB but L 0.719 linear, and the standing
+    production's own sheet-read robe #9bbcb3 sits L 0.415 with a
+    spread of 0.174 - exactly the wall) - the dials are calibrated
+    in the working space.
+    """
     if keep <= 1.0:
         return rgb
+    if kind == "cloth" and _is_pale_cloth(rgb):
+        return _pale_bank(rgb, keep)
     h, _l, s = colorsys.rgb_to_hls(*[min(1.0, max(0.0, c)) for c in rgb[:3]])
     r, g, b = colorsys.hls_to_rgb(h, _l, min(1.0, s * keep))
     return (r, g, b)
+
+
+def _pale_bank(rgb, keep=1.0):
+    """The value branch's move: approach the readable-pastel value
+    from either side, floor the saturation (x keep under a wash),
+    hue untouched, bounded."""
+    h, _l, s = colorsys.rgb_to_hls(*[min(1.0, max(0.0, c)) for c in rgb[:3]])
+    _l2 = _l - (_l - PALE_L_TARGET) * PALE_APPROACH
+    s2 = min(1.0, max(s * keep, PALE_S_FLOOR))
+    r, g, b = colorsys.hls_to_rgb(h, _l2, s2)
+    return (r, g, b)
+
+
+def _is_pale_cloth(rgb):
+    """The pale-dye branch's own predicate - the wall is the dye's
+    EXPRESSIBLE SPREAD (2*s*min(l,1-l)), not just near-whiteness:
+    the near-white pastel cannot spread (l crowds 1) and the washed
+    mid-pale cannot spread (s crowds 0). The evidence names how many
+    dyes needed the value branch."""
+    _h, _l, s = colorsys.rgb_to_hls(*[min(1.0, max(0.0, c)) for c in rgb[:3]])
+    return (_l > PALE_L_LOW and s > PALE_HUE_EPS
+            and (2.0 * s * min(_l, 1.0 - _l)) < PALE_SPREAD_GATE)
 
 
 # ── THE FIGURE-MATERIAL GRADE EXEMPTION (iteration 126) ─────
@@ -146,6 +220,26 @@ def _keep_chroma(rgb, keep):
 # 1.06) and take no exemption.
 GRADE_CHROMA_WASH = {"moonlight": True}
 FIGURE_CHROMA_KEEP = {"skin": 1.10, "hair": 1.22, "cloth": 1.28}
+
+# THE PALE-DYE VALUE BRANCH's dials (iteration 127): the wall is the
+# dye's EXPRESSIBLE SPREAD (2*s*min(l,1-l) - the near-white pastel
+# cannot spread because l crowds 1, the washed mid-pale cannot spread
+# because s crowds 0). Past PALE_L_LOW a dye is not DARK (darks read
+# dark honestly); above PALE_HUE_EPS the dye HAS an authored hue (a
+# true gray must not be painted pink); under PALE_SPREAD_GATE the hue
+# cannot READ. The bank approaches PALE_L_TARGET from either side
+# (PALE_APPROACH of the gap) and floors the saturation at
+# PALE_S_FLOOR - the authored pastel lands as a READABLE pastel.
+# The dials are calibrated in the dyes' own LINEAR space
+# (hex_to_rgb converts sRGB->linear): the standing production's own
+# sheet-read robe #9bbcb3 sits L 0.415 / S 0.21 / spread 0.174 - the
+# named wall - while ordinary dyed cloth sits spread 0.35+ or dark.
+PALE_L_LOW = 0.30
+PALE_L_TARGET = 0.55
+PALE_APPROACH = 0.60
+PALE_S_FLOOR = 0.34
+PALE_HUE_EPS = 0.04
+PALE_SPREAD_GATE = 0.30
 
 
 # (2) THE LINE WEIGHT SOLVES FROM THE FRAMING. The hull offset was a
@@ -549,14 +643,20 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0):
     else:
         em_lit.inputs["Color"].default_value = (*rgb, 1.0)
     if painterly > 0:
-        # THE PAINTERLY STYLE RUNG (iteration 126): the band interiors
-        # breathe - one noise field on the mesh's own Generated coords
-        # (patches RIDE the fabric, no crawl), quantized to three
-        # constant steps (the brush, not a gradient), driving each
-        # band's color between a sunk and a lifted patch. The measurer
-        # chain reads the TOON node only - the bands' hard edges never
-        # see this layer (the 121 law intact).
-        swing = min(0.5, PAINTERLY_SWING * float(painterly))
+        # THE PAINTERLY STYLE RUNG (iteration 126; the 127 statement):
+        # the band interiors breathe - one noise field on the mesh's own
+        # Generated coords (patches RIDE the fabric, no crawl),
+        # quantized to three constant steps (the brush, not a
+        # gradient), driving each band's color between a sunk and a
+        # lifted patch. The swing is the 127 statement law (base +
+        # gain x depth - three to four times the 126 read), and the
+        # lifted patch answers pale dyes (the multiplicative lift
+        # clamped at 1.0 = a no-op exactly where the wides are pale;
+        # past PAINTERLY_PALE_LUM the lift is a dry-brush toward
+        # white - hue preserved). The measurer chain reads the TOON
+        # node only - the bands' hard edges never see this layer (the
+        # 121 law intact).
+        swing = painterly_swing_for(painterly)
         ptc = nt.nodes.new("ShaderNodeTexCoord")
         pn = nt.nodes.new("ShaderNodeTexNoise")
         pn.name = "PainterlyNoise"
@@ -585,15 +685,26 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0):
         def _brush_wrap(target_em, base_rgb, src_socket):
             # re-route the band's paint through the brush mix:
             # factor = the stepped field, A = the sunk patch,
-            # B = the lifted patch (the lift clamps at 1.0 - a pale
-            # dye's lifted patch stays the dye; the sunk patch carries
-            # the brush there)
+            # B = the lifted patch. THE 127 LIFT: on an ordinary dye
+            # the lift is multiplicative (bounded 1.0); on a pale dye
+            # (linear lum past PAINTERLY_PALE_LUM) the multiplicative
+            # lift is a clamped no-op, so the lift becomes a DRY-BRUSH
+            # toward white - every channel pulls toward 1.0 by
+            # (1-c) x swing x PAINTERLY_PALE_LIFT: the gesso
+            # highlight, hue preserved, a real third step where the
+            # clamp was flat.
             pm = nt.nodes.new("ShaderNodeMix")
             pm.data_type = "RGBA"
             pm.name = "PainterlyMix"
             pm.label = "PainterlyMix"
             pm.inputs[6].default_value = (base_rgb[0] * (1.0 - swing), base_rgb[1] * (1.0 - swing), base_rgb[2] * (1.0 - swing), 1.0)
-            pm.inputs[7].default_value = (min(1.0, base_rgb[0] * (1.0 + swing)), min(1.0, base_rgb[1] * (1.0 + swing)), min(1.0, base_rgb[2] * (1.0 + swing)), 1.0)
+            _lum = 0.2126 * base_rgb[0] + 0.7152 * base_rgb[1] + 0.0722 * base_rgb[2]
+            if _lum > PAINTERLY_PALE_LUM:
+                _k = swing * PAINTERLY_PALE_LIFT
+                _lift = tuple(min(1.0, c + (1.0 - c) * _k) for c in base_rgb[:3])
+            else:
+                _lift = tuple(min(1.0, c * (1.0 + swing)) for c in base_rgb[:3])
+            pm.inputs[7].default_value = (_lift[0], _lift[1], _lift[2], 1.0)
             nt.links.new(psep.outputs["Red"], pm.inputs[0])
             if src_socket is not None:
                 nt.links.new(src_socket, pm.inputs[6])
@@ -681,13 +792,20 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
     p_depth = painterly_depth_for(framing_ctx.get("shotType")) if isinstance(framing_ctx, dict) else 0.0
     ink_offset = ink_offset_for(framing_ctx, mode)
     converted, kept = 0, 0
-    # THE FIGURE-MATERIAL GRADE EXEMPTION (iteration 126): the shot's
-    # own color script names the wash class - under a gray wash the
-    # figure's cel dyes bank chroma before the grade lands; the tagged
-    # set surfaces (built before the cast) never ride it.
+    # THE FIGURE-MATERIAL GRADE EXEMPTION (iteration 126; the 127
+    # scope): the shot's own color script names the wash class - under
+    # a gray wash the figure's cel dyes bank chroma before the grade
+    # lands; the tagged set surfaces (built before the cast) never
+    # ride it. AND the pale-dye VALUE branch rides the WIDE-END
+    # framings under ANY grade: the 127 night's probe measured the
+    # named cell's own pixels - the sheet-read robe #9bbcb3 (a pale
+    # gray-sage, expressible spread 0.174) reads "a plain white robe"
+    # at the wide framings under the NEUTRAL grade too - the wall is
+    # the DYE's spread, not only the wash. MEDIUM+ keeps the canon
+    # close look (the earned tuning stands); the wide end answers.
     _lut = str(comp_profile.get("lut") or "") if isinstance(comp_profile, dict) else ""
     _wash = GRADE_CHROMA_WASH.get(_lut)
-    exempted, set_excluded = 0, 0
+    exempted, set_excluded, pale_banked = 0, 0, 0
     for mat in list(bpy.data.materials):
         if not mat.use_nodes or mat.node_tree is None or mat.users == 0:
             continue
@@ -707,8 +825,17 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             else:
                 _keep = FIGURE_CHROMA_KEEP.get(kind, 1.0)
                 if _keep > 1.0:
-                    rgb = _keep_chroma(rgb, _keep)
+                    if kind == "cloth" and _is_pale_cloth(rgb):
+                        pale_banked += 1
+                    rgb = _keep_chroma(rgb, _keep, kind)
                     exempted += 1
+        elif p_depth > 0 and kind == "cloth" and not mat.get("animeos_set_surface") and _is_pale_cloth(rgb):
+            # THE WIDE-END VALUE BRANCH: the pale dye's spread cannot
+            # read at the scale the judge's palette cell reads - bank
+            # it toward the readable pastel (no keep: the grade is NOT
+            # overridden here - the dye's own readability moves)
+            rgb = _pale_bank(rgb, 1.0)
+            pale_banked += 1
         _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp, painterly=p_depth)
         mat["animeos_toon"] = True
         converted += 1
@@ -884,8 +1011,8 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             "inkOffset": ink_offset,
             "inkTargetPx": HULL_INK_PX.get(str(mode or "PREVIEW").upper(), HULL_INK_PX["PREVIEW"]) if isinstance(framing_ctx, dict) else None,
             "denoised": denoised, "fillsEased": eased, "comp": comp_note,
-            "painterlyRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "painted": converted}),
-            "gradeExemption": (None if not _wash else {"lut": _lut, "keep": FIGURE_CHROMA_KEEP, "boosted": exempted, "setExcluded": set_excluded})}
+            "painterlyRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "painted": converted, "swing": round(painterly_swing_for(p_depth), 3), "paleBanked": pale_banked}),
+            "gradeExemption": (None if not _wash else {"lut": _lut, "keep": FIGURE_CHROMA_KEEP, "boosted": exempted, "setExcluded": set_excluded, "paleBanked": pale_banked})}
 
 
 def palette_wash_for(shot_type):

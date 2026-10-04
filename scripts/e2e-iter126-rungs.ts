@@ -69,24 +69,25 @@ out["ladder"] = {"establishing_preview": br.preview_cap_for("ESTABLISHING", "PRE
                  "none_preview": br.preview_cap_for(None, "PREVIEW"),
                  "establishing_final": br.preview_cap_for("ESTABLISHING", "FINAL"),
                  "wide_final": br.preview_cap_for("WIDE", "FINAL")}
-out["swing"] = {"at": round(tp.PAINTERLY_SWING * 0.70, 6), "bounded": tp.PAINTERLY_SWING * 0.70 < 0.5}
+out["swing"] = {"at": round(tp.painterly_swing_for(0.70), 6), "wide": round(tp.painterly_swing_for(0.55), 6), "low": round(tp.painterly_swing_for(0.40), 6), "bounded": tp.painterly_swing_for(1.5) <= 0.5}
 print("PROBE_JSON " + json.dumps(out))
 `;
 
 async function main() {
   // ── 1. THE PAINTERLY STYLE RUNG (source law) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("the toon pass declares the 126 law version", tp.includes("TOON_LAW_VERSION = 126"), "v126");
+  expect("the toon pass declares the 127 law version", tp.includes("TOON_LAW_VERSION = 127"), "v127");
   expect("the painterly rung is a WIDE-end rung (the canon close look untouched)",
     tp.includes('PAINTERLY_BY_SHOT = {"LOW_ANGLE": 0.40, "WIDE": 0.55, "ESTABLISHING": 0.70}')
-      && tp.includes("PAINTERLY_SWING = 0.12") && tp.includes("PAINTERLY_NOISE_SCALE = 2.6"), "the table");
+      && tp.includes("PAINTERLY_SWING_BASE = 0.10") && tp.includes("PAINTERLY_SWING_GAIN = 0.30")
+      && tp.includes("PAINTERLY_NOISE_SCALE = 2.6"), "the table");
   expect("the brush field is three constant steps on the mesh's own coords (the brush, not a gradient)",
     tp.includes('pst.color_ramp.interpolation = "CONSTANT"')
       && tp.includes('nt.links.new(ptc.outputs["Generated"], pn.inputs["Vector"])'), "the field");
   expect("the brush wraps BOTH bands (lit + shadow)",
     tp.includes("_brush_wrap(em, shadow_base, cool.outputs[2] if color_in is not None else None)")
       && tp.includes("_brush_wrap(em_lit, rgb, color_in)"), "the wraps");
-  expect("the swing bounds itself (never gradient dirt)", tp.includes("swing = min(0.5, PAINTERLY_SWING * float(painterly))"), "the bound");
+  expect("the swing bounds itself (never gradient dirt)", tp.includes("swing = painterly_swing_for(painterly)"), "the bound");
   expect("the 121 ramp table stands untouched (the rung rides ON it)",
     tp.includes('"ESTABLISHING":    (0.46, 0.80, 0.020)') && tp.includes('"CLOSEUP":         (0.62, 1.00, 0.040)'), "the canon");
 
@@ -120,7 +121,7 @@ async function main() {
   }
   const probeOut = r.stdout.slice(r.stdout.indexOf("PROBE_JSON ") + "PROBE_JSON ".length).split("\n")[0];
   const probe = JSON.parse(probeOut);
-  expect("the law version answers 126 from the real module", probe.lawVersion === 126, probe.lawVersion);
+  expect("the law version answers 127 from the real module", probe.lawVersion === 127, probe.lawVersion);
   expect("the painterly depth answers the framing for real",
     probe.depths.ESTABLISHING === 0.7 && probe.depths.WIDE === 0.55 && probe.depths.LOW_ANGLE === 0.4
       && probe.depths.MEDIUM === 0 && probe.depths.CLOSEUP === 0 && probe.depths["null"] === 0, probe.depths);
@@ -134,8 +135,9 @@ async function main() {
       && probe.ladder.medium_preview === 640 && probe.ladder.lowangle_preview === 640
       && probe.ladder.none_preview === 640 && probe.ladder.establishing_final === 1280
       && probe.ladder.wide_final === 1280, probe.ladder);
-  expect("the brush swing at the establishing depth stays inside the bound",
-    probe.swing.at === Math.round(0.12 * 0.7 * 1e6) / 1e6 && probe.swing.bounded, probe.swing);
+  expect("the brush swing is the 127 statement law (base + gain x depth, bounded)",
+    probe.swing.at === Math.round(0.31 * 1e6) / 1e6 && probe.swing.wide === Math.round(0.265 * 1e6) / 1e6
+      && probe.swing.low === Math.round(0.22 * 1e6) / 1e6 && probe.swing.bounded, probe.swing);
 
   // ── 5. THE NIGHT TOOL (the 122 ops law: double-fork detach, the explicit env) ──
   const night = read("scripts/detached-night126.mjs");

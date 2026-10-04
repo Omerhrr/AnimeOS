@@ -26,6 +26,19 @@
 #   + RENDER HALF: one PAN job through worker_run with a pillar on the
 #      path: the clip renders, the evidence names look/anatomy/path.
 #
+# SECTION 10 (iteration 127 - THE VALUE WALL ANSWERS): the 126 night's
+# rescore named the remaining frontier twice - the pale-dye VALUE wall
+# ("a plain white robe instead of the detailed light green" - a
+# multiplicative saturation bank cannot rescue a near-white VALUE) and
+# the invisible brush ("a severe style downgrade to a low-fidelity 3D
+# render" while the brush rode +/-8.4% steps). The proof: the pale-dye
+# value branch (cloth dyes past PALE_L_HIGH with an authored hue
+# DEEPEN toward PALE_L_TARGET and floor their saturation, hue exact,
+# gray stands down, skin never deepens), the stronger statement (the
+# swing is a law of the framing: base + gain x depth, 0.31/0.265/0.22
+# at the three painted framings), and the dry-brush lift (the lifted
+# patch pulls toward white on pale dyes instead of clamping flat).
+#
 # Runs under a Blender binary (BLENDER=/path/to/blender) or a Python
 # with the bpy module (pip install bpy). HALF=direct|render|all.
 import json, math, os, subprocess, sys, tempfile
@@ -277,34 +290,47 @@ ok("the bank is bounded (S never leaves 0..1)", 0.0 <= _s1 <= 1.0, _s1)
 ok("keep <= 1.0 is the identity",
    tp._keep_chroma((0.2, 0.4, 0.6), 1.0) == (0.2, 0.4, 0.6) and tp._keep_chroma((0.2, 0.4, 0.6), 0.9) == (0.2, 0.4, 0.6),
    "identity")
-robe126 = m.graded_mat(bpy, "cloth", "X126Robe", "#3f8f78", prof, palette=pal)
-stone126 = m.graded_mat(bpy, "cloth", "X126Stone", "#6b6b60", prof)
-stone126["animeos_set_surface"] = True
-hair126 = m.graded_mat(bpy, "hair", "X126Hair", "#7a3b1f", prof)
+robe127 = m.graded_mat(bpy, "cloth", "X127Robe", "#3f8f78", prof, palette=pal)
+stone127 = m.graded_mat(bpy, "cloth", "X127Stone", "#6b6b60", prof)
+stone127["animeos_set_surface"] = True
+hair127 = m.graded_mat(bpy, "hair", "X127Hair", "#7a3b1f", prof)
+pale127 = m.graded_mat(bpy, "cloth", "X127PaleRobe", "#dbe8d0", prof, palette=pal)
 # apply_look's loop skips userless datablocks - the probes ride fake
 # users (no mesh needed) so the wash-class law can see them
-for _mt in (robe126, stone126, hair126):
+for _mt in (robe127, stone127, hair127, pale127):
     _mt.use_fake_user = True
-dye126 = {}
-for _mt in (robe126, stone126, hair126):
+dye127 = {}
+for _mt in (robe127, stone127, hair127, pale127):
     _r, _k = tp._dye_of(_mt, m.hex_to_rgb)
-    dye126[_mt.name] = _r
-look126 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+    dye127[_mt.name] = _r
+look127 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
-ok("the look names the 126 evidence",
-   look126.get("lawVersion") == 126 and (look126.get("painterlyRung") or {}).get("depth") == 0.70
-   and (look126.get("painterlyRung") or {}).get("painted", 0) > 0, look126.get("painterlyRung"))
-ge = look126.get("gradeExemption") or {}
+ok("the look names the 127 evidence",
+   look127.get("lawVersion") == 127 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
+   and (look127.get("painterlyRung") or {}).get("painted", 0) > 0, look127.get("painterlyRung"))
+ok("the painterly rung names its swing (the 127 statement at the establishing depth)",
+   abs((look127.get("painterlyRung") or {}).get("swing", 0.0) - tp.painterly_swing_for(0.70)) < 1e-6,
+   (look127.get("painterlyRung") or {}).get("swing"))
+ge = look127.get("gradeExemption") or {}
 ok("the exemption answers the gray wash, never the chroma-rich grades",
    ge.get("lut") == "moonlight" and ge.get("boosted", 0) >= 2 and ge.get("setExcluded", 0) >= 1, ge)
+ok("the pale-dye value branch names its own count (the pale robe took the branch)",
+   ge.get("paleBanked", 0) >= 1, ge)
 
 def _has_patch(mat, base, swing):
     """one PainterlyMix whose patch pair derives from `base` (the sunk
     A + the lifted B at the framing's swing) - the node-level truth of
-    WHICH dye the brush is wrapping"""
+    WHICH dye the brush is wrapping; the lift answers the 127 law
+    (multiplicative on ordinary dyes, the dry-brush toward white past
+    PAINTERLY_PALE_LUM - the 126 clamp was a no-op exactly there)"""
+    _lum = 0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2]
+    if _lum > tp.PAINTERLY_PALE_LUM:
+        _k = swing * tp.PAINTERLY_PALE_LIFT
+        want_b = tuple(min(1.0, c + (1.0 - c) * _k) for c in base[:3])
+    else:
+        want_b = tuple(min(1.0, c * (1.0 + swing)) for c in base[:3])
     want_a = tuple(c * (1.0 - swing) for c in base[:3])
-    want_b = tuple(min(1.0, c * (1.0 + swing)) for c in base[:3])
     for n in mat.node_tree.nodes:
         if n.name.startswith("PainterlyMix"):
             a = tuple(n.inputs[6].default_value[:3])
@@ -313,23 +339,101 @@ def _has_patch(mat, base, swing):
                 return True
     return False
 
-_swing = 0.12 * 0.7
-for _name, _keep in (("X126Robe", 1.28), ("X126Hair", 1.22)):
-    _auth_rgb = dye126[_name]
-    _boosted = tp._keep_chroma(_auth_rgb, _keep)
+_swing = tp.painterly_swing_for(0.70)
+for _name, _keep in (("X127Robe", 1.28), ("X127Hair", 1.22)):
+    _auth_rgb = dye127[_name]
+    _boosted = tp._keep_chroma(_auth_rgb, _keep, "cloth" if "Robe" in _name else "hair")
     ok(f"{_name} banks chroma x{_keep} under moonlight (the brush wraps the BANKED dye)",
        _has_patch(bpy.data.materials[_name], _boosted, _swing)
        and not _has_patch(bpy.data.materials[_name], _auth_rgb, _swing), (_name, _auth_rgb, _boosted))
-_stone_auth = dye126["X126Stone"]
-_stone_boost = tp._keep_chroma(_stone_auth, 1.28)
+_stone_auth = dye127["X127Stone"]
+_stone_boost = tp._keep_chroma(_stone_auth, 1.28, "cloth")
 ok("the tagged set keeps the full wash (the world grays, unbanked)",
-   _has_patch(bpy.data.materials["X126Stone"], _stone_auth, _swing)
-   and not _has_patch(bpy.data.materials["X126Stone"], _stone_boost, _swing), "X126Stone")
+   _has_patch(bpy.data.materials["X127Stone"], _stone_auth, _swing)
+   and not _has_patch(bpy.data.materials["X127Stone"], _stone_boost, _swing), "X127Stone")
 ok("the establishing rung rides the ladder",
    m.preview_cap_for("ESTABLISHING", "PREVIEW") == 1024 and m.preview_cap_for("WIDE", "PREVIEW") == 640
    and m.preview_cap_for("CLOSEUP", "PREVIEW") == 640 and m.preview_cap_for(None, "PREVIEW") == 640
    and m.preview_cap_for("ESTABLISHING", "FINAL") == 1280,
    [(s, mo, m.preview_cap_for(s, mo)) for s, mo in (("ESTABLISHING", "PREVIEW"), ("WIDE", "PREVIEW"), ("ESTABLISHING", "FINAL"))])
+# 10. THE VALUE WALL ANSWERS (iteration 127): the pale-dye value
+# branch, the stronger statement, the dry-brush lift.
+ok("the swing is a law of the framing (base + gain x depth, bounded)",
+   abs(tp.painterly_swing_for(0.70) - 0.31) < 1e-9 and abs(tp.painterly_swing_for(0.55) - 0.265) < 1e-9
+   and abs(tp.painterly_swing_for(0.40) - 0.22) < 1e-9 and tp.painterly_swing_for(1.5) <= 0.5,
+   [tp.painterly_swing_for(d) for d in (0.70, 0.55, 0.40, 1.5)])
+_pale_auth = dye127["X127PaleRobe"]
+_ph, _pl, _ps = _cs.rgb_to_hls(*_pale_auth)
+_pale_banked = tp._keep_chroma(_pale_auth, 1.28, "cloth")
+_bh, _bl, _bs = _cs.rgb_to_hls(*_pale_banked)
+_spread0 = max(_pale_auth) - min(_pale_auth)
+_spread1 = max(_pale_banked) - min(_pale_banked)
+_mult_bank = tp._keep_chroma(_pale_auth, 1.28, "hair")
+_mult_spread = max(_mult_bank) - min(_mult_bank)
+ok("the pale robe takes the VALUE branch: approached, floored, hue exact, bounded",
+   tp._is_pale_cloth(_pale_auth) and _bl < _pl and abs(_bl - (_pl - (_pl - tp.PALE_L_TARGET) * tp.PALE_APPROACH)) < 1e-9
+   and _bs >= max(_ps * 1.28, tp.PALE_S_FLOOR) - 1e-9 and abs(_bh - _ph) < 1e-9 and 0.0 <= _bs <= 1.0,
+   ((_pl, _bl), (_ps, _bs)))
+ok("the deepened dye grants real chroma headroom the multiplicative bank could not",
+   _spread1 > _mult_spread and _spread1 > _spread0 * 1.6, (_spread0, _mult_spread, _spread1))
+# THE STANDING PRODUCTION'S OWN WALL (the 127 probe's finding): the
+# sheet-read robe #9bbcb3 is a pale gray-sage - expressible spread
+# 0.175 under the gate - the dye behind "a plain white robe instead
+# of the detailed light green"
+_robe127 = m.hex_to_rgb("#9bbcb3")
+_rh, _rl, _rs = _cs.rgb_to_hls(*_robe127)
+_robe_banked = tp._pale_bank(_robe127, 1.0)
+_rbh, _rbl, _rbs = _cs.rgb_to_hls(*_robe_banked)
+_rspread0 = max(_robe127) - min(_robe127)
+_rspread1 = max(_robe_banked) - min(_robe_banked)
+ok("the sheet-read robe fires the branch from BELOW the target (the L-aware lift)",
+   _rl < tp.PALE_L_TARGET and _rbl > _rl and abs(_rbl - (_rl - (_rl - tp.PALE_L_TARGET) * tp.PALE_APPROACH)) < 1e-9
+   and _rbs >= tp.PALE_S_FLOOR - 1e-9 and abs(_rbh - _rh) < 1e-9, ((_rl, _rbl), (_rs, _rbs)))
+ok("the banked robe's spread nearly doubles (the readable pastel)",
+   _rspread1 > _rspread0 * 1.8, (_rspread0, _rspread1))
+_gray = (0.5, 0.5, 0.52)
+_gh0, _gl0, _gs0 = _cs.rgb_to_hls(*_gray)
+_gray_b = tp._keep_chroma(_gray, 1.28, "cloth")
+_gh1, _gl1, _gs1 = _cs.rgb_to_hls(*_gray_b)
+ok("a true gray stands down (no invented hue, the value kept)",
+   not tp._is_pale_cloth(_gray) and abs(_gl1 - _gl0) < 1e-9 and abs(_gs1 - min(1.0, _gs0 * 1.28)) < 1e-9,
+   ((_gs0, _gs1), (_gl0, _gl1)))
+_pskin = (0.93, 0.85, 0.78)
+_pskin_b = tp._keep_chroma(_pskin, 1.10, "skin")
+_sl0 = _cs.rgb_to_hls(*_pskin)[1]
+_sl1 = _cs.rgb_to_hls(*_pskin_b)[1]
+ok("pale skin never deepens (the face's paleness IS the character)",
+   abs(_sl1 - _sl0) < 1e-9, (_sl0, _sl1))
+ok("a dark dye stands down (darks read dark honestly - the L gate)",
+   not tp._is_pale_cloth(m.hex_to_rgb("#241a12")) and not tp._is_pale_cloth(m.hex_to_rgb("#3f8f7a")),
+   "dark + saturated-mid stand down")
+ok("the pale robe's brush wraps the DEEPENED dye and rides the dry-brush lift",
+   _has_patch(bpy.data.materials["X127PaleRobe"], _pale_banked, _swing)
+   and not _has_patch(bpy.data.materials["X127PaleRobe"], _pale_auth, _swing), "X127PaleRobe")
+_pmixes = [n for n in bpy.data.materials["X127PaleRobe"].node_tree.nodes if n.name.startswith("PainterlyMix")]
+_lum_b = 0.2126 * _pale_banked[0] + 0.7152 * _pale_banked[1] + 0.0722 * _pale_banked[2]
+_kk = _swing * tp.PAINTERLY_PALE_LIFT
+_want_lift = tuple(min(1.0, c + (1.0 - c) * _kk) for c in _pale_banked[:3])
+_want_mult = tuple(min(1.0, c * (1.0 + _swing)) for c in _pale_banked[:3])
+ok("the lifted patch is the dry-brush (toward white), not the clamped multiplicative",
+   _lum_b > tp.PAINTERLY_PALE_LUM
+   and all(any(abs(n.inputs[7].default_value[i] - _want_lift[i]) < 1e-6 for n in _pmixes) for i in range(3))
+   and not all(any(abs(n.inputs[7].default_value[i] - _want_mult[i]) < 1e-6 for n in _pmixes) for i in range(3)),
+   (_want_lift, _want_mult))
+# THE WIDE-END VALUE BRANCH (the 127 scope): under a NON-wash grade at
+# a WIDE framing the pale dye still banks - the named cell rode NEUTRAL
+wide127 = m.graded_mat(bpy, "cloth", "X127WideRobe", "#9bbcb3", prof, palette=pal)
+wide127.use_fake_user = True
+look_wide = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                          {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+                          framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
+pw = look_wide.get("painterlyRung") or {}
+ok("the wide-end branch banks the pale robe under a NON-wash grade (the evidence rides the rung)",
+   look_wide.get("gradeExemption") is None and (pw.get("paleBanked") or 0) >= 1
+   and abs(pw.get("swing", 0) - tp.painterly_swing_for(0.55)) < 1e-6, (pw, look_wide.get("gradeExemption")))
+ok("the wide-banked robe's brush wraps the BANKED (lifted) dye",
+   _has_patch(bpy.data.materials["X127WideRobe"], tp._pale_bank(m.hex_to_rgb("#9bbcb3"), 1.0), tp.painterly_swing_for(0.55)),
+   "X127WideRobe")
 print("DIRECT_FAILS " + json.dumps(fails))
 '''
 
@@ -417,5 +521,5 @@ if HALF in ("all", "direct"):
     run_direct()
 if HALF in ("all", "render"):
     run_render()
-print(f"\n{'ALL GREEN' if failures == 0 else 'FAILURES'} - toon smoke (iteration 121)")
+print(f"\n{'ALL GREEN' if failures == 0 else 'FAILURES'} - toon smoke (iteration 127)")
 sys.exit(0 if failures == 0 else 1)
