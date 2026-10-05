@@ -47,7 +47,7 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 
 // ── 1. THE SOURCE LAWS ──
 const tp = read("bridges/blender/toon_pass.py");
-expect("the toon pass declares the 131 law version", tp.includes("TOON_LAW_VERSION = 129"), "v129");
+expect("the toon pass declares the 132 law version", tp.includes("TOON_LAW_VERSION = 130"), "v130");
 expect("THE DARK MASS READS: the dials live (dark wall, bounded lift, neutral glint floor)",
   tp.includes("HAIR_DARK_LUM = 0.05") && tp.includes("HAIR_MASS_LIFT = 3.6")
   && tp.includes("HAIR_MASS_CAP = 0.055") && tp.includes("HAIR_GLINT_FLOOR = 0.02")
@@ -66,8 +66,12 @@ expect("the set brush reads WORLD coordinates (Geometry.Position - the TexCoord 
   && !tp.includes('ptc.outputs["Position"]'), "the world coords");
 expect("the set's swing scales by the gain and the evidence names it",
   /swing = swing \* PAINTERLY_SET_GAIN/.test(tp) && tp.includes('"setSwing"'), "the set swing");
-expect("THE MEDIUM FACE RUNG: the mild stage rides (six decals, the staging follows the distance)",
-  /"MEDIUM":\s*\{"eye": 1\.12, "brow": 1\.06, "mouth": 1\.03, "nose": 1\.0, "strength": 0\.95\}/.test(tp), "the MEDIUM row");
+expect("THE MASS AS A FRAMING RUNG: the lift rides the painterly depth (the canon framings read the true dark)",
+  /if kind == "hair" and painterly > 0:/.test(tp)
+  && tp.includes('"rung": "stood down - the canon framings read the true dark (the 129 receipt)"')
+  && tp.includes('"rung": "wide-end (the lifted mass reads where the texels are few)"'), "the mass rung");
+expect("THE MEDIUM FACE RUNG'S NEXT STEP: the moderate stage rides (the 121 craft move at MEDIUM's own scale)",
+  /"MEDIUM":\s*\{"eye": 1\.30, "brow": 1\.15, "mouth": 1\.06, "nose": 1\.02, "strength": 1\.0\}/.test(tp), "the MEDIUM row");
 const ac = read("bridges/blender/anime_character.py");
 expect("the builder declares the 131 law version", ac.includes("ANIME_LAW_VERSION = 124"), "v124");
 expect("THE STRAND FALLS: the sway, the taper and the phase live",
@@ -138,12 +142,30 @@ def emissions(m_):
             out.append((round(c[0], 4), round(c[1], 4), round(c[2], 4)))
     return out
 ems = emissions(mat)
-ok("the lit band reads the MASS dye (the drawn frame's readable dark)",
-   len(ems) >= 2 and ems[1] == (round(mass[0], 4), round(mass[1], 4), round(mass[2], 4)), (ems, mass))
-ok("the look evidence names the hair mass (lifted, the mass's own lum, the neutral glint)",
-   (look.get("hairMass") or {}).get("lifted", 0) >= 1
-   and abs((look.get("hairMass") or {}).get("lum", 0) - round(lum, 4)) < 5e-4
-   and "neutral" in str((look.get("hairMass") or {}).get("glint")), look.get("hairMass"))
+# THE MASS AS A FRAMING RUNG (132): at the canon close look the TRUE
+# DARK reads (the 129 receipt - the strongest hair cell on record);
+# the lit band is the dye's own color, no lift, the rung named.
+ok("the CLOSEUP's near-black reads the TRUE DARK (the lit band is the dye itself, the lift stood down)",
+   len(ems) >= 2 and ems[1] == (round(dark[0], 4), round(dark[1], 4), round(dark[2], 4)), (ems, dark))
+ok("the look evidence names the stood-down rung (the canon framings read the true dark)",
+   (look.get("hairMass") or {}).get("lifted") == 0
+   and (look.get("hairMass") or {}).get("stoodDown", 0) >= 1
+   and "true dark" in str((look.get("hairMass") or {}).get("rung")), look.get("hairMass"))
+# the wide end: the lifted mass reads where the texels are few (the
+# 131 canon's new home - the same hue-preserving lift the canon proves)
+matw = m.graded_mat(bpy, "hair", "E132HairWide", "#1a1a1a", prof)
+matw.use_fake_user = True
+lookw132 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                         {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+                         framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
+ems_w = emissions(matw)
+ok("the WIDE's near-black reads the MASS (the lifted bands, hue preserved)",
+   len(ems_w) >= 2 and ems_w[1] == (round(mass[0], 4), round(mass[1], 4), round(mass[2], 4)), (ems_w, mass))
+ok("the wide evidence names the lift and the wide-end rung",
+   (lookw132.get("hairMass") or {}).get("lifted", 0) >= 1
+   and abs((lookw132.get("hairMass") or {}).get("lum", 0) - round(lum, 4)) < 5e-4
+   and "neutral" in str((lookw132.get("hairMass") or {}).get("glint"))
+   and (lookw132.get("hairMass") or {}).get("rung") == "wide-end", lookw132.get("hairMass"))
 
 # the set brush at WIDE: world coords, the set scale, the gentler swing
 setm = m.graded_mat(bpy, "cloth", "E131Set", "#3a4a52", prof)
@@ -197,9 +219,9 @@ ok("the sway never moves the anchors (root and tip keep their stations)",
 
 # the MEDIUM face rung: the staging follows the distance, the tight framings refuse
 med = tp.stage_face_paint_for_framing(bpy, "MEDIUM")
-ok("MEDIUM stages six decals at the mild rung (1.12/1.06/1.03/1.00, push 0.95)",
-   med.get("staged") == 6 and (med.get("scale") or {}).get("eye") == 1.12
-   and (med.get("scale") or {}).get("nose") == 1.0 and "reads" in str(med.get("note")), med)
+ok("MEDIUM stages six decals at the MODERATE rung (1.30/1.15/1.06/1.02, push full - the 132 next step)",
+   med.get("staged") == 6 and (med.get("scale") or {}).get("eye") == 1.30
+   and (med.get("scale") or {}).get("nose") == 1.02 and "reads" in str(med.get("note")), med)
 cu = tp.stage_face_paint_for_framing(bpy, "CLOSEUP")
 ok("the CLOSEUP still refuses (the earned 113 paint stands untouched)",
    cu.get("staged") == 0 and "113" in str(cu.get("note")), cu)

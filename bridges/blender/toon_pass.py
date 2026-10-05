@@ -36,7 +36,7 @@
 import colorsys
 import math
 
-TOON_LAW_VERSION = 129
+TOON_LAW_VERSION = 130
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # ── THE DARK MASS READS (iteration 129→131) ──────────────────
@@ -639,17 +639,30 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=Fa
     surface; robe-scale cloth weaves inside the hem band region."""
     if not isinstance(painterly, (int, float)) or painterly <= 0:
         painterly = 0.0
-    # THE DARK MASS READS (iteration 131): the near-black hair dyes
-    # derive their bands from the lifted mass dye - the drawn frame's
-    # own dark hair is a readable dark in the dye's own hue, never ink
-    # black (the frame's compound lifts - the DoF's sky mix on the
-    # dome's fall, the mist pull, the glint floor - ride ON an
+    # THE DARK MASS READS (iteration 131) - now THE MASS AS A FRAMING
+    # RUNG (iteration 132): the near-black hair dyes derive their bands
+    # from the lifted mass dye at the PAINTED framings - the drawn
+    # frame's own dark hair is a readable dark in the dye's own hue,
+    # never ink black (the frame's compound lifts - the DoF's sky mix
+    # on the dome's fall, the mist pull, the glint floor - ride ON an
     # authored dark instead of DOMINATING it and reading as indigo).
-    # Everything below derives from the mass exactly as it derived
-    # from the dye; the mass rides only when the dye is actually
-    # lifted (the earned mid-tone reads stay byte-exact).
+    # THE CROSS-NIGHT RECEIPT NAMED THE RUNG: the 129 night (the true
+    # dark at the closeup) scored S003 hair 90 - the strongest hair
+    # cell on record; the 131 night (the lift at EVERY framing) scored
+    # it 20 ('hair color changed to teal') - at the canon framings the
+    # plentiful texels afford the TRUE DARK, and the compound lifts'
+    # blue lean reads as a hue lie on a BRIGHT mass (the probe's dome
+    # read slate-blue (73,76,89) over the neutral (57,57,57) target:
+    # the brighter the mass, the louder the lean reads). At the painted
+    # wides the texels are few and the judge's palette cell reads
+    # VALUE - the lifted mass reads there (the 131 wides' own receipt:
+    # S001 palette 90, S006-Lin 80). The rung follows the framing's own
+    # painterly depth (one law, the 126 depth table): the lift rides
+    # painterly > 0, the canon framings (MEDIUM and tighter) read the
+    # dye's own dark. Everything below derives from whichever dye the
+    # framing chose; the earned mid-tone reads stay byte-exact.
     mass_lifted = False
-    if kind == "hair":
+    if kind == "hair" and painterly > 0:
         mass_rgb = hair_mass_dye(rgb)
         if tuple(round(c, 6) for c in mass_rgb) != tuple(round(c, 6) for c in rgb[:3]):
             rgb = mass_rgb
@@ -1026,7 +1039,12 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=Fa
         if mass_lifted:
             return {"look": "TOON", "bands": "flat+dye-sheen", "floor": round(floor, 3),
                     "hairMass": {"lifted": True, "lum": round(0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2], 4),
-                                 "glint": "mass-derived (neutral floor)"}}
+                                 "glint": "mass-derived (neutral floor)",
+                                 "rung": "wide-end (the lifted mass reads where the texels are few)"}}
+        if kind == "hair":
+            return {"look": "TOON", "bands": "flat+dye-sheen", "floor": round(floor, 3),
+                    "hairMass": {"lifted": False,
+                                 "rung": "stood down - the canon framings read the true dark (the 129 receipt)"}}
         return {"look": "TOON", "bands": "flat+dye-sheen", "floor": round(floor, 3)}
     nt.links.new(mix.outputs[0], out.inputs["Surface"])
     return {"look": "TOON", "bands": "flat", "floor": round(floor, 3)}
@@ -1062,6 +1080,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
     exempted, set_excluded, pale_banked = 0, 0, 0
     set_brushed_count = 0
     hair_mass_rows = []
+    hair_stood_down = 0
     emb_trims, emb_hems = 0, 0
     for mat in list(bpy.data.materials):
         if not mat.use_nodes or mat.node_tree is None or mat.users == 0:
@@ -1111,10 +1130,15 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             set_brushed_count += 1
         cel_ev = _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp, painterly=p_depth, trim=is_trim)
         if isinstance(cel_ev, dict) and cel_ev.get("hairMass"):
-            # THE DARK MASS READS: the evidence names the lifted mass
-            # (one row per lifted hair material - the count is the cast's
-            # dark-haired members, the lum is the mass's own read)
-            hair_mass_rows.append(cel_ev["hairMass"])
+            # THE DARK MASS READS, THE RUNG'S EVIDENCE (iteration 132):
+            # the lifted rows name the wide-end read exactly as 131
+            # named them; the stood-down rows count honestly (the canon
+            # framings read the true dark - the aggregate names the
+            # rung instead of a lift that did not happen)
+            if cel_ev["hairMass"].get("lifted"):
+                hair_mass_rows.append(cel_ev["hairMass"])
+            else:
+                hair_stood_down += 1
         mat["animeos_toon"] = True
         converted += 1
 
@@ -1290,7 +1314,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             "inkTargetPx": HULL_INK_PX.get(str(mode or "PREVIEW").upper(), HULL_INK_PX["PREVIEW"]) if isinstance(framing_ctx, dict) else None,
             "denoised": denoised, "fillsEased": eased, "comp": comp_note,
             "painterlyRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "painted": converted, "swing": round(painterly_swing_for(p_depth), 3), "paleBanked": pale_banked, "setBrush": bool(set_brushed_count), "setSwing": round(painterly_swing_for(p_depth) * PAINTERLY_SET_GAIN, 3)}),
-            "hairMass": (None if not hair_mass_rows else {"lifted": len(hair_mass_rows), "lum": hair_mass_rows[0]["lum"], "glint": hair_mass_rows[0]["glint"]}),
+            "hairMass": (({"lifted": len(hair_mass_rows), "lum": hair_mass_rows[0]["lum"], "glint": hair_mass_rows[0]["glint"], "rung": "wide-end"} if hair_mass_rows else {"lifted": 0, "stoodDown": hair_stood_down, "rung": "the canon framings read the true dark (the 129 receipt)"}) if (hair_mass_rows or hair_stood_down) else None),
             "embroideryRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "trims": emb_trims, "hems": emb_hems, "strength": EMBROIDERY_STRENGTH, "threadLift": EMBROIDERY_THREAD_LIFT, "stitch": EMBROIDERY_STITCH}),
             "gradeExemption": (None if not _wash else {"lut": _lut, "keep": FIGURE_CHROMA_KEEP, "boosted": exempted, "setExcluded": set_excluded, "paleBanked": pale_banked})}
 
@@ -1461,11 +1485,18 @@ FACE_PAINT_BY_SHOT = {
     # simplified chibi style' (S002 face 30) while the SAME face at
     # the closeup reads 90 - the craft exists where the texels do,
     # and the staging table now follows the DISTANCE, not the label.
-    # A MILD stage one rung under WIDE: the decals lift a little, the
-    # emission pushes near-full - the face reads drawn at MEDIUM's
-    # own scale. The earned close look (CLOSEUP/MCU/ECU) stays
-    # untouched exactly as 113/121 left it.
-    "MEDIUM":       {"eye": 1.12, "brow": 1.06, "mouth": 1.03, "nose": 1.0, "strength": 0.95},
+    # THE RUNG'S NEXT STEP (iteration 132): the mild stage rode the
+    # night and the cell FELL (S002 face 30 -> 20, 'a simplified chibi
+    # style rather than the detailed male features of the sheet') - at
+    # MEDIUM's own head budget (~24px on the probe's frame) a 1.12x
+    # lift is under a pixel of paint: the detail the judge names on
+    # the sheet cannot read through a mild push. The stage advances
+    # one rung - the 121 craft move at MEDIUM's own scale (the wide
+    # face is not the closeup face scaled down - it is re-drawn): the
+    # decals lift 1.30/1.15/1.06/1.02 and the emission pushes FULL,
+    # one rung under the WIDE row's own values. The earned close look
+    # (CLOSEUP/MCU/ECU) stays untouched exactly as 113/121 left it.
+    "MEDIUM":       {"eye": 1.30, "brow": 1.15, "mouth": 1.06, "nose": 1.02, "strength": 1.0},
 }
 FACE_PAINT_MESHES = {
     "eye": ("EyeLMesh", "EyeRMesh"),

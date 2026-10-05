@@ -312,7 +312,7 @@ look127 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
 ok("the look names the 128 evidence",
-   look127.get("lawVersion") == 129 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
+   look127.get("lawVersion") == 130 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
    and (look127.get("painterlyRung") or {}).get("painted", 0) > 0, look127.get("painterlyRung"))
 ok("the painterly rung names its swing (the 127 statement at the establishing depth)",
    abs((look127.get("painterlyRung") or {}).get("swing", 0.0) - tp.painterly_swing_for(0.70)) < 1e-6,
@@ -494,7 +494,7 @@ look128 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
 er128 = look128.get("embroideryRung") or {}
 ok("the look names the 128 evidence (the rung rides at WIDE with both addresses and its dials)",
-   look128.get("lawVersion") == 129 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
+   look128.get("lawVersion") == 130 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
    and er128.get("strength") == tp.EMBROIDERY_STRENGTH and er128.get("threadLift") == tp.EMBROIDERY_THREAD_LIFT
    and er128.get("stitch") == tp.EMBROIDERY_STITCH, er128)
 _auth_rob = tp._dye_of(rob128, m.hex_to_rgb)[0]
@@ -522,12 +522,17 @@ ok("the MEDIUM canon stays unpainted (no brush, no weave - the earned close look
    (look_med.get("painterlyRung") or {}).get("depth", 0) == 0 and look_med.get("embroideryRung") is None
    and not _emb_mixes(med128), (look_med.get("embroideryRung"), look_med.get("painterlyRung")))
 
-# ── iteration 131: THE DARK MASS READS + THE SET'S OWN BRUSH ──
-hair131 = m.graded_mat(bpy, "hair", "X131Hair", "#1a1a1a", prof)
+# ── iteration 131→132: THE DARK MASS READS, NOW A FRAMING RUNG ──
+# The 131 lift rode every framing; the cross-night receipt (129's true
+# dark read hair 90 at the closeup, 131's universal lift read it 20)
+# moved the lift to the WIDE end - the canon framings read the true
+# dark. The lifted canon lives at WIDE; the CLOSEUP asserts the
+# stood-down read (the dye's own bands, the rung named).
+hair131 = m.graded_mat(bpy, "hair", "X132HairWide", "#1a1a1a", prof)
 hair131.use_fake_user = True
 look131 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
-                        framing_ctx={"shotType": "CLOSEUP", "dist": 0.7 * tp.FIGURE_H, "lens": 85.0, "resX": 640})
+                        framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
 _mass = tp.hair_mass_dye(m.hex_to_rgb("#1a1a1a"))
 def _em_color(mat, idx):
     for n in mat.node_tree.nodes:
@@ -537,10 +542,26 @@ def _em_color(mat, idx):
                 return (round(c[0], 4), round(c[1], 4), round(c[2], 4))
             idx -= 1
     return None
-ok("the near-black hair's bands derive from the MASS dye (the lit band reads the lifted dark, hue preserved)",
+ok("the near-black hair's bands derive from the MASS dye at the WIDE (the lit band reads the lifted dark, hue preserved)",
    look131.get("hairMass") is not None and _mass is not None
    and _em_color(hair131, 1) == (round(_mass[0], 4), round(_mass[1], 4), round(_mass[2], 4)),
    (look131.get("hairMass"), _em_color(hair131, 1), _mass))
+ok("the wide evidence names the wide-end rung",
+   isinstance((look131.get("hairMass") or {}).get("lifted"), int)
+   and (look131.get("hairMass") or {}).get("lifted", 0) >= 1
+   and "wide-end" in str((look131.get("hairMass") or {}).get("rung")), look131.get("hairMass"))
+hair132cu = m.graded_mat(bpy, "hair", "X132HairClose", "#1a1a1a", prof)
+hair132cu.use_fake_user = True
+look132cu = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
+                          {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
+                          framing_ctx={"shotType": "CLOSEUP", "dist": 0.7 * tp.FIGURE_H, "lens": 85.0, "resX": 640})
+ok("the CLOSEUP's near-black reads the TRUE DARK (the lift stood down - the 129 receipt's canon framings)",
+   _em_color(hair132cu, 1) == (round(m.hex_to_rgb("#1a1a1a")[0], 4), round(m.hex_to_rgb("#1a1a1a")[1], 4), round(m.hex_to_rgb("#1a1a1a")[2], 4)),
+   _em_color(hair132cu, 1))
+ok("the closeup evidence names the stood-down rung",
+   (look132cu.get("hairMass") or {}).get("lifted") == 0
+   and (look132cu.get("hairMass") or {}).get("stoodDown", 0) >= 1
+   and "true dark" in str((look132cu.get("hairMass") or {}).get("rung")), look132cu.get("hairMass"))
 _glint = tp.hair_glint_from_mass(_mass)
 ok("the mass-derived glint's additive floor is NEUTRAL (the 115 floor's blue lean dies on the dark masses)",
    abs(_glint[0] - _glint[1]) < 1e-9 and _glint[2] > _glint[0] - 1e-9 and abs(_glint[0] - _glint[2]) < 0.005,
@@ -660,20 +681,24 @@ def run_render():
            isinstance(ink_off, (int, float)) and 0.0012 <= ink_off <= 0.024, ink_off)
     expect("the ink target names its px", (look121.get("look") or {}).get("inkTargetPx") == 1.4, (look121.get("look") or {}).get("inkTargetPx"))
     fp = look121.get("facePaint") or {}
-    # iteration 131: the MEDIUM FACE RUNG - the staging table follows
-    # the DISTANCE, not the label (MEDIUM renders a ~35px head); the
-    # mild stage rides six decal meshes at 1.12/1.06/1.03/1.00 with the
-    # emission pushed to 0.95, while the tight framings still refuse.
-    expect("the face paint staging rides (the 131 MEDIUM rung: six meshes at the mild stage)",
+    # iteration 132: the MEDIUM FACE RUNG'S NEXT STEP - the moderate
+    # stage (the 131 mild stage's own cell fell); six decal meshes at
+    # 1.30/1.15/1.06/1.02 with the emission pushed FULL, while the
+    # tight framings still refuse.
+    expect("the face paint staging rides (the 132 MEDIUM rung: six meshes at the moderate stage)",
            fp.get("shotType") == "MEDIUM" and fp.get("staged") == 6
-           and abs((fp.get("scale") or {}).get("eye", 0) - 1.12) < 1e-6
+           and abs((fp.get("scale") or {}).get("eye", 0) - 1.30) < 1e-6
            and abs(fp.get("strengthPushed", 0) - 4) <= 6
            and "the face paint reads" in str(fp.get("note")), fp)
-    expect("the 131 dark mass reads on the near-black hair (the closeup's indigo answer)",
-           isinstance((look121.get("look") or {}).get("hairMass"), dict)
-           and (look121.get("look") or {}).get("hairMass", {}).get("lifted", 0) >= 1
-           and 0.03 <= (look121.get("look") or {}).get("hairMass", {}).get("lum", 0) <= 0.05,
-           (look121.get("look") or {}).get("hairMass"))
+    # iteration 132: THE MASS AS A FRAMING RUNG - the MEDIUM job's
+    # evidence names the STOOD-DOWN read (the true dark at the canon
+    # framings; the lift lives at the wide end now).
+    hm = (look121.get("look") or {}).get("hairMass")
+    expect("the 131 mass stands down at the MEDIUM canon (the true dark reads - the 129 receipt)",
+           isinstance(hm, dict) and hm.get("lifted") == 0
+           and hm.get("stoodDown", 0) >= 1
+           and "true dark" in str(hm.get("rung")),
+           hm)
 
 
 if HALF in ("all", "direct"):

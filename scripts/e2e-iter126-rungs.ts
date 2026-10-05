@@ -76,7 +76,7 @@ print("PROBE_JSON " + json.dumps(out))
 async function main() {
   // ── 1. THE PAINTERLY STYLE RUNG (source law) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("the toon pass declares the law version (advanced legitimately to 129)", tp.includes("TOON_LAW_VERSION = 129"), "v128");
+  expect("the toon pass declares the law version (advanced legitimately to 130)", tp.includes("TOON_LAW_VERSION = 130"), "v128");
   expect("the painterly rung is a WIDE-end rung (the canon close look untouched)",
     tp.includes('PAINTERLY_BY_SHOT = {"LOW_ANGLE": 0.40, "WIDE": 0.55, "ESTABLISHING": 0.70}')
       && tp.includes("PAINTERLY_SWING_BASE = 0.10") && tp.includes("PAINTERLY_SWING_GAIN = 0.30")
@@ -121,7 +121,7 @@ async function main() {
   }
   const probeOut = r.stdout.slice(r.stdout.indexOf("PROBE_JSON ") + "PROBE_JSON ".length).split("\n")[0];
   const probe = JSON.parse(probeOut);
-  expect("the law version answers 129 from the real module", probe.lawVersion === 129, probe.lawVersion);
+  expect("the law version answers 130 from the real module", probe.lawVersion === 130, probe.lawVersion);
   expect("the painterly depth answers the framing for real",
     probe.depths.ESTABLISHING === 0.7 && probe.depths.WIDE === 0.55 && probe.depths.LOW_ANGLE === 0.4
       && probe.depths.MEDIUM === 0 && probe.depths.CLOSEUP === 0 && probe.depths["null"] === 0, probe.depths);
