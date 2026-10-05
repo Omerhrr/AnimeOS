@@ -73,7 +73,7 @@ expect("THE MASS AS A FRAMING RUNG: the lift rides the painterly depth (the cano
 expect("THE MEDIUM FACE RUNG'S NEXT STEP: the moderate stage rides (the 121 craft move at MEDIUM's own scale)",
   /"MEDIUM":\s*\{"eye": 1\.30, "brow": 1\.15, "mouth": 1\.06, "nose": 1\.02, "strength": 1\.0\}/.test(tp), "the MEDIUM row");
 const ac = read("bridges/blender/anime_character.py");
-expect("the builder declares the 131 law version", ac.includes("ANIME_LAW_VERSION = 124"), "v124");
+expect("the builder declares the 131 law version", ac.includes("ANIME_LAW_VERSION = 125"), "v124");
 expect("THE STRAND FALLS: the sway, the taper and the phase live",
   ac.includes("STRAND_SWAY_AMP = 0.011") && ac.includes("STRAND_TIP_TAPER = 0.32")
   && ac.includes("def strand_fall"), "the strand law");

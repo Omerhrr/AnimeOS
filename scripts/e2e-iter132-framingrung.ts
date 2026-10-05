@@ -61,7 +61,7 @@ expect("the earned close look stays untouched (the 113/121 rows stand)",
   && /"WIDE":\s*\{"eye": 1\.30, "brow": 1\.18, "mouth": 1\.08, "nose": 1\.05, "strength": 1\.0\}/.test(tp), "the wide rows");
 const ac = read("bridges/blender/anime_character.py");
 expect("the builder's law version rides untouched (no bridge change on the anime side)",
-  ac.includes("ANIME_LAW_VERSION = 124"), "v124");
+  ac.includes("ANIME_LAW_VERSION = 125"), "v124");
 
 // ── 2. THE REAL BLENDER PROBE (node-level laws under the real bpy) ──
 const PROBE = `

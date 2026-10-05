@@ -142,7 +142,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
     fh.write(runner)
 subprocess.run(cmd(fh.name, os.path.join(BR_DIR, "animeos_bridge.py"), job), capture_output=True, text=True, timeout=1200)
 st = json.load(open(job))
-expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v124"), (st.get("figureSource"), st.get("animeRefused")))
+expect("worker builds the designed anime character", str(st.get("figureSource")).startswith("anime:v125"), (st.get("figureSource"), st.get("animeRefused")))
 expect("the strand fall rides the builder (the 131 hanging strands bow)", ((st.get("anime") or {}).get("hairStrandSway") or {}).get("lawVersion") == "strand-fall-v1"
        and ((st.get("anime") or {}).get("hairStrandSway") or {}).get("strands", 0) >= 4, (st.get("anime") or {}).get("hairStrandSway"))
 expect("worker clip rendered", bool(st.get("mp4Path")) and os.path.exists(st.get("mp4Path") or ""), st.get("error"))

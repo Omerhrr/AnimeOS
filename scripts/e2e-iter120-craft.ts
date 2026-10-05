@@ -136,7 +136,7 @@ async function main() {
     fa.includes("shading rides the") && ac.includes("the sculpt moves geometry"));
   expect("the profile read answers in millimeters", fa.includes('"proudMm"'));
   expect("the head carries the evidence prop", ac.includes('"animeos_face_anatomy"'));
-  expect("the builder declares v124", ac.includes("ANIME_LAW_VERSION = 124"));
+  expect("the builder declares v124", ac.includes("ANIME_LAW_VERSION = 125"));
 
   // ── 7. THE PROMPTS TRUST THE LABEL ──
   const identity = read("src/lib/identity.ts");

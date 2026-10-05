@@ -46,7 +46,7 @@ import math
 import os
 import sys
 
-ANIME_LAW_VERSION = 124
+ANIME_LAW_VERSION = 125
 
 # ── THE STRAND FALLS (iteration 131) ────────────────────────
 # The 130 night's notes read the figure twice: 'the face and hair
@@ -363,11 +363,27 @@ def paint_eye(spec, size=256):
     almond = np.minimum(top - v, v - bot)
     almond = np.where(np.abs(u) < 0.95, almond, -1.0)
     over(soft(-almond, 0.03), (0.97, 0.96, 0.95))
+    # ── THE DRAWN FACE'S GENDER LAW (iteration 134): the paint reads
+    #    the spec's own gender. The shoujo draw (the tall iris, the
+    #    double glint, the flicked lash) is the FEMININE tell and the
+    #    133 night's judge named it on a male spec ('a feminine anime
+    #    style with large eyes and a beauty mark not present in the
+    #    canonical male reference'). The MALE eye: a narrower, shorter
+    #    iris (more sclera reads at the rung's texels), a smaller
+    #    pupil, ONE small catch-light, and the flick GATED ON LASHES
+    #    (none under 0.55, full by 0.85 - the flick is the feminine
+    #    ink). The female draw is byte-kept. The probe's receipts:
+    #    probe-134-facegender C1/C5/C7 (the eye reads male), C0 the
+    #    control that read shoujo. ──
+    male = str((spec.get("body") or {}).get("gender")) == "male"
     # iris: tall ellipse, clipped by the almond. THE IRIS IS DARK (the
     # 113 paint law): the old gradient ran bright at the bottom and the
     # eye read as a pale ring at production distance - the anime iris
     # is a dark mass with a small bright glint at the bottom.
-    ir = np.sqrt((u / 0.5) ** 2 + ((v + 0.02) / 0.74) ** 2)
+    if male:
+        ir = np.sqrt((u / 0.44) ** 2 + ((v + 0.02) / 0.58) ** 2)
+    else:
+        ir = np.sqrt((u / 0.5) ** 2 + ((v + 0.02) / 0.74) ** 2)
     iris_col = np.array(_hex_srgb(spec["eyes"]["color"]), np.float32)
     dark = iris_col * 0.18
     light = np.clip(iris_col * 0.9 + 0.10, 0, 1)
@@ -380,10 +396,15 @@ def paint_eye(spec, size=256):
     rim = soft(np.abs(ir - 0.97) - 0.03, 0.02) * soft(-almond, 0.03)
     over(rim, tuple(dark * 0.8))
     # pupil
-    pr = np.sqrt((u / 0.2) ** 2 + ((v + 0.02) / 0.36) ** 2)
+    if male:
+        pr = np.sqrt((u / 0.18) ** 2 + ((v + 0.02) / 0.30) ** 2)
+    else:
+        pr = np.sqrt((u / 0.2) ** 2 + ((v + 0.02) / 0.36) ** 2)
     over(soft(pr - 1.0, 0.05) * soft(-almond, 0.03), tuple(dark * 0.5))
-    # catch-lights
-    for cx, cy, r in ((-0.17, 0.3, 0.15), (0.16, -0.3, 0.07)):
+    # catch-lights (the shoujo double-glint is the feminine read; the
+    # male eye carries one small light)
+    lights = ((-0.15, 0.28, 0.09),) if male else ((-0.17, 0.3, 0.15), (0.16, -0.3, 0.07))
+    for cx, cy, r in lights:
         over(soft(np.sqrt((u - cx) ** 2 + (v - cy) ** 2) - r, 0.03) * soft(-almond, 0.03), (1.0, 1.0, 1.0))
     # upper lash line (thick, flicks up/out at the outer corner) - the
     # 113 paint law thickens it: the lash is the eye's ink at distance
@@ -391,8 +412,11 @@ def paint_eye(spec, size=256):
     lash = np.abs(v - top) - lash_w * (1.0 + 0.6 * np.clip(u, 0, 1))
     lash = np.where((u > -0.98) & (u < 0.98), lash, 1.0)
     over(soft(lash, 0.03), (0.10, 0.07, 0.08))
+    # the flick gates on lashes for the male spec (the probe's C1/C7
+    # receipts); the female draw keeps the flick at full
+    fk = max(0.0, min(1.0, (float(spec["eyes"].get("lashes", 1.0)) - 0.55) / 0.30)) if male else 1.0
     flick = np.sqrt(((u - 0.95) / 0.16) ** 2 + ((v - (top + 0.1)) / 0.06) ** 2) - 1.0
-    over(soft(flick, 0.08) * (u > 0.7), (0.10, 0.07, 0.08))
+    over(soft(flick, 0.08) * (u > 0.7), (0.10, 0.07, 0.08), a=fk)
     # lower line (thin, outer half)
     low = np.abs(v - bot) - 0.018
     over(soft(low, 0.02) * np.clip((u + 0.1) / 0.6, 0, 1) * (np.abs(u) < 0.9), (0.25, 0.16, 0.16), 0.8)
@@ -404,9 +428,19 @@ def paint_brow(spec, w=256, h=64):
     y, x = np.mgrid[0:h, 0:w].astype(np.float32)
     u = (x / (w - 1)) * 2 - 1
     v = 1 - (y / (h - 1)) * 2
-    arch = spec["brows"]["arch"]
+    # ── THE BROW'S GENDER LAW (iteration 134): the male spec carries a
+    #    brow FLOOR (heavier ink) and an arch CAP (the thin high arch
+    #    is the feminine read the 133 night's judge named beside the
+    #    eye); the female draw is byte-kept. Receipts: the probe's
+    #    C4/C5/C7. ──
+    male = str((spec.get("body") or {}).get("gender")) == "male"
+    thickness = float(spec["brows"]["thickness"])
+    arch = float(spec["brows"]["arch"])
+    if male:
+        thickness = max(thickness, 1.55)
+        arch = min(arch, 0.28)
     center = -0.1 + (0.45 * arch) * (1 - (u - 0.1) ** 2)
-    thick = 0.24 * spec["brows"]["thickness"] * (1.0 - 0.55 * np.clip(u, 0, 1))
+    thick = 0.24 * thickness * (1.0 - 0.55 * np.clip(u, 0, 1))
     d = np.abs(v - center) - thick
     d = np.where(np.abs(u) < 0.92, d, 1.0)
     rgba = np.zeros((h, w, 4), np.float32)
@@ -1072,7 +1106,24 @@ def build_hair(bpy, scn, spec, head_empty, hair_mat):
         for s in range(segs):
             ph = s / segs * math.tau
             front = _clamp(-math.sin(ph), 0, 1)
-            th_max = hairline + (1.0 - front) * (1.25 if style != "short" else 0.95)
+            # ── THE SIDEBURN TUCK (iteration 134): the deep tail used to
+            #    run the cap's side rim past the ear, and the rim's
+            #    terminal ring read as a dash on the cheek - the 133
+            #    night's 'beauty mark not present in the canonical male
+            #    reference'. THE F-BISECT CONVICTED THE CAP
+            #    (probe-134-sideburn, three real cuts on the honest
+            #    payload): F1 bangs-none rode the mark (cx 24.8), F2
+            #    cap-hidden KILLED it (marks 0), F3 all-hair hidden
+            #    reframed and stood aside - after the C/D/E series had
+            #    refuted the paint knobs, the ink hull, the locks, the
+            #    decal lift, the key yaw, the fill share and the hero
+            #    carve in turn. The tail now gates on BEHIND-THE-EAR:
+            #    in front of the ear line the rim ends at the temple arc
+            #    (the cheek keeps its skin, the side locks carry the
+            #    fall), behind it the nape coverage stands. ──
+            back = _clamp(math.sin(ph) + 0.30, 0, 1)   # 0 in front of the ear line, 1 at the nape
+            deep = 1.25 if style != "short" else 0.95
+            th_max = hairline + (1.0 - front) * (deep * back + 0.35 * (1.0 - back))
             th = r / rings * th_max
             cv.append(_scalp(th, ph, 0.006, hs))
     for r in range(rings):
