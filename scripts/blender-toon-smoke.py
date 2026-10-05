@@ -137,7 +137,11 @@ shot = {"shotType": "MEDIUM", "movement": "PAN", "duration": 2.0, "poseStart": "
 scene_p = {"cameraDistance": 1.0}
 subject = dict(meas)
 pos, target, _ = m.camera_pose(shot, scene_p, 0.75, subject)
-mid = [pos[i] * 0.55 + target[i] * 0.45 for i in range(3)]
+# the 133 rung pulls the MEDIUM in to ~1.3m - a pillar at the old
+# 45% blend now sits inside the body radius and the push law honestly
+# refuses it (the obstacle hugs the subject); the stage moves the
+# pillar out where the last resort has room to park the lens
+mid = [pos[i] * 0.75 + target[i] * 0.25 for i in range(3)]
 bpy.ops.mesh.primitive_cylinder_add(radius=0.12, depth=4.0, location=(mid[0], mid[1], 1.0))
 bpy.context.view_layer.update()
 p_base, t_base, _ = m.camera_pose(shot, scene_p, 0.0, subject)

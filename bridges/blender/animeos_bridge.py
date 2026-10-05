@@ -786,7 +786,24 @@ SUBJECT_FILL = {
     "CLOSEUP": 0.82,          # solved from the HEAD's measured size
     "EXTREME_CLOSEUP": 1.15,  # solved from the HEAD's measured size
 }
-PRESENCE_LAW_VERSION = 107
+# ── THE MEDIUM'S OWN GRAMMAR (iteration 133) ─────────────────
+# The 132 night's frontier named the wall twice: S002's face cell
+# rode 20 THROUGH the moderate face stage ('the MEDIUM wall is the
+# framing's texel budget, not the paint'), and the probe measured
+# the MEDIUM head at ~24-44px. The geometry answered WHY: the
+# presence solve sized the MEDIUM from the WHOLE figure at fill
+# 0.74 - the full figure owns 74% of frame height, which is film
+# grammar's FULL SHOT, not the waist-up MEDIUM the sheet comparison
+# assumes. The rung: the MEDIUM solves from the WAIST-UP body (the
+# upper MEDIUM_UPPER_SHARE of the measured figure) - dist ~3.1
+# pulls in to ~1.3, the head's texels multiply (the 133 probe's own
+# receipt: 44px -> 61px and the face reads drawn), and the aim
+# lifts MEDIUM_HEADROOM above the chest so the crown keeps its
+# headroom (the probe's first cut clipped the topknot at frame
+# top - the eye caught it before any night could).
+MEDIUM_UPPER_SHARE = 0.42
+MEDIUM_HEADROOM = 0.11
+PRESENCE_LAW_VERSION = 108
 
 
 def measure_subject(root):
@@ -1184,6 +1201,7 @@ class _Framing:
         h = height
         target = [0.0, 0.0, height * 0.75]
         fill = None
+        aim = None
         self.origin = [0.0, 0.0]
         if framed and isinstance(subject, dict) and subject.get("h"):
             # ── THE PRESENCE LAW (iteration 107): the lens SOLVES the
@@ -1207,6 +1225,15 @@ class _Framing:
             # subject and the aim is the pair's midpoint
             pair = bool(subject.get("pair")) if isinstance(subject, dict) else False
             size = float(subject.get("headH") or subject["h"]) if (tight and not pair) else float(subject["h"])
+            # THE MEDIUM'S OWN GRAMMAR (iteration 133): the waist-up
+            # solve - the upper body fills the frame, not the whole
+            # figure (the full-figure solve was a full shot wearing the
+            # MEDIUM name; the face cell starved on the frame's own
+            # texel budget). The pair solve rides the union box and is
+            # never cut down - the two-shot's subject is the PAIR.
+            medium = (st == "MEDIUM") and not pair
+            if medium:
+                size *= MEDIUM_UPPER_SHARE
             fill = SUBJECT_FILL.get(st, 0.7)
             tan_half = 10.125 / float(lens)  # the 36mm sensor, horizontal fit, 16:9
             dist = clamp(size / (fill * 2.0 * tan_half), 0.45, 14.0)
@@ -1226,8 +1253,18 @@ class _Framing:
                 target = [float(subject.get("cx") or 0.0), float(subject.get("cy") or 0.0), chest]
                 h = chest + subject["h"] * 0.08
                 self.origin = [float(subject.get("cx") or 0.0), float(subject.get("cy") or 0.0)]
+                aim = "chest"
             else:
                 aim = "face" if (dist < 1.2 or tight) else "chest"
+                # THE MEDIUM'S OWN GRAMMAR pins the chest aim (the
+                # waist-up frame centers the upper body; the dist seam
+                # must never flip it to a portrait) and lifts the aim
+                # MEDIUM_HEADROOM above the chest so the crown keeps
+                # its headroom (the 133 probe's first cut clipped the
+                # topknot at frame top)
+                if medium:
+                    aim = "chest"
+                    _aim_z = float(subject.get("chest") or subject["h"] * 0.62) + float(subject["h"]) * MEDIUM_HEADROOM
                 if aim == "face":
                     # THE LEVEL LENS (iteration 113): the closeup's lens rides
                     # the face's own height - the chest-height lens aimed UP
@@ -1237,10 +1274,14 @@ class _Framing:
                     # silhouette'). A hair above the eye line, tilted down a
                     # few degrees - the portrait angle.
                     h = float(subject.get("face") or subject["h"] * 0.84) + subject["h"] * 0.035
+                elif medium:
+                    h = _aim_z
                 else:
                     h = float(subject.get("chest") or subject["h"] * 0.62) + subject["h"] * 0.08
-                target = [0.0, 0.0, float(subject.get("face") or subject["h"] * 0.84) if aim == "face" else float(subject.get("chest") or subject["h"] * 0.62)]
+                target = [0.0, 0.0, float(subject.get("face") or subject["h"] * 0.84) if aim == "face" else (_aim_z if medium else float(subject.get("chest") or subject["h"] * 0.62))]
                 self.origin = [0.0, 0.0]
+                if medium:
+                    self.rung = "the waist-up MEDIUM (the 133 rung: the upper body solves, the crown keeps its headroom)"
         elif framed:
             # prop-scale distance: the designed figure stands ~0.9m tall
             # (0.45x), and the lens table was tuned for full-scale sets -
@@ -1284,6 +1325,8 @@ class _Framing:
         self.h = h
         self.target = target
         self.fill = fill
+        self.aim = aim
+        self.rung = getattr(self, "rung", None)
 
 
 def apply_camera_move(movement, t, fr):
@@ -7319,7 +7362,6 @@ def worker_run(job_file):
                     sightline_ev["path"] = {"skipped": str(exc)[:120]}
         if subject_ctx is not None:
             fr0 = _Framing(shot, scene_p, subject_ctx)
-            st0 = str(shot.get("shotType") or "MEDIUM").upper()
             presence_ev = {
                 "lawVersion": PRESENCE_LAW_VERSION,
                 "subjectH": subject_ctx["h"],
@@ -7328,7 +7370,11 @@ def worker_run(job_file):
                 "dist": round(fr0.dist, 3),
                 "lens": fr0.lens,
                 "aimZ": round(fr0.target[2], 3),
-                "aim": "face" if (fr0.dist < 1.2 or st0 in ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")) else "chest",
+                "aim": fr0.aim,
+                # THE MEDIUM'S OWN GRAMMAR (iteration 133): the rung
+                # names the waist-up solve when it rides (the other
+                # framings keep the 107 law and name nothing)
+                "rung": fr0.rung,
             }
             if sightline_ev is not None:
                 presence_ev["sightline"] = sightline_ev
