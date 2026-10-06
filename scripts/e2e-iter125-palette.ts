@@ -57,7 +57,7 @@ function makeTestFrame(color: string, out: string): boolean {
 async function main() {
   // ── 1. THE MIST SEAM (the LOW_ANGLE staging) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("the toon pass declares the law version (advanced legitimately to 130)", tp.includes("TOON_LAW_VERSION = 130"), "v128");
+  expect("the toon pass declares the law version (advanced legitimately to 131)", tp.includes("TOON_LAW_VERSION = 131"), "v131");
   expect("LOW_ANGLE joins the mist staging under the same cap the wides carry",
     tp.includes('"LOW_ANGLE": (5.0, 14.0, 0.72)'), "the staging row");
   expect("the cap law holds (every staged tuple caps below full intensity; the house alone runs 1.0)",

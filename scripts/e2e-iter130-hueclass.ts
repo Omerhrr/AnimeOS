@@ -205,8 +205,8 @@ async function main() {
 
   // ── 3. THE BRIDGE STANDS UNTOUCHED (no law-change restart owed) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("TOON_LAW_VERSION advanced legitimately to 130 (the 132 mass framing rung)",
-    tp.includes("TOON_LAW_VERSION = 130"), "v128");
+  expect("TOON_LAW_VERSION advanced legitimately to 131 (the 135 trim weave's own scope)",
+    tp.includes("TOON_LAW_VERSION = 131"), "v131");
 
   finish();
 }

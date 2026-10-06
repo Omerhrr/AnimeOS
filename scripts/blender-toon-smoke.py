@@ -257,7 +257,9 @@ pbrush = bpy.data.materials.new("PainterlyProbe")
 pbrush.use_nodes = True
 pbrush.node_tree.nodes.clear()
 pbrush.node_tree.nodes.new("ShaderNodeOutputMaterial")
-tp._cel_tree(pbrush, m.hex_to_rgb("#3f8f78"), "cloth", m.hex_to_rgb, ramp=tp.style_ramp_for("ESTABLISHING"), painterly=0.7)
+# the 135 composition: apply_look rides weave_on = p_depth > 0 at the
+# wide end - the direct probe passes the same shape explicitly
+tp._cel_tree(pbrush, m.hex_to_rgb("#3f8f78"), "cloth", m.hex_to_rgb, ramp=tp.style_ramp_for("ESTABLISHING"), painterly=0.7, trim=False, weave=True)
 pn_names = [n.name for n in pbrush.node_tree.nodes]
 ok("the painterly probe carries the brush layer",
    "PainterlyNoise" in pn_names and "PainterlyRamp" in pn_names
@@ -316,7 +318,7 @@ look127 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
 ok("the look names the 128 evidence",
-   look127.get("lawVersion") == 130 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
+   look127.get("lawVersion") == 131 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
    and (look127.get("painterlyRung") or {}).get("painted", 0) > 0, look127.get("painterlyRung"))
 ok("the painterly rung names its swing (the 127 statement at the establishing depth)",
    abs((look127.get("painterlyRung") or {}).get("swing", 0.0) - tp.painterly_swing_for(0.70)) < 1e-6,
@@ -498,7 +500,7 @@ look128 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
 er128 = look128.get("embroideryRung") or {}
 ok("the look names the 128 evidence (the rung rides at WIDE with both addresses and its dials)",
-   look128.get("lawVersion") == 130 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
+   look128.get("lawVersion") == 131 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
    and er128.get("strength") == tp.EMBROIDERY_STRENGTH and er128.get("threadLift") == tp.EMBROIDERY_THREAD_LIFT
    and er128.get("stitch") == tp.EMBROIDERY_STITCH, er128)
 _auth_rob = tp._dye_of(rob128, m.hex_to_rgb)[0]
@@ -522,9 +524,10 @@ med128.use_fake_user = True
 look_med = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                          {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
                          framing_ctx={"shotType": "MEDIUM", "dist": 3.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
-ok("the MEDIUM canon stays unpainted (no brush, no weave - the earned close look stands)",
-   (look_med.get("painterlyRung") or {}).get("depth", 0) == 0 and look_med.get("embroideryRung") is None
-   and not _emb_mixes(med128), (look_med.get("embroideryRung"), look_med.get("painterlyRung")))
+ok("the MEDIUM canon keeps its brush refusal and the trim weave rides its OWN rung (the 135 scope: no brush, the hem weave present, depth 0)",
+   look_med.get("painterlyRung") is None and (look_med.get("embroideryRung") or {}).get("scope") == "the trim weave's own rung (135)"
+   and (look_med.get("embroideryRung") or {}).get("depth") == 0.0 and _emb_mixes(med128),
+   (look_med.get("embroideryRung"), look_med.get("painterlyRung")))
 
 # ── iteration 131→132: THE DARK MASS READS, NOW A FRAMING RUNG ──
 # The 131 lift rode every framing; the cross-night receipt (129's true

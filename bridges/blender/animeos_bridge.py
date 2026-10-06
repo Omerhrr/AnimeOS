@@ -6203,6 +6203,29 @@ def worker_run(job_file):
                     rock.scale = (1.0, 0.8 + rng() * 0.4, 0.6 + rng() * 0.5)
                     rock.data.materials.append(mat)
 
+        # ── THE SET CARRIES ITS OWN TAG, EVERY STAGING PATH (iteration
+        #    135): the 114 loop tagged the designed-DNA build only -
+        #    the legacy plate and the library env asset staged their
+        #    materials WITHOUT the tag, and the 135 trim-weave scope
+        #    (the weave's own rung at the canon framings) read those
+        #    untagged world mats as robe cloth: the probe's A2 ground
+        #    went warm and the mound's contrast collapsed into the sky
+        #    (the node check convicted SetMat holding EmbroideryRamp
+        #    while untagged). The sweep runs at the END of set staging
+        #    - the props and the cast build AFTER this line, so their
+        #    materials stay figure-owned exactly as the 114 law left
+        #    them - and it is idempotent under the designed build's
+        #    own tag. ──
+        _tagged_set = 0
+        for _mat in bpy.data.materials:
+            if _mat.use_nodes:
+                try:
+                    _mat["animeos_set_surface"] = True
+                    _tagged_set += 1
+                except Exception:  # noqa: BLE001
+                    pass
+        state["setSurfaceMats"] = _tagged_set
+
         # ── v5.0/v6.0: DESIGNED props and creatures named by the shot
         #    text ride the payload and load as real library assets at a
         #    deterministic foreground line (never stacked, never boxes).

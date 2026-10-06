@@ -70,7 +70,7 @@ expect("the sideburn tuck gates the cap's deep tail on behind-the-ear",
   && /th_max = hairline \+ \(1\.0 - front\) \* \(deep \* back \+ 0\.35 \* \(1\.0 - back\)\)/.test(ac), "the tuck");
 const tp = read("bridges/blender/toon_pass.py");
 expect("the toon pass holds its 132 version (no look-side change this iteration)",
-  tp.includes("TOON_LAW_VERSION = 130"), "v130");
+  tp.includes("TOON_LAW_VERSION = 131"), "v131");
 const br = read("bridges/blender/animeos_bridge.py");
 expect("the presence law holds its 108 rung (the 133 grammar stands)",
   br.includes("PRESENCE_LAW_VERSION = 108"), "v108");

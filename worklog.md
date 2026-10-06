@@ -2441,3 +2441,25 @@ Stage Summary:
 - The frontier: (1) the MEDIUM's own trim/embroidery answer or the texel route (the cell's named ceiling); (2) the wide-end robe wash (its own iteration); (3) the sheet stability hashes pinned; (4) the variance wall.
 
 Addendum (iteration-134 night): recorded in the entry above - the drain clean (6/6 REAL clips, no simulator/zombie/wall), rescore mean 41 / median 35 / p10 35 BELOW the 70 floor refused verbatim, the rung's own cell acquitted of the gender paint by the judge's own wording and the eye-read of the night's frames, the frontier carried to the 135 iteration.
+
+---
+Task ID: iteration-135
+Agent: Super Z (main agent)
+Task: Iteration 135 - THE TRIM WEAVE'S OWN SCOPE (TOON_LAW_VERSION 130 -> 131). The 134 night's frontier item one: the MEDIUM's own trim/embroidery answer - the judge read the trim FLAT at exactly the framings where the trim owns texels, because the 128 rung wrote the weave INSIDE the painterly block.
+
+Work Log:
+- STATE: HEAD d0210e5 (the 134 night record) with the 135 work already in flight from an earlier trace (toon_pass.py modified, probe-135-trim.py + detached-probe135.mjs untracked). The probe had run 5/5 cuts (attempt two; frames + zooms in /home/z/my-project/inspect/probe135).
+- EYE-READ: the A2 zoom's gold X-sash READS as woven (the stitch wave's chalkier thread tone, bounded column variation); collar sat 0.455 -> 0.223 at MEDIUM; B1 (weave + 960 texel route) read [99,115,106] vs A2's [100,115,107] - the WEAVE moves the trim read, not the texel budget (the 960 route stays shelved); C2's closeup holds the 121 bands.
+- THE PROBE'S OWN CATCH: A2's ground went warm + the mound's contrast collapsed into the sky while the sky was BYTE-IDENTICAL across A1/A2/B1 ([95,105,123]). The node-level check under real bpy (scripts/probe135-nodecheck.py, local) convicted SetMat holding EmbroideryRamp while UNTAGGED: the 114 loop tagged the designed-DNA build only - the legacy plate (env-less payloads, bridge ~6189) and the library env asset staged world materials OUTSIDE it. The night payload is safe (seed env DNA -> build_designed_set -> tagged), but the 135 scope widened the weave's reach to every canon framing, so the side door became a visible lie.
+- THE FIX (animeos_bridge.py): one staging sweep at the END of the set block in worker_run - every material existing at that moment carries the 114 tag; props and cast build AFTER (their mats stay figure-owned); idempotent under the designed build's own tag. Re-run acquittal: weave holders EXACTLY AccentMat/RobeMat/BootsMat, the world clean. state["setSurfaceMats"] rides.
+- THE LAW (toon_pass.py): TRIM_WEAVE_BY_SHOT = {MEDIUM/MCU/CLOSEUP/ECU: 1.0}; weave_on = p_depth > 0 OR the table; the 128 wide-end composition byte-kept (the weave rides AFTER the brush, INSIDE the band emissions); at weave-only framings the brush never runs (painterlyRung null, depth reads 0.0 honestly) and the shadow band's cooled dye derives inline (_emb_shadow, the 891 formula byte-equal); the hair's true dark keys on painterly (the 129 receipt stands); the evidence names its scope: 'the trim weave's own rung (135)' vs 'the wide-end brush scope (128)'.
+- E2E: e2e-iter135-trimscope.ts ALL GREEN (33 asserts: source pins, the gate's unit truth, the real worker_run node truth on the env-less payload - the exact leak path - and the wide-end scope byte-kept).
+- PINS: e2e-iter118 through 134 ALL GREEN; the version pins advanced legitimately to 131 (121, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134) and 128's two structural pins updated to the moved shapes (the guard keys on weave; the shadow wrap derives _emb_shadow).
+- SMOKES: blender-toon ALL GREEN (the painterly probe passes the 135 composition explicitly; the MEDIUM assert reads the NEW law - brush refusal kept, hem weave present at depth 0), blender-anime + blender-camera ALL GREEN.
+- GATE: src tsc 0 errors (grep "^src/" empty).
+- RECORD: README item 41 appended.
+
+Stage Summary:
+- The trim's stitch wave now rides the four trim-texel framings WITHOUT the brush; the wide-end composition stands byte-exact; the world never weaves on any staging path.
+- The tag's side doors are closed for good (the sweep at the end of set staging).
+- Next: the 135 night (detached-night135.mjs on the 133/134 pattern; the pool restarts per the TOON 131 bridge change) - S003's wardrobe 20 and S002's wardrobe 40 are the named cells the night re-reads.

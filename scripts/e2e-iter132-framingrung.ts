@@ -43,7 +43,7 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 
 // ── 1. THE SOURCE LAWS ──
 const tp = read("bridges/blender/toon_pass.py");
-expect("the toon pass declares the 132 law version", tp.includes("TOON_LAW_VERSION = 130"), "v130");
+expect("the toon pass declares the 135 law version (advanced legitimately: the trim weave's own scope)", tp.includes("TOON_LAW_VERSION = 131"), "v131");
 expect("THE MASS AS A FRAMING RUNG: the lift is keyed on the painterly depth (the framing's own law)",
   /if kind == "hair" and painterly > 0:/.test(tp), "the depth key");
 expect("the rung's evidence names BOTH homes (the wide-end lift, the stood-down canon framings)",

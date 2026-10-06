@@ -127,7 +127,7 @@ print("PROBE_JSON " + json.dumps(out))
 async function main() {
   // ── 1. THE PALE-DYE VALUE BRANCH (source law) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("the toon pass declares the law version (advanced legitimately to 130)", tp.includes("TOON_LAW_VERSION = 130"), "v128");
+  expect("the toon pass declares the law version (advanced legitimately to 131)", tp.includes("TOON_LAW_VERSION = 131"), "v131");
   expect("the value branch's dials are named laws (linear-space, the wall is the spread)",
     tp.includes("PALE_L_LOW = 0.30") && tp.includes("PALE_L_TARGET = 0.55")
       && tp.includes("PALE_APPROACH = 0.60") && tp.includes("PALE_S_FLOOR = 0.34")
@@ -175,7 +175,7 @@ async function main() {
   }
   const probeOut = r.stdout.slice(r.stdout.indexOf("PROBE_JSON ") + "PROBE_JSON ".length).split("\n")[0];
   const probe = JSON.parse(probeOut);
-  expect("the law version answers 130 from the real module", probe.lawVersion === 130, probe.lawVersion);
+  expect("the law version answers 131 from the real module", probe.lawVersion === 131, probe.lawVersion);
   expect("the pale robe takes the VALUE branch: approached exactly, floored, hue exact, bounded",
     probe.pale.wasPale && probe.pale.deepened && probe.pale.approachExact && probe.pale.floored
       && probe.pale.hueKept && probe.pale.bounded, probe.pale);

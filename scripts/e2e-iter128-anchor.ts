@@ -156,22 +156,22 @@ async function main() {
 
   // ── 2. THE EMBROIDERY RUNG (source law, toon pass) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("the toon pass declares the 129 law version", tp.includes("TOON_LAW_VERSION = 130"), "v128");
+  expect("the toon pass declares the 131 law version (advanced legitimately: the 135 trim weave's own scope)", tp.includes("TOON_LAW_VERSION = 131"), "v131");
   expect("the rung's dials are named laws (stitch, strength, thread lift, warm push, the trim address)",
     tp.includes("EMBROIDERY_STITCH = 21.0") && tp.includes("EMBROIDERY_STRENGTH = 0.55")
       && tp.includes("EMBROIDERY_THREAD_LIFT = 1.42") && tp.includes("EMBROIDERY_THREAD_WARM = 0.05")
       && tp.includes('TRIM_MAT_MARKS = ("accent",)'), "the dials");
   expect("the thread tone is bounded and hue-faithful (the metallic-thread read)",
     tp.includes("def embroidery_thread_for(rgb):") && tp.includes("out.append(min(1.0, max(0.0, v)))"), "the thread");
-  expect("the weave is CLOTH ONLY (the skin never weaves, the hair never weaves)",
-    tp.includes('if kind == "cloth" and not mat.get("animeos_set_surface"):') && tp.includes("CLOTH ONLY - the skin never weaves"), "the guard");
+  expect("the weave is CLOTH ONLY (the skin never weaves, the hair never weaves; the 135 scope adds its own gate)",
+    tp.includes('if weave and kind == "cloth" and not mat.get("animeos_set_surface"):') && tp.includes("CLOTH ONLY - the skin never weaves"), "the guard");
   expect("the accent trim weaves whole; robe-scale cloth weaves the hem band region (the yuanbian)",
     tp.includes("if not trim:") && tp.includes("hem.inputs[1].default_value = HEM_BAND"), "the mask");
   expect("the stitch field is three CONSTANT steps on the mesh's own Generated coords (never a gradient)",
     tp.includes('est.color_ramp.interpolation = "CONSTANT"')
       && tp.includes('nt.links.new(em_tc.outputs["Generated"], em_sep.inputs[0])'), "the field");
-  expect("the weave rides AFTER the brush (the two statements compose) and inside the band emissions",
-    tp.includes("_brush_wrap(em_lit, rgb, color_in)") && tp.includes("_embroidery_wrap(em, shadow_base)")
+  expect("the weave rides AFTER the brush (the two statements compose) and inside the band emissions (the 135 weave-only framings derive the cooled shadow inline)",
+    tp.includes("_brush_wrap(em_lit, rgb, color_in)") && tp.includes("_embroidery_wrap(em, _emb_shadow)")
       && tp.includes("_embroidery_wrap(em_lit, rgb)"), "the order");
   expect("the rung's evidence names both addresses (trims + hems) and the thread's dials",
     tp.includes('"trims": emb_trims, "hems": emb_hems') && tp.includes('"threadLift": EMBROIDERY_THREAD_LIFT'), "the evidence");
@@ -186,7 +186,7 @@ async function main() {
   }
   const probeOut = r.stdout.slice(r.stdout.indexOf("PROBE_JSON ") + "PROBE_JSON ".length).split("\n")[0];
   const probe = JSON.parse(probeOut);
-  expect("the law version answers 130 from the real module", probe.lawVersion === 130, probe.lawVersion);
+  expect("the law version answers 131 from the real module", probe.lawVersion === 131, probe.lawVersion);
   expect("the jade accent's thread is bounded, lifted and warm-pushed (Lin's canonical trim)",
     probe.jadeThread.bounded && probe.jadeThread.lifted && probe.jadeThread.warmPush, probe.jadeThread);
   expect("the gold accent's thread is bounded, lifted and warm-pushed (Wei's canonical trim)",
