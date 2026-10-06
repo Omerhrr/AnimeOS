@@ -60,7 +60,7 @@ expect("the presence evidence reads the framing's own aim (no duplicate derivati
   /"aim": fr0\.aim,/.test(br) && /"rung": fr0\.rung,/.test(br), "the evidence");
 const tp = read("bridges/blender/toon_pass.py");
 expect("the toon pass holds its 132 version (no bridge change on the look side)",
-  tp.includes("TOON_LAW_VERSION = 131"), "v131");
+  tp.includes("TOON_LAW_VERSION = 132"), "v131");
 const ac = read("bridges/blender/anime_character.py");
 expect("the builder's law version rides untouched",
   ac.includes("ANIME_LAW_VERSION = 125"), "v124");

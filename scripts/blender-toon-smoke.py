@@ -318,7 +318,7 @@ look127 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
 ok("the look names the 128 evidence",
-   look127.get("lawVersion") == 131 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
+   look127.get("lawVersion") == 132 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
    and (look127.get("painterlyRung") or {}).get("painted", 0) > 0, look127.get("painterlyRung"))
 ok("the painterly rung names its swing (the 127 statement at the establishing depth)",
    abs((look127.get("painterlyRung") or {}).get("swing", 0.0) - tp.painterly_swing_for(0.70)) < 1e-6,
@@ -499,10 +499,12 @@ look128 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "tribulation", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
 er128 = look128.get("embroideryRung") or {}
-ok("the look names the 128 evidence (the rung rides at WIDE with both addresses and its dials)",
-   look128.get("lawVersion") == 131 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
-   and er128.get("strength") == tp.EMBROIDERY_STRENGTH and er128.get("threadLift") == tp.EMBROIDERY_THREAD_LIFT
-   and er128.get("stitch") == tp.EMBROIDERY_STITCH, er128)
+ok("the look names the 128 evidence (the rung rides at WIDE with both addresses and its dials - the 136 boldness rung's own dials at the wide end)",
+   look128.get("lawVersion") == 132 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
+   and er128.get("bold") is True and er128.get("strength") == tp.TRIM_WEAVE_BOLD_STRENGTH
+   and er128.get("threadLift") == tp.EMBROIDERY_THREAD_LIFT
+   and er128.get("stitch") == tp.TRIM_WEAVE_BOLD_STITCH
+   and er128.get("boldness") == "the trim's own boldness rung (136)", er128)
 _auth_rob = tp._dye_of(rob128, m.hex_to_rgb)[0]
 _auth_acc = tp._dye_of(acc128, m.hex_to_rgb)[0]
 ok("the anchored robe's weave lives inside the hem band only (a LESS_THAN hem mask gates the wave factor)",
@@ -528,6 +530,11 @@ ok("the MEDIUM canon keeps its brush refusal and the trim weave rides its OWN ru
    look_med.get("painterlyRung") is None and (look_med.get("embroideryRung") or {}).get("scope") == "the trim weave's own rung (135)"
    and (look_med.get("embroideryRung") or {}).get("depth") == 0.0 and _emb_mixes(med128),
    (look_med.get("embroideryRung"), look_med.get("painterlyRung")))
+ok("the MEDIUM's trim keeps the STANDING stitch (the 136 boldness keys the wide end only - the 135 receipt byte-kept)",
+   (look_med.get("embroideryRung") or {}).get("stitch") == tp.EMBROIDERY_STITCH
+   and (look_med.get("embroideryRung") or {}).get("strength") == tp.EMBROIDERY_STRENGTH
+   and (look_med.get("embroideryRung") or {}).get("bold") is False
+   and (look_med.get("embroideryRung") or {}).get("boldness") is None, look_med.get("embroideryRung"))
 
 # ── iteration 131→132: THE DARK MASS READS, NOW A FRAMING RUNG ──
 # The 131 lift rode every framing; the cross-night receipt (129's true

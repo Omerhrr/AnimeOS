@@ -47,7 +47,7 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 
 // ── 1. THE SOURCE LAWS ──
 const tp = read("bridges/blender/toon_pass.py");
-expect("the toon pass declares the 135 law version", tp.includes("TOON_LAW_VERSION = 131"), "v131");
+expect("the toon pass declares the 135 law version", tp.includes("TOON_LAW_VERSION = 132"), "v131");
 expect("THE DARK MASS READS: the dials live (dark wall, bounded lift, neutral glint floor)",
   tp.includes("HAIR_DARK_LUM = 0.05") && tp.includes("HAIR_MASS_LIFT = 3.6")
   && tp.includes("HAIR_MASS_CAP = 0.055") && tp.includes("HAIR_GLINT_FLOOR = 0.02")

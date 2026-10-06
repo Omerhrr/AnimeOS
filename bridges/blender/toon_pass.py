@@ -36,7 +36,7 @@
 import colorsys
 import math
 
-TOON_LAW_VERSION = 131
+TOON_LAW_VERSION = 132
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # ── THE DARK MASS READS (iteration 129→131) ──────────────────
@@ -237,6 +237,35 @@ TRIM_WEAVE_BY_SHOT = {"MEDIUM": 1.0, "MCU": 1.0, "CLOSEUP": 1.0, "ECU": 1.0}
 def trim_weave_for(shot_type):
     """The framing's trim-weave gate (truthy = the weave rides)."""
     return TRIM_WEAVE_BY_SHOT.get(str(shot_type or "MEDIUM").upper(), 0.0)
+
+
+# ── THE TRIM'S OWN BOLDNESS RUNG (iteration 136) ───────────
+# The 135 night's remnant: the framings where the trim owns FEW
+# texels still read it flat - S001's establishing ('lack the
+# intricate embroidery', wardrobe 40) and S006-Wei's pair ('the
+# wardrobe lacks the gold trim of the model sheet'). The eye's own
+# arithmetic: the sash strap at the establishing is ~4px wide - the
+# 21.0 stitch's ~10 alternations alias into one mean tone and the
+# strap reads SMOOTH. The probe (probe-136-boldness, 7 real cuts on
+# the honest payloads) convicted the standing read and picked the
+# winner: at the wide-end framings the stitch COARSENS (21.0 -> 7.0,
+# ~1-2 alternations survive at the strap) and the thread rides
+# farther (0.55 -> 0.75) - the trim reads as WOVEN at the small
+# scale (the W6 A/B: flat straps under the standing law, the thread
+# alternation visible under the bold). The 135 scope's own framings
+# (MEDIUM/MCU/CLOSEUP/ECU - the trim's texels resolve the 21.0
+# stitch) keep the standing values BYTE-EXACT (the 135 receipt: S002
+# wardrobe 50, S003's accusation downgraded). The 126 discipline
+# holds: CONSTANT steps, never a gradient; the 121 hard band edges
+# stand (the weave rides inside the band emissions only).
+TRIM_WEAVE_BOLD_BY_SHOT = {"LOW_ANGLE": 1.0, "WIDE": 1.0, "ESTABLISHING": 1.0}
+TRIM_WEAVE_BOLD_STITCH = 7.0      # the coarse stitch (the strap's ~1-2 bands)
+TRIM_WEAVE_BOLD_STRENGTH = 0.75   # the thread rides farther
+
+
+def trim_weave_bold_for(shot_type):
+    """The framing's trim-boldness gate (truthy = the coarse stitch)."""
+    return TRIM_WEAVE_BOLD_BY_SHOT.get(str(shot_type or "MEDIUM").upper(), 0.0)
 
 
 def embroidery_thread_for(rgb):
@@ -650,7 +679,7 @@ def _palette_mid(mat):
     return members[len(members) // 2]
 
 
-def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=False, weave=False):
+def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=False, weave=False, weave_bold=False):
     """The cel tree. ramp = (lit-band size, shadow floor scale, band
     smoothness) - THE STYLE LAW's framing answer (iteration 121); None
     keeps the earned constants (the turnaround's fixed cams).
@@ -660,7 +689,11 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=Fa
     surface; robe-scale cloth weaves inside the hem band region.
     weave = the trim weave's OWN gate (iteration 135): True rides the
     128 stitch wave without the painterly brush (the brush's wide-end
-    scope stands byte-exact; the weave follows the trim's own texels)."""
+    scope stands byte-exact; the weave follows the trim's own texels).
+    weave_bold = the trim's own BOLDNESS rung (iteration 136): True
+    coarsens the stitch and strengthens the thread at the wide-end
+    framings, where the trim owns few texels (the 135 night's named
+    remnant); the trim's own framings keep the standing stitch."""
     if not isinstance(painterly, (int, float)) or painterly <= 0:
         painterly = 0.0
     # THE DARK MASS READS (iteration 131) - now THE MASS AS A FRAMING
@@ -910,13 +943,19 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=Fa
         em_tc = nt.nodes.new("ShaderNodeTexCoord")
         em_sep = nt.nodes.new("ShaderNodeSeparateXYZ")
         nt.links.new(em_tc.outputs["Generated"], em_sep.inputs[0])
+        # THE BOLDNESS RUNG (136): the wide-end framings coarse the
+        # stitch so the strap's few texels resolve ~1-2 alternations
+        # (the 21.0 stitch aliases into a flat read at ~4px)
+        _stitch = TRIM_WEAVE_BOLD_STITCH if weave_bold else EMBROIDERY_STITCH
         w_ax = nt.nodes.new("ShaderNodeMath")
         w_ax.operation = "MULTIPLY"
-        w_ax.inputs[1].default_value = EMBROIDERY_STITCH
+        w_ax.name = "EmbroideryStitch"
+        w_ax.label = "EmbroideryStitch"
+        w_ax.inputs[1].default_value = _stitch
         nt.links.new(em_sep.outputs["X"], w_ax.inputs[0])
         w_az = nt.nodes.new("ShaderNodeMath")
         w_az.operation = "MULTIPLY"
-        w_az.inputs[1].default_value = EMBROIDERY_STITCH
+        w_az.inputs[1].default_value = _stitch
         nt.links.new(em_sep.outputs["Z"], w_az.inputs[0])
         w_sa = nt.nodes.new("ShaderNodeMath")
         w_sa.operation = "SINE"
@@ -955,7 +994,7 @@ def _cel_tree(mat, rgb, kind, hex_to_rgb=None, ramp=None, painterly=0.0, trim=Fa
         e_k.operation = "MULTIPLY"   # the step x the rung's strength
         e_k.name = "EmbroideryStrength"
         e_k.label = "EmbroideryStrength"
-        e_k.inputs[1].default_value = EMBROIDERY_STRENGTH
+        e_k.inputs[1].default_value = (TRIM_WEAVE_BOLD_STRENGTH if weave_bold else EMBROIDERY_STRENGTH)
         nt.links.new(ered.outputs["Red"], e_k.inputs[0])
         e_f = e_k
         if not trim:
@@ -1097,6 +1136,11 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
     # brush's wide-end framings (the 128 composition) PLUS the table's
     # own framings - the trim's texels answer, not the brush's.
     weave_on = p_depth > 0 or (trim_weave_for(framing_ctx.get("shotType")) > 0 if isinstance(framing_ctx, dict) else False)
+    # THE TRIM'S OWN BOLDNESS RUNG (iteration 136): at the wide-end
+    # framings the trim owns few texels - the stitch coarsens and the
+    # thread strengthens so the weave RESOLVES at the small scale. The
+    # trim's own framings (the 135 table) keep the standing stitch.
+    weave_bold = p_depth > 0 and (trim_weave_bold_for(framing_ctx.get("shotType")) > 0 if isinstance(framing_ctx, dict) else False)
     ink_offset = ink_offset_for(framing_ctx, mode)
     converted, kept = 0, 0
     # THE FIGURE-MATERIAL GRADE EXEMPTION (iteration 126; the 127
@@ -1163,7 +1207,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             # THE SET'S OWN BRUSH: the evidence names how many set
             # surfaces took the world-coords brush at this framing.
             set_brushed_count += 1
-        cel_ev = _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp, painterly=p_depth, trim=is_trim, weave=weave_on)
+        cel_ev = _cel_tree(mat, rgb, kind, hex_to_rgb, ramp=ramp, painterly=p_depth, trim=is_trim, weave=weave_on, weave_bold=weave_bold)
         if isinstance(cel_ev, dict) and cel_ev.get("hairMass"):
             # THE DARK MASS READS, THE RUNG'S EVIDENCE (iteration 132):
             # the lifted rows name the wide-end read exactly as 131
@@ -1350,7 +1394,7 @@ def apply_look(bpy, scn, look, mode, hex_to_rgb, comp_profile=None, framing_ctx=
             "denoised": denoised, "fillsEased": eased, "comp": comp_note,
             "painterlyRung": (None if p_depth <= 0 else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "painted": converted, "swing": round(painterly_swing_for(p_depth), 3), "paleBanked": pale_banked, "setBrush": bool(set_brushed_count), "setSwing": round(painterly_swing_for(p_depth) * PAINTERLY_SET_GAIN, 3)}),
             "hairMass": (({"lifted": len(hair_mass_rows), "lum": hair_mass_rows[0]["lum"], "glint": hair_mass_rows[0]["glint"], "rung": "wide-end"} if hair_mass_rows else {"lifted": 0, "stoodDown": hair_stood_down, "rung": "the canon framings read the true dark (the 129 receipt)"}) if (hair_mass_rows or hair_stood_down) else None),
-            "embroideryRung": (None if not weave_on else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "scope": ("the wide-end brush scope (128)" if p_depth > 0 else "the trim weave's own rung (135)"), "trims": emb_trims, "hems": emb_hems, "strength": EMBROIDERY_STRENGTH, "threadLift": EMBROIDERY_THREAD_LIFT, "stitch": EMBROIDERY_STITCH}),
+            "embroideryRung": (None if not weave_on else {"depth": p_depth, "shotType": str(framing_ctx.get("shotType") or "MEDIUM").upper(), "scope": ("the wide-end brush scope (128)" if p_depth > 0 else "the trim weave's own rung (135)"), "trims": emb_trims, "hems": emb_hems, "strength": (TRIM_WEAVE_BOLD_STRENGTH if weave_bold else EMBROIDERY_STRENGTH), "threadLift": EMBROIDERY_THREAD_LIFT, "stitch": (TRIM_WEAVE_BOLD_STITCH if weave_bold else EMBROIDERY_STITCH), "bold": bool(weave_bold), "boldness": ("the trim's own boldness rung (136)" if weave_bold else None)}),
             "gradeExemption": (None if not _wash else {"lut": _lut, "keep": FIGURE_CHROMA_KEEP, "boosted": exempted, "setExcluded": set_excluded, "paleBanked": pale_banked})}
 
 
