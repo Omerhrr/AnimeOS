@@ -2501,3 +2501,22 @@ Stage Summary:
 - The trim's stitch wave now BOLDENS at exactly the framings where the trim owns few texels; the 135 scope's receipt stands byte-kept; the world never weaves.
 - The pool restart law triggers before the 136 night (TOON 132 is a bridge change).
 - Next: the 136 night (detached-night136.mjs on the 135 pattern; S001's wardrobe 40 and S006's trim cell are the named cells) - if the cells still hold, the accent's own value lift is the named next rung.
+
+---
+Task ID: night-136
+Agent: Super Z (main agent)
+Task: The 136 night - reset -> drain -> rescore at the 136 laws (TOON_LAW_VERSION 132, the trim's own boldness rung). The named cells: S001's establishing wardrobe 40 and S006-Wei's pair trim cell.
+
+Work Log:
+- THE POOL RESTART LAW HONORED: the resident worker (holding the 131 code, born 11:08 during the 135 drain) killed at 14:54 before the first job; the spawner respawned fresh worker 24339 on the 132 code at S001's submission.
+- THE RESET: 6 render jobs deleted (6 clips removed), 6 RENDER identity scores deleted, 6 shots reset to REVIEW (night136-reset.log).
+- THE DRAIN (night136-drain.log): 6/6 REAL Blender clips in ~47 minutes (14:54 -> 15:41) at ANIME 125 / TOON 132 / PRESENCE 108 - S001 101f, S002, S003 67f, S004 96f, S005, S006 86f; no simulator fall, no zombie, no wall expiry; the DSH inspector proposing a revision on every clip (the honest crew read).
+- THE RESCORE (night136-rescore.log, median of 3): scored 6 refused 0. Per-shot: S001 60 [face 40, hair 70, wardrobe 70, palette 80, style 40], S002 40 [face 20, hair 60, wardrobe 50, palette 70, style 40], S003 35 [face 40, hair 50, wardrobe 30, palette 50, style 30], S004 35 [face 50, hair 60, wardrobe 50, palette 10, style 30], S005 35 [face 20, hair 40, wardrobe 50, palette 60, style 30], S006 60 [Lin 65: wardrobe 70; Wei 60: wardrobe 70].
+- DISTRIBUTION: mean 44% / median 38% / p10 35% (the gate's own 7-entry read 47/40/35) vs the 70% floor - BELOW (6/6 under), the publish gate refused verbatim ('An episode does not publish BELOW the floor' - the under cells: calm/close/locked worst at S003, emission worst at S005).
+- THE NAMED CELLS ANSWERED: S001's establishing wardrobe 35 -> 70 (+35) and S006-Wei's pair wardrobe 40 -> 70 (+30) - the boldness rung's both named cells moved; the judge's notes carry the acquittal (S001 'correct green robe and has a topknot' - no embroidery accusation; Wei 'dark robe with light trim and long hair match the silhouette' - the trim-reads-present sentence). S001 35 -> 60, S006 40 -> 60.
+- THE EYE-READ (eye136/night, the night's own frames): S001's 8x zoom shows the sash X present with tonal variation across the straps (vs the 135's convicted smooth strap); S006-Lin's 8x shows the crossed straps WOVEN (lighter-teal thread segments against the deeper dye at the 640x360 pair scale); S006-Wei's light trim present at the collar/chest band (angled away kneeling - the honest note); the storm grade still mutes the gold toward pale-jade (the 135 caveat; S001's palette cell did not name it: 80).
+- THE VARIANCE WALL STILL THE CEILING: S003 65 -> 35 while S001 35 -> 60 on the same craft; S004's palette 10 (the dye-class drift receipt stands); Wei's dye drifted (the judge's palette cell named it at the pair); the style sweep 30-50; S002/S005's face 20 (the 134 texel budget ceiling).
+- RECORD: README item 43 appended; detached-night136.mjs lands.
+
+Stage Summary:
+- The 136 night is on the record: the boldness rung's both named cells MOVED (+35/+30), the distribution held (44/38/35), the gate refused verbatim, the frontier named (the dye-class drift as a build-path question / the style statement as a paint question).
