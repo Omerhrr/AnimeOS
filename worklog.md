@@ -2520,3 +2520,22 @@ Work Log:
 
 Stage Summary:
 - The 136 night is on the record: the boldness rung's both named cells MOVED (+35/+30), the distribution held (44/38/35), the gate refused verbatim, the frontier named (the dye-class drift as a build-path question / the style statement as a paint question).
+
+---
+Task ID: iteration-137
+Agent: Super Z (main agent)
+Task: Iteration 137 - the palette drift receipt. The sandbox wiped mid-iteration; the restore ran the standing laws and healed the drift structurally; the gates landed the receipt.
+
+Work Log:
+- THE WIPE: the whole filesystem reset (the repo, the DB, the Blender install, the untracked sheet art gone; the remote carried everything through 462d9c4 - the push law's payoff).
+- THE REBUILD: repo cloned at remote HEAD; npm install; Blender 5.2.2 LTS re-provisioned (ANIMEOS_BLENDER_BIN for the pool); the schema re-pushed to file:/home/z/my-project/db/custom.db; the director re-registered (OWNER); GET /api/projects fired the auto-seed - the production returned byte-faithful (the scene, the six shots with the standing framings, the five cast rows).
+- THE RESTORE (night122-restore.ts): four fresh sheets anchored (image-gen), the committed r2 designs wired byte-exact (Lin 517 / Wei 518 chars), the sheet DNA read for the whole cast.
+- THE 130 GATE (night130-reanchor.ts): Lin's first roll blue-out-of-teal (#384c74) -> regen landed #294845 IN class; Wei's first roll hue-out (#35253a) -> regen landed #282627 IN the design's value class with the GOLD accent (#c4a35a) surviving; Chen Hao regen'd in; Elder Han honest receipt (in class, no regen).
+- THE LEDGER (probe-137-dyeledger.ts): the cast DNA computed exactly as the engine assembles it - the sheet read wins the merge, and the 128 DESIGN ANCHOR STANDS DOWN (no anchored rows): Wei's merged robe #3d3d3d sits IN the design's #3a2230 value class. The pre-wipe contradiction (sheet dark blue vs render purple - the anchor firing while the sheet read sat OUT of class) is structurally healed.
+- THE EYE-READ: the fresh Wei sheet is the strongest anchor yet (dark robe + rich gold embroidery + teal inner + gold-belted topknot, the 魔尊 calligraphy); Lin's final sheet is the clean jade hanfu (honest note: no gold sash in the new art - the accent rides teal, the sheet is the law).
+- THE GATES: e2e-iter137-restore ALL GREEN (28 asserts - the source pins, the DB ledger, the unit truth, the REAL worker_run node truth: Wei RobeMat #3d3d3d / AccentMat #c4a35a / HairMat #1a1a1a; Lin RobeMat #2b5246 / AccentMat #4d7a7a); the cascade iter117..136 ALL GREEN; blender-toon/anime/camera smokes ALL GREEN on the fresh Blender; src tsc 0 errors.
+- THE OPS LESSON (instrumented, not yet a law): a cold pool's first-worker ACK window can overflow a PREVIEW to the simulator (the S006 smoke render fell through at the 65s span while the worker rendered fine - the 111 lesson re-learned); the night drains warm.
+
+Stage Summary:
+- Iteration 137 landed as the restore receipt: the standing laws (auto-seed + 122 + 130) healed the palette drift structurally - the sheet, the anchor and the build now agree; no bridge law moved.
+- Next: the 137 night (warm-pool drain) - the judge's palette cells re-read against the healed anchors: S004's palette 10 and the pair shot's dye cell are the named cells.
