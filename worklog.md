@@ -2482,3 +2482,22 @@ Work Log:
 
 Stage Summary:
 - The 135 night is on the record: the weave's cells moved, the median +3, the gate refused verbatim, the frontier named (the trim's boldness rung / the style statement's rung).
+
+---
+Task ID: iteration-136
+Agent: Super Z (main agent)
+Task: Iteration 136 - THE TRIM'S OWN BOLDNESS RUNG (TOON_LAW_VERSION 131 -> 132). The 135 night's remnant: the framings where the trim owns FEW texels still read it flat (S001's establishing wardrobe 40, S006-Wei's pair 'lacks the gold trim') - the 21.0 stitch's ~10 alternations alias into one mean tone at a ~4px strap.
+
+Work Log:
+- THE EYE BEFORE THE PEN: the night's own S001 establishing frame (1024x576) + S006 pair frame (640x360) pulled from public/renders; the 8x sash zoom convicts - the sash X a smooth pale strap ~4px wide, zero stitch modulation; the cuff bands smooth.
+- THE PROBE (probe-136-boldness.py, detached via detached-probe136.mjs, 7/7 landed in /home/z/my-project/inspect/probe136): the A-series on S001's REAL establishing record at the REAL 1024 cap (A1 standing / B1 stitch 10.5 / B2 stitch 7.0 / B3 10.5+0.75 / B4 7.0+0.75) + the W6 A/B on S006's REAL pair payload (Lin byte-exact; Wei's committed 518-char spec + his sheet-DNA palette #1e2a3a/#c5a059 read from Character.sheetDna - the drain's own DNA source). Honest catches: the first S001 crop boxes were derived from the night frame and missed the probe frame's figure (re-derived on the probe frames); the first W6 cut's patch key missed and rode the standing law - relabeled W6-s006-stand (it IS the pair control) and re-run as W6-s006-bold with the fixed key.
+- THE EYE-READ: A1 flat smooth gold straps (the standing receipt convicted); stitch 7.0 carries ~1-2 alternations at the strap (10.5 shows less than a full one); the W6 A/B is the sentence - Lin's sash X and Wei's front strap read WOVEN under the bold (lighter-gold thread segments against the deeper dye, cuff bands two-tone, hem textured) vs flat under the standing law. THE WINNER: stitch 7.0 + strength 0.75 (the value lift stays shelved as the next rung).
+- THE LAW (toon_pass.py): TOON_LAW_VERSION 132; TRIM_WEAVE_BOLD_BY_SHOT = {LOW_ANGLE/WIDE/ESTABLISHING: 1.0} keys the brush's own framings (where the trim is small); weave_bold = p_depth > 0 AND the table; _cel_tree carries weave_bold; the stitch node coarsens (21.0 -> 7.0) and the strength node rides farther (0.55 -> 0.75) at the wide end; the stitch node now carries its own name (EmbroideryStitch - the node truth's address); the evidence names bold + 'the trim's own boldness rung (136)' with the ACTIVE dials; the 135 scope's framings keep 21.0/0.55 BYTE-EXACT; the 126 constant steps and the 121 band edges stand.
+- THE PINS: e2e-iter136-boldness ALL GREEN (38 asserts: source pins, the gate's unit truth, the REAL worker_run node truth at ESTABLISHING/WIDE/MEDIUM/CLOSEUP - the stitch node 7.0/0.75 at the wide end vs 21.0/0.55 at the trim's own framings, the 135 acquittal holders standing; the one honest fix: the MEDIUM strength node reads float32 0.550000011920929 - the assert went tolerance-honest).
+- THE CASCADE: e2e-iter117 through 135 ALL GREEN (the version pins advanced legitimately to 132 in 121/125/126/127/128/129/130/131/132/133/134/135; 121's structural _cel_tree signature pin updated to the moved shape). SMOKES: blender-toon (the WIDE assert reads the BOLD dials + the new MEDIUM standing-stitch assert), blender-anime, blender-camera - ALL GREEN. GATE: src tsc 0 errors (zero new - the baseline's own out-of-scope lines stand, verified against the stash baseline).
+- RECORD: README item 42 appended.
+
+Stage Summary:
+- The trim's stitch wave now BOLDENS at exactly the framings where the trim owns few texels; the 135 scope's receipt stands byte-kept; the world never weaves.
+- The pool restart law triggers before the 136 night (TOON 132 is a bridge change).
+- Next: the 136 night (detached-night136.mjs on the 135 pattern; S001's wardrobe 40 and S006's trim cell are the named cells) - if the cells still hold, the accent's own value lift is the named next rung.
