@@ -2463,3 +2463,22 @@ Stage Summary:
 - The trim's stitch wave now rides the four trim-texel framings WITHOUT the brush; the wide-end composition stands byte-exact; the world never weaves on any staging path.
 - The tag's side doors are closed for good (the sweep at the end of set staging).
 - Next: the 135 night (detached-night135.mjs on the 133/134 pattern; the pool restarts per the TOON 131 bridge change) - S003's wardrobe 20 and S002's wardrobe 40 are the named cells the night re-reads.
+
+---
+Task ID: night-135
+Agent: Super Z (main agent)
+Task: The 135 night - reset, drain, rescore, eye-read, record.
+
+Work Log:
+- POOL RESTART LAW: the resident worker (old code) killed; the spawner respawned fresh on the 131 code at the first job.
+- RESET: 6 jobs deleted (6 clips removed), 6 RENDER scores deleted, 6 shots to REVIEW.
+- DRAIN CLEAN: 6/6 REAL Blender clips in ~45 min at ANIME 125 / TOON 131 / PRESENCE 108; no simulator fall, no zombie, no wall expiry; the DSH inspector proposed a revision on all 6.
+- RESCORE median-of-3: scored 6 refused 0; mean 44 / median 38 / p10 35 (gate read 46/40/35) vs floor 70 - BELOW (6/6 under), refused verbatim.
+- THE WEAVE'S CELLS: S002 wardrobe 40 -> 50 (+10), S003's wardrobe 'consistent with the sheet' at 50 (the 128-era closeup accusation downgraded), S006-Lin wardrobe 70 'aligns'; S003 35 -> 65 (face 80), S002 35 -> 40.
+- EYE-READ: the night's S002 waist-up shows the hem wave texture reading across the robe panels, crossed collar present; the gold sash reads pale-jade under the storm grade (the judge's palette cell did not name it).
+- THE REMNANT: S001's establishing + S006-Wei's pair still read the trim flat where the trim owns few texels - the named next answer (the trim's boldness rung or the accent value lift).
+- THE WALL: S001 40 -> 35 while S003 35 -> 65 (the swings), style-20 sweep continues, S002 face 20 held (the texel ceiling), S004 palette 30 (the dye-class drift receipt).
+- RECORD: README item 41's night paragraph + both worklogs. Commit + push next.
+
+Stage Summary:
+- The 135 night is on the record: the weave's cells moved, the median +3, the gate refused verbatim, the frontier named (the trim's boldness rung / the style statement's rung).
