@@ -2539,3 +2539,23 @@ Work Log:
 Stage Summary:
 - Iteration 137 landed as the restore receipt: the standing laws (auto-seed + 122 + 130) healed the palette drift structurally - the sheet, the anchor and the build now agree; no bridge law moved.
 - Next: the 137 night (warm-pool drain) - the judge's palette cells re-read against the healed anchors: S004's palette 10 and the pair shot's dye cell are the named cells.
+
+---
+Task ID: night-137
+Agent: Super Z (main agent)
+Task: The 137 night - reset -> drain -> rescore at the healed anchors. The named cells: S004's palette 10 and the pair shot's dye cell.
+
+Work Log:
+- THE WARM-POOL LAW HONORED: the pool pre-warmed with a direct 25s job (the ops lesson applied); no bridge law moved, so no pool restart; the drain's first ACK landed inside the 20s tick - no simulator fall.
+- THE RESET: 1 stale render job deleted, 0 clips, 6 shots -> REVIEW.
+- THE DRAIN (night137-drain.log): 6/6 REAL Blender clips in ~47 minutes (21:06 -> 21:53) at ANIME 125 / TOON 132 / PRESENCE 108; the DSH inspector proposing a revision on every clip (the honest crew read); no simulator fall, no zombie.
+- THE RESCORE (night137-rescore.log, median of 3): S001 60 [wardrobe 70, palette 80], S002 65 [face 60, style 60], S003 65 [face 70, palette 80; a wardrobe-0/weapon-0 sample named honestly - the median protected], S004 35 [face 20, PALETTE 50, style 30], S005 75 [face 70, hair 80, wardrobe 80, palette 70, style 70], S006 65 [Lin 65 / Wei 75: face 80, 'the dark robe with gold/yellow trim... matching the canonical color scheme'].
+- DISTRIBUTION: mean 61% / median 65% / p10 35% (the gate's 7-entry read 63/65/35) vs the 70% floor - BELOW (5/6 under), the gate refused verbatim. THE MOVE vs 136: mean +17, median +27 - the record's biggest single-night jump.
+- THE DRIFT'S CELL ANSWERED: S004's palette 10 -> 50; the dye accusation RETIRED in the judge's own words at the pair (Wei 75, face 80).
+- THE EYE-READ (eye137, the night's own frames): S004's 7x - the gold sash X with modulation, the cuff trim, the topknot pin; the robe plum under the storm's purple wash (the mute is the lighting's); S006's pair - Lin's teal + pale sash, Wei's maroon + the gold waist band.
+- THE REMNANTS: S004's face 20 (the 134 texel ceiling's last loud cell) holds the p10 at 35; S003's framing-contract sample; the style sweep 30-70 (moving up).
+- RECORD: README item 45 + both worklogs; detached-night137.mjs lands.
+
+Stage Summary:
+- Night 137 on the record: the heal's verdict - median 65 (+27), the drift's cell +40, the dye accusation retired; the gate still refuses (5/6 under the 70 floor) with S004's face 20 the floor cell.
+- Next: the 138 iteration - the face texel ceiling's framing rung or the style statement rung.
