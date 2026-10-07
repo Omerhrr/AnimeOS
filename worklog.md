@@ -2657,3 +2657,25 @@ Stage Summary:
 - The 140 design is DATA + ONE paint row: the next night renders Lin's r3 and the 133 look with no further bridge change.
 - README item 50 carries the record; the commit lands the law, the gates, the probe harness, the cascade and the night driver.
 - The 140 night answers next: S003's face-gender cell re-read where the male statement rides, S004's style cell under the 133 look.
+
+---
+Task ID: night-140
+Agent: Super Z (main)
+Task: AnimeOS Iteration 140 night - reset | drain | rescore with Lin's r3 male ink + the 133 WIDE paint row riding; both named cells' verdict
+
+Work Log:
+- Pre-flight: HEAD 2f63d1a = origin/main (pushed, verified); Blender 5.2.2 LTS present; dev server up; DB at /home/z/my-project/db/custom.db
+- Warm-pool law FIRST (no resident survived the 133 bridge change): PHASE=a ALL GREEN (A1-A7, the A7 pin reading the registry's living truth) - the fresh boot paid before the drain's first submit
+- OPS receipt: the drain's first launch died at login 401 - the sandbox rebuild's auto-seed restores the CAST but never the OWNER account (ensureSeed creates characters, not users); repaired through the app's own register door (first account = OWNER, no DB surgery), login 200, relaunch clean
+- reset: 1 leftover render job deleted, 6 shots -> REVIEW, 0 active jobs verified
+- drain: 6/6 REAL Blender clips in ~57 min at ANIME 125 / TOON 133 / PRESENCE 108; DSH revision on every clip; no fall/zombie/expiry; S001 ACK inside the first tick on the warm pool
+- Clip receipts: S001 1024x576 101f / S002 640x360 120f / S003 640x360 67f / S004 1024x576 96f / S005 640x360 101f / S006 1024x576 86f (the wide rung law holds)
+- THE MALE STATEMENT IN THE PIXELS (eye140/night): S003 closeup 4x - heavy ink bars low over compact apertures (the 2.0 ceiling), round iris + pupil + catch-light with white sclera (the shojo glossy iris gone), angular jaw, nose line + mouth - a stern young man; the twice-named face-gender cell ANSWERED in the frame
+- THE PAINT STATEMENT IN THE PIXELS: S004 WIDE reads poster-crisp (hard band edges, flat fills, composed 2D background); the judge's accusation MUTATED 'simplified 3D render' -> 'a simple vector look' - the 3D complaint RETIRED; S004 face 20 -> 30, first movement in four nights
+- rescore median-of-3: S001 35 / S002 35 / S003 35 / S004 35 [face 30] / S005 35 / S006 50; mean 38 / median 35 / p10 35 vs floor 70 - BELOW (6/6 under); publish refused verbatim
+- The honest ledger: the board fell 13 while both named cells moved in the judge's own words - the single-night read stays judge-variance-dominated; the eye names the S003 forehead-highlight ellipse as a concrete round artifact the 'round' complaint may point at; teal-vs-black dye cell stands unowned
+- README item 51 + both worklogs
+
+Stage Summary:
+- Both statements rode and both landed - the male ink and the flat WIDE paint are IN the frames; the 3D accusation is retired and S004's face moved for the first time in four nights
+- The score did not follow the pixels: the wall is the judge's single-night sweep; the frontier for 141 is probe-first on the highlight ellipse + the dye cell
