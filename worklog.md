@@ -2619,3 +2619,23 @@ Stage Summary:
 - The 138 frontier's first paint answer is on main: the r3 statement rides where the identity lives, the tight framings and Lin's receipts untouched by construction
 - detached-night139.mjs is staged; the 139 night re-reads S004's face/style cells under the r3 statement - if the chibi accusation retires, the p10's floor cell finally breaks
 - Standing ops note: the smokes need BLENDER + DATABASE_URL exported (the runner() fallback to plain python reads empty evidence - the env lesson now in the record)
+
+---
+Task ID: night-139
+Agent: Super Z (main)
+Task: AnimeOS Iteration 139 night - reset | drain | rescore with the r3 statement riding; the named cell's verdict
+
+Work Log:
+- Pre-flight: HEAD b48eff3, the resident warm (served 5, 2/2 alive) and CURRENT (no bridge change - the design is DATA, the pool restart law did not trigger)
+- reset: 6 jobs + 6 RENDER scores deleted, 6 shots -> REVIEW
+- drain: 6/6 REAL Blender clips in ~57 min at ANIME 125 / TOON 132 / PRESENCE 108; the r3 statement riding every Wei build; DSH revision on every clip (the honest crew read); no fall/zombie/expiry
+- THE R3 LANDED (eye139/night): S004's 8x face carries the probe's B4 composition in production - smaller eye-to-face ratio, compact head, mature read
+- THE NAMED CELL HELD: S004 face 20, the judge's 'chibi' sentence again - with the r3 in the frame the accusation is the LOOK's language, not the build's proportions; the proportion lever is spent (the dials at their clamp floors)
+- Sibling receipt: S006-Lin's note 'a simplified 3D render rather than the 2D illustration of the sheet'
+- The variance wall's loudest sweep: S003 75 -> 35 (a NEW cell: 'wrong gender/age features, missing mole'), S006-Lin face 90 -> 70, S004 hair 60 -> 20; S001 60 -> 65 (+5)
+- rescore median-of-3: mean 51 / median 50 / p10 35 vs the 70 floor - BELOW (5/6 under; S006 70 the one clear); publish refused verbatim
+- README item 49 + both worklogs; commit + push + remote HEAD verified
+
+Stage Summary:
+- The three-night hold at face 20 across three different builds is itself the receipt: no single lever moves the cell; the style statement's PAINT rung is the named frontier
+- The 140 iteration: the look pass's own statement at the wide-end framings, or S003's mole cell
