@@ -2579,3 +2579,25 @@ Stage Summary:
 - Iteration 138 lands: THE WIDE RUNG. The 1024 rung now feeds the judge real texels at BOTH WIDE shots; the p10's floor cell (S004's face) has its named ceiling answered by the probe's own pixels
 - detached-night138.mjs is ready for the 138 night (reset | drain | rescore); the pool-restart law is satisfied by construction (fresh sandbox, no resident worker)
 - The 139 frontier after the 138 night: if S004's face moves, the style statement's own rung is the named remnant
+
+---
+Task ID: night-138
+Agent: Super Z (main)
+Task: AnimeOS Iteration 138 night - reset | drain | rescore at the wide rung, the 138 law's own verdict on S004's face cell
+
+Work Log:
+- Pre-flight: repo at a08172f (the 138 law commit), work tree clean except the untracked probe138-cast.json (ops artifact, stays out); dev server up, DB at the standing path, NO resident pool worker alive (the pool restart law satisfied by construction - the first spawn loads the 138 code fresh)
+- Warm-pool law honored BEFORE the drain (the 137 lesson): e2e-iter103 phase a paid the resident+pool boot on a lab render (A1-A6 green); the A7 FAIL is a stale pin, not a pool failure (registry 90 -> 91 tools after a later iteration; noted for a pin advance)
+- reset: 1 stale job deleted, 0 RENDER scores, 6 shots -> REVIEW
+- drain: 6/6 REAL Blender clips in ~57 minutes at ANIME 125 / TOON 132 / PRESENCE 108; S001 ACK'd inside the 20s tick, BLENDER_LOCAL from the 21s tick, no simulator fall / zombie / wall expiry; DSH revision proposed on every clip (the honest crew read)
+- The wide rung's receipt on disk: S001/S004/S006 at 1024x576 (ESTABLISHING + both WIDEs), S002/S003/S005 at 640x360 - the 138 ladder riding as lawed
+- rescore median-of-3: scored 6 refused 0; mean 58 / median 63 / p10 35 vs the 70 floor - BELOW (4/6 under; S003 75, S006 75 the clears); publish gate refused verbatim
+- The named cell: S004's face HELD 20 at the wide rung; the accusation mutated to a style read ('simplified chibi aesthetic', style 15); S004's palette held 70
+- Eye-read (eye138/night, the night's own frames): S004's 8x face carries the DRAWN face (iris + catch-light, brow, nose, mouth, fringe, gold pin) - the 137-era smear retired; the chibi read is a proportion read; S006-Lin face 90 the night's best (iris highlight, brow, nose, mouth at 12x); S006-Wei 75 with maroon + gold collar trim under the wash
+- Moves: S003 65 -> 75, S006 65 -> 75, S001 60 held (face 50 / hair 40 swing), S005 75 -> 65, S002 65 -> 40 (face-gender cell named), S004 50 -> 35; mean 61 -> 58, median 65 -> 63 (held within variance), p10 35 held
+- README item 47 appended; this worklog + the outer worklog appended; commit + push + remote HEAD verified
+
+Stage Summary:
+- The 138 night's verdict is on the record: the texels were NECESSARY (the smear is retired, the faces are drawn) but NOT SUFFICIENT (the judge's face read at the wide is now a style/proportion read)
+- The frontier hands to the style statement's own rung: the 'chibi' proportion read at the small wide figure + S002's face-gender swing are the paint questions
+- The 103 A7 pin is stale (90 -> 91 tools) - advance it in a future iteration
