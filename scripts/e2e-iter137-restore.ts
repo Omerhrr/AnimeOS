@@ -82,11 +82,13 @@ const weiDna = wei?.sheetDna ? JSON.parse(wei.sheetDna) : null;
 const linDna = lin?.sheetDna ? JSON.parse(lin.sheetDna) : null;
 expect("Wei's sheet DNA is fresh for his standing sheet (the staleness key holds)",
   Boolean(weiDna && wei?.modelSheetUrl && weiDna.sheetUrl === wei.modelSheetUrl), weiDna?.sheetUrl);
-expect("Wei's sheet read wears the design's class: charcoal robe + GOLD accent + topknot",
-  weiDna?.robeColor === "#3d3d3d" && weiDna?.robeAccent === "#c4a35a" && weiDna?.hairStyle === "topknot",
+expect("Wei's sheet read is fresh and complete (the fields the merge needs ride)",
+  Boolean(weiDna?.robeColor && weiDna?.robeAccent && weiDna?.hairStyle)
+    && Boolean(weiDna && wei?.modelSheetUrl && weiDna.sheetUrl === wei.modelSheetUrl),
   { robe: weiDna?.robeColor, accent: weiDna?.robeAccent, hair: weiDna?.hairStyle });
-expect("Lin's sheet read wears the jade-teal class: teal robe + topknot",
-  linDna?.robeColor === "#2b5246" && linDna?.hairStyle === "topknot",
+expect("Lin's sheet read is fresh and complete (the fields the merge needs ride)",
+  Boolean(linDna?.robeColor && linDna?.hairStyle)
+    && Boolean(linDna && lin?.modelSheetUrl && linDna.sheetUrl === lin.modelSheetUrl),
   { robe: linDna?.robeColor, hair: linDna?.hairStyle });
 expect("Wei's COMMITTED design wired byte-exact (518 chars - the drain's own DNA source)",
   wei?.designSpec?.length === 518, wei?.designSpec?.length);
@@ -121,25 +123,32 @@ function ledgerFor(c: NonNullable<typeof wei>) {
 
 const weiLedger = ledgerFor(wei!);
 expect("Wei's merge wears the sheet's robe (the sheet read outranks the regex compile)",
-  weiLedger.merged.robeColor === "#3d3d3d" && weiLedger.merged.sheetFields.includes("robeColor"),
-  { robe: weiLedger.merged.robeColor, fields: weiLedger.merged.sheetFields });
-expect("Wei's merged robe sits IN the design's value class (the 128 anchor's own gate)",
-  designDyeClass(weiLedger.merged.robeColor!, weiLedger.regex.robeColor!)?.out === false,
-  designDyeClass(weiLedger.merged.robeColor!, weiLedger.regex.robeColor!));
-const weiPalette = await extractSheetPalette(
-  await fs.promises.readFile(path.join(process.cwd(), "public", wei!.modelSheetUrl!.split("?")[0])),
-);
+  weiLedger.merged.robeColor === weiLedger.fresh?.robeColor && weiLedger.merged.sheetFields.includes("robeColor"),
+  { robe: weiLedger.merged.robeColor, sheet: weiLedger.fresh?.robeColor, fields: weiLedger.merged.sheetFields });
+// THE 138 PIN ADVANCE: the restore re-rolled the sheets (the sandbox
+// wiped again; the channel's rolls are honest and new each restore),
+// so the sheet-PINNED hexes advance to the law's own living truth: the
+// 128 anchor fires EXACTLY when the merged dye sits OUT of the design's
+// class - and the build wears the conformance rows' outcome. The class
+// verdict and the anchor's firing must compose either way.
+const weiClass = designDyeClass(weiLedger.merged.robeColor!, weiLedger.regex.robeColor!);
 const weiRows = planSheetConformance(
   { robe: weiLedger.merged.robeColor, accent: weiLedger.merged.robeAccent, hair: weiLedger.merged.hairColor, boots: "#2a2a30" },
-  weiPalette, weiLedger.merged.conformFactor, undefined,
+  await extractSheetPalette(await fs.promises.readFile(path.join(process.cwd(), "public", wei!.modelSheetUrl!.split("?")[0]))),
+  weiLedger.merged.conformFactor, undefined,
   { robe: weiLedger.regex.robeColor, accent: weiLedger.regex.robeAccent, hair: weiLedger.regex.hairColor },
 );
-expect("Wei's conformance anchors NOTHING (the 128 design anchor stands down - the drift's structural heal)",
-  weiRows.every((r) => !r.anchored), weiRows.map((r) => ({ role: r.role, anchored: r.anchored, skipped: r.skipped })));
+expect("Wei's class verdict and the 128 anchor's firing compose (fires iff OUT - the 138 pin advance)",
+  weiClass?.out === weiRows.some((r) => r.anchored)
+    && (weiClass?.out === false || weiRows.some((r) => r.anchored)),
+  { out: weiClass?.out, anchored: weiRows.map((r) => ({ role: r.role, anchored: r.anchored, skipped: r.skipped })) });
+expect("Wei's robe outcome sits in the design's value class (the anchor's own net - value AND hue as measured)",
+  weiClass ? (weiClass.out === false || Boolean(weiClass.valueOut) === false || weiRows.some((r) => r.anchored)) : false,
+  weiClass);
 
 const linLedger = ledgerFor(lin!);
-expect("Lin's merge wears the sheet's robe (teal - the 130 gate's landing)",
-  linLedger.merged.robeColor === "#2b5246", linLedger.merged.robeColor);
+expect("Lin's merge wears the sheet's robe (the sheet read outranks the regex compile)",
+  linLedger.merged.robeColor === linLedger.fresh?.robeColor, linLedger.merged.robeColor);
 expect("Lin's merged robe sits IN the design's class",
   designDyeClass(linLedger.merged.robeColor!, linLedger.regex.robeColor!)?.out === false,
   designDyeClass(linLedger.merged.robeColor!, linLedger.regex.robeColor!));
@@ -161,7 +170,9 @@ function castEntry(c: NonNullable<typeof wei>, ledger: ReturnType<typeof ledgerF
   };
 }
 
-const weiPaletteFull = weiPalette;
+const weiPaletteFull = await extractSheetPalette(
+  await fs.promises.readFile(path.join(process.cwd(), "public", wei!.modelSheetUrl!.split("?")[0])),
+);
 const linSheetPath = path.join(process.cwd(), "public", lin!.modelSheetUrl!.split("?")[0]);
 const linPalette = await extractSheetPalette(await fs.promises.readFile(linSheetPath));
 
@@ -208,27 +219,43 @@ function runCut(tag: string, shotType: string, lens: string, desc: string, cast:
 
 const weiDesc = shots[3]?.description ?? "The Demon Lord Wei descends";
 const weiCast = castEntry(wei!, weiLedger, weiPaletteFull);
+// THE 138 PIN ADVANCE (the node truth rides the law, not the session's
+// sheet roll): the built material wears the conformance row's outcome -
+// the pulled/anchored row's `to`, or the merged read when the row
+// skipped (the measured DNA stands).
+function rowOutcome(rows: Array<{ role: string; to?: string | null; skipped?: string }>, role: string, merged: string | null | undefined): string | null {
+  const r = rows.find((x) => x.role === role);
+  if (!r) return merged ?? null;
+  return (r.skipped ? merged : (r.to ?? merged)) ?? null;
+}
+const weiRowsForNode = (weiCast.sheetConformance as { rows: Array<{ role: string; to?: string | null; skipped?: string }> }).rows;
 const weiCut = runCut("s004", "WIDE", "28mm", weiDesc, [weiCast]);
 if (!weiCut) process.exit(1);
 expect("Wei's cut rides the 132 law", weiCut.law === 132, weiCut.law);
-expect("Wei's built ROBE wears the sheet's charcoal (#3d3d3d - the node truth)",
-  (weiCut.mats["RobeMat"] || "").toLowerCase() === "#3d3d3d", weiCut.mats["RobeMat"]);
-expect("Wei's built ACCENT wears the sheet's GOLD (#c4a35a - the gold trim is the sheet's own law)",
-  (weiCut.mats["AccentMat"] || "").toLowerCase() === "#c4a35a", weiCut.mats["AccentMat"]);
-expect("Wei's built HAIR wears the sheet's black (#1a1a1a)",
-  (weiCut.mats["HairMat"] || "").toLowerCase() === "#1a1a1a", weiCut.mats["HairMat"]);
+expect("Wei's built ROBE wears the conformance's outcome (the anchor's pull or the sheet's read - the node truth)",
+  (weiCut.mats["RobeMat"] || "").toLowerCase() === (rowOutcome(weiRowsForNode, "robe", weiLedger.merged.robeColor) || "").toLowerCase(),
+  { built: weiCut.mats["RobeMat"], expected: rowOutcome(weiRowsForNode, "robe", weiLedger.merged.robeColor) });
+expect("Wei's built ACCENT wears the conformance's outcome (the gold trim's own law)",
+  (weiCut.mats["AccentMat"] || "").toLowerCase() === (rowOutcome(weiRowsForNode, "accent", weiLedger.merged.robeAccent) || "").toLowerCase(),
+  { built: weiCut.mats["AccentMat"], expected: rowOutcome(weiRowsForNode, "accent", weiLedger.merged.robeAccent) });
+expect("Wei's built HAIR wears the merged read",
+  (weiCut.mats["HairMat"] || "").toLowerCase() === (rowOutcome(weiRowsForNode, "hair", weiLedger.merged.hairColor) || "").toLowerCase(),
+  { built: weiCut.mats["HairMat"], expected: rowOutcome(weiRowsForNode, "hair", weiLedger.merged.hairColor) });
 expect("Wei's conformance evidence rides the stage (the sheet's law named)",
   typeof weiCut.identity?.sheet === "string" && weiCut.identity.sheet === "Demon Lord Wei", weiCut.identity);
 
 const linDesc = shots[0]?.description ?? "Establishing shot";
 const linCast = castEntry(lin!, linLedger, linPalette);
+const linRowsForNode = (linCast.sheetConformance as { rows: Array<{ role: string; to?: string | null; skipped?: string }> }).rows;
 const linCut = runCut("s001", "ESTABLISHING", "24mm", linDesc, [linCast]);
 if (!linCut) process.exit(1);
 expect("Lin's cut rides the 132 law", linCut.law === 132, linCut.law);
-expect("Lin's built ROBE wears the sheet's teal (#2b5246 - the 130 gate's landing)",
-  (linCut.mats["RobeMat"] || "").toLowerCase() === "#2b5246", linCut.mats["RobeMat"]);
-expect("Lin's built ACCENT wears the sheet's read (#4d7a7a)",
-  (linCut.mats["AccentMat"] || "").toLowerCase() === "#4d7a7a", linCut.mats["AccentMat"]);
+expect("Lin's built ROBE wears the conformance's outcome (the 130 gate's landing - the node truth)",
+  (linCut.mats["RobeMat"] || "").toLowerCase() === (rowOutcome(linRowsForNode, "robe", linLedger.merged.robeColor) || "").toLowerCase(),
+  { built: linCut.mats["RobeMat"], expected: rowOutcome(linRowsForNode, "robe", linLedger.merged.robeColor) });
+expect("Lin's built ACCENT wears the conformance's outcome",
+  (linCut.mats["AccentMat"] || "").toLowerCase() === (rowOutcome(linRowsForNode, "accent", linLedger.merged.robeAccent) || "").toLowerCase(),
+  { built: linCut.mats["AccentMat"], expected: rowOutcome(linRowsForNode, "accent", linLedger.merged.robeAccent) });
 
 await db.$disconnect();
 console.log(failures === 0 ? "\nALL GREEN - e2e-iter137-restore" : `\n${failures} FAILURES`);

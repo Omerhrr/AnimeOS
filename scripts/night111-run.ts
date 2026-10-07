@@ -27,7 +27,10 @@ const PASSWORD = "anchored2026";
 const POOL = 1; // the 4GB host's honest wall: the three-way contention
 // OOM-killed a worker mid-night - solo renders only (the iteration 106
 // lesson, re-learned live: the pool admits ONE designed build at a time)
-const OVERALL_TIMEOUT_MS = 55 * 60 * 1000; // solo renders: ~6 min each x 5 + DSH
+const OVERALL_TIMEOUT_MS = 90 * 60 * 1000; // solo renders: ~6 min each x 5 + DSH;
+// the 138 wide rung moves the two WIDE clips to the 1024 rung (~2.56x pixel
+// cost each) - the wall rises so the drain never expires mid-night (the
+// ledger reads the cost honestly per frame at the render itself)
 const POLL_MS = 20_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -4046,11 +4046,17 @@ COMP_LUTS = {
     "neutral": {"lift": (0.98, 0.985, 1.02, 1.0), "gain": (1.03, 1.0, 0.965, 1.0), "sat": 1.06, "mistTint": (0.36, 0.4, 0.46, 1.0)},
 }
 
-# ── THE RESOLUTION RUNG LADDER (iterations 123 + 126) ─────────
+# ── THE RESOLUTION RUNG LADDER (iterations 123 + 126 + 138) ───
 # 512 was the 122 night's floor (a WIDE face at ~10px); 640 is the
 # 123 preview rung every framing rides; 1024 is the 126 ESTABLISHING
 # rung (the 125 night's wall: a ~30px establishing figure fed the
-# judge mush even through the crops); 1280 stays FINAL.
+# judge mush even through the crops) EXTENDED TO THE WIDE FRAMING
+# by 138 (the 137 night's receipt: S004's face 20 - the 134 texel
+# budget ceiling's last loud cell - and its style 30 held the p10
+# at 35; the probe's own arithmetic: the WIDE fills 0.50 so the head
+# lands ~30px at the 640 rung, deep in the 133 smear zone, and the
+# geometry cannot pull in - the WIDE's contract owns the scene, the
+# aura crawl across the floor); 1280 stays FINAL.
 PREVIEW_CAP = 640
 ESTABLISHING_CAP = 1024
 FINAL_CAP = 1280
@@ -4058,11 +4064,13 @@ FINAL_CAP = 1280
 
 def preview_cap_for(shot_type, mode):
     """The rung ladder: FINAL renders at the FINAL cap; a PREVIEW of
-    the ESTABLISHING framing rides the establishing rung; every other
-    preview keeps the 640 rung."""
+    the wide-end framings (ESTABLISHING, WIDE) rides the 1024 rung
+    (the 138 wide rung - the 126 precedent: the crops feed the judge
+    real texels, the head gains ~1.6x linear); every other preview
+    keeps the 640 rung."""
     if str(mode or "PREVIEW").upper() == "FINAL":
         return FINAL_CAP
-    return ESTABLISHING_CAP if str(shot_type or "").upper() == "ESTABLISHING" else PREVIEW_CAP
+    return ESTABLISHING_CAP if str(shot_type or "").upper() in ("ESTABLISHING", "WIDE") else PREVIEW_CAP
 
 
 def comp_profile(shot):
@@ -6075,8 +6083,20 @@ def worker_run(job_file):
         # figure gains ~1.6x linear (the crops feed the judge real
         # texels, the painterly brush has pixels to breathe in), the
         # cost class moves ~2.56x on the establishing shots ONLY, and
-        # the ledger reads it honestly per frame. The tight framings
-        # keep the 640 rung; FINAL stays 1280.
+        # the ledger reads it honestly per frame.
+        # THE WIDE RUNG (iteration 138): the 137 night's receipt named
+        # the face texel ceiling's last loud cell - S004's face 20 at
+        # the WIDE (the head ~30px at the 640 rung, the face a smear,
+        # the 133 arithmetic). The WIDE's geometry cannot pull in (the
+        # contract owns the scene), so the rung ladder extends the
+        # 1024 rung to the WIDE framing - the 138 probe's A/B receipt:
+        # the same build at 1024 lands the head ~48px and the face
+        # reads DRAWN (the eyes with iris + catch-light, the brow
+        # bands, the nose line, the mouth, the topknot pin, the sash
+        # X's gold with modulation) while the 640 control rides the
+        # convicted smear. The tight framings keep the 640 rung (the
+        # LOW_ANGLE's own cells read - the 137 night's one per-shot
+        # clear); FINAL stays 1280.
         cap = preview_cap_for(shot.get("shotType"), mode)
         scale = min(1.0, cap / max(res_w, res_h))
         out_w = max(16, round(res_w * scale / 2) * 2)

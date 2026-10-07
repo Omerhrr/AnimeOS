@@ -362,8 +362,8 @@ _stone_boost = tp._keep_chroma(_stone_auth, 1.28, "cloth")
 ok("the tagged set keeps the full wash (the world grays, unbanked - and its brush rides the SET swing)",
    _has_patch(bpy.data.materials["X127Stone"], _stone_auth, _swing * tp.PAINTERLY_SET_GAIN)
    and not _has_patch(bpy.data.materials["X127Stone"], _stone_boost, _swing), "X127Stone")
-ok("the establishing rung rides the ladder",
-   m.preview_cap_for("ESTABLISHING", "PREVIEW") == 1024 and m.preview_cap_for("WIDE", "PREVIEW") == 640
+ok("the wide rung rides the ladder (the 138 advance: ESTABLISHING + WIDE at 1024)",
+   m.preview_cap_for("ESTABLISHING", "PREVIEW") == 1024 and m.preview_cap_for("WIDE", "PREVIEW") == 1024
    and m.preview_cap_for("CLOSEUP", "PREVIEW") == 640 and m.preview_cap_for(None, "PREVIEW") == 640
    and m.preview_cap_for("ESTABLISHING", "FINAL") == 1280,
    [(s, mo, m.preview_cap_for(s, mo)) for s, mo in (("ESTABLISHING", "PREVIEW"), ("WIDE", "PREVIEW"), ("ESTABLISHING", "FINAL"))])
