@@ -13,9 +13,12 @@
 //      skipped when anchored),
 //   2. wire Lin Yue's COMMITTED r2 design (byte-exact from git,
 //      the exact designed build 112-121 measured),
-//   3. wire Demon Lord Wei's COMMITTED 115 design (byte-exact from
-//      git; the crew's best round, reconstructed - the assumption
-//      is named here: r2, the tuned round),
+//   3. wire Demon Lord Wei's COMMITTED r3 design (byte-exact from
+//      git; r2 was the 115 tuned round, r3 is the 139 statement
+//      revision - the 138 night's chibi receipt answered by the
+//      probe-139 A/B: headScale 0.95 -> 0.85, hair volume
+//      1.15 -> 0.90, eyes 0.8 -> 0.70, the sheet art unchanged -
+//      the sheet is the law the dials serve),
 //   4. read the sheet DNA into the build for the whole cast.
 // Run: DATABASE_URL=file:... npx tsx scripts/night122-restore.ts
 import { db } from "../src/lib/db";
@@ -32,7 +35,10 @@ const COMMITTED = [
   },
   {
     name: "Demon Lord Wei",
-    dna: "public/designs/cmuqieinq000cpxz7lp5ohq41/r2/dna.json",
+    // r3 (the 139 statement revision): the proportion dials move,
+    // the SHEET ART does not - the designSheet rides the r2
+    // turnaround (the same law the dials serve)
+    dna: "public/designs/cmuqieinq000cpxz7lp5ohq41/r3/dna.json",
     sheet: "/designs/cmuqieinq000cpxz7lp5ohq41/r2/turn_sheet.png",
   },
 ];

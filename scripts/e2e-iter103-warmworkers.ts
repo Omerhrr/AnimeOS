@@ -120,7 +120,11 @@ async function run() {
   const tools = readFileSync("src/lib/dsh/tools.ts", "utf8");
   const defsMatch = tools.match(/export const TOOL_DEFS[\s\S]*?\n\];/);
   const toolCount = defsMatch ? (defsMatch[0].match(/\n    name: "/g) ?? []).length : -1;
-  check("A7 the registry stands at 90 tools (the pool is infrastructure)", toolCount === 90, `count=${toolCount}`);
+  // THE LIVING TRUTH (the 139 housekeeping - the 137 gate's own lesson):
+  // the registry GROWS with the studio's tools; the pool is
+  // infrastructure and does not own the count. The floor stands where
+  // iteration 103 measured it; the ceiling is the registry's own truth.
+  check("A7 the registry carries the tool floor (the pool is infrastructure; the registry's living truth, not a session constant)", toolCount >= 90, `count=${toolCount}`);
   }
 
   if (PHASE === "b" || PHASE === "b2" || PHASE === "all") {

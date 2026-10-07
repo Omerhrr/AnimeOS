@@ -90,8 +90,8 @@ expect("Lin's sheet read is fresh and complete (the fields the merge needs ride)
   Boolean(linDna?.robeColor && linDna?.hairStyle)
     && Boolean(linDna && lin?.modelSheetUrl && linDna.sheetUrl === lin.modelSheetUrl),
   { robe: linDna?.robeColor, hair: linDna?.hairStyle });
-expect("Wei's COMMITTED design wired byte-exact (518 chars - the drain's own DNA source)",
-  wei?.designSpec?.length === 518, wei?.designSpec?.length);
+expect("Wei's COMMITTED design wired byte-exact (517 chars - the 139 statement revision: the probe-139 B4 dials head 0.85 / hair 0.90 / eyes 0.70; r2's 518 was the 115 round)",
+  wei?.designSpec?.length === 517, wei?.designSpec?.length);
 expect("Lin's COMMITTED design wired byte-exact (517 chars)",
   lin?.designSpec?.length === 517, lin?.designSpec?.length);
 expect("Wei's designSheet points at the committed r2 turnaround",

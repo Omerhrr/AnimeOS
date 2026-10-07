@@ -2601,3 +2601,21 @@ Stage Summary:
 - The 138 night's verdict is on the record: the texels were NECESSARY (the smear is retired, the faces are drawn) but NOT SUFFICIENT (the judge's face read at the wide is now a style/proportion read)
 - The frontier hands to the style statement's own rung: the 'chibi' proportion read at the small wide figure + S002's face-gender swing are the paint questions
 - The 103 A7 pin is stale (90 -> 91 tools) - advance it in a future iteration
+
+---
+Task ID: iter-139
+Agent: Super Z (main)
+Task: AnimeOS Iteration 139 - THE STATEMENT REVISION (Wei's design r3: the probe's three anti-chibi dials), the 138 night's mutated accusation answered
+
+Work Log:
+- probe-139 (probe-139-style.py, 5 real worker_run cuts on the drain's own payload, regenerated fresh): A1-stand (headH 0.1051) / B1-head085 (0.094 - the clamp floor) / B2-hair09 / B3-eye070 (the eye-to-face ratio, the strongest anti-chibi move) / B4-statement; the eye-read: eyes carry the chibi tell, head second, hair subtlest
+- THE LAW: Wei's design r2 -> r3 (exactly three dials: headScale 0.85, hair volume 0.90, eyes 0.70); the sheet art unchanged (designSheet rides the r2 turnaround); Lin's r2 byte-exact; no build-law bump (the dials ride inside the standing clamps - the design is DATA, no pool restart needed)
+- Wiring: night122-restore.ts wires r3 (the sandbox-rebuild law advances); the restore ran (Lin 517 / Wei 517 bytes, the r3 dials verified in the DB); e2e-iter137's pin advanced to the r3 bytes; e2e-iter103's A7 advanced to the registry's living truth (>= 90)
+- e2e-iter139-statement ALL GREEN (32 asserts incl. the REAL worker_run truth: the r3 skull lands at the probe's own witness headH ~0.094 at the WIDE 1024 rung); one honest fix mid-run: the byte-length measure is JSON.stringify's (517), not python json.dumps's (583)
+- Cascade 117-138 ALL GREEN (cascade-139.mjs; the runner reads each gate's exit status as the canon); toon/anime/camera smokes ALL GREEN - the first red run was MY invocation (the smokes' runner() needs BLENDER exported; without it the subprocess halves run under plain python and read empty evidence - diagnosed by exact replication, the bridge was never broken)
+- src tsc 0 errors; README item 48 + both worklogs; commit + push + remote HEAD verified
+
+Stage Summary:
+- The 138 frontier's first paint answer is on main: the r3 statement rides where the identity lives, the tight framings and Lin's receipts untouched by construction
+- detached-night139.mjs is staged; the 139 night re-reads S004's face/style cells under the r3 statement - if the chibi accusation retires, the p10's floor cell finally breaks
+- Standing ops note: the smokes need BLENDER + DATABASE_URL exported (the runner() fallback to plain python reads empty evidence - the env lesson now in the record)
