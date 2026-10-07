@@ -36,7 +36,7 @@
 import colorsys
 import math
 
-TOON_LAW_VERSION = 132
+TOON_LAW_VERSION = 133
 TOON_STYLES = ("DONGHUA", "ANIME", "KOREAN")
 
 # ── THE DARK MASS READS (iteration 129→131) ──────────────────
@@ -137,7 +137,22 @@ STYLE_RAMP_BY_SHOT = {
     "MCU":             (0.62, 1.00, 0.040),
     "MEDIUM":          (0.58, 0.95, 0.035),
     "LOW_ANGLE":       (0.55, 0.92, 0.030),
-    "WIDE":            (0.50, 0.85, 0.025),
+    # THE WIDE-END PAINT STATEMENT (iteration 140): the 139 night's
+    # verdict named the look's own language at the small figure
+    # ('a simplified 3D render rather than the 2D illustration of the
+    # sheet') AFTER the proportion lever was spent (the r3 dials at
+    # their floors, the face reading mature, the accusation HELD).
+    # The probe's P-cuts (probe-140-face.py, real worker_run cuts on
+    # the drain's own S004 payload): the standing WIDE row reads soft
+    # (the rounded 3D wrap the judge names) while the flatter row
+    # (0.42, 0.78, 0.015) reads poster-crisp - hard band edges, flat
+    # fills, the 2D-illustration language at the wide-end framings.
+    # The ink statement (HULL_INK_PX 1.4 -> 2.0) was CUT AND REFUSED:
+    # the eye could not witness the gain at 1024 (the visibility bar
+    # a statement must clear). The WIDE row moves alone - the canon
+    # framings (CLOSEUP and tighter) keep the earned look byte-exact,
+    # ESTABLISHING waits for its own receipt.
+    "WIDE":            (0.42, 0.78, 0.015),
     "ESTABLISHING":    (0.46, 0.80, 0.020),
 }
 

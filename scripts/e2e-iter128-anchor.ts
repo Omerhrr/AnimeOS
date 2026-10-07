@@ -156,7 +156,7 @@ async function main() {
 
   // ── 2. THE EMBROIDERY RUNG (source law, toon pass) ──
   const tp = read("bridges/blender/toon_pass.py");
-  expect("the toon pass declares the 131 law version (advanced legitimately: the 135 trim weave's own scope)", tp.includes("TOON_LAW_VERSION = 132"), "v131");
+  expect("the toon pass declares the current law version (advanced legitimately to 133: the 140 wide-end paint statement)", tp.includes("TOON_LAW_VERSION = 133"), "v133");
   expect("the rung's dials are named laws (stitch, strength, thread lift, warm push, the trim address)",
     tp.includes("EMBROIDERY_STITCH = 21.0") && tp.includes("EMBROIDERY_STRENGTH = 0.55")
       && tp.includes("EMBROIDERY_THREAD_LIFT = 1.42") && tp.includes("EMBROIDERY_THREAD_WARM = 0.05")
@@ -186,7 +186,7 @@ async function main() {
   }
   const probeOut = r.stdout.slice(r.stdout.indexOf("PROBE_JSON ") + "PROBE_JSON ".length).split("\n")[0];
   const probe = JSON.parse(probeOut);
-  expect("the law version answers 131 from the real module", probe.lawVersion === 132, probe.lawVersion);
+  expect("the law version answers 133 from the real module (the 140 paint statement)", probe.lawVersion === 133, probe.lawVersion);
   expect("the jade accent's thread is bounded, lifted and warm-pushed (Lin's canonical trim)",
     probe.jadeThread.bounded && probe.jadeThread.lifted && probe.jadeThread.warmPush, probe.jadeThread);
   expect("the gold accent's thread is bounded, lifted and warm-pushed (Wei's canonical trim)",

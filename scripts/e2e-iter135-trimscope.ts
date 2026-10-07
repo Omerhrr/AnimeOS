@@ -54,7 +54,7 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 // ── 1. THE SOURCE LAWS ──
 const tp = read("bridges/blender/toon_pass.py");
 expect("the toon law holds the 132 (advanced legitimately: the trim's own boldness rung)",
-  tp.includes("TOON_LAW_VERSION = 132"), "v132");
+  tp.includes("TOON_LAW_VERSION = 133"), "v133");
 expect("the weave's scope table names the four trim-texel framings",
   tp.includes('TRIM_WEAVE_BY_SHOT = {"MEDIUM": 1.0, "MCU": 1.0, "CLOSEUP": 1.0, "ECU": 1.0}'), "the table");
 expect("the gate refuses every framing outside the table (the wide end rides the brush's own scope)",
@@ -148,7 +148,7 @@ def build(shot_type, lens):
 st_m, rows_m = build("MEDIUM", "35mm")
 look_m = ((st_m.get("render") or {}).get("look") or {})
 er = look_m.get("embroideryRung")
-ok("the look rides the 132 law", look_m.get("lawVersion") == 132, look_m.get("lawVersion"))
+ok("the look rides the 133 law (the 140 statement)", look_m.get("lawVersion") == 133, look_m.get("lawVersion"))
 ok("the evidence names the trim weave's own rung (135)",
    isinstance(er, dict) and er.get("scope") == "the trim weave's own rung (135)", er)
 ok("the rung's depth is 0 (the brush NEVER rode the MEDIUM - the weave alone)",

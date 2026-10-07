@@ -46,7 +46,7 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 // ── 1. THE SOURCE LAWS ──
 const tp = read("bridges/blender/toon_pass.py");
 expect("the toon law advances to 132 (the trim's own boldness rung)",
-  tp.includes("TOON_LAW_VERSION = 132"), "v132");
+  tp.includes("TOON_LAW_VERSION = 133"), "v133");
 expect("the boldness table names the three wide-end framings (the brush's own scope, where the trim is small)",
   tp.includes('TRIM_WEAVE_BOLD_BY_SHOT = {"LOW_ANGLE": 1.0, "WIDE": 1.0, "ESTABLISHING": 1.0}'), "the table");
 expect("the bold stitch lands the probe's winner (7.0 - the strap's ~1-2 alternations)",
@@ -153,7 +153,7 @@ st_e, rows_e = build("ESTABLISHING", "24mm")
 look_e = ((st_e.get("render") or {}).get("look") or {})
 er_e = look_e.get("embroideryRung")
 pw_e = look_e.get("painterlyRung")
-ok("the look rides the 132 law at the establishing", look_e.get("lawVersion") == 132, look_e.get("lawVersion"))
+ok("the look rides the 133 law at the establishing (the 140 statement)", look_e.get("lawVersion") == 133, look_e.get("lawVersion"))
 ok("the establishing's rung names the boldness (bold True, the 136 sentence)",
    isinstance(er_e, dict) and er_e.get("bold") is True
    and er_e.get("boldness") == "the trim's own boldness rung (136)", er_e)

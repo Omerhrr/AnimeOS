@@ -2639,3 +2639,21 @@ Work Log:
 Stage Summary:
 - The three-night hold at face 20 across three different builds is itself the receipt: no single lever moves the cell; the style statement's PAINT rung is the named frontier
 - The 140 iteration: the look pass's own statement at the wide-end framings, or S003's mole cell
+
+---
+Task ID: it-140
+Agent: Super Z (main)
+Task: Iteration 140 - the paint statement + Lin's male ink (probe-first on the 139 frontier).
+
+Work Log:
+- Sandbox rebuilt first (the workspace was wiped): repo cloned back at 5bb8d2d, auto-seed + night122-restore re-anchored the cast byte-exact (Wei r3 517 / Lin r2), Blender 5.2.2 LTS provisioned, warm-pool A1-A7 green, the seed-noise 'Lin Yue - Clone 001' row deleted.
+- Probe-first: probe-140-cast.ts (S003 + S004 through the REAL lib assembly) + probe-140-face.py (8 cuts) + probe-140b-face.py (3 cuts: the tag-collision recovery w1-stand + the m-cuts). Ten real worker_run cuts on the drain's own payload.
+- The eye's receipts: S003 standing face reads SHOJO (the twice-named cell visible); the youth hypothesis TESTED AND REJECTED (f-cuts wrong direction); the male statement ANSWERED (m1 aperture 0.70 + m2 brow ink 2.0 - the face reads a stern young man). S004: the p1 flatter WIDE row reads poster-crisp 2D illustration; the p2 ink gain not witnessable at 1024 - CUT AND REFUSED. The mole half named judge variance (the fresh sheet carries no mole).
+- The law: Lin r2 -> r3 (exactly two dials: eyes 0.8->0.70, brows 1.25->2.0; dyes/hair/body/face byte-exact; the sheet art unchanged; the design is DATA); the WIDE row (0.50,0.85,0.025) -> (0.42,0.78,0.015) - the flattest, hardest row, the 121 monotone ladder deliberately broken by the statement; TOON 132 -> 133; ANIME 125 / PRESENCE 108 stand.
+- Gates: e2e-iter140-paint ALL GREEN (source law, module truth, DB ledger 514, drain assembly, real Blender cuts closeup+wide, the night tool); cascade 117..140 ALL GREEN (the version pins advanced legitimately to 133 across twelve gates; the 121 ramp-table pin names the statement row; the 137 byte-count pins ride 514); the smokes ALL GREEN (the toon smoke's monotone-ladder assertion advanced to the statement shape); src tsc 0 errors.
+- OPS: the pool restart law satisfied by construction (no resident alive after the bridge change); detached-night140.mjs ready (reset | drain | rescore).
+
+Stage Summary:
+- The 140 design is DATA + ONE paint row: the next night renders Lin's r3 and the 133 look with no further bridge change.
+- README item 50 carries the record; the commit lands the law, the gates, the probe harness, the cascade and the night driver.
+- The 140 night answers next: S003's face-gender cell re-read where the male statement rides, S004's style cell under the 133 look.

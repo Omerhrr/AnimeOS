@@ -187,8 +187,8 @@ ok("resolve_look: DONGHUA -> TOON, WESTERN -> PBR, explicit wins",
 # 6. THE STYLE LAW (iteration 121): the toon ramp answers the framing
 ramp_c, ramp_w, ramp_e = tp.style_ramp_for("CLOSEUP"), tp.style_ramp_for("WIDE"), tp.style_ramp_for("ESTABLISHING")
 ok("the tight framings keep the earned ramp", ramp_c == (tp.TOON_SIZE, 1.0, tp.TOON_SMOOTH), ramp_c)
-ok("the ramp narrows and deepens and hardens toward establishing",
-   ramp_e[0] < ramp_w[0] < ramp_c[0] and ramp_e[1] < ramp_w[1] < ramp_c[1] and ramp_e[2] < ramp_w[2] < ramp_c[2],
+ok("the WIDE row is the 140 paint statement (the flattest, hardest row - the judge's complaint cells live at the wide; ESTABLISHING holds its 121 row awaiting its own receipt)",
+   ramp_w < ramp_c and ramp_w[0] < ramp_e[0] and ramp_w[1] < ramp_e[1] and ramp_w[2] < ramp_e[2] and ramp_e < ramp_c,
    (ramp_c, ramp_w, ramp_e))
 # the line weight solves from the framing's own pixels-per-world
 off_e = tp.ink_offset_for({"dist": 2.6 * 0.9, "lens": 24, "resX": 512}, "PREVIEW")
@@ -318,7 +318,7 @@ look127 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         {"lut": "moonlight", "factors": dict(m.COMP_BASE)},
                         framing_ctx={"shotType": "ESTABLISHING", "dist": 9.0 * tp.FIGURE_H, "lens": 24.0, "resX": 1024})
 ok("the look names the 128 evidence",
-   look127.get("lawVersion") == 132 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
+   look127.get("lawVersion") == 133 and (look127.get("painterlyRung") or {}).get("depth") == 0.70
    and (look127.get("painterlyRung") or {}).get("painted", 0) > 0, look127.get("painterlyRung"))
 ok("the painterly rung names its swing (the 127 statement at the establishing depth)",
    abs((look127.get("painterlyRung") or {}).get("swing", 0.0) - tp.painterly_swing_for(0.70)) < 1e-6,
@@ -500,7 +500,7 @@ look128 = tp.apply_look(bpy, scn, "TOON", "PREVIEW", m.hex_to_rgb,
                         framing_ctx={"shotType": "WIDE", "dist": 6.0 * tp.FIGURE_H, "lens": 35.0, "resX": 640})
 er128 = look128.get("embroideryRung") or {}
 ok("the look names the 128 evidence (the rung rides at WIDE with both addresses and its dials - the 136 boldness rung's own dials at the wide end)",
-   look128.get("lawVersion") == 132 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
+   look128.get("lawVersion") == 133 and er128.get("trims", 0) >= 1 and er128.get("hems", 0) >= 1
    and er128.get("bold") is True and er128.get("strength") == tp.TRIM_WEAVE_BOLD_STRENGTH
    and er128.get("threadLift") == tp.EMBROIDERY_THREAD_LIFT
    and er128.get("stitch") == tp.TRIM_WEAVE_BOLD_STITCH

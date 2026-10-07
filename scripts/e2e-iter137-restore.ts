@@ -50,8 +50,8 @@ const tp = read("bridges/blender/toon_pass.py");
 const animeCharacter = read("bridges/blender/anime_character.py");
 expect("the anime law stands at 125 (no bridge law moved)",
   animeCharacter.includes("ANIME_LAW_VERSION = 125"), "v125");
-expect("the toon law stands at 132 (the 136 boldness rung)",
-  tp.includes("TOON_LAW_VERSION = 132"), "v132");
+expect("the toon law stands at 133 (the 140 wide-end paint statement)",
+  tp.includes("TOON_LAW_VERSION = 133"), "v133");
 expect("the presence law stands at 108",
   bridge.includes("PRESENCE_LAW_VERSION = 108"), "v108");
 
@@ -92,8 +92,8 @@ expect("Lin's sheet read is fresh and complete (the fields the merge needs ride)
   { robe: linDna?.robeColor, hair: linDna?.hairStyle });
 expect("Wei's COMMITTED design wired byte-exact (517 chars - the 139 statement revision: the probe-139 B4 dials head 0.85 / hair 0.90 / eyes 0.70; r2's 518 was the 115 round)",
   wei?.designSpec?.length === 517, wei?.designSpec?.length);
-expect("Lin's COMMITTED design wired byte-exact (517 chars)",
-  lin?.designSpec?.length === 517, lin?.designSpec?.length);
+expect("Lin's COMMITTED design wired byte-exact (514 chars - the 140 r3 statement's bytes; r2 rode 517)",
+  lin?.designSpec?.length === 514, lin?.designSpec?.length);
 expect("Wei's designSheet points at the committed r2 turnaround",
   wei?.designSheetUrl === "/designs/cmuqieinq000cpxz7lp5ohq41/r2/turn_sheet.png", wei?.designSheetUrl);
 expect("Lin's designSheet points at the committed r2 turnaround",
@@ -231,7 +231,7 @@ function rowOutcome(rows: Array<{ role: string; to?: string | null; skipped?: st
 const weiRowsForNode = (weiCast.sheetConformance as { rows: Array<{ role: string; to?: string | null; skipped?: string }> }).rows;
 const weiCut = runCut("s004", "WIDE", "28mm", weiDesc, [weiCast]);
 if (!weiCut) process.exit(1);
-expect("Wei's cut rides the 132 law", weiCut.law === 132, weiCut.law);
+expect("Wei's cut rides the 132 law", weiCut.law === 133, weiCut.law);
 expect("Wei's built ROBE wears the conformance's outcome (the anchor's pull or the sheet's read - the node truth)",
   (weiCut.mats["RobeMat"] || "").toLowerCase() === (rowOutcome(weiRowsForNode, "robe", weiLedger.merged.robeColor) || "").toLowerCase(),
   { built: weiCut.mats["RobeMat"], expected: rowOutcome(weiRowsForNode, "robe", weiLedger.merged.robeColor) });
@@ -249,7 +249,7 @@ const linCast = castEntry(lin!, linLedger, linPalette);
 const linRowsForNode = (linCast.sheetConformance as { rows: Array<{ role: string; to?: string | null; skipped?: string }> }).rows;
 const linCut = runCut("s001", "ESTABLISHING", "24mm", linDesc, [linCast]);
 if (!linCut) process.exit(1);
-expect("Lin's cut rides the 132 law", linCut.law === 132, linCut.law);
+expect("Lin's cut rides the 132 law", linCut.law === 133, linCut.law);
 expect("Lin's built ROBE wears the conformance's outcome (the 130 gate's landing - the node truth)",
   (linCut.mats["RobeMat"] || "").toLowerCase() === (rowOutcome(linRowsForNode, "robe", linLedger.merged.robeColor) || "").toLowerCase(),
   { built: linCut.mats["RobeMat"], expected: rowOutcome(linRowsForNode, "robe", linLedger.merged.robeColor) });

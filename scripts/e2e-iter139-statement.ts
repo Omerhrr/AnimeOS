@@ -76,8 +76,9 @@ function sourceLaw() {
       && JSON.stringify(r3.robeAccent) === JSON.stringify(r2.robeAccent)
       && JSON.stringify(r3.hairColor) === JSON.stringify(r2.hairColor), "the dyes");
   const lin = JSON.parse(read(LIN_R2));
-  expect("Lin's r2 stands untouched on disk (her dials do not move)",
-    lin.designSpec.body.headScale === 0.9 && lin.designSpec.eyes.size === 0.8, "lin r2");
+  expect("Lin's r2 FILE stands untouched on disk (the r3 revision is a new file - the design history is the ledger)",
+    lin.designSpec.body.headScale === 0.9 && lin.designSpec.eyes.size === 0.8
+      && lin.designSpec.brows.thickness === 1.25, "lin r2 file");
   const restore = read("scripts/night122-restore.ts");
   expect("the restore law wires Wei's r3 byte-exact (the sandbox-rebuild law advances)",
     restore.includes("r3/dna.json") && restore.includes("r3 is the 139 statement"), "the wiring");
@@ -91,7 +92,7 @@ function sourceLaw() {
   const toon = read("bridges/blender/toon_pass.py");
   const bridge = read("bridges/blender/animeos_bridge.py");
   expect("no build-law bump (the design is DATA - the dials ride inside the standing clamps)",
-    anime.includes("ANIME_LAW_VERSION = 125") && toon.includes("TOON_LAW_VERSION = 132")
+    anime.includes("ANIME_LAW_VERSION = 125") && toon.includes("TOON_LAW_VERSION = 133")
       && bridge.includes("PRESENCE_LAW_VERSION = 108"), "the versions");
   expect("the clamp law is the dials' own net (headScale floor 0.85, eyes floor 0.70)",
     anime.includes('"headScale": _num(b0, "headScale", 1.0, 0.85, 1.2)')
@@ -156,10 +157,10 @@ async function dbLedger() {
     wei.designSpec?.length === 517, wei.designSpec?.length);
   expect("Wei's DB design carries the r3 dials",
     weiSpec?.body?.headScale === 0.85 && weiSpec?.hair?.volume === 0.9 && weiSpec?.eyes?.size === 0.7, weiSpec);
-  expect("Lin's DB design rides the r2 bytes (517 chars)",
-    lin.designSpec?.length === 517, lin.designSpec?.length);
-  expect("Lin's DB design carries the r2 dials",
-    linSpec?.body?.headScale === 0.9 && linSpec?.eyes?.size === 0.8, linSpec);
+  expect("Lin's DB design rides the r3 bytes (514 chars - the 140 statement revision advances this pin; r2 rode 517)",
+    lin.designSpec?.length === 514, lin.designSpec?.length);
+  expect("Lin's DB design carries the r3 dials (eyes at the male floor, the brow at the ink ceiling)",
+    linSpec?.body?.headScale === 0.9 && linSpec?.eyes?.size === 0.7 && linSpec?.brows?.thickness === 2.0, linSpec);
   expect("Wei's designSheet points at the r2 turnaround (the art did not change)",
     wei.designSheetUrl === "/designs/cmuqieinq000cpxz7lp5ohq41/r2/turn_sheet.png", wei.designSheetUrl);
 }
@@ -184,8 +185,8 @@ function drainAssembly() {
   const s6 = cast.S006?.cast ?? [];
   const lin6 = s6.find((c: any) => c.name === "Lin Yue");
   const wei6 = s6.find((c: any) => c.name === "Demon Lord Wei");
-  expect("S006's pair rides Lin r2 + Wei r3 (each character's own statement)",
-    (lin6?.designSpec as any)?.body?.headScale === 0.9 && (lin6?.designSpec as any)?.eyes?.size === 0.8
+  expect("S006's pair rides Lin r3 + Wei r3 (each character's own statement - the 140 revision advances this pin)",
+    (lin6?.designSpec as any)?.body?.headScale === 0.9 && (lin6?.designSpec as any)?.eyes?.size === 0.7
       && (wei6?.designSpec as any)?.body?.headScale === 0.85 && (wei6?.designSpec as any)?.eyes?.size === 0.7,
     s6.map((c: any) => c.name));
   return cast;
@@ -241,8 +242,8 @@ ok("the r3 skull measure lands at the probe's own witness (headH ~0.094, r2 rode
    isinstance(hh, (int, float)) and abs(hh - 0.094) < 0.002, presence)
 ok("the presence law rides 108 (the solve's shape stands under the r3 design)",
    presence.get("lawVersion") == 108, presence)
-ok("the toon law rides 132 (no paint law moved)",
-   look.get("lawVersion") == 132, look)
+ok("the toon law rides 133 (the 140 wide-end paint statement advances this pin)",
+   look.get("lawVersion") == 133, look)
 ok("the WIDE's solve keeps the full-figure contract (fill 0.5, never cut down)",
    abs(presence.get("fill", 0) - 0.5) < 1e-9, presence)
 

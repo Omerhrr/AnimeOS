@@ -11,8 +11,15 @@
 // law, no re-rolls anywhere:
 //   1. anchor the four primary members' model sheets (image-gen,
 //      skipped when anchored),
-//   2. wire Lin Yue's COMMITTED r2 design (byte-exact from git,
-//      the exact designed build 112-121 measured),
+//   2. wire Lin Yue's COMMITTED r3 design (byte-exact from git;
+//      r2 was the 112-121 measured designed build, r3 is the 140 statement
+//      revision - the twice-named 'wrong gender/age
+//      features' cell at the face-filling closeup answered by the
+//      probe-140 m-cuts: eyes.size 0.8 -> 0.70 (the male floor,
+//      the aperture shrinks), brows.thickness 1.25 -> 2.0 (the male
+//      ink ceiling - the brow reads at the closeup); the dye
+//      language, hair, body and face shape byte-exact r2; the sheet
+//      art unchanged - the sheet is the law the dials serve),
 //   3. wire Demon Lord Wei's COMMITTED r3 design (byte-exact from
 //      git; r2 was the 115 tuned round, r3 is the 139 statement
 //      revision - the 138 night's chibi receipt answered by the
@@ -30,7 +37,10 @@ const SHEET_MEMBERS = ["Lin Yue", "Chen Hao", "Elder Han", "Demon Lord Wei"];
 const COMMITTED = [
   {
     name: "Lin Yue",
-    dna: "public/designs/cmuq1s4i00007ppgsjqryw9r5/r2/dna.json",
+    // r3 (the 140 statement revision): the male-statement dials move,
+    // the SHEET ART does not - the designSheet rides the r2
+    // turnaround (the same law the dials serve)
+    dna: "public/designs/cmuq1s4i00007ppgsjqryw9r5/r3/dna.json",
     sheet: "/designs/cmuq1s4i00007ppgsjqryw9r5/r2/turn_sheet.png",
   },
   {

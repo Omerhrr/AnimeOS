@@ -57,7 +57,7 @@ function sourceLaw() {
   const anime = read("bridges/blender/anime_character.py");
   expect("ANIME 125 stands", anime.includes("ANIME_LAW_VERSION = 125"), "anime 125");
   const toon = read("bridges/blender/toon_pass.py");
-  expect("TOON 132 stands", toon.includes("TOON_LAW_VERSION = 132"), "toon 132");
+  expect("TOON 132 stands", toon.includes("TOON_LAW_VERSION = 133"), "toon 133");
   expect("the night wall rises with the rung's honest cost (the drain never expires mid-night)",
     read("scripts/night111-run.ts").includes("const OVERALL_TIMEOUT_MS = 90 * 60 * 1000;"), "the wall");
 }
@@ -153,7 +153,7 @@ ok("the WIDE's solve keeps the 108 law's shape (fill 0.5, the full-figure solve 
    abs((ev_w.get("presence") or {}).get("fill", 0) - 0.5) < 1e-9
      and (ev_w.get("presence") or {}).get("rung") is None, ev_w.get("presence"))
 ok("the toon law rides 132 at the wide (the 136 bold rung's framings)",
-   ((ev_w.get("look") or {}).get("lawVersion")) == 132, ev_w.get("look"))
+   ((ev_w.get("look") or {}).get("lawVersion")) == 133, ev_w.get("look"))
 ok("the S004 dye rides the honest sheet conformance (the anchored robe, not a constant)",
    len((S004.get("cast") or [])) == 1 and bool((S004["cast"][0] or {}).get("robeColor")), S004.get("cast"))
 

@@ -49,7 +49,7 @@ expect("128 anchor factor stands", paletteSrc.includes("export const DESIGN_ANCH
 expect("115 value-class cap stands", paletteSrc.includes("export const PULL_LUM_CAP = 0.15"));
 // the bridge is byte-untouched this iteration
 const toonSrc = read("bridges/blender/toon_pass.py");
-expect("TOON_LAW_VERSION holds the 132 (advanced legitimately: the trim's own boldness rung)", /TOON_LAW_VERSION\s*=\s*132/.test(toonSrc));
+expect("TOON_LAW_VERSION holds the 133 (advanced legitimately: the 140 wide-end paint statement)", /TOON_LAW_VERSION\s*=\s*133/.test(toonSrc));
 
 // ── the REAL TS-module probe (tsx) ──
 const TS_PROBE = `
