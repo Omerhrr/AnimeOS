@@ -2559,3 +2559,23 @@ Work Log:
 Stage Summary:
 - Night 137 on the record: the heal's verdict - median 65 (+27), the drift's cell +40, the dye accusation retired; the gate still refuses (5/6 under the 70 floor) with S004's face 20 the floor cell.
 - Next: the 138 iteration - the face texel ceiling's framing rung or the style statement rung.
+
+---
+Task ID: iter-138
+Agent: Super Z (main)
+Task: Iteration 138 - the face budget's framing rung (the 137 night's named frontier: S004's face 20, the p10's floor cell)
+
+Work Log:
+- Re-oriented on the remote: found Iteration 137 already complete on main (d6aa248 the restore + 70653f9 the night record - the palette drift healed, S004 palette 10 -> 50, the dye accusation retired in the judge's own words); this sandbox wiped again, so the rebuild ran first: clone at the remote HEAD, npm install, Blender 5.2.2 LTS re-provisioned, prisma db push at the standing path, OWNER registered, the auto-seed byte-faithful (5 cast rows, scene 12 with the six standing framings), night122-restore (4 sheets + the committed r2 designs + the DNA read), night130-reanchor (Lin in class; Wei's channel kept its hue drift through 3 gens - the honest receipt: the 130 anchor remains the render's net)
+- Traced the frontier: the resolution rung ladder (bridge, iterations 123+126) - WIDE fills 0.50 so S004's head lands ~30px at the 640 rung, in the 133 smear zone; the geometry cannot pull in (the WIDE's contract owns the scene); the lever is the ladder itself, the 126 precedent
+- probe-138-cast.ts: the drain's own cast assembly through the REAL lib functions (detectCast, characterDesignDna, adherentDna, planSheetConformance with the 128 anchor, environmentDna, parseCameraChoreo) -> probe138-cast.json (S004 Wei robe #3b243a anchored / accent #8c7b5e; S006 Lin teal #3b7a7a)
+- probe-138-widerung.py: 5 real worker_run cuts (A1-s004-640, B1-s004-1024, B2-s004-896, A2-s006-640, B3-s006-1024), all landed; the eye-read of the 8x zooms: 640 = the convicted smear (eyes smudges, no nose/mouth, hair aliasing), 1024 = the DRAWN face (iris + catch-light, brows, nose, mouth, topknot pin, sash X gold with modulation, ~48px head); 896 crosses but softer; the pair confirms the reach
+- THE LAW: preview_cap_for keys (ESTABLISHING, WIDE) to the 1024 rung; the tight framings keep 640 byte-exact; FINAL 1280; no version bump (the ladder rides source law as 123/126); the night wall 55 -> 90 min (the two WIDE clips ~2.56x pixel cost each)
+- The pin advances: e2e-iter126 (wide 1024), e2e-iter123 (the cap pin), blender-toon-smoke (the ladder assert names the 138 advance), e2e-iter137 (the sheet-pinned hexes -> the law's living truth: the anchor fires iff the merged dye sits OUT of the design's class; the built materials wear the conformance rows' outcome - the gate survives every future restore)
+- Gates: e2e-iter138-widerung ALL GREEN (24 asserts incl. the REAL worker_run node truth); cascade 117-137 ALL GREEN; toon/anime/camera smokes ALL GREEN; src tsc 0 errors (zero new)
+- Committed + pushed; remote HEAD verified
+
+Stage Summary:
+- Iteration 138 lands: THE WIDE RUNG. The 1024 rung now feeds the judge real texels at BOTH WIDE shots; the p10's floor cell (S004's face) has its named ceiling answered by the probe's own pixels
+- detached-night138.mjs is ready for the 138 night (reset | drain | rescore); the pool-restart law is satisfied by construction (fresh sandbox, no resident worker)
+- The 139 frontier after the 138 night: if S004's face moves, the style statement's own rung is the named remnant
