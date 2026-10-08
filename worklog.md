@@ -2679,3 +2679,23 @@ Work Log:
 Stage Summary:
 - Both statements rode and both landed - the male ink and the flat WIDE paint are IN the frames; the 3D accusation is retired and S004's face moved for the first time in four nights
 - The score did not follow the pixels: the wall is the judge's single-night sweep; the frontier for 141 is probe-first on the highlight ellipse + the dye cell
+
+---
+Task ID: iter-141
+Agent: Super Z (main)
+Task: Iteration 141 - the conviction probe (the 140 night's two named cells on the real pipeline), probe-first, the refusals carried honestly
+
+Work Log:
+- Sandbox rebuilt FIRST (the workspace wiped again): repo cloned at 636b234, DB re-seeded + night122-restore (Lin r3 514 / Wei r3 517 byte-exact), Blender 5.2.2 LTS re-provisioned, OWNER re-minted through the register door BEFORE the night, warm-pool A1-A7 green, clone noise deleted
+- THE PROBE: probe-141-cast.ts (the REAL lib assembly) measured the dye chain CLEAN - the riding hairColor #1a1a1a near-black, 'already true to the sheet'; probe-141-dye.py's bisect ladder + 141b/c/d/e: fog, wash, mass-lift, rim, shadow-cool, comp mist, sample count ALL exonerated; b4-black CONVICTED - pure-black dye still renders (0.4, 11.4, 46.0), R EXACTLY ZERO - the additive blue is the scene's fx LIGHT TRANSPORT
+- CELL 2: e1 cleared the shadow floor; e2 moved the oval with the band Size - the forehead ellipse IS the skin's lit-band boundary (a shading read, not a deformity)
+- THE FIRST BURN (HSV S-clamp gate, TOON 134): the mass read neutral black BUT the clamp redistributed the flood's energy into R/G (+20 R) and the dome bounced the face +58 bright; the smooth lever washed the face's cel planes at 0.18 AND 0.10 - both CUT
+- THE SECOND BURN (the mass-lerp gate): the readable dark became mid-grey (154) - CUT
+- THE REFUSALS: toon_pass reverted byte-exact to HEAD (TOON 133 STANDS, no residue); the material-side lever is not where this fix lives - the LIGHT-SIDE law (the fx transport's hue on the hero's dark masses) named as the next lever
+- Gates: e2e-iter141-conviction ALL GREEN (14 asserts); the cascade 117..141 ALL GREEN - the 140 gate's probe ledgers re-rendered HONESTLY after the wipe (7+3 cuts through the resume law); toon/anime/camera smokes ALL GREEN; src tsc 0 errors
+- detached-night141.mjs staged
+
+Stage Summary:
+- The teal-vs-black cell is now a MEASURED conviction (the light transport), not a mystery; both material-side cures refused by their own receipts; the 115 sheen law's unfinished sentence named as the next lever
+- The 141 night re-reads S003/S005 under the standing 133; the 142 probe opens the light-side lever
+
