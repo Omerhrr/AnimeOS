@@ -2733,3 +2733,21 @@ Work Log:
 Stage Summary:
 - The gate's number is now the arc: reproducible across drains, cohort-scoped, honest about youth, and it does not lift the board - the same craft below the floor stays below
 - The 142 night appends the first REAL arc reading (PROVISIONAL at one night); night-143 settles the first two-night arc
+
+---
+Task ID: night-142
+Agent: Super Z (main)
+Task: Iteration 142 night - the first REAL arc reading under the standing laws
+
+Work Log:
+- Night flow: phase a green (the pool warm from the session boot + 17 probe cuts; no bridge change - the restart law satisfied by construction); detached-night142.mjs reset (6 jobs/clips removed, 6 shots to REVIEW) -> drain 6/6 REAL Blender clips ~52 min (wide rung ladder holds) -> rescore with ANIMEOS_NIGHT_TAG=night-142
+- THE ARC APPENDED: 6 rows in cohort a125/t133/p108 - the ledger's first production readings; the reset's wipe never touched them (the survival law, live)
+- Board: S001 35 / S002 55 / S003 85 / S004 35 / S005 40 / S006 65 - mean 53 / median 48 / p10 35, BELOW (5/6 under)
+- THE GATE'S NEW VOICE: the publish refusal names "over 7 arc reading(s) across 1 night(s) (PROVISIONAL - single-night read)" - the arc vocabulary in the real machinery; verdict honest BELOW
+- OPS: the first gate attempt 500'd - the dev server's prisma client predated the arc table; the client-restart law paid, the refusal landed verbatim on the re-run
+- Eye receipts (eye142/night): S003 4x the male statement identical to 141 - 85 TWICE in a row; S004 swung 65->35 with the pixels unchanged (the band, cell-specific); S005 weapon glow holds; S006 transport tint holds
+- README item 55 + both worklogs
+
+Stage Summary:
+- The arc instrument is LIVE: night-142 rides alone (PROVISIONAL, honestly); night-143 settles the first two-night median
+- S003's 85-85 repeat makes the male-ink closeup the first cell with a stable high judge read; S004's 65->35 swing is the band's cell-specificity - exactly what the arc medians absorb
