@@ -18,6 +18,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { scoreShotIdentity, scoreShotIdentityMedian } from "../src/lib/identity";
+import { appendIdentityArcReading, bridgeLawCohort, defaultNightTag } from "../src/lib/identity-arc";
 
 const db = new PrismaClient();
 const BASE = "http://localhost:3000";
@@ -57,6 +58,13 @@ async function main() {
   const worsts: number[] = [];
   const refused: string[] = [];
   console.log(`samples per shot: ${SAMPLES} (the verdict is the per-entry median)`);
+  // THE ARC (iteration 142): every night's verdict appends to the arc
+  // ledger - night-tagged and cohort-tagged - so the release gate's
+  // number is the multi-night median, not a single night's sweep.
+  // The reset's identityScore wipe never touches these rows.
+  const NIGHT = process.env.ANIMEOS_NIGHT_TAG ?? defaultNightTag();
+  const COHORT = bridgeLawCohort();
+  console.log(`arc: appending to night ${NIGHT} in cohort ${COHORT}`);
   for (const s of shots) {
     const res = SAMPLES > 1
       ? await scoreShotIdentityMedian(s.id, "RENDER", SAMPLES)
@@ -64,6 +72,15 @@ async function main() {
     if (res.ok) {
       const v = res.scored.verdict;
       worsts.push(v.worst);
+      await appendIdentityArcReading({
+        projectId: project.id,
+        shotId: s.id,
+        source: "RENDER",
+        night: NIGHT,
+        cohort: COHORT,
+        worst: v.worst,
+        scores: v.entries,
+      });
       for (const e of v.entries) {
         const aspectLine = Object.entries(e.aspects ?? {})
           .map(([k, n]) => `${k} ${Math.round((n as number) * 100)}%`)

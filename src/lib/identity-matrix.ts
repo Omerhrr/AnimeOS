@@ -49,6 +49,7 @@
 import { db } from "@/lib/db";
 import { IDENTITY_RENDER_THRESHOLD, IDENTITY_REPAINT_THRESHOLD, type IdentitySource, type IdentityScoreEntry } from "@/lib/identity";
 import { parseExpressionClip } from "@/lib/blender/expressions";
+import { IDENTITY_ARC_MIN_NIGHTS, arcMedianRows, readIdentityArcEpisode } from "@/lib/identity-arc";
 
 // ── the five axes, each bucketed purely from the shot's own data ──
 
@@ -460,6 +461,13 @@ export interface EpisodeReleaseRead {
   verdict: DistributionVerdict; // the episode's own overall verdict
   overall: MatrixCell;
   blocking: MatrixCell[]; // the HOLD/BELOW cells, worst p10 first
+  // THE ARC (iteration 142): when the arc ledger carries readings for
+  // this episode, the gate's number is the per-entry median ACROSS
+  // the cohort's nights - not one night's sweep. arc=false means the
+  // pre-arc fallback (the sweep's own rows) answered.
+  arc: boolean;
+  nights: number; // distinct nights the read rolled (the sweep: 1)
+  provisional: boolean; // an arc younger than IDENTITY_ARC_MIN_NIGHTS
 }
 
 /**
@@ -472,22 +480,65 @@ export interface EpisodeReleaseRead {
  * guess a release). The standing law keeps its teeth beside this
  * (rule 69 untouched) - this is the release view, at the episode
  * grain, wired into the machinery that ships the pixels.
+ *
+ * THE ARC (iteration 142): when the arc ledger carries readings for
+ * this episode+source, the gate's number is the PER-ENTRY MEDIAN
+ * across the latest cohort's nights - the 141 band (identical craft
+ * swinging 38..60 of mean between drains) cannot move a medianed
+ * verdict the way it moves a single-night sweep. A one-night arc
+ * reads PROVISIONAL. No arc rows: the pre-arc fallback - the sweep's
+ * own rows, byte-exact as before.
  */
 export async function episodeReleaseVerdict(
   projectId: string,
   episodeId: string,
   source: IdentitySource = "RENDER",
 ): Promise<EpisodeReleaseRead> {
-  const [project, scoreRows] = await Promise.all([
+  const [project, scoreRows, arcRows] = await Promise.all([
     db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true } } } }),
     db.identityScore.findMany({
       where: { projectId, source, shot: { scene: { episodeId } } },
       include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
     }),
+    readIdentityArcEpisode(projectId, episodeId, source),
   ]);
   const floor = source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
   const cast = project?.characters ?? [];
   const idByName = new Map(cast.map((c) => [c.name, c.id] as const));
+
+  // the arc feed: per-entry medians across the cohort's nights
+  if (arcRows.length > 0) {
+    const arc = arcMedianRows({
+      arcRows,
+      idByName,
+      bucketOf: (shot) => ({
+        framing: identityFramingBucket(shot.shotType),
+        yaw: identityYawBucket(shot.movement),
+        expression: identityExpressionBucket(shot.description, shot.poseStart, shot.poseEnd),
+        lighting: identityLightingBucket(shot.lighting),
+        state: identityStateBucket(shot.poseStart),
+      }),
+    });
+    const matrix = identityMatrixFromRows(arc.rows, floor, source);
+    const blocking = matrix.axes
+      .flatMap((t) => t.cells.filter((c) => c.verdict === "HOLD" || c.verdict === "BELOW"))
+      .sort(cellOrder)
+      .slice(0, 4);
+    return {
+      episodeId,
+      source,
+      floor,
+      readings: arc.rows.length,
+      verdict: matrix.overall.verdict,
+      overall: matrix.overall,
+      blocking,
+      arc: true,
+      nights: arc.nights,
+      provisional: arc.nights < IDENTITY_ARC_MIN_NIGHTS,
+    };
+  }
+
+  // the pre-arc fallback: the sweep's own rows (byte-exact behavior)
   const rows = scoreRowsToMatrixRows(scoreRows, idByName);
   const matrix = identityMatrixFromRows(rows, floor, source);
   const blocking = matrix.axes
@@ -502,6 +553,9 @@ export async function episodeReleaseVerdict(
     verdict: matrix.overall.verdict,
     overall: matrix.overall,
     blocking,
+    arc: false,
+    nights: 1,
+    provisional: false,
   };
 }
 
@@ -510,11 +564,21 @@ function pct2(v: number | null): string {
 }
 
 /**
+ * The arc span a read names in its own words: the sweep reads
+ * byte-exact as before; an arc read names its nights and its youth.
+ */
+function arcSpan(read: EpisodeReleaseRead): string {
+  if (!read.arc) return `${read.readings} reading(s)`;
+  const span = `${read.readings} arc reading(s) across ${read.nights} night(s)`;
+  return read.provisional ? `${span} (PROVISIONAL - single-night read)` : span;
+}
+
+/**
  * The conformance line a RELEASE verdict earns (pure): the check the
  * package carries once the gate opens.
  */
 export function episodeReleaseCheckLine(read: EpisodeReleaseRead): string {
-  return `identity distribution RELEASES - p10 ${pct2(read.overall.p10)}, mean ${pct2(read.overall.mean)}, median ${pct2(read.overall.median)} over ${read.readings} reading(s), floor ${pct2(read.floor)}`;
+  return `identity distribution RELEASES - p10 ${pct2(read.overall.p10)}, mean ${pct2(read.overall.mean)}, median ${pct2(read.overall.median)} over ${arcSpan(read)}, floor ${pct2(read.floor)}`;
 }
 
 /**
@@ -528,7 +592,7 @@ export function episodeReleaseRefusal(read: EpisodeReleaseRead, epTag: string): 
   if (read.verdict === "UNSCORED") {
     return `${epTag} carries no scored identity readings (${read.source.toLowerCase()} source) - the matrix has nothing to judge and the release spine does not guess a release: score the episode's renders first (measure_identity_bar or identity_matrix scoreFirst), then stage the publish again`;
   }
-  const shape = `mean ${pct2(read.overall.mean)}, median ${pct2(read.overall.median)}, p10 ${pct2(read.overall.p10)}, worst ${pct2(read.overall.worst)} over ${read.readings} reading(s), floor ${floorPct}`;
+  const shape = `mean ${pct2(read.overall.mean)}, median ${pct2(read.overall.median)}, p10 ${pct2(read.overall.p10)}, worst ${pct2(read.overall.worst)} over ${arcSpan(read)}, floor ${floorPct}`;
   const cells = read.blocking.length > 0
     ? read.blocking.map((c) => `${c.key} - ${c.verdict}, p10 ${pct2(c.p10)}${c.worstRef ? ` (worst at ${c.worstRef})` : ""}`).join("; ")
     : "the dipping cells sit outside the top of each axis - read identity_matrix for the full shape";

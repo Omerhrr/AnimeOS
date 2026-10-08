@@ -2717,3 +2717,19 @@ Work Log:
 Stage Summary:
 - The 138 lesson now has its band: two drains of identical craft sit 22 points of mean apart - a single-night board cannot carry a build decision; the multi-night arc is the instrument
 - The under cells now: S001's ESTABLISHING receipt (the last 121-row remnant), S002 style, S004 weapon 0, S005 style at distance; the 142 frontier: the gate's own number (multi-night median / larger sample) + the 141 probe's light-side lever
+
+---
+Task ID: iter-142
+Agent: Super Z (main)
+Task: Iteration 142 - THE ARC (the release gate's number is the multi-night median), probe-first, the instrument fixed where the 141 band convicted it
+
+Work Log:
+- THE PROBE (probe-142-arc.ts): candidate A (single-night sweep) swings 23 points of mean between the two recorded drains of identical craft - not reproducible; candidate B (per-shot median across nights) lands mean 49 / median 46 - reproducible, converging, still BELOW 70 (the instrument does not flatter); candidate C (bootstrap 10k) proves within-night samples cannot cross the drain-to-drain band
+- THE STRUCTURAL FIND: IdentityScore carries ONE row per shot+source - every night overwrites the last; the gate has only ever read one night
+- THE MECHANISM: IdentityArcReading table (unique shot+source+night, cohort-indexed) + src/lib/identity-arc.ts (bridgeLawCohort reads the bridges' own law versions -> a125/t133/p108; appendIdentityArcReading; arcMedianRows) + the release gate rolls per-entry medians across the latest cohort's nights; one-night arcs answer PROVISIONAL; the fallback stays byte-exact
+- Cascade 117..142 ALL GREEN - the 140/141 probe ledgers re-rendered HONESTLY after the wipe (7+3+7 cuts: the male-ink ladder, the paint cuts, the conviction bisect with b4-black at the cool lean); the toon/anime/camera smokes ALL GREEN (the first toon run failed on a missing BLENDER env - user error, not a regression); src tsc 0 errors
+- detached-night142.mjs staged; README item 54 + both worklogs
+
+Stage Summary:
+- The gate's number is now the arc: reproducible across drains, cohort-scoped, honest about youth, and it does not lift the board - the same craft below the floor stays below
+- The 142 night appends the first REAL arc reading (PROVISIONAL at one night); night-143 settles the first two-night arc

@@ -62,6 +62,7 @@ model Project {
   repaintRuns      RepaintRun[]
   studioSchedules  StudioSchedule[]
   identityScores   IdentityScore[]
+  identityArcReadings IdentityArcReading[]
   panelEmbeddings  PanelEmbedding[]
   planTemplates    PlanTemplate[]
   blenderAssets    BlenderAsset[]
@@ -456,6 +457,7 @@ model Shot {
   artist         Artist?         @relation(fields: [artistId], references: [id], onDelete: SetNull)
   audioCues      AudioCue[]
   identityScores IdentityScore[]
+  identityArcReadings IdentityArcReading[]
   panelEmbedding PanelEmbedding?
 
   @@unique([sceneId, number])
@@ -1131,6 +1133,36 @@ model IdentityScore {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([shotId, source])
+}
+
+// THE IDENTITY ARC (iteration 142): the release gate's number is the
+// MULTI-NIGHT median, not a single night's sweep. The 141 night
+// measured the band: identical craft (same laws, same designs, same
+// pipeline) scored mean 38 one drain and mean 60 the next - a
+// single-night verdict is not reproducible, and the identityScore
+// table structurally cannot remember (one row per shot+source: every
+// night OVERWRITES the last). The arc is the ledger that survives:
+// each night's readings append here night-tagged and COHORT-tagged
+// (the law versions the pixels rendered under), the reset's
+// identityScore wipe never touches them, and the gate rolls the
+// PER-ENTRY MEDIAN across the cohort's nights. A law bump opens a
+// new cohort - old readings never pollute new laws. A one-night arc
+// answers honestly: PROVISIONAL.
+model IdentityArcReading {
+  id        String   @id @default(cuid())
+  projectId String
+  shotId    String
+  source    String   @default("RENDER") // PANEL | RENDER - the same sources the sweep answers
+  night     String // the night tag the reading rode (e.g. "night-142")
+  cohort    String // the law cohort the pixels rendered + scored under (e.g. "a125/t133/p108")
+  worst     Float    @default(1) // min similarity across the shot's cast that night
+  scores    String   @default("[]") // JSON IdentityScoreEntry[] - that night's per-entry verdicts
+  scoredAt  DateTime @default(now())
+  shot      Shot     @relation(fields: [shotId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([shotId, source, night])
+  @@index([projectId, source, cohort])
 }
 
 // PROVIDER-FREE IDENTITY AFFINITY: a deterministic artwork-level
