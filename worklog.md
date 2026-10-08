@@ -2699,3 +2699,21 @@ Stage Summary:
 - The teal-vs-black cell is now a MEASURED conviction (the light transport), not a mystery; both material-side cures refused by their own receipts; the 115 sheen law's unfinished sentence named as the next lever
 - The 141 night re-reads S003/S005 under the standing 133; the 142 probe opens the light-side lever
 
+
+---
+Task ID: night-141
+Agent: Super Z (main)
+Task: Iteration 141 night - the drain re-reads S003/S005 under the standing 133, the score instrument named
+
+Work Log:
+- Sandbox rebuilt FIRST (the workspace wiped again): repo cloned at d806b4e, npm + prisma rebuilt, ensureSeed restored the cast, OWNER re-minted through the register door (director@studio.dev), night122-restore wired Lin r3 514 / Wei r3 517 byte-exact, Blender 5.2.2 LTS re-provisioned, dev server up
+- Warm-pool law paid in full: PHASE=a A1-A7 green (source asserts), PHASE=b B1-B7 + C1 green (the resident booted, two workers, reuse proven through three real renders)
+- detached-night141.mjs reset: 6 shots to REVIEW, 1 stale lab job removed; drain: 6/6 REAL Blender clips ~50 min (S001/S004/S006 1024x576, S002/S003/S005 640x360 - the wide rung law holds), DSH revision on every clip, no fall/zombie/expiry
+- Eye-read receipts (eye141/night): S003 4x male ink STABLE (heavy straight bars, compact apertures, round iris/pupil/catch-light, white sclera, angular jaw) + the forehead lit-band crisp where the 141 probe convicted it; S002 4x same statement at medium (topknot + gold pin, teal cross-collar trim); S004 WIDE poster-crisp holds; S005 weapon glow luminous (weapon 100); S006 8x the purple ambience tints the hair masses - the fx-transport conviction GENERALIZED
+- rescore median-of-3: S001 35 [face 20] / S002 50 / S003 85 [face 90 hair 90 style 90] / S004 65 [weapon 0] / S005 45 [weapon 100] / S006 80 [Lin face 80 hair 90 wardrobe 90; Wei face 70 hair 90]; mean 60 / median 57 / p10 35 vs floor 70 - BELOW (4/6 under), publish refused verbatim
+- THE CONTROLLED COMPARISON: same laws, same r3 designs, same pipeline as 140's night - mean 38 -> 60 (+22), S003 35 -> 85, S006 50 -> 80, S004 35 -> 65, S001 35 -> 35; the eye confirms the pixels did not move - the swing is the judge's single-night variance MEASURED
+- README item 53 + both worklogs
+
+Stage Summary:
+- The 138 lesson now has its band: two drains of identical craft sit 22 points of mean apart - a single-night board cannot carry a build decision; the multi-night arc is the instrument
+- The under cells now: S001's ESTABLISHING receipt (the last 121-row remnant), S002 style, S004 weapon 0, S005 style at distance; the 142 frontier: the gate's own number (multi-night median / larger sample) + the 141 probe's light-side lever
