@@ -2773,3 +2773,25 @@ Stage Summary:
 - night-143 rides clean and alone (PROVISIONAL, honestly) in a ledger that restarted with the sandbox; night-144 settles the first two-night median - the first build decision the instrument may carry
 - The clone law now has its own conviction receipt: a seed-noise row in the cast detection contaminates the pixels AND the judge's reads (S002's ghost drift) - delete before every drain
 - The band's deepest datum: S003 85/85/85 -> 35 on receipt-identical pixels - the arc medians exist for exactly this
+
+---
+Task ID: night-144
+Agent: main (Super Z)
+Task: Iteration 144 - the durable arc (the ledger outlives the sandbox) + the 144 night
+
+Work Log:
+- Sandbox rebuild law paid in full (the box died again): clone at 4fc5515, npm + prisma BEFORE the dev server, OWNER re-minted (register door), ensureSeed, night122-restore (4 sheets + Lin r3 514 / Wei r3 517 byte-exact + DNA read), THE CLONE DELETED BEFORE THE DRAIN (Lin Yue - Clone 001 rode the fresh seed; the 140 law held this time), Blender 5.2.2 LTS foreground curl, warm-pool A1-A7 + B1-B7 + C1 ALL GREEN
+- probe-144-durable.ts: death #1 read from item 56, death #2 queried LIVE (0 arc rows in the fresh DB - night-143's board exists only in the records), candidates A (DB-only: dead twice) vs B (the committed receipt) - B wins; the fold mechanics and the two-night-across-a-death median proven in the probe
+- Mechanism: identity-arc.ts IDENTITY_ARC_LAW_VERSION 142 -> 144; ARC_RECEIPT_PATH receipts/identity-arc.jsonl; appendIdentityArcReading writes DB + receipt (fold-replace by source+ref+night, the write never breaks the append); readIdentityArcEpisode UNIONS DB + receipt (DB wins its key; a line with no live shot does not join); episodeReleaseVerdict threads opts; e2e-142 repaired (appends ride the lab receipt, version pins to 144); .gitignore carries receipts/.e2e*
+- e2e-iter144-durable.ts: 23 asserts ALL GREEN FIRST RUN (the death law, the ref join across a fresh cuid, the union dedupe, the two-night median at the exact 0.55, the production receipt byte-untouched, the no-residue law)
+- Cascade re-ran 2 RED (the 140/141 probe ledgers ENOENT - untracked receipts die with every sandbox, the SAME pattern) -> the resume law paid (probe-140 7 cuts + 140b 3 cuts + probe-141 7 keys re-rendered through Blender) -> FULL cascade 117..144 + 103a ALL GREEN (26 lines); toon/anime/camera smokes ALL GREEN; src tsc 0 errors (^src/ zero)
+- Commit b6c9ca3 (the instrument), then the night: detached-night144.mjs staged (ANIMEOS_NIGHT_TAG=night-144), reset clean (arc untouched), drain 6/6 real Blender clips ~57 min (wide rung ladder: S001/S004/S006 @ 1024, tight @ 640; DSH revision every clip; no fall/zombie/expiry), rescore appended night-144 (cohort a125/t133/p108) to the DB AND the receipt (6 lines on disk, ref-chained E7/Sc12/S001-006)
+- Board: S001 35 / S002 35 / S003 65 / S004 35 / S005 35 / S006 60 - sweep mean 44 / median 35 / p10 35 vs floor 70, BELOW (6/6 under); the gate answered IN ITS ARC VOICE off the durable ledger: "mean 46%, median 35%, p10 35%, worst 35% over 7 arc reading(s) across 1 night(s) (PROVISIONAL - single-night read), floor 70%" - refusal verbatim
+- Eye-read BEFORE the record (eye144/night): S003 4x male statement receipt-identical for the SIXTH drain (judge 90/90/90/90/40 -> 70 on the same pixels); S001 ONE figure (the ghost stays gone); S004/S006 the purple ambience tints the masses, Wei's black hair reads crimson under the night grade (the transport hue conviction, third night); S005 the weapon glow luminous
+- README item 57 + this worklog + the outer worklog carry the record; commit + push + remote HEAD verified
+
+Stage Summary:
+- The arc ledger is now DURABLE: receipts/identity-arc.jsonl is committed and the gate unions DB + receipts - a sandbox death can no longer zero the nights; night-145 settles the first two-night median on a ledger that survives
+- The first durable receipt lines are the 144 night's own (no backfill - the anti-fabrication law held; the 142/143 boards live in the records)
+- The band's deepest stretch yet: S001 65->35, S002 60->35, S003 35->65 between 143/144 drains of receipt-stable craft - the arc medians are the instrument; a one-night read answers PROVISIONAL, honestly
+- The light-side lever stays named: the fx transport hue on hero dark masses (115 sheen law's unfinished sentence) - the S004/S006 purple/crimson receipt, third night running
