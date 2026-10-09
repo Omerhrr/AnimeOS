@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-// THE IDENTITY ARC (iteration 142) - the release gate's number is
-// the multi-night median, not a single night's sweep.
+// THE IDENTITY ARC (iteration 142; made durable in 144) - the
+// release gate's number is the multi-night median, not a single
+// night's sweep.
 //
 // The 141 night measured the band: identical craft (ANIME 125 /
 // TOON 133 / PRESENCE 108, the same r3 designs, the same pipeline)
@@ -37,10 +38,104 @@ import path from "path";
 import { db } from "@/lib/db";
 import type { IdentityScoreEntry, IdentitySource } from "@/lib/identity";
 
-export const IDENTITY_ARC_LAW_VERSION = 142;
+export const IDENTITY_ARC_LAW_VERSION = 144;
 
 /** The nights an arc needs before its read is not provisional. */
 export const IDENTITY_ARC_MIN_NIGHTS = 2;
+
+// ─────────────────────────────────────────────────────────────
+// THE DURABLE LEDGER (iteration 144). The arc's rows ride the
+// runtime DB, and the runtime DB dies with every sandbox rebuild -
+// measured twice back to back: the night-142 rows died in the 143
+// rebuild, the night-143 rows died in the 144 rebuild. The arc as
+// built could never reach its own purpose (the two-night median)
+// in a world with deaths. So the append ALSO writes a receipt line
+// into the repo - JSONL, committed - keyed by the WORK's number
+// chain (episode/scene/shot), not the DB's surrogate cuids: the
+// seed recreates the chain byte-exact every rebuild, the cuids it
+// does not. The gate UNIONS the DB rows and the receipt lines
+// (dedupe by source+ref+night, the live row wins its key), so a
+// night whose DB rows died still reads. The anti-fabrication law
+// holds unchanged: receipts START EMPTY - the dead rows stay dead
+// (the 142/143 boards live in the records, not backfilled); only
+// REAL appends write lines, going forward.
+// ─────────────────────────────────────────────────────────────
+
+/** The committed receipt the production appends ride (repo-relative). */
+export const ARC_RECEIPT_PATH = "receipts/identity-arc.jsonl";
+
+/** Where in the work a receipt line's reading landed (the durable key). */
+export interface ArcReceiptRef {
+  episode: number;
+  scene: number;
+  shot: number;
+}
+
+/** One append's durable line: the reading, tagged, addressed by the work. */
+export interface ArcReceiptLine {
+  projectId: string;
+  source: string;
+  night: string;
+  cohort: string;
+  worst: number;
+  scores: IdentityScoreEntry[];
+  scoredAt: string; // ISO - the reading's own instant, kept across deaths
+  ref: ArcReceiptRef;
+}
+
+const receiptKeyOf = (source: string, ref: ArcReceiptRef, night: string): string =>
+  `${source}|${ref.episode}/${ref.scene}/${ref.shot}|${night}`;
+
+/**
+ * Fold raw receipt lines into readings (pure): the last line for a
+ * (source, ref, night) wins - the same idempotent replace the DB
+ * upsert obeys; a corrupt line is dropped and the fold continues.
+ */
+export function foldArcReceiptLines(lines: string[]): ArcReceiptLine[] {
+  const byKey = new Map<string, ArcReceiptLine>();
+  for (const raw of lines) {
+    const t = raw.trim();
+    if (!t) continue;
+    try {
+      const o = JSON.parse(t) as ArcReceiptLine;
+      if (!o || typeof o !== "object") continue;
+      if (!o.night || !o.source) continue;
+      if (!o.ref || typeof o.ref.episode !== "number" || typeof o.ref.scene !== "number" || typeof o.ref.shot !== "number") continue;
+      byKey.set(receiptKeyOf(o.source, o.ref, o.night), o);
+    } catch {
+      continue; // a corrupt line never poisons the fold
+    }
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Read the folded receipt (repo-relative path, default the
+ * production ledger). Unreadable or absent: the arc rides the DB
+ * alone - the pre-144 behavior, byte-exact.
+ */
+export function readIdentityArcReceipt(p?: string): ArcReceiptLine[] {
+  const file = path.join(process.cwd(), p ?? ARC_RECEIPT_PATH);
+  try {
+    return foldArcReceiptLines(fs.readFileSync(file, "utf8").split("\n"));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Write one receipt line (fold-replace by the durable key). The
+ * e2e's lab scopes ride their own path so the production receipt
+ * carries only REAL nights.
+ */
+export function writeArcReceiptLine(line: ArcReceiptLine, p?: string): void {
+  const file = path.join(process.cwd(), p ?? ARC_RECEIPT_PATH);
+  const key = receiptKeyOf(line.source, line.ref, line.night);
+  const kept = readIdentityArcReceipt(p).filter((l) => receiptKeyOf(l.source, l.ref, l.night) !== key);
+  kept.push(line);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, kept.map((l) => JSON.stringify(l)).join("\n") + "\n");
+}
 
 /** One appended night's reading: the rescore's verdict, tagged. */
 export interface IdentityArcAppend {
@@ -83,8 +178,18 @@ export function defaultNightTag(now?: Date): string {
   return `night-${d.toISOString().slice(0, 10)}`;
 }
 
-/** Append (or idempotently replace) one night's reading for a shot. */
-export async function appendIdentityArcReading(a: IdentityArcAppend): Promise<void> {
+/**
+ * Append (or idempotently replace) one night's reading for a shot -
+ * in the DB AND, since 144, in the committed receipt (the durable
+ * ledger). `opts.receiptPath === null` skips the receipt write (the
+ * e2e scopes that must not touch the production ledger); a path
+ * redirects it (the e2e's own lab receipt). The receipt write never
+ * breaks the DB append - it warns and stands down.
+ */
+export async function appendIdentityArcReading(
+  a: IdentityArcAppend,
+  opts?: { receiptPath?: string | null },
+): Promise<void> {
   const data = {
     projectId: a.projectId,
     shotId: a.shotId,
@@ -99,6 +204,29 @@ export async function appendIdentityArcReading(a: IdentityArcAppend): Promise<vo
     create: data,
     update: data,
   });
+  if (opts?.receiptPath === null) return;
+  try {
+    const shot = await db.shot.findUnique({
+      where: { id: a.shotId },
+      include: { scene: { include: { episode: { select: { number: true } } } } },
+    });
+    if (!shot) return; // no ref, no durable line - the DB row stands
+    writeArcReceiptLine(
+      {
+        projectId: a.projectId,
+        source: a.source,
+        night: a.night,
+        cohort: a.cohort,
+        worst: a.worst,
+        scores: a.scores,
+        scoredAt: new Date().toISOString(),
+        ref: { episode: shot.scene.episode.number, scene: shot.scene.number, shot: shot.number },
+      },
+      opts?.receiptPath,
+    );
+  } catch (e) {
+    console.warn(`[arc] receipt write stood down: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 /** One arc row with the shot chain the matrix buckets need. */
@@ -124,26 +252,65 @@ export interface IdentityArcRow {
 }
 
 /**
- * Read ONE episode's arc rows (a source), newest first. The gate's
- * feed: whatever the cohort filter does not do here, the caller
- * decides - the release read takes the latest cohort the rows carry.
+ * Read ONE episode's arc rows (a source), newest first - the DB's
+ * live rows UNION the committed receipt's lines (the durable
+ * ledger, iteration 144). A receipt line joins by the WORK's number
+ * chain: the seed recreates episode/scene/shot numbers byte-exact
+ * every rebuild, so a night whose DB rows died with a sandbox still
+ * reads. The DB row wins its (source, ref, night) key - the live
+ * ledger is the truth of record; the receipt carries the nights the
+ * DB lost. A line whose ref names no live shot does not join
+ * (honest: the work it measured no longer exists). `opts`
+ * routes/opts-out the receipt read for the e2e's lab scopes.
  */
 export async function readIdentityArcEpisode(
   projectId: string,
   episodeId: string,
   source: IdentitySource = "RENDER",
+  opts?: { receiptPath?: string | null },
 ): Promise<IdentityArcRow[]> {
-  const rows = await db.identityArcReading.findMany({
-    where: { projectId, source, shot: { scene: { episodeId } } },
-    orderBy: { scoredAt: "desc" },
-    include: {
-      shot: {
-        include: { scene: { include: { episode: { select: { number: true } } } } },
+  const [rows, episode] = await Promise.all([
+    db.identityArcReading.findMany({
+      where: { projectId, source, shot: { scene: { episodeId } } },
+      orderBy: { scoredAt: "desc" },
+      include: {
+        shot: {
+          include: { scene: { include: { episode: { select: { number: true } } } } },
+        },
       },
-    },
-  });
+    }),
+    db.episode.findUnique({ where: { id: episodeId }, select: { number: true } }),
+  ]);
+  const out = new Map<string, IdentityArcRow>();
+  const keyOf = (r: { source: string; night: string; shot: { number: number; scene: { number: number } } }): string =>
+    `${r.source}|${r.shot.scene.number}/${r.shot.number}|${r.night}`;
+  for (const r of rows) out.set(keyOf(r), r as unknown as IdentityArcRow);
+  if (opts?.receiptPath !== null && episode) {
+    const live = await db.shot.findMany({
+      where: { scene: { episodeId } },
+      include: { scene: { include: { episode: { select: { number: true } } } } },
+    });
+    const byRef = new Map(live.map((s) => [`${s.scene.number}/${s.number}`, s] as const));
+    for (const line of readIdentityArcReceipt(opts?.receiptPath)) {
+      if (line.source !== source || line.ref.episode !== episode.number) continue;
+      const shot = byRef.get(`${line.ref.scene}/${line.ref.shot}`);
+      if (!shot) continue;
+      const row = {
+        shotId: shot.id,
+        source: line.source,
+        night: line.night,
+        cohort: line.cohort,
+        worst: line.worst,
+        scores: JSON.stringify(line.scores ?? []),
+        scoredAt: new Date(line.scoredAt ?? 0),
+        shot,
+      } as unknown as IdentityArcRow;
+      const k = keyOf(row);
+      if (!out.has(k)) out.set(k, row);
+    }
+  }
   // shape to the narrow chain the buckets need (episode number only)
-  return rows as unknown as IdentityArcRow[];
+  return [...out.values()].sort((a, b) => b.scoredAt.getTime() - a.scoredAt.getTime());
 }
 
 const medianOf = (xs: number[]): number => {

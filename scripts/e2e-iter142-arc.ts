@@ -49,6 +49,10 @@ import { episodeReleaseVerdict, episodeReleaseRefusal } from "../src/lib/identit
 
 const db = new PrismaClient();
 const TITLE = "Immortal Path";
+// THE DURABLE LEDGER (iteration 144): the e2e's appends ride their
+// own lab receipt so the production ledger carries only REAL nights;
+// deleted fresh at the start and gone at the end (no residue).
+const LAB_ARC = "receipts/.e2e142-lab.jsonl";
 
 let failures = 0;
 function check(name: string, ok: boolean, detail?: string) {
@@ -62,7 +66,7 @@ async function main() {
 
   // ── A1 the source law ──
   const arcSrc = readFileSync("src/lib/identity-arc.ts", "utf8");
-  check("A1a the arc lib carries its law version (142)", arcSrc.includes("export const IDENTITY_ARC_LAW_VERSION = 142"));
+  check("A1a the arc lib carries its law version (144)", arcSrc.includes("export const IDENTITY_ARC_LAW_VERSION = 144"));
   const schema = readFileSync("prisma/schema.prisma", "utf8");
   check("A1b the schema carries the arc table (one reading per shot+source+night)",
     schema.includes("model IdentityArcReading") && schema.includes("@@unique([shotId, source, night])"));
@@ -78,7 +82,7 @@ async function main() {
   check("A2 the cohort is the bridges' own law versions (a125/t133/p108 - the standing build)",
     cohort === "a125/t133/p108", `got ${cohort}`);
   check("A2b the arc's youth law stands (a one-night arc is PROVISIONAL below the floor of two)",
-    IDENTITY_ARC_MIN_NIGHTS === 2 && IDENTITY_ARC_LAW_VERSION === 142);
+    IDENTITY_ARC_MIN_NIGHTS === 2 && IDENTITY_ARC_LAW_VERSION === 144);
 
   // ── A3 the arc math (pure) ──
   const idByName = new Map<string, string>([["Lin Yue", "c-lin"], ["Demon Lord Wei", "c-wei"]]);
@@ -149,6 +153,7 @@ async function main() {
     !labSweepRefusal.includes("arc") && !labSweepRefusal.includes("PROVISIONAL"), labSweepRefusal.slice(0, 120));
 
   // ── A4 the REAL gate on the REAL shots ──
+  try { fs.rmSync(LAB_ARC, { force: true }); } catch { /* fresh fold */ }
   const CO = "e2e-arc";
   const OLD = "a000/t000/p000";
   // an old-cohort reading first (earliest scoredAt -> filtered by the leader)
@@ -156,7 +161,7 @@ async function main() {
     projectId: project.id, shotId: shots[2].id, source: "RENDER",
     night: "e2e-old", cohort: OLD, worst: 0.99,
     scores: [{ characterName: "Lin Yue", similarity: 0.99, aspects: {}, note: "old cohort - never reads" }],
-  });
+  }, { receiptPath: LAB_ARC });
   await sleep(40);
   // night one: every shot reads LOW
   for (const s of shots.slice(0, 2)) {
@@ -164,7 +169,7 @@ async function main() {
       projectId: project.id, shotId: s.id, source: "RENDER",
       night: "e2e-n1", cohort: CO, worst: 0.35,
       scores: [{ characterName: "Lin Yue", similarity: 0.35, aspects: { face: 0.2, style: 0.3 }, note: "e2e n1" }],
-    });
+    }, { receiptPath: LAB_ARC });
   }
   await sleep(40);
   const one = await episodeReleaseVerdict(project.id, episodeId);
@@ -184,7 +189,7 @@ async function main() {
       projectId: project.id, shotId: s.id, source: "RENDER",
       night: "e2e-n2", cohort: CO, worst: i === 0 ? 0.85 : 0.5,
       scores: [{ characterName: "Lin Yue", similarity: i === 0 ? 0.85 : 0.5, aspects: { face: 0.9, style: 0.9 }, note: "e2e n2" }],
-    });
+    }, { receiptPath: LAB_ARC });
   }
   const two = await episodeReleaseVerdict(project.id, episodeId);
   check("A4e two nights settle the arc (provisional=false, nights=2)",
@@ -202,7 +207,7 @@ async function main() {
     projectId: project.id, shotId: shots[0].id, source: "RENDER",
     night: "e2e-n2", cohort: CO, worst: 0.85,
     scores: [{ characterName: "Lin Yue", similarity: 0.85, aspects: { face: 0.9 }, note: "re-ride" }],
-  });
+  }, { receiptPath: LAB_ARC });
   const afterRide = await readIdentityArcEpisode(project.id, episodeId);
   const n2Rows = afterRide.filter((r) => r.night === "e2e-n2").length;
   check("A4h the append is idempotent per night (a re-rescore replaces, never duplicates)",
@@ -221,6 +226,7 @@ async function main() {
   // real nights and the lab chain untouched) - the gate's answer
   // must return byte-exact to the production truth captured first ──
   await db.identityArcReading.deleteMany({ where: { projectId: project.id, night: { in: ["e2e-n1", "e2e-n2", "e2e-old"] } } });
+  fs.rmSync(LAB_ARC, { force: true }); // the lab receipt leaves with the lab rows
   await db.shot.delete({ where: { id: labShot.id } });
   await db.scene.delete({ where: { id: labScene.id } });
   await db.episode.delete({ where: { id: labEpisode.id } });

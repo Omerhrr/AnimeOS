@@ -82,9 +82,12 @@ public/voices/*.wav
 public/auditions/*.wav
 !public/auditions/.gitkeep
 
-# e2e iter31 local artifacts
+# e2e iter34 local artifacts
 scripts/.e2e31-frames/
 scripts/.e2e31-state.json
+
+# the arc's e2e LAB receipts (the production receipt commits; the labs never do)
+receipts/.e2e*
 
 # e2e iter34 local artifacts
 iter34-*.png

@@ -488,11 +488,18 @@ export interface EpisodeReleaseRead {
  * verdict the way it moves a single-night sweep. A one-night arc
  * reads PROVISIONAL. No arc rows: the pre-arc fallback - the sweep's
  * own rows, byte-exact as before.
+ *
+ * THE DURABLE LEDGER (iteration 144): the arc rows the gate reads
+ * union the DB's live rows with the committed receipt's lines - a
+ * night whose DB rows died with a sandbox still reads, keyed by the
+ * work's number chain. `opts` routes the receipt read (the e2e's
+ * lab scopes ride their own path; `receiptPath: null` opts out).
  */
 export async function episodeReleaseVerdict(
   projectId: string,
   episodeId: string,
   source: IdentitySource = "RENDER",
+  opts?: { receiptPath?: string | null },
 ): Promise<EpisodeReleaseRead> {
   const [project, scoreRows, arcRows] = await Promise.all([
     db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true } } } }),
@@ -500,7 +507,7 @@ export async function episodeReleaseVerdict(
       where: { projectId, source, shot: { scene: { episodeId } } },
       include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
     }),
-    readIdentityArcEpisode(projectId, episodeId, source),
+    readIdentityArcEpisode(projectId, episodeId, source, opts),
   ]);
   const floor = source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
   const cast = project?.characters ?? [];
