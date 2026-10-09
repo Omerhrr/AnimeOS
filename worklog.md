@@ -2751,3 +2751,25 @@ Work Log:
 Stage Summary:
 - The arc instrument is LIVE: night-142 rides alone (PROVISIONAL, honestly); night-143 settles the first two-night median
 - S003's 85-85 repeat makes the male-ink closeup the first cell with a stable high judge read; S004's 65->35 swing is the band's cell-specificity - exactly what the arc medians absorb
+
+---
+Task ID: iter-143
+Agent: Super Z (main)
+Task: Iteration 143 - the second arc reading (night-143), instrument-first; the session opened over a full sandbox rebuild and a contaminated first drain that the eye caught and the discipline invalidated
+
+Work Log:
+- SANDBOX REBUILD (the workspace wiped again): cloned at 3cff74b = origin/main - the handoff summary was stale (142 + its night already recorded); npm + prisma generate/db push BEFORE the dev server (the arc-table 500 trap cannot fire); OWNER re-minted through the register door; ensureSeed via the cookie'd read; night122-restore byte-exact (Lin 514 / Wei 517, DNA READ); Blender 5.2.2 LTS; warm-pool A1-A7 + B1-B7 + C1 ALL GREEN
+- LEDGER FOUND EMPTY: the sandbox death killed the night-142 arc rows with the old DB; NO backfill (the anti-fabrication law - the 142 board lives in the records); night-143 = this ledger's first reading
+- detached-night143.mjs staged (ANIMEOS_NIGHT_TAG=night-143 baked - the ledger's night identity is the iteration, not the wall clock)
+- FIRST DRAIN 6/6 - THE EYE CAUGHT A GHOST: S001's script says "a lone figure" but the frame carried TWO; the seed-noise "Lin Yue - Clone 001" (fresh seed; no sheet, no spec, female defaults, blue #2e6f9e) rode detectCast's whole-word match on every Lin-named shot; the 140 standing law (delete the clone BEFORE the drain) was missed in the rebuild
+- INVALIDATION: clone deleted (cast = the true four), reset (6 jobs + 6 clips wiped), the re-rescore REPLACED night-143's arc rows idempotently (the survival law + the idempotent append in one motion)
+- CLEAN DRAIN 6/6 (~55 min; DSH revision every clip; no fall/zombie/expiry); CLEAN BOARD: S001 65 / S002 60 / S003 35 / S004 35 / S005 60 / S006 75 - sweep mean 55 / median 60 / p10 35, BELOW (5/6); GATE: "mean 59%, median 60%, p10 35%, worst 35% over 7 arc reading(s) across 1 night(s) (PROVISIONAL - single-night read), floor 70%" - refusal verbatim
+- THE BAND DEEPENED: S003's male statement receipt-identical FIVE drains running (eye-confirmed) and the judge's face cell went 90/90/90 -> 40 on it; S004 swung 65/35/55/35; S002's contaminated "female drift" (the judge read the GHOST) recovered to 60 clean - single-night variance is the dominant signal, the arc median is the instrument
+- GATES: first cascade 3 RED, every cause named and repaired - probe140/141 ledgers ENOENT (untracked receipts die with the sandbox; re-rendered through the resume law: 7+3 cuts + the 141 ladder's 7 keys, b4-black REPRODUCED at rgb [0.5, 11.4, 46.0]); e2e-iter142-arc A6/A8/A9 stale (written for an empty ledger; the gate answered a populated one CORRECTLY) -> repaired STATE-INDEPENDENT: UNSCORED + sweep-fallback shapes on the e2e's own lab scope, A8/A9 = the byte-exact no-residue law vs the captured production truth; re-run cascade 117..142 ALL GREEN (24 gates); toon/anime/camera smokes ALL GREEN (ops receipt: the smokes need the BLENDER env var or bpy cannot import); src tsc 0 errors
+- LAWS: IDENTITY_ARC_LAW_VERSION 142 stands; ANIME 125 / TOON 133 / PRESENCE 108 stand (re-read night, no dial moved)
+- README item 56 + both worklogs
+
+Stage Summary:
+- night-143 rides clean and alone (PROVISIONAL, honestly) in a ledger that restarted with the sandbox; night-144 settles the first two-night median - the first build decision the instrument may carry
+- The clone law now has its own conviction receipt: a seed-noise row in the cast detection contaminates the pixels AND the judge's reads (S002's ghost drift) - delete before every drain
+- The band's deepest datum: S003 85/85/85 -> 35 on receipt-identical pixels - the arc medians exist for exactly this

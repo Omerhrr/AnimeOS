@@ -20,10 +20,16 @@
 //   A4 the REAL gate (append arc rows for the standing scene's
 //      shots -> episodeReleaseVerdict reads arc=true, the medians
 //      land, one night reads PROVISIONAL, two nights do not)
-//   A5 the survival law (the reset's identityScore wipe leaves the
-//      arc standing; the cleanup restores the honest empty state)
-//   A6 the fallback (no arc rows -> the sweep's rows answer
-//      byte-exact - the cascade's refusals cannot change shape)
+//   A5 the survival law (the identityScore wipe leaves the arc
+//      standing - the reset's exact shape, scoped to the e2e's own
+//      lab row so the production sweep keeps its night)
+//   A6 the fallback (a lab scope with no arc rows -> the UNSCORED
+//      spine and the sweep's rows answer byte-exact in EVERY ledger
+//      state - the cascade's refusals cannot change shape)
+//   A8/A9 the no-residue law (the 143 repair: the production arc
+//      carries REAL nights now, so cleanup is judged against the
+//      captured production truth, byte-exact - not against an
+//      emptiness no honest night will ever restore)
 //
 // Run: DATABASE_URL=file:... npx tsx scripts/e2e-iter142-arc.ts
 // ─────────────────────────────────────────────────────────────
@@ -111,14 +117,36 @@ async function main() {
   if (shots.length < 3) throw new Error("the standing scene carries too few shots");
   const episodeId = scene.episodeId;
 
-  // ── A6 the fallback (BEFORE any arc rows exist) ──
-  const preArc = await episodeReleaseVerdict(project.id, episodeId);
+  // ── the production truth FIRST (A8/A9's no-residue baseline) ──
+  const preProduction = await episodeReleaseVerdict(project.id, episodeId);
+  const preProductionRefusal = episodeReleaseRefusal(preProduction, "EP07");
+
+  // ── A6 the fallback shapes (on the e2e's own lab scope): the
+  // production arc carries REAL nights now (night-143), so the
+  // pre-arc fallback can no longer ride the production episode's
+  // emptiness - the lab chain makes the shapes assert in EVERY
+  // ledger state the studio will ever run this gate in ──
+  const season = await db.season.findFirst({ where: { projectId: project.id } });
+  if (!season) throw new Error("season missing");
+  const labEpisode = await db.episode.create({ data: { seasonId: season.id, number: 99, title: "e2e-arc-lab" } });
+  const labScene = await db.scene.create({ data: { episodeId: labEpisode.id, number: 99, title: "e2e-arc-lab" } });
+  const labShot = await db.shot.create({ data: { sceneId: labScene.id, number: 99, description: "e2e arc lab - Lin Yue stands", shotType: "MEDIUM", movement: "STATIC", poseStart: "stand", lighting: "night", duration: 1 } });
+  // no readings at all -> UNSCORED (the spine does not guess)
+  const labEmpty = await episodeReleaseVerdict(project.id, labEpisode.id);
+  check("A6-pre no readings -> UNSCORED (arc=false, the spine does not guess)",
+    labEmpty.verdict === "UNSCORED" && labEmpty.arc === false && labEmpty.readings === 0,
+    `verdict=${labEmpty.verdict} arc=${labEmpty.arc}`);
+  check("A6-pre2 the UNSCORED refusal keeps its standing words",
+    episodeReleaseRefusal(labEmpty, "E-LAB").includes("carries no scored identity readings"));
+  // one sweep row, still no arc rows -> the sweep answers (the pre-arc fallback)
+  await db.identityScore.create({ data: { projectId: project.id, shotId: labShot.id, source: "RENDER", scores: JSON.stringify([{ characterName: "Lin Yue", similarity: 0.5, aspects: { face: 0.4, style: 0.5 }, note: "e2e sweep row" }]), worst: 0.5, castSize: 1 } });
+  const labSweep = await episodeReleaseVerdict(project.id, labEpisode.id);
   check("A6a no arc rows -> the sweep answers byte-exact (arc=false, nights=1)",
-    preArc.arc === false && preArc.nights === 1 && preArc.provisional === false,
-    `arc=${preArc.arc} nights=${preArc.nights}`);
-  const preRefusal = episodeReleaseRefusal(preArc, "EP07");
+    labSweep.arc === false && labSweep.nights === 1 && labSweep.provisional === false && labSweep.readings === 1,
+    `arc=${labSweep.arc} nights=${labSweep.nights} readings=${labSweep.readings}`);
+  const labSweepRefusal = episodeReleaseRefusal(labSweep, "E-LAB");
   check("A6b the fallback refusal keeps its standing shape (no arc vocabulary)",
-    !preRefusal.includes("arc") && !preRefusal.includes("PROVISIONAL"), preRefusal.slice(0, 120));
+    !labSweepRefusal.includes("arc") && !labSweepRefusal.includes("PROVISIONAL"), labSweepRefusal.slice(0, 120));
 
   // ── A4 the REAL gate on the REAL shots ──
   const CO = "e2e-arc";
@@ -180,21 +208,29 @@ async function main() {
   check("A4h the append is idempotent per night (a re-rescore replaces, never duplicates)",
     n2Rows === 2, `n2 rows=${n2Rows}`);
 
-  // ── A5 the survival law ──
+  // ── A5 the survival law (the reset's wipe shape, scoped to the
+  // e2e's own lab row - the production sweep rows keep their night;
+  // the arc rows stand, which is the law the reset obeys) ──
   const arcBefore = await db.identityArcReading.count({ where: { projectId: project.id, source: "RENDER" } });
-  await db.identityScore.deleteMany({ where: { projectId: project.id, source: "RENDER" } }); // THE RESET'S EXACT WIPE
+  await db.identityScore.deleteMany({ where: { shotId: labShot.id } }); // THE RESET'S WIPE SHAPE
   const arcAfter = await db.identityArcReading.count({ where: { projectId: project.id, source: "RENDER" } });
-  check("A5 the reset's identityScore wipe leaves the arc standing",
+  check("A5 the identityScore wipe leaves the arc standing",
     arcBefore > 0 && arcAfter === arcBefore, `before=${arcBefore} after=${arcAfter}`);
 
-  // ── cleanup: the e2e arc rows leave, the honest empty state returns ──
+  // ── cleanup: the e2e rows leave EVERYWHERE (the production arc's
+  // real nights and the lab chain untouched) - the gate's answer
+  // must return byte-exact to the production truth captured first ──
   await db.identityArcReading.deleteMany({ where: { projectId: project.id, night: { in: ["e2e-n1", "e2e-n2", "e2e-old"] } } });
+  await db.shot.delete({ where: { id: labShot.id } });
+  await db.scene.delete({ where: { id: labScene.id } });
+  await db.episode.delete({ where: { id: labEpisode.id } });
   const post = await episodeReleaseVerdict(project.id, episodeId);
-  check("A8 the cleanup restores the honest empty state (UNSCORED - the spine does not guess)",
-    post.verdict === "UNSCORED" && post.arc === false,
-    `verdict=${post.verdict} arc=${post.arc}`);
-  check("A9 the UNSCORED refusal keeps its standing words",
-    episodeReleaseRefusal(post, "EP07").includes("carries no scored identity readings"));
+  check("A8 the cleanup restores the production truth byte-exact (no e2e residue in the gate's answer)",
+    post.verdict === preProduction.verdict && post.arc === preProduction.arc && post.nights === preProduction.nights
+      && Math.abs(post.overall.mean - preProduction.overall.mean) < 1e-9,
+    `verdict=${post.verdict}/${preProduction.verdict} arc=${post.arc}/${preProduction.arc} nights=${post.nights}/${preProduction.nights}`);
+  check("A9 the refusal is byte-exact against the captured production truth (the e2e left no words behind)",
+    episodeReleaseRefusal(post, "EP07") === preProductionRefusal);
 
   console.log(`\n${failures === 0 ? "ALL GREEN" : `${failures} FAILURE(S)`} - iteration 142 (the arc)`);
   if (failures > 0) process.exitCode = 1;
