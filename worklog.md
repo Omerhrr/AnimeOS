@@ -2795,3 +2795,26 @@ Stage Summary:
 - The first durable receipt lines are the 144 night's own (no backfill - the anti-fabrication law held; the 142/143 boards live in the records)
 - The band's deepest stretch yet: S001 65->35, S002 60->35, S003 35->65 between 143/144 drains of receipt-stable craft - the arc medians are the instrument; a one-night read answers PROVISIONAL, honestly
 - The light-side lever stays named: the fx transport hue on hero dark masses (115 sheen law's unfinished sentence) - the S004/S006 purple/crimson receipt, third night running
+
+---
+Task ID: night-145
+Agent: Super Z (main)
+Task: Iteration 145 night - the second night on the durable arc ledger (receipts/identity-arc.jsonl); the first two-night median settles, the verdict loses its PROVISIONAL flag, the instrument carries its first build decision.
+
+Work Log:
+- Verified before acting (the standing law): HEAD 5969283 = origin/main (the summary was stale at 141 - the remote already carried 142/143/144 and their nights), the box lived between nights (no rebuild due), cast anchored (4 characters, sheets + DNA, NO clone ghost), OWNER present, Blender 5.2.2 + dev server alive
+- Warm-pool law paid in full: PHASE=a A1-A7 green, PHASE=b B1-B7 + C1 green (the resident booted, two workers rode, reuse proven through three real renders)
+- Staged detached-night145.mjs (ANIMEOS_NIGHT_TAG=night-145 baked, night145-*.log/pid)
+- reset clean: 6 jobs + 6 clips + 6 RENDER scores wiped, shots -> REVIEW; arc ledger VERIFIED untouched after the reset (night-144 x 6 rows - the 142 survival law holds)
+- drain: 6/6 real Blender clips ~57 min (10:05-11:01) at the wide rung ladder (S001/S004/S006 @ 1024x576, tight framings @ 640x360), DSH revision on every clip, no fall/zombie/expiry
+- rescore: appended night-145 (cohort a125/t133/p108) to DB AND receipts/identity-arc.jsonl - 12 lines on disk (6+6), ref-chained E7/Sc12/S001-006
+- Board: S001 35 / S002 35 / S003 65 / S004 40 / S005 35 / S006 50 - sweep mean 43 / median 38 / p10 35 vs floor 70, BELOW (6/6)
+- THE FIRST SETTLED VERDICT (publish attempt 400, verbatim): "...mean 46%, median 38%, p10 35%, worst 35% over 7 arc reading(s) across 2 night(s), floor 70%. The under cells: calm/emission/med - BELOW p10 35% (worst E7 Sc12 S005); shadow - BELOW (worst S002). Repair the distribution (identity_repair_pass), then stage." - NO PROVISIONAL flag; the span named, the repair path named
+- Eye-read BEFORE the record (inspect/eye145/night/): S003 4x male statement receipt-identical SEVENTH drain; S001 ESTABLISHING ONE figure (ghost law, second night); S002 4x clean statement face; S006 8x purple ambience tints masses + Wei black hair crimson (transport hue conviction FOURTH night); S005 weapon glow luminous, teal disc legible
+- README item 58 appended; this worklog + /home/z/my-project/worklog.md written; commit + push + remote HEAD verified
+
+Stage Summary:
+- The arc instrument is now BUILD-GRADE: two durable nights on a ledger that cannot be zeroed, per-entry medians settled, the verdict answers without PROVISIONAL and names its own repair path (identity_repair_pass)
+- The settled verdict is BELOW - honestly (the instrument does not flatter the craft); the ledger's own band is tight (144->145: four shots identical, S004 +5, S006 -10) vs the pre-ledger 30-point swings
+- The transport hue conviction holds four nights running (purple ambience -> crimson cast on black hair) - the 115 sheen law's unfinished sentence stays the named craft-side lever
+- Next frontier: identity_repair_pass (the gate's own named repair) probed before any pen moves; the light-side transport hue lever waits with its four-night receipt
