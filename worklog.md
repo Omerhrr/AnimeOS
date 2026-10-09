@@ -2837,3 +2837,25 @@ Stage Summary:
 - The instrument's first closed loop is wired: refuse (the arc) -> repair (the pass) -> re-read (the same arc) - the repair's re-scores land in the ledger the gate reads, and the pass's own answer carries the gate's verdict
 - The alignment evidence held: the repair's worst-first queues already carried the gate's named worst cells - no selection change needed, the evidence said so
 - The 146 night answers next: the first REAL repair pass on the drain's own below cells - refuse -> repair -> re-read on one ledger
+
+---
+Task ID: night-146
+Agent: Super Z (main)
+Task: Iteration 146 night - the first REAL repair pass riding the drain's own below cells; the closed loop refuse -> repair -> re-read, one ledger.
+
+Work Log:
+- THE SANDBOX WAS WIPED ENTIRELY mid-run (repo, node_modules, DB, Blender, dev server all gone - the seventh drift lesson, the harshest); git log verified BEFORE anything (the summary claimed 146 not started; remote HEAD was already e6828a9 = 146 committed - the sixth drift lesson's law held)
+- The clone returned the durable ledger byte-exact: receipts/identity-arc.jsonl 12 lines (night-144 + 145) with the fresh DB at 0 arc rows - readIdentityArcEpisode's UNION law (DB rows joined by the work's number chain + the receipt's lines) carried both nights into the gate's read ON THE FRESH BOX: the sandbox-death law paid its hardest test
+- Rebuild law paid in full, detached (rebuild146.mjs double-fork - plain nohup children die between tool calls, re-learned): npm + prisma BEFORE dev server, prisma db push at the standing path, Blender 5.2.2 through provisionBlender (verified), OWNER through the register door, auto-seed through signed /api/projects GET, night122-restore (4 sheets image-gen, Lin 514 / Wei 517 byte-exact, DNA re-read), night130-reanchor (Lin IN, Chen Hao 1 regen -> IN, Elder Han IN, Wei IN), clone ghost deleted before the drain, warm-pool A1-A7 + B1-B7 + C1 ALL GREEN
+- detached-night146.mjs written (the 145 runner's law, night-146 tag) + chain146.mjs (the drain's rescore chains at NIGHT RESULT 6/6) + night146-repair.ts (production repair runner) + eye146-extract.ts
+- Reset clean (12 lines verified after); drain 6/6 real Blender ~56 min (wide rung ladder; DSH revision on every clip); rescore chained automatically - night-146 appended (18 lines), the gate refused across 3 nights verbatim (mean 47 / median 40 / p10 35; the under cells unchanged: calm/emission/med @ S005, shadow @ S002)
+- THE FIRST REAL REPAIR PASS (repair-2026-10-09, production receipt): Lin's DNA read fresh (10/10 sections, 8 owned), queue S005 -> S002 -> S001 re-rendered + re-scored: S005 35 -> 60 IMPROVED, S002 35 -> 55 IMPROVED (NEW sheet-adherent pixels), S001 UNCHANGED (re-render TIMED OUT at the 330s tick budget, frame 54/101 - the error note lives in the ledger); re-anchor beat fired for both members (sheets regenerated, shots re-scored against the new sheets); Wei S004 40 -> 65 IMPROVED (timeout note beside it - the lift rode the re-anchor's re-judgment of the drain's pixels); Lin avg 51 -> 60, Wei 55 -> 68, both still BELOW - the gap named, never averaged away
+- The repair's re-scores LANDED IN THE ARC: repair-2026-10-09 appended (22 lines, 4 nights); the gate's re-read: BELOW (mean 47 / median 40 / p10 35 over 7 arc readings across 4 nights) - the multi-night median carried the three nights the repair cannot erase; the instrument's first honest closed loop
+- TICK-BUDGET FINDING (named): REPAIR_TICKS 660 x 500ms = 330s cannot cover a 1024-wide render (~11 min); 2 of 4 re-renders timed out - the wide rungs' repairs ride re-judgments unless the wait scales with the rung
+- Eye receipts (eye146/night, untracked): S003 RECEIPT-IDENTICAL EIGHTH DRAIN; S001 lone figure (ghost law third ledger night); S005/S002 the repair's own pixels credible (glow luminous; statement face clean); S004 striking (crimson + gold + arch); S006 two-shot distinct, violet transport FIFTH night but crimson-in-hair PARTIAL tonight (red concentrates in the robe) - the eye does not flatter
+- src tsc 0 errors; README item 60 + both worklogs; commit + push + remote HEAD verified
+
+Stage Summary:
+- The instrument's first closed loop ran on production pixels: refuse (3 nights) -> repair (real lifts: S005 +25, S002 +20 on new pixels; S004 +25 via re-anchor; timeouts named) -> re-read (still BELOW across 4 nights - the arc's memory is the design)
+- The durable ledger survived total workspace death via the committed receipt + the union read; the rebuild law is now fully scripted (rebuild146.mjs)
+- The 147 frontier: the tick-budget law (renderWait scales with the rung), then the second repair pass on a ledger that knows what a repair night is; the light-side transport hue waits as the craft lever
