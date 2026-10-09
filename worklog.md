@@ -2818,3 +2818,22 @@ Stage Summary:
 - The settled verdict is BELOW - honestly (the instrument does not flatter the craft); the ledger's own band is tight (144->145: four shots identical, S004 +5, S006 -10) vs the pre-ledger 30-point swings
 - The transport hue conviction holds four nights running (purple ambience -> crimson cast on black hair) - the 115 sheen law's unfinished sentence stays the named craft-side lever
 - Next frontier: identity_repair_pass (the gate's own named repair) probed before any pen moves; the light-side transport hue lever waits with its four-night receipt
+
+---
+Task ID: 146
+Agent: Super Z (main)
+Task: Iteration 146 - THE REPAIR JOINS THE ARC: the 145 verdict named identity_repair_pass as the repair; the probe measured the named repair against the named refusal; the fix wires the repair's re-scores INTO the arc ledger and reads the after-standing off the gate's own instrument.
+
+Work Log:
+- probe-146-repair.ts (read-only on production, the divergence on the lab scope through the REAL functions): the sweep (the repair's instrument) vs the arc (the gate's instrument) side by side; the alignment GOOD (the worst-first queues carry the gate's named worst shots S005+S002); the divergence FATAL (the repair's verdict law says REPAIRED at 0.90 while the arc median never moves - 0.35, 2 nights, still refuses); the wiring named (scoreRenderIdentity has ZERO arc references; the arc's only production writer is the night rescore)
+- THE FIX: identity-repair.ts appends every re-scored shot to the arc (whole-cast verdict + worst, the night rescore's own shape), cohort-tagged (bridgeLawCohort), night-tagged repair-<calendar day> (the idempotent fold), ref-chained by the append; result.arcAfter reads episodeReleaseVerdict off the SAME receipt path for every worked episode; the DSH tool prints the arc standing in the refusal's own vocabulary; receiptPath routes the receipt (labs never touch the production ledger)
+- IDENTITY_ARC_LAW_VERSION 144 -> 146; the 142/144 gates' version pins repaired (A1a/B1a + the inline A2b), the standing discipline
+- e2e-iter146-joinarc.ts ALL GREEN (24 asserts; the REAL loop on a throwaway production: real sheet, real render, real re-score - this run's honest verdict WORSE 35->25; the arc DB row + receipt line ref-chained 1/1/2; the gate reads the repair night; arcAfter byte-matches the gate's read; the fold replaces; the production ledger byte-exact; no residue)
+- Ops receipts during the build: the e2e's login needed redirect:"manual" (the session cookie rides the 302) AND the csrf cookie in the jar (the double-submit pair) - two honest fetch-law lessons; the first cascade ran 1 RED (the 142 gate's inline A2b pin at 144) - repaired, the FULL cascade re-ran ALL GREEN (26 gates, one clean run)
+- toon/anime/camera smokes ALL GREEN; src tsc 0 errors
+- README item 59 + both worklogs; commit + push + remote HEAD verified
+
+Stage Summary:
+- The instrument's first closed loop is wired: refuse (the arc) -> repair (the pass) -> re-read (the same arc) - the repair's re-scores land in the ledger the gate reads, and the pass's own answer carries the gate's verdict
+- The alignment evidence held: the repair's worst-first queues already carried the gate's named worst cells - no selection change needed, the evidence said so
+- The 146 night answers next: the first REAL repair pass on the drain's own below cells - refuse -> repair -> re-read on one ledger

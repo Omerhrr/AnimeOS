@@ -4146,18 +4146,25 @@ async function executeToolInner(
           const m = await castIdentityMeasurement(projectId, "RENDER");
           return { status: "OK", result: `IDENTITY REPAIR PASS: nothing to repair - no member sits BELOW the ${Math.round(res.bar * 100)}% bar. ${castIdentityLine(m)}` };
         }
-        const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
+        const pct = (v: number | null) => (v === null || !Number.isFinite(v) ? "-" : `${(v * 100).toFixed(0)}%`);
         const lines = res.members.map((mem) => {
           const shotLines = mem.shots.length
             ? mem.shots.map((s) => `    ${s.ref}: ${pct(s.before)} -> ${s.after === null ? "unscored" : pct(s.after)} - ${s.verdict}${s.error ? ` (${s.error})` : ""}`).join("\n")
             : "    (no named below shot found - the readings moved before the loop reached them)";
           return `  ${mem.name}: ${repairVerdictLine(mem.verdict)}\n${shotLines}\n    dna: ${mem.dna.line}${mem.reanchored ? "\n    re-anchored: the canonical sheet was regenerated mid-loop, the shots re-scored against the new sheet" : ""}${mem.reanchorError ? `\n    re-anchor FAILED: ${mem.reanchorError}` : ""}\n    standing after: ${mem.after.standing}${mem.after.worst !== null ? ` (worst ${pct(mem.after.worst)})` : ""}`;
         });
+        // THE REPAIR JOINS THE ARC (iteration 146): the re-scores
+        // appended to the arc ledger under the repair night, and the
+        // after-standing is read the way the gate reads - the arc's
+        // multi-night median - so the repair's ledger and the release
+        // verdict answer one instrument.
+        const arcLines = res.arcAfter.map((a) => `  EP${a.episodeNumber ?? "?"} arc standing: ${a.verdict} (mean ${pct(a.overall.mean)}, median ${pct(a.overall.median)}, p10 ${pct(a.overall.p10)}, worst ${pct(a.overall.worst)} over ${a.readings} arc reading(s) across ${a.nights} night(s)${a.provisional ? " (PROVISIONAL - single-night read)" : ""}, floor ${pct(a.floor)})`);
         return {
           status: "OK",
           result: [
-            `IDENTITY REPAIR PASS (shipping bar ${Math.round(res.bar * 100)}%):`,
+            `IDENTITY REPAIR PASS (shipping bar ${Math.round(res.bar * 100)}%, arc night ${res.night} - the re-scores appended to the arc ledger):`,
             ...lines,
+            ...arcLines,
             `standing: ${res.before.below} below -> ${res.after.below} below, ${res.before.clearing} -> ${res.after.clearing} clearing (${res.after.measured} measured).`,
             res.after.below === 0
               ? " The named gap is closed - pass the cast again to confirm the standing."

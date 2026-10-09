@@ -38,10 +38,27 @@ import path from "path";
 import { db } from "@/lib/db";
 import type { IdentityScoreEntry, IdentitySource } from "@/lib/identity";
 
-export const IDENTITY_ARC_LAW_VERSION = 144;
+export const IDENTITY_ARC_LAW_VERSION = 146;
 
 /** The nights an arc needs before its read is not provisional. */
 export const IDENTITY_ARC_MIN_NIGHTS = 2;
+
+// ─────────────────────────────────────────────────────────────
+// THE REPAIR JOINS THE ARC (iteration 146). The 145 night's settled
+// verdict named its own repair path - and the probe measured the
+// gap: the repair pass as built read the SWEEP (its before/after
+// standings, its REPAIRED verdicts), re-scored into the sweep, and
+// the gate stopped reading the sweep the moment the arc existed -
+// a repair that lifted its shots to 0.90 reported into a ledger the
+// refusing instrument never reads. From 146 the repair's re-scores
+// APPEND to the arc (real production readings of the work:
+// ref-chained, cohort-tagged from the bridges' own law versions,
+// night-tagged `repair-<date>` - a re-run the same day folds into
+// the same night, the same idempotent replace every other writer
+// obeys), and the pass reads its after-standing the way the gate
+// does - episodeReleaseVerdict off the same receipt path - so the
+// repair's ledger and the gate's verdict answer ONE instrument.
+// ─────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────
 // THE DURABLE LEDGER (iteration 144). The arc's rows ride the

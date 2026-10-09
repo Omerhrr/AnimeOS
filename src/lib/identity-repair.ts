@@ -28,6 +28,9 @@
 import { db } from "@/lib/db";
 import { recordCharacterAssetReadings } from "@/lib/character-assets";
 import { castIdentityMeasurement, scoreRenderIdentity, type CastIdentityMeasurement, type IdentitySource } from "@/lib/identity";
+import { appendIdentityArcReading, bridgeLawCohort } from "@/lib/identity-arc";
+import { episodeReleaseVerdict, type EpisodeReleaseRead } from "@/lib/identity-matrix";
+import type { IdentityScoreEntry } from "@/lib/identity";
 import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
 import { parseGroomProfile, groomProfileLine } from "@/lib/blender/groom";
 import { reanchorCharacter } from "@/lib/reanchor";
@@ -70,6 +73,12 @@ export interface RepairPassResult {
   members: RepairMemberRow[];
   before: { below: number; clearing: number; measured: number };
   after: { below: number; clearing: number; measured: number };
+  /** THE REPAIR JOINS THE ARC (iteration 146): the night tag the
+   * re-scores appended under, and the gate's own read of every
+   * episode the worked shots live in - the after-standing answers
+   * the SAME instrument that refused, off the SAME receipt. */
+  night: string;
+  arcAfter: Array<EpisodeReleaseRead & { episodeNumber: number | null }>;
 }
 
 // ── the pure verdict law (the E2E asserts it) ──
@@ -187,15 +196,35 @@ function memberSnapshot(m: CastIdentityMeasurement, characterId: string) {
  * shots, re-score with the real vision channel, re-anchor the members
  * the re-render could not lift (when reanchor is on), and read the
  * standing again. Every miss is named in the ledger.
+ *
+ * THE REPAIR JOINS THE ARC (iteration 146): every re-scored shot
+ * APPENDS to the identity arc under `night` (default
+ * `repair-<calendar day>` - a re-run the same day folds into the
+ * same night, the idempotent replace), cohort-tagged from the
+ * bridges' own law versions, ref-chained to the work - and the
+ * result's `arcAfter` reads the gate's own verdict (the multi-night
+ * median off the same receipt path) for every episode the worked
+ * shots live in, so the repair's ledger and the release gate answer
+ * ONE instrument. `receiptPath` routes the receipt (default: the
+ * committed production ledger; null: DB rows only - the e2e's lab
+ * scopes ride their own path and never touch the production
+ * receipt).
  */
 export async function runIdentityRepairPass(
   projectId: string,
-  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string },
+  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string; night?: string; receiptPath?: string | null },
 ): Promise<RepairPassResult> {
   const memberLimit = Math.max(1, Math.min(REPAIR_MAX_MEMBERS, Math.round(Number(opts?.members ?? 2) || 2)));
   const shotLimit = Math.max(1, Math.min(REPAIR_MAX_SHOTS_PER_MEMBER, Math.round(Number(opts?.shotsPerMember ?? 1) || 1)));
   const reanchor = opts?.reanchor !== false;
   const nameFilter = (opts?.nameFilter ?? "").trim().toLowerCase();
+  const night = (opts?.night ?? "").trim() || `repair-${new Date().toISOString().slice(0, 10)}`;
+  const receiptPath = opts?.receiptPath;
+  const cohort = bridgeLawCohort();
+  // the re-scores' full verdicts, freshest per shot - the arc append
+  // carries the SHOT's whole cast read, the same shape the night
+  // rescore appends
+  const verdicts = new Map<string, { worst: number; entries: IdentityScoreEntry[] }>();
 
   const before = await castIdentityMeasurement(projectId, "RENDER");
   const belowMembers = before.members
@@ -228,6 +257,11 @@ export async function runIdentityRepairPass(
       }
       const rescored = await scoreRenderIdentity(t.shotId);
       const after = rescored.ok ? rescored.scored.verdict.entries.find((e) => e.characterName === member.name)?.similarity ?? null : null;
+      // the full cast read rides to the arc append (the freshest wins
+      // when several members share the shot - the fold keeps the last)
+      if (rescored.ok) {
+        verdicts.set(t.shotId, { worst: rescored.scored.verdict.worst, entries: rescored.scored.verdict.entries });
+      }
       shotRows.push({
         ref: t.ref,
         shotId: t.shotId,
@@ -252,6 +286,9 @@ export async function runIdentityRepairPass(
           if (row.verdict === "REPAIRED") continue;
           const rescored = await scoreRenderIdentity(row.shotId);
           const after = rescored.ok ? rescored.scored.verdict.entries.find((e) => e.characterName === member.name)?.similarity ?? null : null;
+          if (rescored.ok) {
+            verdicts.set(row.shotId, { worst: rescored.scored.verdict.worst, entries: rescored.scored.verdict.entries });
+          }
           row.after = after;
           row.verdict = shotRepairVerdict(row.before, after, before.bar);
           if (!rescored.ok) row.error = rescored.error;
@@ -295,9 +332,49 @@ export async function runIdentityRepairPass(
     } catch (err) {
       console.log(`[character-asset] ${member.name}: the validation write failed - ${err instanceof Error ? err.message : "unknown"}`);
     }
+
+    // THE REPAIR JOINS THE ARC (iteration 146): this member's worked
+    // shots append to the identity arc - real production readings of
+    // the work, the same shape the night rescore appends (the shot's
+    // whole cast verdict, worst included), ref-chained to the work by
+    // the append itself. A shot worked by several members appends
+    // once per freshest verdict - the fold keeps the last.
+    for (const t of targets) {
+      const v = verdicts.get(t.shotId);
+      if (!v) continue; // no score, no arc row - the miss is named in the ledger
+      await appendIdentityArcReading(
+        {
+          projectId,
+          shotId: t.shotId,
+          source: "RENDER",
+          night,
+          cohort,
+          worst: v.worst,
+          scores: v.entries,
+        },
+        { receiptPath },
+      );
+    }
   }
 
   const after = await castIdentityMeasurement(projectId, "RENDER");
+
+  // THE AFTER-STANDING ANSWERS THE GATE'S OWN INSTRUMENT: the worked
+  // shots' distinct episodes, read through episodeReleaseVerdict off
+  // the SAME receipt path the appends rode - the repair's ledger and
+  // the release verdict are one instrument from here on.
+  const workedShotIds = [...verdicts.keys()];
+  const workedShots = await db.shot.findMany({
+    where: { id: { in: workedShotIds } },
+    select: { id: true, scene: { select: { episodeId: true, episode: { select: { number: true } } } } },
+  });
+  const episodeIds = [...new Set(workedShots.map((s) => s.scene.episodeId))];
+  const arcAfter: Array<EpisodeReleaseRead & { episodeNumber: number | null }> = [];
+  for (const epId of episodeIds) {
+    const read = await episodeReleaseVerdict(projectId, epId, "RENDER", { receiptPath });
+    const epNumber = workedShots.find((s) => s.scene.episodeId === epId)?.scene.episode.number ?? null;
+    arcAfter.push({ ...read, episodeNumber: epNumber });
+  }
 
   const result: RepairPassResult = {
     projectId,
@@ -306,6 +383,8 @@ export async function runIdentityRepairPass(
     members: rows,
     before: standingSnapshot(before),
     after: standingSnapshot(after),
+    night,
+    arcAfter,
   };
 
   // the loop's landing: one production event carrying the ledger

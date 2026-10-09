@@ -97,7 +97,7 @@ async function main() {
 
   // ── B1 the source law ──
   const arcSrc = readFileSync("src/lib/identity-arc.ts", "utf8");
-  check("B1a the arc lib carries the durable version (144)", arcSrc.includes("export const IDENTITY_ARC_LAW_VERSION = 144"));
+  check("B1a the arc lib carries the durable version (146 - the repair joined the arc)", arcSrc.includes("export const IDENTITY_ARC_LAW_VERSION = 146"));
   check("B1b the receipt path is the committed production ledger",
     arcSrc.includes('export const ARC_RECEIPT_PATH = "receipts/identity-arc.jsonl"'));
   check("B1c the fold replaces by (source, ref, night) - the idempotent durable key",

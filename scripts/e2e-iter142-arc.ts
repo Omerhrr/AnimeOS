@@ -66,7 +66,7 @@ async function main() {
 
   // ── A1 the source law ──
   const arcSrc = readFileSync("src/lib/identity-arc.ts", "utf8");
-  check("A1a the arc lib carries its law version (144)", arcSrc.includes("export const IDENTITY_ARC_LAW_VERSION = 144"));
+  check("A1a the arc lib carries its law version (146 - the repair joined the arc)", arcSrc.includes("export const IDENTITY_ARC_LAW_VERSION = 146"));
   const schema = readFileSync("prisma/schema.prisma", "utf8");
   check("A1b the schema carries the arc table (one reading per shot+source+night)",
     schema.includes("model IdentityArcReading") && schema.includes("@@unique([shotId, source, night])"));
@@ -82,7 +82,7 @@ async function main() {
   check("A2 the cohort is the bridges' own law versions (a125/t133/p108 - the standing build)",
     cohort === "a125/t133/p108", `got ${cohort}`);
   check("A2b the arc's youth law stands (a one-night arc is PROVISIONAL below the floor of two)",
-    IDENTITY_ARC_MIN_NIGHTS === 2 && IDENTITY_ARC_LAW_VERSION === 144);
+    IDENTITY_ARC_MIN_NIGHTS === 2 && IDENTITY_ARC_LAW_VERSION === 146);
 
   // ── A3 the arc math (pure) ──
   const idByName = new Map<string, string>([["Lin Yue", "c-lin"], ["Demon Lord Wei", "c-wei"]]);
