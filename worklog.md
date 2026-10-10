@@ -2877,3 +2877,22 @@ Work Log:
 Stage Summary:
 - REPAIR_LAW_VERSION 147 committed; IDENTITY_ARC 146 / ANIME 125 / TOON 133 / PRESENCE 108 stand.
 - The 148 frontier: the second REAL repair pass at the wide rung WITH the scaled wait - S001 (101 frames) and Wei S004 (96) must ride NEW pixels to completion; the light-side transport hue waits as the craft lever.
+
+---
+Task ID: iteration-148-night
+Agent: Super Z (main)
+Task: Iteration 148 night - reset -> drain -> rescore -> the SECOND REAL repair pass (the FIRST under the scaled wait) -> re-read -> eye-read -> record -> commit -> push.
+
+Work Log:
+- Reset clean (fresh DB arc rows 0 post-rebuild; the receipt's 22 lines carried the four nights via the UNION law).
+- Drain 6/6 ~50 min (S001 f101 @ ~10.3 s/frame live); DSH revision x6; the recreated chain watcher's regex missed "NIGHT RESULT: 6/6" (colon) - rescore chained manually, lesson recorded.
+- night-148 appended: 28 lines. Board: S001 55 / S002 55 / S003 75 / S004 65 / S005 50 / S006 75 (the fresh drain's best night, sweep mean 62.5); gate across 5 nights: BELOW (mean 50 / median 40 / p10 35).
+- THE SECOND REAL REPAIR PASS (repair-2026-10-10): 4/4 re-renders COMPLETED under the scaled wait (zero timeouts - the 147 law's first production ride); verdicts honest: Lin 50->40 / 55->45 / 55->35, Wei 65->40, ALL WORSE, both STILL_BELOW; re-anchor beat fired for both; re-scores appended - 32 lines, SIX nights.
+- The night's finding: the completed pixels are sheet-credible in the eye (S004 arch striking, S005 blade luminous, S006 two-shot distinct) yet scored 40/35/45/40 against the REGENERATED sheets - the judge's reference moved under the pixels. 149's finding: the re-anchor beat's sheets must ride the hue-class honest receipt (night130 law) - a reference that changes under the work is not a reference.
+- Eye receipts: S001 lone figure TRUE (fourth ledger night); S006 violet transport SIXTH night, crimson-in-hair PARTIAL; S002/S003 face crops missed (per-drain camera grammar moved compositions).
+- Gates: no build-law moves (the night RAN the laws: REPAIR 147 first production ride; IDENTITY_ARC 146; ANIME 125 / TOON 133 / PRESENCE 108). Receipt 32 lines committed.
+- README item 62 + both worklogs carry the record; committed and pushed.
+
+Stage Summary:
+- The scaled wait is production-proven; the honest closed loop now reads completed pixels, not re-judgments.
+- 149 frontier: the re-anchor beat's sheet honesty (hue-class receipt on regenerated sheets) + the light-side transport hue craft lever.
