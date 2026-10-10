@@ -2859,3 +2859,21 @@ Stage Summary:
 - The instrument's first closed loop ran on production pixels: refuse (3 nights) -> repair (real lifts: S005 +25, S002 +20 on new pixels; S004 +25 via re-anchor; timeouts named) -> re-read (still BELOW across 4 nights - the arc's memory is the design)
 - The durable ledger survived total workspace death via the committed receipt + the union read; the rebuild law is now fully scripted (rebuild146.mjs)
 - The 147 frontier: the tick-budget law (renderWait scales with the rung), then the second repair pass on a ledger that knows what a repair night is; the light-side transport hue waits as the craft lever
+
+---
+Task ID: iteration-147
+Agent: Super Z (main)
+Task: Iteration 147 - THE TICK-BUDGET LAW: the repair's renderWait scales with the rung (probe -> law -> e2e -> smokes -> gates -> commit -> push), eighth sandbox death paid, gates ride the scaled wait.
+
+Work Log:
+- Eighth drift verified before anything: repo clone survived at a357325 = origin/main with the 22-line receipt; Blender, DB, node_modules, .env, dev server all gone.
+- Rebuild law paid (rebuild147.mjs double-fork detach): npm + prisma BEFORE dev server, db push, Blender 5.2.2 LTS via provision-runtime.mjs (4 steps exit 0); .env hand-written; OWNER re-minted; auto-seed via signed GET; night122-restore (4 sheets, Lin r3 514 / Wei r3 517 byte-exact, DNA re-read); night130-reanchor (Wei 1 regen -> IN); clone ghost deleted; warm-pool a+b ALL GREEN.
+- probe-147-ticks.ts COMPLETE ALL GREEN: divergence measured from committed evidence only - S001 6.11 s/frame (need 1.87x budget), S004 12.22 s/frame (need 3.56x budget); the drain's live "frame N/M" telemetry unread by the repair loop.
+- THE LAW: identity-repair.ts REPAIR_LAW_VERSION 147 - the constant REPAIR_TICKS removed; the wait is progress-aware (stage frame telemetry + job progress); STALL 240 ticks (120s no advance), CEILING 2640 ticks (22 min, sized from the measured worst cost with margin); failures name which budget + the frame reached; renderWaitDecision pure; frameOf reads the work.
+- THE FINDING ALIVE IN THE GATES: 146/147 e2e gates' own waits were fixed 210s loops - on a loaded box renders were abandoned mid-advance (frame 40/60), starving everything downstream (rows:0 twice in-cascade); both gates now ride renderAndWait (the law dogfoods itself).
+- Resume law paid: probe140 (7 cuts) + probe140b + probe141 dye ladder re-rendered honestly; anatomy smoke's stale pin repaired (anime-v123 -> anime-v125).
+- Gates: e2e-iter147-ticklaw ALL GREEN (29 asserts, real render completing under the scaled wait, arc append to lab receipt 1/1/3, production receipt byte-untouched, no residue); e2e-iter146-joinarc ALL GREEN on the same law; CASCADE 117..147 + 103a ALL GREEN (28 checks, one clean run); toon/anime/camera smokes GREEN (+ anatomy repaired); src tsc 0.
+
+Stage Summary:
+- REPAIR_LAW_VERSION 147 committed; IDENTITY_ARC 146 / ANIME 125 / TOON 133 / PRESENCE 108 stand.
+- The 148 frontier: the second REAL repair pass at the wide rung WITH the scaled wait - S001 (101 frames) and Wei S004 (96) must ride NEW pixels to completion; the light-side transport hue waits as the craft lever.

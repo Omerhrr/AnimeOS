@@ -39,8 +39,31 @@ import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
 // ── the loop's knobs (bounded: a repair pass is a pass, not a night) ──
 export const REPAIR_MAX_MEMBERS = 4;
 export const REPAIR_MAX_SHOTS_PER_MEMBER = 3;
-export const REPAIR_TICKS = 660;
+
+/** THE TICK-BUDGET LAW (iteration 147): the repair's wait scales with
+ * the work, never a constant. The 146 night measured the old fixed
+ * 330s budget under-covering the wide rung's real renders by 1.87x
+ * (S001: 101 frames at ~6.1 s/frame) and 3.56x (Wei S004: 96 frames
+ * at ~12.2 s/frame) - two of four re-renders died mid-render and
+ * their "repairs" were silently re-judgments (the re-anchor beat
+ * supplied the lift). From 147 the wait reads the job's OWN progress
+ * (the stage's live "frame N/M", the job's progress): a render that
+ * advances is alive and waits as long as it needs. Only two honest
+ * budgets can end a wait:
+ *
+ *   - STALL: no visible advance for REPAIR_STALL_TICKS consecutive
+ *     ticks (240 x 500ms = 120s - Blender can spend minutes on one
+ *     heavy frame, the window clears that bar), or
+ *   - CEILING: REPAIR_MAX_WAIT_TICKS total (2640 x 500ms = 22 min,
+ *     sized from the measured worst per-frame cost at the wide rung
+ *     - 12.2 s/frame x ~101 frames = ~20.6 min - with margin).
+ *
+ * Either way the failure status NAMES WHICH budget ended the wait and
+ * the frame the work reached - the ledger stays honest at both rungs. */
+export const REPAIR_LAW_VERSION = 147;
 export const REPAIR_TICK_MS = 500;
+export const REPAIR_STALL_TICKS = 240;
+export const REPAIR_MAX_WAIT_TICKS = 2640;
 
 export type ShotRepairVerdict = "REPAIRED" | "IMPROVED" | "UNCHANGED" | "WORSE" | "UNSCORED";
 export type MemberRepairVerdict = "REPAIRED" | "IMPROVED" | "STILL_BELOW" | "UNSCORED";
@@ -164,13 +187,52 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** The wait decision, PURE (the E2E asserts it): keep waiting unless
+ * the stall or the ceiling fires - the stall outranks the ceiling. */
+export function renderWaitDecision(input: { elapsedTicks: number; stalledTicks: number }): { continue: boolean; reason?: "stall" | "ceiling" } {
+  if (input.stalledTicks >= REPAIR_STALL_TICKS) return { continue: false, reason: "stall" };
+  if (input.elapsedTicks >= REPAIR_MAX_WAIT_TICKS) return { continue: false, reason: "ceiling" };
+  return { continue: true };
+}
+
+/** The live frame read off the job's stage ("rendering frame 54/101"). */
+function frameOf(stage: string | null | undefined): number | null {
+  const m = typeof stage === "string" ? stage.match(/frame (\d+)\/(\d+)/) : null;
+  return m ? Number(m[1]) : null;
+}
+
 export async function renderAndWait(projectId: string, shotId: string): Promise<{ ok: boolean; status: string }> {
   const job = await createRenderJob(projectId, shotId, "PREVIEW");
   if (!job) return { ok: false, status: "no-job" };
+  // THE WAIT SCALES WITH THE WORK (iteration 147): progress-aware -
+  // an advancing render is alive; only the stall or the ceiling ends
+  // the wait, and the failure names which.
   let ticked = await tickRenderJob(job.id);
-  for (let i = 0; i < REPAIR_TICKS && ticked && ticked.status === "RENDERING"; i++) {
+  let elapsed = 0;
+  let stalled = 0;
+  let lastFrame = frameOf(ticked?.stage);
+  let lastProgress = ticked?.progress ?? 0;
+  while (ticked && ticked.status === "RENDERING") {
+    const decision = renderWaitDecision({ elapsedTicks: elapsed, stalledTicks: stalled });
+    if (!decision.continue) {
+      const budget = decision.reason === "stall" ? REPAIR_STALL_TICKS : REPAIR_MAX_WAIT_TICKS;
+      return {
+        ok: false,
+        status: `${decision.reason} at tick ${elapsed}/${budget}, last frame ${lastFrame ?? "?"} - the ${decision.reason} budget ended the wait`,
+      };
+    }
     await sleep(REPAIR_TICK_MS);
+    elapsed += 1;
     ticked = await tickRenderJob(job.id);
+    const frame = frameOf(ticked?.stage);
+    const advanced = (frame !== null && frame !== lastFrame) || (ticked?.progress ?? 0) > lastProgress;
+    if (advanced) {
+      stalled = 0;
+      if (frame !== null) lastFrame = frame;
+      lastProgress = ticked?.progress ?? lastProgress;
+    } else {
+      stalled += 1;
+    }
   }
   return {
     ok: !!ticked && ["REVIEW", "APPROVED"].includes(ticked.status) && !!ticked.outputUrl,

@@ -44,7 +44,7 @@ import { db } from "../src/lib/db";
 import { executeTool } from "../src/lib/dsh/tools";
 import { createRenderJob, tickRenderJob } from "../src/lib/engine/render";
 import { scoreShotIdentityFromRaw, castIdentityMeasurement } from "../src/lib/identity";
-import { runIdentityRepairPass, shotRepairVerdict } from "../src/lib/identity-repair";
+import { runIdentityRepairPass, shotRepairVerdict, renderAndWait } from "../src/lib/identity-repair";
 import { appendIdentityArcReading, bridgeLawCohort, IDENTITY_ARC_LAW_VERSION } from "../src/lib/identity-arc";
 import { episodeReleaseVerdict } from "../src/lib/identity-matrix";
 import { readFileSync, existsSync, unlinkSync, mkdirSync, rmSync as fsRmSync } from "node:fs";
@@ -140,14 +140,12 @@ async function cleanupLab(labId: string): Promise<void> {
 }
 
 async function realRender(labId: string, shotId: string): Promise<{ ok: boolean; status: string }> {
-  const job = await createRenderJob(labId, shotId, "PREVIEW");
-  if (!job) return { ok: false, status: "no-job" };
-  let ticked = await tickRenderJob(job.id);
-  for (let i = 0; i < 420 && ticked && ticked.status === "RENDERING"; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    ticked = await tickRenderJob(job.id);
-  }
-  return { ok: !!ticked && ["REVIEW", "APPROVED"].includes(ticked.status) && !!ticked.outputUrl, status: `${ticked?.status} ${ticked?.stage ?? ""}` };
+  // THE TICK-BUDGET LAW (iteration 147): the gate rides the SAME
+  // progress-aware wait the repair rides - the old fixed 210s loop
+  // died on advancing renders the moment the box was loaded (the
+  // exact finding the 146 night named), and a gate that abandons an
+  // alive render starves everything downstream of a clip.
+  return renderAndWait(labId, shotId);
 }
 
 async function main() {
