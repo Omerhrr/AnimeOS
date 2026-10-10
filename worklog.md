@@ -2912,3 +2912,19 @@ Work Log:
 
 Stage Summary:
 - The judge's reference is now STABLE under the repair loop (the 148 wound closed at its root); the fx path carries a bounded transport law; the transport's next seams are named with evidence. Ready for the 150 night: the third REAL repair pass under the acceptance.
+
+---
+Task ID: night-150
+Agent: main (Super Z)
+Task: Iteration 150 night - the third REAL repair pass under the sheet acceptance (the 149 law's first production ride); the full night chain.
+
+Work Log:
+- Warm-pool a+b green (the resident booted on the guarded code); reset clean (6 shots to REVIEW, the arc untouched - the receipt's 32 lines through the UNION law).
+- Drain 6/6 real Blender clips ~48 min (S001 101f @ ~6.8 s/f - the fastest yet); the corrected chain watcher (the colon) chained the rescore automatically at NIGHT RESULT: 6/6.
+- night-150 appended (38 lines, seven nights). Board: S001 35 / S002 35 / S003 45 / S004 50 / S005 50 / S006 65 (sweep median 48); the gate: BELOW across 7 nights (mean 50 / median 40 / p10 35).
+- THE THIRD REAL REPAIR PASS - the 149 law ran as designed: the beat STOOD DOWN for both members (Lin #2b5444 dLum 0.082/dHue 0.038; Wei #5c1a2b dLum 0.004/dHue 0.054 - the reference does not move, zero sheets regenerated); the re-renders (zero timeouts under the scaled wait) judged against the standing sheets: Lin S003 45->60 IMPROVED, Wei S004 50->55 IMPROVED; both members IMPROVED (46->49, 63->65), both still BELOW; repair-2026-10-10 folded.
+- Eye receipts: S003 receipt-identical (ninth drain); S001 one figure (fifth night); S004 Wei's hair solid dark (the crimson flood did not lead - the guard in the pixels); S006 Lin's hair carries the blue-green ambient tint; S002's standing crop missed (the grammar moved); S005 clean.
+- README item 64 + both worklogs; commit + push + remote verification next.
+
+Stage Summary:
+- The reference-stability law is production-proven: zero regenerated sheets, honest lifts against the standing sheets, the still-below named. The gate holds BELOW; the crossing's remaining named seams are the lightning windows and the night comp grade (each owes its own probe).
