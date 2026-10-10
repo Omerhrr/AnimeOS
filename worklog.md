@@ -2928,3 +2928,17 @@ Work Log:
 
 Stage Summary:
 - The reference-stability law is production-proven: zero regenerated sheets, honest lifts against the standing sheets, the still-below named. The gate holds BELOW; the crossing's remaining named seams are the lightning windows and the night comp grade (each owes its own probe).
+
+---
+Task ID: iter-151
+Agent: main (Super Z)
+Task: Iteration 151 - the transport hunt's evidence iteration: the lightning probe (exonerated) + the comp grade probe (convicted at 2.26x).
+
+Work Log:
+- Lightning probe: the strike windows computed deterministically from the drain job id (the seed law mirrored); strike vs quiet frames metered on the EXISTING night-150 S006 clip - EXONERATED (63.2 vs 63.3; zero new renders).
+- Comp probe: one S006 cut through the real worker_run with the comp stripped (the honest cast dumper's assembly, the fx under the 149 guard); the same strip metered vs the graded clip - CONVICTED (comp-off 28.0 vs graded 63.2, 2.26x).
+- The conviction ledger complete: the dye (141), the fx emitters (149), the strobe (151) exonerated; the comp grade convicted (151). The lever designed for 152: a luminance-masked grade tint (comp-side - not one of the 141 shader refusals) with its own verify arm.
+- No src changes (an evidence iteration - every law version stands).
+
+Stage Summary:
+- The seven-night violet flood's seam is NAMED AND MEASURED: the post-process grade. 152 lands the bounded-grade lever + verify, then the night reads the medians.
