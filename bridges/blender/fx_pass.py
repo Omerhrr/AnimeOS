@@ -35,6 +35,55 @@ import math
 
 FX_KINDS = ("TRAIL", "BURST", "AURA", "MOTES")
 
+# ─────────────────────────────────────────────────────────────
+# THE FX TRANSPORT GUARD (iteration 149) - the fx answers the eye
+# and the glint, never the dye.
+#
+# The 141 conviction (proven, never cured): a pure-black hair dye
+# still rendered blue - R EXACTLY ZERO, G 11 B 46 standing - the
+# additive hue is the scene's own fx LIGHT TRANSPORT (the azure
+# energy, the lightning, the violet aura) landing on the hero's
+# dark masses with a hue the dye does not carry. Two material-side
+# cures were attempted that night and CUT BY THEIR OWN RECEIPTS
+# (the S-clamp redistributed the flood's energy and bounced the
+# face bright; the mass-lerp turned the readable dark a mid-grey)
+# - the lever is LIGHT-SIDE or it is nothing. The eye receipts ran
+# the conviction six nights (the violet transport, the
+# crimson-in-hair PARTIAL): the 115 sheen law's unfinished
+# sentence - "the moon decides WHERE the glint sits, the sheet
+# decides WHAT COLOR it is" - completes here:
+#
+#   The fx emitters lose their DIFFUSE transport (object-level
+#   ray visibility: the flood that re-dyes the dark masses dies)
+#   and re-carry a BOUNDED share of the program's energy as ONE
+#   point light of the same hue at the program's anchor:
+#
+#     - the spectacle stays visible to the CAMERA (the show),
+#     - and to GLOSSY rays (the glint keeps its source),
+#     - the ambience keeps its mood - bounded, deterministic,
+#     - the dark masses keep the dye's own class.
+#
+# The share is a dial the probe calibrates; the derivation is
+# deterministic (no rng - the seed law holds).
+# ─────────────────────────────────────────────────────────────
+FX_TRANSPORT_SHARE = 0.35   # the bounded share of the programmed energy the transport light re-carries
+FX_TRANSPORT_WATTS = 60.0   # the nominal emitter scale the share multiplies (a night accent vs the 140W hero key)
+
+
+def fx_transport_energy(inten):
+    """The transport light's bounded energy (pure, deterministic)."""
+    return FX_TRANSPORT_WATTS * max(0.0, float(inten)) * FX_TRANSPORT_SHARE
+
+
+def fx_transport_energy_designed(strength):
+    """The DESIGNED emitters' bounded transport (the blade energy, the
+    prop glow, the creature glow): the emission strength maps to a
+    bounded wattage - a full-strength glow (>= 3.2) carries the full
+    share, weaker glows keep a bounded whisper. Pure, deterministic;
+    the bridge's guard_designed_emitter calls this (one law, two
+    runtime homes)."""
+    return FX_TRANSPORT_WATTS * FX_TRANSPORT_SHARE * max(0.25, min(1.0, float(strength) / 3.2))
+
 
 def fnv1a(s):
     """32-bit FNV-1a (mirrors the bridge's seed law exactly)."""
@@ -141,19 +190,42 @@ def _emission_mat(bpy, name, rgb, strength):
     return mat
 
 
+def _transport_light(bpy, scn, name, rgb, inten, parent=None, loc=(0.0, 0.0, 0.0)):
+    """THE FX TRANSPORT GUARD (iteration 149): one bounded point light
+    of the program's own hue at the program's anchor - the bounded
+    share of the energy the emitter's diffuse transport used to flood
+    with. Deterministic: placement and energy derive from the program
+    and the constants, never from rng."""
+    light_data = bpy.data.lights.new(name, "POINT")
+    light_data.color = (rgb[0], rgb[1], rgb[2])
+    light_data.energy = fx_transport_energy(inten)
+    light = bpy.data.objects.new(name, light_data)
+    if parent is not None:
+        light.parent = parent
+    light.location = loc
+    scn.collection.objects.link(light)
+    return light
+
+
 def build_fx_rig(bpy, scn, programs, figure, energy_hex, job_id):
     """Compile the programs into real objects parented into the scene:
     the trail fan hangs off the blade (or the right elbow when the
     figure carries no weapon - an honest fallback), the burst anchors
     at the figure's chest, the aura wraps the root, the motes scatter
     through the volume. A program that cannot anchor is skipped with
-    a note. Returns the rig the frame loop drives."""
+    a note. Returns the rig the frame loop drives.
+
+    THE FX TRANSPORT GUARD (iteration 149) rides every program: the
+    emitter objects lose DIFFUSE ray visibility (camera + glossy
+    stay - the show and the glint survive) and one bounded transport
+    light re-carries the ambience."""
     notes = []
     rig = {
         "trail": None,
         "bursts": [],
         "auras": [],
         "motes": None,
+        "transport": [],
         "prev_beat": -1,
         "fired": 0,
         "trail_peak": 0.0,
@@ -197,8 +269,10 @@ def build_fx_rig(bpy, scn, programs, figure, energy_hex, job_id):
                 scn.collection.objects.link(ob)
                 ob.parent = fan_root
                 ob.data.materials.append(mat)
+                ob.visible_diffuse = False  # THE FX TRANSPORT GUARD (149): the dye keeps its class
                 quads.append(ob)
             rig["trail"] = {"quads": quads, "mat": mat, "intensity": inten, "phase": rng() * 6.28}
+            rig["transport"].append(_transport_light(bpy, scn, f"FxTransport{pi + 1}", rgb, inten, parent=fan_root, loc=(0.0, 0.0, 0.2)))
             rig["kinds"].append("TRAIL")
 
         elif kind == "BURST":
@@ -217,6 +291,7 @@ def build_fx_rig(bpy, scn, programs, figure, energy_hex, job_id):
             ring.data.materials.append(ring_mat)
             ring.parent = broot
             ring.rotation_euler = (math.radians(90), 0, 0)  # flat across the floor plane
+            ring.visible_diffuse = False  # THE FX TRANSPORT GUARD (149)
             shard_mat = _emission_mat(bpy, f"FxBurstShardMat{pi + 1}", rgb, 0.0)
             shards = []
             for s in range(9):
@@ -232,11 +307,13 @@ def build_fx_rig(bpy, scn, programs, figure, energy_hex, job_id):
                 ob.scale = (0.001, 0.001, 0.001)
                 ob.data.materials.append(shard_mat)
                 ob.parent = broot
+                ob.visible_diffuse = False  # THE FX TRANSPORT GUARD (149)
                 shards[si]["ob"] = ob
             rig["bursts"].append({
                 "ring": ring, "ring_mat": ring_mat, "shards": shards, "shard_mat": shard_mat,
                 "intensity": inten, "bound": set(prog["beats"]), "t": None, "seed_phase": rng() * 6.28,
             })
+            rig["transport"].append(_transport_light(bpy, scn, f"FxTransport{pi + 1}", rgb, inten, parent=broot, loc=(0.0, 0.0, 0.0)))
             rig["kinds"].append("BURST")
 
         elif kind == "AURA":
@@ -251,7 +328,9 @@ def build_fx_rig(bpy, scn, programs, figure, energy_hex, job_id):
             torus.data.materials.append(mat)
             torus.parent = root
             torus.location = (0.0, 0.0, 0.95)  # waist height, figure-local
+            torus.visible_diffuse = False  # THE FX TRANSPORT GUARD (149): the flood that re-dyes the hero's masses dies
             rig["auras"].append({"ob": torus, "mat": mat, "intensity": inten, "phase": rng() * 6.28})
+            rig["transport"].append(_transport_light(bpy, scn, f"FxTransport{pi + 1}", rgb, inten, parent=root, loc=(0.0, 0.0, 0.95)))
             rig["kinds"].append("AURA")
 
         elif kind == "MOTES":
@@ -264,6 +343,7 @@ def build_fx_rig(bpy, scn, programs, figure, energy_hex, job_id):
                 ob = bpy.context.active_object
                 ob.name = f"FxMotes{pi + 1}_{m}"
                 ob.data.materials.append(mat)
+                ob.visible_diffuse = False  # THE FX TRANSPORT GUARD (149)
                 motes.append({
                     "ob": ob,
                     "base": (ob.location.x, ob.location.y, ob.location.z),
@@ -273,7 +353,15 @@ def build_fx_rig(bpy, scn, programs, figure, energy_hex, job_id):
                     "phase": rng() * 6.28,
                 })
             rig["motes"] = {"motes": motes, "mat": mat, "intensity": inten}
+            rig["transport"].append(_transport_light(bpy, scn, f"FxTransport{pi + 1}", rgb, inten, parent=None, loc=(0.0, 0.0, 1.7)))
             rig["kinds"].append("MOTES")
+
+    if rig["transport"]:
+        notes.append(
+            f"THE FX TRANSPORT GUARD (149): {len(rig['kinds'])} program(s) - the emitters ride visible_diffuse=False "
+            f"(camera + glossy stay), {len(rig['transport'])} bounded transport light(s) at "
+            f"share {FX_TRANSPORT_SHARE} ({FX_TRANSPORT_WATTS}W nominal) - the fx answers the eye and the glint, never the dye"
+        )
 
     return rig
 

@@ -427,7 +427,19 @@ export function buildVisualAnchor(
   return parts.filter(Boolean).join("; ");
 }
 
-export async function generateCharacterModelSheet(characterId: string) {
+/**
+ * THE CANDIDATE IS NOT THE REFERENCE (iteration 149): with `install:
+ * false` the generated sheet lands at a CANDIDATE path and the
+ * character row is untouched - the acceptance loop measures the
+ * candidate's pixels BEFORE anything may become the judge's
+ * reference. A generation the acceptance refuses leaves the standing
+ * sheet byte-exact (the 148 night's wound: a sheet that changes every
+ * regeneration is not a reference - and one that was never accepted
+ * must never displace one that stands). Default: install (the
+ * canonical behavior every existing caller keeps).
+ */
+export async function generateCharacterModelSheet(characterId: string, opts?: { install?: boolean }) {
+  const install = opts?.install !== false;
   const character = await db.character.findUnique({
     where: { id: characterId },
     include: { project: true, states: { orderBy: { episodeNumber: "asc" } } },
@@ -472,6 +484,13 @@ export async function generateCharacterModelSheet(characterId: string) {
 
   const dir = path.join(process.cwd(), "public", "sheets");
   await fs.promises.mkdir(dir, { recursive: true });
+  if (!install) {
+    // THE CANDIDATE PATH (iteration 149): the standing sheet's file and
+    // the character row both stay untouched - the acceptance decides.
+    const candidatePath = path.join(dir, `${character.id}.candidate.png`);
+    await fs.promises.writeFile(candidatePath, Buffer.from(base64, "base64"));
+    return { modelSheetUrl: `/sheets/${character.id}.candidate.png`, prompt: sheetPrompt.slice(0, 1200), anchor, dyes, dyeClause, installed: false as const };
+  }
   await fs.promises.writeFile(path.join(dir, `${character.id}.png`), Buffer.from(base64, "base64"));
 
   const modelSheetUrl = `/sheets/${character.id}.png?v=${Date.now()}`;
@@ -481,7 +500,7 @@ export async function generateCharacterModelSheet(characterId: string) {
     data: { modelSheetUrl, modelSheetPrompt: anchor, modelSheetAt: now },
   });
 
-  return { modelSheetUrl, prompt: sheetPrompt.slice(0, 1200), anchor, dyes, dyeClause };
+  return { modelSheetUrl, prompt: sheetPrompt.slice(0, 1200), anchor, dyes, dyeClause, installed: true as const };
 }
 
 // ─── SDK call with retry ────────────────────────────────────

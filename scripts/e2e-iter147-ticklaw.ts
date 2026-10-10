@@ -133,8 +133,8 @@ async function main() {
   const repairSrc = readFileSync("src/lib/identity-repair.ts", "utf8");
   const arcSrc = readFileSync("src/lib/identity-arc.ts", "utf8");
 
-  check("A1a the repair lib carries the tick-budget law version (147)",
-    repairSrc.includes(`export const REPAIR_LAW_VERSION = ${REPAIR_LAW_VERSION}`) && REPAIR_LAW_VERSION === 147);
+  check("A1a the repair lib carries the tick-budget law (landed at 147, the standing version rides forward)",
+    repairSrc.includes(`export const REPAIR_LAW_VERSION = ${REPAIR_LAW_VERSION}`) && REPAIR_LAW_VERSION >= 147);
   check("A1b the old constant budget is GONE from source",
     !repairSrc.includes("REPAIR_TICKS ") && !repairSrc.includes("REPAIR_TICKS ="),
     "660 x 500ms was the finding");

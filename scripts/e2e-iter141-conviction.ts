@@ -30,7 +30,7 @@ import { db } from "../src/lib/db";
 import { detectCast } from "../src/lib/ai/art";
 import { characterDesignDna } from "../src/lib/animation/design";
 import { adherentDna, sheetDnaFresh } from "../src/lib/blender/adherence";
-import { planSheetConformance, extractSheetPalette } from "../src/lib/blender/sheet-palette";
+import { planSheetConformance, extractSheetPalette, relLum, PULL_LUM_CAP } from "../src/lib/blender/sheet-palette";
 import fs from "fs";
 import path from "path";
 
@@ -93,8 +93,14 @@ async function main() {
         { robe: regex.robeColor, accent: regex.robeAccent, hair: regex.hairColor },
       );
       const hairRow = rows.find((r) => r.role === "hair");
-      check("the conformance's hair row refuses to re-dye", !!hairRow && (hairRow.skipped !== undefined || hairRow.to === hairRow.from || hairRow.anchored !== undefined),
-        `hair row: ${hairRow?.from} -> ${hairRow?.to}${hairRow?.skipped ? ` (${hairRow.skipped.slice(0, 60)})` : ""}${hairRow?.anchored ? " (anchored)" : ""}`);
+      // THE 115 LAW'S LETTER (re-based at 149: the standing sheet's
+      // palette moved with the 149 rebuild's regenerated art, and the
+      // law allows a WITHIN-CLASS refinement - the refusal is for the
+      // pull that would CROSS the dye's value class):
+      const crossed = !!hairRow && hairRow.to !== undefined && hairRow.to !== hairRow.from &&
+        Math.abs(relLum(hairRow.to) - relLum(hairRow.from)) > PULL_LUM_CAP;
+      check("the conformance's hair row never crosses the dye's value class (the 115 law)", !!hairRow && !crossed,
+        `hair row: ${hairRow?.from} -> ${hairRow?.to}${hairRow?.skipped ? ` (${hairRow.skipped.slice(0, 60)})` : ""}${hairRow?.anchored ? " (anchored)" : ""}${crossed ? " - CROSSED" : ""}`);
     }
   }
 

@@ -2896,3 +2896,19 @@ Work Log:
 Stage Summary:
 - The scaled wait is production-proven; the honest closed loop now reads completed pixels, not re-judgments.
 - 149 frontier: the re-anchor beat's sheet honesty (hue-class receipt on regenerated sheets) + the light-side transport hue craft lever.
+
+---
+Task ID: iter-149
+Agent: main (Super Z)
+Task: Iteration 149 - the reference-stability law (the sheet acceptance) + the light-side fx transport guard; end-to-end day iteration (rebuild after the ninth drift, probe, gates, commit, push).
+
+Work Log:
+- Ninth drift: box wiped; clone at 147201d = origin/main verified; rebuild149.mjs (double-fork detach) paid the full law - npm/prisma before the dev server, Blender 5.2.2 LTS via provisionBlender, OWNER re-minted, auto-seed, ghost deleted, night122-restore byte-exact (Lin 514 / Wei 517, DNA 4/4), night130-reanchor (3 honest receipts + Wei 1 regen -> IN), warm-pool a+b green. NEW LESSON: .env must be UNQUOTED (the launcher's naive parser passes raw values; Prisma rejects a leading quote).
+- THE SHEET ACCEPTANCE (REPAIR_LAW_VERSION 149): reanchor.ts gained acceptanceGateVerdict (pure), measureSheetClass, SHEET_ACCEPT_ATTEMPTS=3, reanchorWithSheetAcceptance (the night130 gate on the build DNA's dye class: honest -> stand down, no image generated; drifted -> bounded best-of-3 candidates measured IN class before install via art.ts install:false candidate path; all OUT -> the standing sheet stands byte-exact; no dyes -> canonical fall-through named). identity-repair.ts (b) half: only an ACCEPTED sheet re-scores; a stood-down beat keeps the re-render verdicts; the ledger carries reanchorAttempts/reanchorNote.
+- THE FX TRANSPORT GUARD: fx_pass.py - every fx emitter rides visible_diffuse=False (camera+glossy stay) + one bounded POINT light per program (share 0.35 of 60W, deterministic); the bridge's guard_designed_emitter covers the blade energy (hero + partner + legacy), prop glow, creature glow; one formula (fx_transport_energy_designed), two runtime homes.
+- THE PROBE (141 discipline): two REAL arms of S005+S006 (stash-flip off vs on); meter + eye: the guard fired, the ambience kept its tint, the hair boxes unmoved to 0.1/255 - the hair's foreign hue rides the LIGHTNING + the night comp grade (the named next seams, each owing its own probe; no blind burns).
+- GATES: e2e-iter149-reference ALL GREEN (33 asserts); the cascade 26/28 first pass, the 2 reds were the resume law's pattern (the probe ledgers died with the box) - the resume law re-rendered probe140 (7 cuts) + 140b (3 cuts) + the 141 bisect ladder and both gates went green (the 141 hair-row assert re-based to the 115 law's letter - within-class refinement is lawful, the refusal is the crossing); the fx transport smoke green (14 asserts, real Blender); toon/anime/camera/anatomy smokes green; src tsc 0 errors; the 147 gate's pin repaired to >= 147.
+- Stage: detached-night150.mjs + night150-repair.ts + cascade-149.mjs prepared for the night chain.
+
+Stage Summary:
+- The judge's reference is now STABLE under the repair loop (the 148 wound closed at its root); the fx path carries a bounded transport law; the transport's next seams are named with evidence. Ready for the 150 night: the third REAL repair pass under the acceptance.

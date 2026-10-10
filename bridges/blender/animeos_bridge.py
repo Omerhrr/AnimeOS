@@ -2283,6 +2283,55 @@ def emission_mat(bpy, name, color_hex, strength):
     return mat
 
 
+# ── THE FX TRANSPORT GUARD (iteration 149) - the designed emitters ──
+# The 141 conviction was LIGHT TRANSPORT: the emissive blade energy
+# and the glowing props flood the hero's dark masses with a hue the
+# dye does not carry (pure-black hair rendered R 0 / G 11 / B 46 on
+# its own), and the two material-side cures of that night were cut by
+# their own receipts. The lever is light-side: the emitters keep the
+# CAMERA and the GLOSSY rays (the show and the glint - the 115 sheen
+# law's "the moon decides WHERE the glint sits"), lose the DIFFUSE
+# transport (the flood that re-dyes the masses), and one bounded
+# POINT light of the emitter's own hue re-carries the ambience at
+# the law's share. Deterministic; the formula lives in fx_pass
+# (one law, two runtime homes).
+
+def _fx_designed_energy(strength):
+    """The designed emitters' bounded transport wattage (the fx_pass
+    law's own derivation)."""
+    here_dir = os.path.dirname(os.path.abspath(__file__))
+    if here_dir not in sys.path:
+        sys.path.insert(0, here_dir)
+    import fx_pass
+    return fx_pass.fx_transport_energy_designed(strength)
+
+
+def guard_designed_emitter(bpy, scn, name, parts, color_hex, strength, parent=None, loc=None):
+    """Guard ONE designed emitter: every carrier object loses diffuse
+    ray visibility; one bounded transport light of the emitter's own
+    hue re-carries the ambience. Returns the evidence the state names."""
+    guarded = []
+    for ob in parts:
+        if ob is not None:
+            try:
+                ob.visible_diffuse = False
+                guarded.append(ob.name)
+            except Exception:  # noqa: BLE001
+                pass
+    rgb = hex_to_rgb(color_hex)
+    energy = _fx_designed_energy(strength)
+    light_data = bpy.data.lights.new(name, "POINT")
+    light_data.color = (rgb[0], rgb[1], rgb[2])
+    light_data.energy = energy
+    light = bpy.data.objects.new(name, light_data)
+    if parent is not None:
+        light.parent = parent
+    if loc is not None:
+        light.location = loc
+    scn.collection.objects.link(light)
+    return {"light": light.name, "energy": round(energy, 3), "guarded": guarded}
+
+
 def smooth(obj):
     """Smooth-shade a mesh so primitives read as cloth/skin, not blocks."""
     if obj and obj.type == "MESH":
@@ -5176,11 +5225,14 @@ def build_designed_prop(bpy, scn, dna, job_id="prop-build"):
 
     report = {"propType": ptype, "parts": 0, "runes": 0}
     parts = 0
+    glow_carriers = []  # THE FX TRANSPORT GUARD (149): the parts wearing the glow
 
     def part(ob, name, mat=None):
         nonlocal parts
         ob.name = name
         ob.data.materials.append(mat if mat is not None else body)
+        if glow_s > 0 and mat is glow_mat:
+            glow_carriers.append(ob)
         try:
             bpy.ops.object.shade_smooth()
         except Exception:  # noqa: BLE001
@@ -5299,6 +5351,17 @@ def build_designed_prop(bpy, scn, dna, job_id="prop-build"):
             part(bead, f"Finial{k + 1}", accent)
 
     report["parts"] = parts
+    # THE FX TRANSPORT GUARD (iteration 149): the prop's glow is a
+    # designed emitter - the luminous parts keep the camera and the
+    # glint; their diffuse flood is bounded (the violet transport's
+    # own law)
+    if glow_carriers:
+        try:
+            report["transportGuard"] = guard_designed_emitter(
+                bpy, scn, "FxTransportProp", glow_carriers, glow_hex,
+                max(0.4, glow_s), loc=tuple(glow_carriers[0].location))
+        except Exception as exc:  # noqa: BLE001
+            report["transportGuard"] = {"refused": str(exc)[:160]}
     return report
 
 
@@ -5324,11 +5387,14 @@ def build_designed_creature(bpy, scn, dna, job_id="creature-build"):
 
     report = {"archetype": archetype, "parts": 0}
     parts = 0
+    glow_carriers = []  # THE FX TRANSPORT GUARD (149): the parts wearing the glow
 
     def part(ob, name, mat=None):
         nonlocal parts
         ob.name = name
         ob.data.materials.append(mat if mat is not None else hide)
+        if glow_s > 0.5 and mat is glow_mat:
+            glow_carriers.append(ob)
         try:
             bpy.ops.object.shade_smooth()
         except Exception:  # noqa: BLE001
@@ -5438,6 +5504,15 @@ def build_designed_creature(bpy, scn, dna, job_id="creature-build"):
                 part(horn, f"Horn{s_i}", accent)
 
     report["parts"] = parts
+    # THE FX TRANSPORT GUARD (iteration 149): the creature's glow (the
+    # spirit eyes) rides the same light-side law
+    if glow_carriers:
+        try:
+            report["transportGuard"] = guard_designed_emitter(
+                bpy, scn, "FxTransportCreature", glow_carriers, glow_hex,
+                max(0.8, glow_s * 2.0), loc=tuple(glow_carriers[0].location))
+        except Exception as exc:  # noqa: BLE001
+            report["transportGuard"] = {"refused": str(exc)[:160]}
     return report
 
 
@@ -6428,6 +6503,20 @@ def worker_run(job_file):
                     state["anatomy"] = toon_pass.reshape_anatomy(bpy, scn, figure, hero)
             except Exception as exc:  # noqa: BLE001
                 state["anatomy"] = {"applied": False, "note": f"anatomy pass refused: {exc}"[:160]}
+            # THE FX TRANSPORT GUARD (iteration 149): the hero's blade
+            # energy is a designed emitter - the luminous blade keeps
+            # the camera and the glint; its diffuse flood on the
+            # wielder's dark masses is bounded (the 141 conviction's
+            # light-side answer).
+            try:
+                if isinstance(figure, dict) and figure.get("blade") is not None:
+                    state["bladeTransport"] = guard_designed_emitter(
+                        bpy, scn, "FxTransportBlade", [figure.get("blade")],
+                        (hero or {}).get("bladeColor") or "#5eead4",
+                        2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0,
+                        parent=figure.get("gripPivot") or figure.get("root"), loc=(0.0, 0.0, 0.0))
+            except Exception as exc:  # noqa: BLE001
+                state["bladeTransport"] = {"refused": str(exc)[:160]}
             state["rig"] = {
                 "version": "v4.1" if state.get("figureSource", "").startswith("asset") else "v4.0-designed",
                 "face": True, "hands": True,
@@ -6582,6 +6671,17 @@ def worker_run(job_file):
                     state["secondFigureMaterials"] = materials_evidence(other_mprof)
                     # the second figure's skin depth rides the state too
                     state["secondFigureSkinDepth"] = skin_depth_evidence(other_sdep)
+                    # THE FX TRANSPORT GUARD (iteration 149): the
+                    # partner's blade rides the same law
+                    try:
+                        if isinstance(other_rig, dict) and other_rig.get("blade") is not None:
+                            state["partnerBladeTransport"] = guard_designed_emitter(
+                                bpy, scn, "FxTransportBladeB", [other_rig.get("blade")],
+                                (other or {}).get("bladeColor") or "#5eead4",
+                                2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0,
+                                parent=other_rig.get("gripPivot") or other_rig.get("root"), loc=(0.0, 0.0, 0.0))
+                    except Exception as exc:  # noqa: BLE001
+                        state["partnerBladeTransport"] = {"refused": str(exc)[:160]}
                     # the second figure's groom rides the state too
                     if isinstance(other_rig, dict) and other_rig.get("groom"):
                         state["secondFigureGroom"] = other_rig["groom"]
@@ -6738,6 +6838,16 @@ def worker_run(job_file):
             blade.data.materials.append(emission_mat(
                 bpy, "BladeMat", (hero or {}).get("bladeColor", "#40f2d2") if hero else "#40f2d2",
                 2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0))
+            # THE FX TRANSPORT GUARD (iteration 149): the legacy blade
+            # rides the same light-side law
+            try:
+                state["bladeTransport"] = guard_designed_emitter(
+                    bpy, scn, "FxTransportBlade", [blade],
+                    (hero or {}).get("bladeColor", "#40f2d2") if hero else "#40f2d2",
+                    2.0 + float(scene_p.get("energyIntensity", 0.6)) * 8.0,
+                    loc=tuple(blade.location))
+            except Exception as exc:  # noqa: BLE001
+                state["bladeTransport"] = {"refused": str(exc)[:160]}
 
         # ── v7.2 SECONDARY MOTION RIG: the hero's cloth and hair hang
         #    from pivots and will ride the grammar beats (or the shot's

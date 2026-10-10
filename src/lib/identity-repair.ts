@@ -33,7 +33,7 @@ import { episodeReleaseVerdict, type EpisodeReleaseRead } from "@/lib/identity-m
 import type { IdentityScoreEntry } from "@/lib/identity";
 import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
 import { parseGroomProfile, groomProfileLine } from "@/lib/blender/groom";
-import { reanchorCharacter } from "@/lib/reanchor";
+import { reanchorWithSheetAcceptance } from "@/lib/reanchor";
 import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
 
 // ── the loop's knobs (bounded: a repair pass is a pass, not a night) ──
@@ -59,8 +59,23 @@ export const REPAIR_MAX_SHOTS_PER_MEMBER = 3;
  *     - 12.2 s/frame x ~101 frames = ~20.6 min - with margin).
  *
  * Either way the failure status NAMES WHICH budget ended the wait and
- * the frame the work reached - the ledger stays honest at both rungs. */
-export const REPAIR_LAW_VERSION = 147;
+ * the frame the work reached - the ledger stays honest at both rungs.
+ *
+ * THE REFERENCE DOES NOT MOVE UNDER AN HONEST RECEIPT (iteration
+ * 149): the 148 night rode the scaled wait to 4/4 completed
+ * re-renders and the completed pixels told the truth the re-anchor's
+ * sheets did not want to hear - the beat regenerated the canonical
+ * sheet for every still-below member with no acceptance and no
+ * stability, and the judge's reference moved under the pixels (the
+ * 146 night's +25 and the 148 night's -8 rode the SAME beat). From
+ * 149 the re-anchor beat carries ITS SHEET ACCEPTANCE (the night130
+ * law, completed): the member's build DNA is measured against the
+ * committed design dyes, an honest build means the reference STANDS
+ * (the still-below is named, never re-judged against a moved
+ * goalpost), a drifted build owes a bounded best-of candidates whose
+ * pixels must measure IN the design's class BEFORE any installs, and
+ * a channel that keeps its drift keeps its standing sheet. */
+export const REPAIR_LAW_VERSION = 149;
 export const REPAIR_TICK_MS = 500;
 export const REPAIR_STALL_TICKS = 240;
 export const REPAIR_MAX_WAIT_TICKS = 2640;
@@ -85,6 +100,12 @@ export interface RepairMemberRow {
   shots: RepairShotRow[];
   reanchored: boolean;
   reanchorError?: string;
+  /** THE SHEET ACCEPTANCE (iteration 149): how the beat answered.
+   * `reanchored` is true only when an accepted sheet installed; the
+   * note names every other answer (the honest stand-down, the
+   * channel's kept drift) and the attempts count the candidates. */
+  reanchorAttempts?: number;
+  reanchorNote?: string;
   after: { standing: string; average: number | null; worst: number | null };
   verdict: MemberRepairVerdict;
 }
@@ -297,13 +318,15 @@ export async function runIdentityRepairPass(
   const rows: RepairMemberRow[] = [];
   for (const member of belowMembers) {
     // (a-1) THE SHEET IS READ INTO BUILD DNA: a fresh vision read (the
-    // cache is deliberately bypassed - a repair re-measures its truth)
+    //    cache is deliberately bypassed - a repair re-measures its truth)
     let dna: RepairMemberRow["dna"] = { source: "skipped", line: `${member.name}: no sheet read attempted` };
+    let buildRobe: string | null = null;
     if (member.anchored) {
       const read = await readSheetDna(member.characterId, { refresh: true });
       dna = read.ok
         ? { source: read.source, line: adherenceLineFromRead(member.name, read.dna) }
         : { source: "failed", line: `${member.name}: sheet DNA read failed - ${read.error}` };
+      buildRobe = read.ok ? read.dna.robeColor ?? null : null;
     } else {
       dna = { source: "skipped", line: `${member.name}: unanchored cannot be repaired against nothing` };
     }
@@ -336,13 +359,22 @@ export async function runIdentityRepairPass(
 
     let reanchored = false;
     let reanchorError: string | undefined;
+    let reanchorAttempts: number | undefined;
+    let reanchorNote: string | undefined;
 
-    // (b) STILL BELOW -> the sheet itself answers next: regenerate it
-    // from the current design text, then re-score the same shots
-    // against the NEW sheet (the re-anchor is the loop's second half).
+    // (b) STILL BELOW -> THE SHEET ACCEPTANCE ANSWERS FIRST (iteration
+    // 149): the night130 gate reads the member's build DNA against the
+    // committed design dyes. An HONEST build means the reference does
+    // not move - the still-below stands named, never re-judged against
+    // a regenerated goalpost (the 148 wound). A DRIFTED build owes a
+    // bounded best-of candidates, each measured IN the design's class
+    // before it may install; only an ACCEPTED sheet re-scores the
+    // shots (the reference actually moved - the re-judgment is fair).
     if (reanchor && memberRepairVerdict(shotRows) !== "REPAIRED" && member.anchored) {
-      const ra = await reanchorCharacter(member.characterId, { rescore: 0, actor: "DSH" });
-      if (ra.ok) {
+      const ra = await reanchorWithSheetAcceptance(member.characterId, { buildRobe, actor: "DSH" });
+      reanchorAttempts = ra.attempts;
+      reanchorNote = ra.ok ? ra.note : `the acceptance failed - ${ra.error ?? "unknown"}`;
+      if (ra.ok && ra.accepted && ra.result) {
         reanchored = true;
         for (const row of shotRows) {
           if (row.verdict === "REPAIRED") continue;
@@ -355,9 +387,12 @@ export async function runIdentityRepairPass(
           row.verdict = shotRepairVerdict(row.before, after, before.bar);
           if (!rescored.ok) row.error = rescored.error;
         }
-      } else {
+      } else if (!ra.ok) {
         reanchorError = ra.error;
       }
+      // a stood-down beat keeps the re-render verdicts: the reference
+      // did not move, so re-judging the same pixels against the same
+      // sheet would be variance double-dipping, not repair
     }
 
     // the standing after this member's shots were re-judged
@@ -370,6 +405,8 @@ export async function runIdentityRepairPass(
       shots: shotRows,
       reanchored,
       ...(reanchorError ? { reanchorError } : {}),
+      ...(reanchorAttempts !== undefined ? { reanchorAttempts } : {}),
+      ...(reanchorNote !== undefined ? { reanchorNote } : {}),
       after: afterSnap,
       verdict: memberRepairVerdict(shotRows),
     });
@@ -465,6 +502,8 @@ export async function runIdentityRepairPass(
             name: r.name,
             dna: r.dna,
             reanchored: r.reanchored,
+            ...(r.reanchorAttempts !== undefined ? { reanchorAttempts: r.reanchorAttempts } : {}),
+            ...(r.reanchorNote !== undefined ? { reanchorNote: r.reanchorNote } : {}),
             verdict: r.verdict,
             shots: r.shots.map((s) => ({ ref: s.ref, before: s.before, after: s.after, verdict: s.verdict, error: s.error })),
           })),
