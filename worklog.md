@@ -3049,3 +3049,18 @@ Work Log:
 
 Stage Summary:
 - The judge's contract now owes each rung its own scale. 158 = the night: the p109 cohort's second night - do the front-scale aspects read what the scale can carry now.
+
+---
+Task ID: night-158
+Agent: main (Super Z)
+Task: Iteration 158 night - the scale law's first night (the drain re-read under the 157 contract), end-to-end.
+
+Work Log:
+- Warm-pool a+b ALL GREEN; reset clean (6 jobs / 6 clips); drain 6/6 ~51 min (DSH revision every clip); the watcher chained the rescore.
+- Board: S001 65 (+30) / S002 65 / S003 75 / S004 60 (+20) / S005 55 (+15) / S006 75 (both members) - sweep mean 66.
+- Gate: the p109 cohort's 2-night read - mean 62, median 65, p10 48, worst 48, floor 70 -> BELOW; the worst cell lifted 35 -> 48 (the scale law's fingerprint).
+- Eye: the pixels are the 156 drain's own grammar (the ghost law's eighth night; the bounded mist holds); the A/B completed in reverse - the contract moved, the read followed on the same-honest pixels.
+- No repair pass tonight (the eye before the hand); receipts staged (54 lines); commit + push + remote verification.
+
+Stage Summary:
+- The judge's wide-cell grammar was the seam and the scale law is its repair; the remaining 8-point mean gap is measured with its holds named. 159 = the pixel-bound vs contract-bound probe (S005/S004's limiting aspects against their crops) before any hand moves.
