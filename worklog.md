@@ -3095,3 +3095,19 @@ Work Log:
 
 Stage Summary:
 - The present tense reads at the floor; the crossing is the arc's own memory converging. 161 = the fourth night (or the named cells' final lift); the LUT probe waits.
+
+---
+Task ID: night-161
+Agent: main (Super Z)
+Task: Iteration 161 night - the variance night (the p109 cohort's fourth), end-to-end.
+
+Work Log:
+- Warm-pool a+b green; reset clean; drain 6/6 ~50 min; the watcher chained the rescore.
+- Board: S001 45 (-20) / S002 65 / S003 75 / S004 65 (-10) / S005 35 (-30) / S006 75+80 (EXACTLY the 160 read) - sweep mean 60, median 65, p10 35.
+- Gate: the 4-night arc medians mean 65.4 / p10 47.5 / worst 47.5 -> BELOW (the variance night slowed the convergence).
+- Eye: S005's pixels RECEIPT-IDENTICAL to 158/160 (the judge read the same grammar at 55, 65, 35); the ghost law's tenth night.
+- THE SPLIT: the stable cells (S002/S003/S006) held exactly across four nights; the swing cells (S001/S004/S005) wander +/-15-30 on unchanged pixels - the judge's sampling variance is the measured seam.
+- Receipts staged (66 lines); commit + push + remote verification.
+
+Stage Summary:
+- The judge's sampling variance is the remaining instrument seam. 162 = the within-entry spread probe, then the damping lever (median-of-5) if the evidence names it, then the night.
