@@ -2985,3 +2985,17 @@ Work Log:
 
 Stage Summary:
 - The lever cured what it convicted; the medians still BELOW - the crossing waits on the wide-cell grammar. The 154 frontier: the fourth REAL repair pass on the worst-first cells (S001 20, S004 40, S005 40) under the standing laws.
+
+---
+Task ID: iter-154
+Agent: main (Super Z)
+Task: Iteration 154 - the fourth REAL repair pass (the gate-refusal remedy), end-to-end.
+
+Work Log:
+- Pass (night154-repair.ts): members 2 / shotsPerMember 3 / reanchor ON; Lin S001/S005/S006, Wei S004 (de-dup'd); the acceptance's THIRD production ride (Wei build #4a1525 in-class dLum 0.026/dHue 0.047 - no sheet moved); 6 real renders ~38 min under the scaled wait (zero timeouts); S001 20->35 IMPROVED, S006 50->75 REPAIRED (the arc's best cell), S004/S005 40 UNCHANGED; Lin avg 48->56, Wei 48->60; repair-2026-10-11 folded.
+- Gate re-read: EP7 BELOW (mean 51, median 45, p10 35, worst 35 across 8 nights) - mean 49->51, medians hold, no flip.
+- Eye receipts: S006 closer grammar (the arc's strongest composition), S001 lone figure with legible debris masses + lighter violet; the wides judge tiny figures harshly (the seam named twice).
+- README item 68 + both worklogs; commit + push + remote verification next.
+
+Stage Summary:
+- The repair instrument is exhausted for the wides; the remaining lever is the wide-cell framing law (155 - the craft lever the evidence names twice).
