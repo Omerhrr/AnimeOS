@@ -3111,3 +3111,17 @@ Work Log:
 
 Stage Summary:
 - The judge's sampling variance is the remaining instrument seam. 162 = the within-entry spread probe, then the damping lever (median-of-5) if the evidence names it, then the night.
+
+---
+Task ID: iter-162
+Agent: main (Super Z)
+Task: Iteration 162 - the damping constant (the sampling-variance probe + the lever), end-to-end.
+
+Work Log:
+- PROBE (probe162-spread.ts, read-only, 7 raw calls per cell over the SAME strip + crops): S001 [35,65,35,35,65,55,75] spread 40 BIMODAL (35 x4 = the banned comparison resurfacing; 65 x2 = the scale-law mode); S005 [35,65,35,35,35,65,35] 5:2; S002 the control, continuous, spread 30. The median-of-3 was a coin flip between the modes - why the swing cells wandered while the stable cells held.
+- LEVER: the committed rescore's ANIMEOS_SCORE_SAMPLES default 3 -> 5 (the 117 ceiling min1/max7 stands; the env override stands); the door: four privates exported one-line for the probe.
+- GATES: e2e-iter162-damping ALL GREEN (9 asserts); cascade 35 gates ALL GREEN; 5 smokes green; src tsc 0.
+- README item 76 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The instrument measures more; the verdict converges to the majority mode. 163 = the night at samples=5 (the damped read's first night; the convergence arithmetic).

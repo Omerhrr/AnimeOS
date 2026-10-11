@@ -138,7 +138,7 @@ export type IdentitySource = "PANEL" | "RENDER";
 /** The shot row shape the identity pipeline needs (project + cast + sheets). */
 type IdentityShot = NonNullable<Awaited<ReturnType<typeof loadIdentityShot>>>;
 
-async function loadIdentityShot(shotId: string) {
+export async function loadIdentityShot(shotId: string) {
   return db.shot.findUnique({
     where: { id: shotId },
     include: {
@@ -229,7 +229,7 @@ export interface IdentitySheet {
  * every sheet - each sheet riding its framing-matched view when that
  * view exists on disk.
  */
-async function prepareIdentityContext(
+export async function prepareIdentityContext(
   shot: IdentityShot,
   override?: { imageData: string; error: string }, // a RENDER source hands its poster here
 ) {
@@ -478,7 +478,7 @@ export async function scoreShotIdentityMedian(
 
 /** One raw vision call over the prepared context - the single
  * variance source both the plain and the medianed score share. */
-async function rawIdentityCall(
+export async function rawIdentityCall(
   ctx: Extract<Awaited<ReturnType<typeof prepareIdentityContext>>, { ok: true }>,
   frames: number | undefined,
   faceStrip?: { dataUrl: string; members: string[]; frames: number } | null,
@@ -1136,7 +1136,7 @@ export function cueSampleTimestamps(durationSec: number, cues: number[]): number
 
 /** The latest finished clip for a shot, as a poster data URL (plus the
  * clip path so the pose-matched path can build its filmstrip). */
-async function renderPosterForShot(shotId: string): Promise<RenderPoster | null> {
+export async function renderPosterForShot(shotId: string): Promise<RenderPoster | null> {
   const job = await db.renderJob.findFirst({
     where: { shotId, outputUrl: { not: null }, status: { in: ["REVIEW", "APPROVED", "NEEDS_REVISION"] } },
     orderBy: { createdAt: "desc" },
