@@ -3125,3 +3125,18 @@ Work Log:
 
 Stage Summary:
 - The instrument measures more; the verdict converges to the majority mode. 163 = the night at samples=5 (the damped read's first night; the convergence arithmetic).
+
+---
+Task ID: night-163
+Agent: main (Super Z)
+Task: Iteration 163 night - the damped read's first night (samples=5), end-to-end.
+
+Work Log:
+- Warm-pool a+b green; reset clean; drain 6/6 ~50 min; the watcher chained the rescore at samples=5 (30 calls; two 429s rode the burst - the median rode the survivors).
+- Board: S001 65 (CONVERGED - the damping resolved the 161 coin-flip to the high mode) / S002 65 / S003 70 / S004 55 / S005 35 (the model's true majority at this cell) / S006 75+80 stable; sweep mean 61.
+- Gate: the 5-night read mean 65.7 / worst 40 -> BELOW (4/6 under); S001's arc median climbed 55->65, S005's sank 47.5->40 (the damping made the read a measurement).
+- PROBE (probe163-rungs.ts): S005 is LOW_ANGLE 50mm - the 155 lift never touched its fill (0.58), the 138 ladder groups it at 640 (the 159 boxes' receipt: resX=640), the 157 contract judges it front-scale - THE LADDER AND THE CONTRACT DISAGREE, and the cell is the arc's worst.
+- No repair pass (the seam is named); receipts staged (72 lines); commit + push + remote verification.
+
+Stage Summary:
+- The damping converted coin flips into measurements; the named seam is the LOW_ANGLE rung grouping. 164 = the rung question (the 1024-vs-640 verify arm), then the ladder law if the evidence names it.
