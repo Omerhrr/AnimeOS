@@ -3079,3 +3079,19 @@ Work Log:
 
 Stage Summary:
 - The scale law's sentence is finished; the crossing's arithmetic: the 160 night is the p109 cohort's third - the wide cells owe their final honest lift under the face/hair crop grammar.
+
+---
+Task ID: night-160
+Agent: main (Super Z)
+Task: Iteration 160 night - the completed law's night (the p109 cohort's third), end-to-end.
+
+Work Log:
+- Warm-pool a+b ALL GREEN; reset clean; drain 6/6 ~51 min; the watcher chained the rescore.
+- Board: S001 65 / S002 65 / S003 75 / S004 75 (+15, the 159 cell: Wei's face 20->60, hair 40->70) / S005 65 (+10) / S006 Lin 75 + Wei 80 (the arc's best single entry) - sweep mean 70, median 70, p10 65.
+- Gate: the 3-night read mean 67 / median 65 / p10 55 / worst 55 -> BELOW; the real publish gate fired its own 400 refusal (the law working).
+- The arc median mechanism named: night-156's low anchors hold S001/S004/S005's medians while the present tense reads at the floor; the medians converge - the fourth night lands ~69.3, the fifth crosses (~71).
+- Eye: S006 the arc's cleanest two-shot; the ghost law's ninth night; the pixels the 158/156 grammar.
+- No repair pass tonight (the eye before the hand); receipts staged (60 lines); commit + push + remote verification.
+
+Stage Summary:
+- The present tense reads at the floor; the crossing is the arc's own memory converging. 161 = the fourth night (or the named cells' final lift); the LUT probe waits.
