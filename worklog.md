@@ -2999,3 +2999,38 @@ Work Log:
 
 Stage Summary:
 - The repair instrument is exhausted for the wides; the remaining lever is the wide-cell framing law (155 - the craft lever the evidence names twice).
+
+---
+Task ID: iter-155
+Agent: main (Super Z)
+Task: Iteration 155 - the wide-cell framing law (the wide fill lift) + the squared mist ramp + the 5.2 collection laws, end-to-end.
+
+Work Log:
+- Opened from HEAD c64d9da = origin/main (verified); 155 found in flight in the working tree - probed the full diff before touching anything.
+- THE LIFT: SUBJECT_FILL ESTABLISHING 0.28->0.40, WIDE 0.50->0.56; PRESENCE 108->109; ten e2e gates re-pinned (cohort a125/t133/p109); the 107 solve mechanism untouched.
+- THE SQUARED MIST RAMP: the fresh payload re-verify caught the 152 linear ramp under-bounding (40.2 vs 63.3, raw 28.0); the square bounds the masses, the mid-field rides full, ambience keeps ~0.69; GRADE_MASS_CEIL 0.30 stands (the shape moved, not the ceil).
+- THE 5.2 COLLECTION LAWS: int-key socket fallback + the tolerant creator (ShaderNode twins) - the re-verify's skip receipt named them.
+- THE VERIFY: the stale reverify wrapper rendered a washed default scene (10.2/10.2 - the WRAPPER LAW catch: worker_run reads {jobId, payload, outDir}); arms.py with BOTH cuts deleted: massBounded 40.1 vs massGraded 63.2 (raw 28.0) - C2 within the LUT's ride (the rider NAMED: the LUT, the 156 frontier), C3 the drop real (1.58x), ambience intact - THE LEVER STANDS; deterministic reproduction of the 12:46 chain read.
+- THE RE-BASE DISCIPLINE: the e2e letters and both probe judges speak one re-based law.
+- THE REANCHOR TYPE REPAIR: ok literal true -> boolean + the STAND_DOWN ternaries' null-safety; src tsc 0 restored.
+- GATES: e2e-iter155 ALL GREEN; cascade 117..155 + 103a ALL GREEN (33 gates); 5 smokes green; src tsc 0.
+- README item 69 + both worklogs; commit + push + remote verification next.
+
+Stage Summary:
+- The camera's own lever is in the build; the verify's residual rider is the LUT (the 156 probe). 156 = the night: the drain re-reads under PRESENCE 109 - do the wide cells lift above the rolling medians.
+
+---
+Task ID: night-156
+Agent: main (Super Z)
+Task: Iteration 156 night - the lift's first night (the drain re-read under PRESENCE 109), end-to-end.
+
+Work Log:
+- Warm-pool a+b ALL GREEN (PHASE=b's retire law killed the 8h pre-155 residents; the pool rebooted ON the lifted bridge; 3 real renders proved reuse).
+- Reset clean (10 jobs / 10 clips, 6 shots to REVIEW, the arc untouched); drain 6/6 ~52 min at ~4.9s/frame (the fastest measured); the colon-law watcher chained the rescore.
+- Board: S001 35 / S002 65 / S003 75 / S004 40 / S005 40 / S006 70 (sweep mean 54, median 53) - the four wides byte-identical to the 154 board.
+- Gate: PRESENCE 109 opened a NEW arc cohort (the 146 law's own letter); the p109 cohort's first night reads PROVISIONAL mean 57 / median 65 / p10 35 / worst 35, floor 70 -> BELOW; the crossing's clock restarts.
+- EYE: the lift IS in the pixels (S001 ~36%, S002 fills the frame waist-up, S004 ~45%, S005 ~40%) AND the judge's wide numbers did not move - the failing aspects are face/hair/style (the detail aspects); the A/B is clean: the seam is the judge's wide-cell grammar, not the figure scale. Ghost law's 7th night (S001 lone figure); the bounded mist holds; the hair not crimson-led.
+- NO repair pass (the re-judgment sin); receipts staged (48 lines); commit + push + remote verification.
+
+Stage Summary:
+- The wide-cell floor is the judge's wide-cell grammar. 157 = the evidence-first probe of the aspect weights at the rungs, then the lever, then a night.
