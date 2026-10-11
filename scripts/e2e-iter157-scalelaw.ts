@@ -45,6 +45,19 @@ expect("the law's letter: the aspects score from their strips when they ride",
   src.includes("score from the figure crops when they ride"), "the strips");
 expect("the 123 face-strip law untouched", src.includes("THE JUDGE SEES THE FACE (iteration 123)"), "123");
 expect("the 125 figure-strip law untouched", src.includes("THE PALETTE GETS ITS ADDRESS (iteration 125)"), "125");
+// THE 159 COMPLETION (the law's own sentence finished - the probe
+// read the judge's own crops: Wei's face 20 on a clearly-resolved
+// crop, Lin's 40 on a resolved face - the crops resolve STRUCTURE,
+// not paint texture)
+expect("the 159 completion rides: the crops resolve STRUCTURE, not paint texture",
+  src.includes("THE FACE AND HAIR CROPS RESOLVE STRUCTURE, NOT PAINT TEXTURE") &&
+  src.includes("THE 159 COMPLETION (the law's own sentence finished)"), "159");
+expect("the 159 letter: the face judges on structure (proportion, feature placement, the shapes)",
+  src.includes("judge the face on its structure (proportion, feature placement"), "the letter");
+expect("the 159 letter: the hair judges on silhouette, mass and color class under the scene's ambient light",
+  src.includes("the hair on its silhouette, mass and the dye's color class as it reads under the scene's own ambient light"), "the letter");
+expect("the 159 letter: a soft crop is the scale's own honest read, not a drift",
+  src.includes("a soft crop is the scale's own honest read, not a drift"), "the letter");
 
 // ── 2. THE REAL PROMPT BUILD (the real function, no mocks) ──
 const sheets = [{ name: "Lin Yue" }];

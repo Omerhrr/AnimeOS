@@ -186,8 +186,17 @@ export function framingViewFor(shotType: string | null | undefined): "close" | "
  * views only): the 156 night's controlled A/B - the wide fill lift
  * moved the figures materially and the judge's wide numbers did not
  * move - named the seam in the judge's own notes. The law names what
- * each rung owes so the read stays the model's own. */
-const SCALE_LAW_157 = ` THE SCALE LAW: the model sheet is painted in a rich, detailed style - at this front-scale framing (a wide or establishing view) the figure is small BY DESIGN, so judge it on what that scale can carry: silhouette, pose, palette presence, wardrobe cut and color blocking, the world's composition. The sheet's fine detail (embroidery, jewelry, belt hardware, painterly texture, strand-level hair) is the CLOSEUP grammar's own comparison - do NOT score this framing down for detail its scale cannot resolve, and do not call the style 'simplified' or 'flat' for reading clean at scale. The FACE and HAIR aspects score from the face crops when they ride; the PALETTE and WARDROBE aspects score from the figure crops when they ride; the STYLE aspect scores the render's own line/ink/cel grammar as it reads at this scale. The similarity you report is your reading of what the framing REVEALS, never of what it hides.`;
+ * each rung owes so the read stays the model's own.
+ * THE 159 COMPLETION (the law's own sentence finished): the probe
+ * extracted the judge's OWN face crops for the two limiting cells
+ * (S004 Wei face 20 on a crop that clearly resolves eyes, brows,
+ * nose, mouth, hair framing; S005 Lin face 40 on a resolved face) -
+ * the crops resolve STRUCTURE, not paint texture, and the model was
+ * still folding the sheet's painterly crispness (and the sheet's
+ * neutral studio light) into the face/hair reads. The completion
+ * names the crops' own grammar: structure and color class under the
+ * scene's ambient light, never the paint's crispness. */
+const SCALE_LAW_157 = ` THE SCALE LAW: the model sheet is painted in a rich, detailed style - at this front-scale framing (a wide or establishing view) the figure is small BY DESIGN, so judge it on what that scale can carry: silhouette, pose, palette presence, wardrobe cut and color blocking, the world's composition. The sheet's fine detail (embroidery, jewelry, belt hardware, painterly texture, strand-level hair) is the CLOSEUP grammar's own comparison - do NOT score this framing down for detail its scale cannot resolve, and do not call the style 'simplified' or 'flat' for reading clean at scale. The FACE and HAIR aspects score from the face crops when they ride; the PALETTE and WARDROBE aspects score from the figure crops when they ride; the STYLE aspect scores the render's own line/ink/cel grammar as it reads at this scale. THE FACE AND HAIR CROPS RESOLVE STRUCTURE, NOT PAINT TEXTURE: judge the face on its structure (proportion, feature placement, the shapes of eyes, brows, nose and mouth) and the hair on its silhouette, mass and the dye's color class as it reads under the scene's own ambient light (every surface in the frame wears that light - the sheet's neutral studio read is not this frame's), never on the sheet's painterly crispness or strand-level texture; a soft crop is the scale's own honest read, not a drift. The similarity you report is your reading of what the framing REVEALS, never of what it hides.`;
 
 /** The sibling per-view render next to the stitched sheet (only the
  * generated turnarounds carry views on disk - an uploaded sheet has

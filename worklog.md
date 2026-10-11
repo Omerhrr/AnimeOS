@@ -3064,3 +3064,18 @@ Work Log:
 
 Stage Summary:
 - The judge's wide-cell grammar was the seam and the scale law is its repair; the remaining 8-point mean gap is measured with its holds named. 159 = the pixel-bound vs contract-bound probe (S005/S004's limiting aspects against their crops) before any hand moves.
+
+---
+Task ID: iter-159
+Agent: main (Super Z)
+Task: Iteration 159 - the scale law's own sentence finished (the face/hair crop grammar), end-to-end.
+
+Work Log:
+- PROBE (probe159-crops.ts): extracted the judge's OWN face crops (the render's face boxes, pixel-space, cropped to 224h exactly as cropFaceCell) - S004's Wei ~60x59px @1024, S005's Lin ~49x45px @640; the eye read them: Wei's face 20 on a CLEARLY RESOLVED crop (eyes, brows, nose, mouth, hair framing, collar); Lin's face 40 on a resolved crop.
+- VERDICT: contract-bound with a pixel rider - the crops carry more than the model credited; the honest rider is real (the violet ambient cast; the soft 60px source).
+- LEVER: SCALE_LAW_157's text extended (THE FACE AND HAIR CROPS RESOLVE STRUCTURE, NOT PAINT TEXTURE) - structure/feature placement for the face; silhouette/mass/color class under the scene's ambient light for the hair; the soft crop named the scale's own honest read.
+- GATES: e2e-iter157-scalelaw ALL GREEN (24 asserts); cascade 34 gates ALL GREEN; 5 smokes green; src tsc 0.
+- README item 73 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The scale law's sentence is finished; the crossing's arithmetic: the 160 night is the p109 cohort's third - the wide cells owe their final honest lift under the face/hair crop grammar.
