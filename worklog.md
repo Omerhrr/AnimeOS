@@ -2956,3 +2956,32 @@ Work Log:
 
 Stage Summary:
 - The transport hunt is CLOSED AND CURED: the seam convicted (151), the lever landed with its verify (152), the cascade green. The 153 night reads the medians under the stable reference AND the bounded flood - the crossing's honest question.
+
+---
+Task ID: night-153
+Agent: main (Super Z)
+Task: Iteration 153 night - the first drain re-read under the bounded mist (the 152 lever's first production night); the medians' answer is the crossing's honest question.
+
+Work Log:
+- TENTH DRIFT: box wiped (the session resumed into an empty workspace). Clone at a6aae10 = origin/main verified (152 committed, pushed) - the summary was stale again (the 147-152 chain had ridden in the prior session); the remote HEAD read FIRST, the seven-drift lesson held.
+- Rebuild law paid in full (rebuild153.mjs double-fork detach, scripts/rb153-verify.ts + derived chain153.mjs / detached-night153.mjs / eye153-extract.ts): npm + prisma BEFORE the dev server, db push at the standing path, Blender 5.2.2 LTS from the cached tarball + provision-runtime verify (exit 0), .env UNQUOTED (the 149 lesson honored), OWNER re-minted through the register door (201), ensureSeed via signed GET (1 project), night122-restore (4 sheets image-gen, Lin r3 514 / Wei r3 517 designSpec byte-exact, DNA 4/4), night130-reanchor clean, ghost law green (none standing), warm-pool A1-A7 + B1-B7 + C1 ALL GREEN (the resident booted, two workers, reuse proven through three real renders).
+- NEW LESSON (the verify's own): the 514/517 byte-exact receipt is the r3 designSpec JSON's own length (the 137 pins' law), NOT the turn_sheet.png (1.68MB committed art); Chen Hao / Elder Han are sheets-only members - the verifier now names both truths.
+- Night chain armed: detached-night153.mjs (tag night-153, the eighth night on the durable ledger) + chain153.mjs (the colon law: NIGHT RESULT: 6/6). Reset clean (6 shots to REVIEW, the arc untouched - the receipt's lines carry through the UNION law). Drain launched 07:35 - the 152 luminance-masked mist rides its first production night (the first drain since the 143 receipts where the violet flood does not ride the masses).
+
+Stage Summary:
+- Sandbox rebuilt on the tenth drift, the rebuild law paid without a stumble; the 153 night reads whether the entries lift above the rolling seven-night medians under the stable reference AND the bounded flood.
+
+---
+Task ID: night-153 (record)
+Agent: main (Super Z)
+Task: Iteration 153 night - the drain, rescore, eye-read, and record under the bounded mist.
+
+Work Log:
+- Drain 6/6 real Blender clips ~53 min (S001 101f / S002 120f / S003 67f / S004 96f / S005 101f / S006 86f; DSH revision every clip; the watcher chained the rescore at NIGHT RESULT: 6/6).
+- night-153 appended (38 lines) - AND STAGED IN THE COMMIT (the hardened law: night-150's six lines died uncommitted; the receipts file rides every night-record commit from here).
+- Board: S001 20 / S002 65 / S003 65 / S004 40 / S005 40 / S006 50 (median 45). Gate: BELOW (mean 49 / median 45 / p10 35 / worst 35 across 7 sources; floor 70). The closeups lifted sharply (S002 35->65, S003 45->65); the wides read lower (S001 35->20).
+- Eye receipts: the bounded mist IS in the pixels (S006 masses near-black, S004 hair not crimson-led, S003 closeup strongest, S001 lone figure sixth night, S002 crop missed second night - the wide-cell framing named the next seam).
+- README item 67 + both worklogs; commit + push + remote verification next.
+
+Stage Summary:
+- The lever cured what it convicted; the medians still BELOW - the crossing waits on the wide-cell grammar. The 154 frontier: the fourth REAL repair pass on the worst-first cells (S001 20, S004 40, S005 40) under the standing laws.
