@@ -3034,3 +3034,18 @@ Work Log:
 
 Stage Summary:
 - The wide-cell floor is the judge's wide-cell grammar. 157 = the evidence-first probe of the aspect weights at the rungs, then the lever, then a night.
+
+---
+Task ID: iter-157
+Agent: main (Super Z)
+Task: Iteration 157 - the rung-aware aspect contract (the scale law), end-to-end.
+
+Work Log:
+- PROBE (on the 156 night's own 6 entries): the strips RODE (every note carried '+ face crops judged + figure crops judged'; the boxes are the bridge's 3D head-rig projection, v123); the aspect reads are scale-confounded (style 0.2-0.4 front vs 0.8 close on the same grammar); the model's notes compared the wides against the SHEET's fine detail ('intricate gold embroidery', 'detailed painterly style') - the 121 omission law disobeyed at the wides.
+- LEVER: SCALE_LAW_157 (named const) spliced into the 121 framing contract, front-scale views ONLY (ESTABLISHING/WIDE/WS/LOW_ANGLE); each aspect scores on what the rung's scale resolves; the similarity reads what the framing reveals, never what it hides; the score stays the model's own reading.
+- GATES: e2e-iter157-scalelaw ALL GREEN (20 asserts incl. the real buildIdentityPrompt - front carries the law, close/three do not); cascade 117..157 + 103a ALL GREEN (34 gates); 5 smokes green; src tsc 0.
+- No bridge law moved (a prompt-side scoring law - the cohort reads the bridges: a125/t133/p109 stands).
+- README item 71 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The judge's contract now owes each rung its own scale. 158 = the night: the p109 cohort's second night - do the front-scale aspects read what the scale can carry now.

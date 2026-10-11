@@ -182,6 +182,13 @@ export function framingViewFor(shotType: string | null | undefined): "close" | "
   return FRAMING_SHEET_VIEW[String(shotType ?? "MEDIUM").toUpperCase()] ?? "front";
 }
 
+/** THE 157 SCALE LAW (the rung-aware aspect contract, front-scale
+ * views only): the 156 night's controlled A/B - the wide fill lift
+ * moved the figures materially and the judge's wide numbers did not
+ * move - named the seam in the judge's own notes. The law names what
+ * each rung owes so the read stays the model's own. */
+const SCALE_LAW_157 = ` THE SCALE LAW: the model sheet is painted in a rich, detailed style - at this front-scale framing (a wide or establishing view) the figure is small BY DESIGN, so judge it on what that scale can carry: silhouette, pose, palette presence, wardrobe cut and color blocking, the world's composition. The sheet's fine detail (embroidery, jewelry, belt hardware, painterly texture, strand-level hair) is the CLOSEUP grammar's own comparison - do NOT score this framing down for detail its scale cannot resolve, and do not call the style 'simplified' or 'flat' for reading clean at scale. The FACE and HAIR aspects score from the face crops when they ride; the PALETTE and WARDROBE aspects score from the figure crops when they ride; the STYLE aspect scores the render's own line/ink/cel grammar as it reads at this scale. The similarity you report is your reading of what the framing REVEALS, never of what it hides.`;
+
 /** The sibling per-view render next to the stitched sheet (only the
  * generated turnarounds carry views on disk - an uploaded sheet has
  * none and the stitched sheet alone rides).
@@ -281,8 +288,23 @@ export function buildIdentityPrompt(
   // THE FRAMING CONTRACT (iteration 121): the judge scores the
   // character, never the framing - an aspect the framing cannot show
   // is omitted, not penalized.
+  // THE RUNG-AWARE ASPECT CONTRACT (iteration 157): the 156 night's
+  // controlled answer named the seam - the face/figure crops rode
+  // (every entry's note carried '+ face crops judged + figure crops
+  // judged') and the wides still floored (style 0.2-0.4 at the
+  // front-scale views vs 0.8 at the closeup on the SAME render
+  // grammar; the model's own notes compared the wides against 'the
+  // intricate gold embroidery' and 'the detailed painterly style of
+  // the reference' - the SHEET's fine detail, which a wide's scale
+  // cannot resolve). The 121 law told the judge what to omit; it
+  // never told it what a rung OWES. The 157 law does: the sheet's
+  // fine detail is the closeup grammar's own comparison, each aspect
+  // scores on what this rung's scale resolves, and the similarity
+  // reads what the framing reveals - never what it hides. The score
+  // stays the model's own reading (the eye's instrument recalibrated
+  // by naming, never the hand editing the read).
   const framing = framingView
-    ? `This shot is framed as a ${framingView}-scale view. The framing reference image(s) show each character at a comparable framing - prefer them for close comparisons. Judge each aspect ONLY on what this shot's framing reveals: a head-and-shoulders framing cannot show the full wardrobe and an establishing wide cannot show the face - omit an aspect the framing cannot show rather than scoring it low, and say 'framing hides <aspect>' in the note when you omit.`
+    ? `This shot is framed as a ${framingView}-scale view. The framing reference image(s) show each character at a comparable framing - prefer them for close comparisons. Judge each aspect ONLY on what this shot's framing reveals: a head-and-shoulders framing cannot show the full wardrobe and an establishing wide cannot show the face - omit an aspect the framing cannot show rather than scoring it low, and say 'framing hides <aspect>' in the note when you omit.${framingView === "front" ? SCALE_LAW_157 : ""}`
     : "";
   // THE JUDGE SEES THE FACE (iteration 123): the face crop strip rides
   // beside the full frames - the face aspect scores on the crops first.
