@@ -120,7 +120,7 @@ function sourceLaw() {
   const anime = read("bridges/blender/anime_character.py");
   const bridge = read("bridges/blender/animeos_bridge.py");
   expect("no build-law bump (ANIME 125 / PRESENCE 108 stand - the dials ride the standing clamps)",
-    anime.includes("ANIME_LAW_VERSION = 125") && bridge.includes("PRESENCE_LAW_VERSION = 108"), "the versions");
+    anime.includes("ANIME_LAW_VERSION = 125") && bridge.includes("PRESENCE_LAW_VERSION = 109"), "the versions");
   expect("the clamp law is the dials' own net (the male eye floor 0.70, the brow ceiling 2.0)",
     anime.includes('"size": _num(e0, "size", 0.92 if gender == "male" else 1.0, 0.7, 1.4)')
       && anime.includes('"thickness": _num(br0, "thickness", 1.25 if gender == "male" else 1.0, 0.5, 2.0),'), "the clamps");
@@ -276,8 +276,8 @@ ev = st.get("render") or {}
 presence = ev.get("presence") or {}
 mp4 = st.get("mp4Path")
 ok("Lin's r3 cut lands a real clip at the CLOSEUP", bool(mp4) and os.path.exists(mp4), mp4)
-ok("the closeup solve rides 108 (lens 85, the face-filling framing the cell names)",
-   presence.get("lawVersion") == 108 and presence.get("lens") == 85, presence)
+ok("the closeup solve rides 109 (lens 85, the face-filling framing the cell names - the 155 lift advanced the version legitimately)",
+   presence.get("lawVersion") == 109 and presence.get("lens") == 85, presence)
 ok("the closeup canon ramp rode (style_ramp_for CLOSEUP untouched by the wide statement)",
    tp.style_ramp_for("CLOSEUP") == (0.62, 1.00, 0.040), "the canon")
 

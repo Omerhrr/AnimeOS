@@ -79,8 +79,8 @@ async function main() {
 
   // ── A2 the cohort law ──
   const cohort = bridgeLawCohort();
-  check("A2 the cohort is the bridges' own law versions (a125/t133/p108 - the standing build)",
-    cohort === "a125/t133/p108", `got ${cohort}`);
+  check("A2 the cohort is the bridges' own law versions (a125/t133/p109 - the 155 wide-fill lift moved the presence grammar)",
+    cohort === "a125/t133/p109", `got ${cohort}`);
   check("A2b the arc's youth law stands (a one-night arc is PROVISIONAL below the floor of two)",
     IDENTITY_ARC_MIN_NIGHTS === 2 && IDENTITY_ARC_LAW_VERSION === 146);
 

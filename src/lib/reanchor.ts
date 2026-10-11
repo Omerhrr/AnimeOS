@@ -103,7 +103,11 @@ export async function measureSheetClass(sheetUrl: string | null | undefined, des
 }
 
 export interface AcceptedReanchorOutcome {
-  ok: true;
+  /** boolean, not the `true` literal (the 155 repair): the outcome
+   * carries real failure variants (character missing, canonical
+   * failure) - the literal lied, and the fresh toolchain the tenth
+   * drift's rebuild installed caught it. */
+  ok: boolean;
   characterId: string;
   characterName: string;
   projectId: string;
@@ -238,7 +242,11 @@ export async function reanchorWithSheetAcceptance(
       verdict,
       accepted: false,
       attempts: 0,
-      note: `the honest receipt stands - the build (${buildRobe}) wears the design's class (dLum ${gate?.dLum.toFixed(3)}, dHue ${gate?.dHue !== null ? gate.dHue.toFixed(3) : "exempt"}); the reference does not move`,
+      // the 155 repair: the verdict derives from a non-null gate's own
+      // read, so the ternaries ride the true side at runtime - but the
+      // compiler cannot see the derivation, so the null-safety is
+      // spelled (no `?.` into a method call).
+      note: `the honest receipt stands - the build (${buildRobe}) wears the design's class (dLum ${gate ? gate.dLum.toFixed(3) : "n/a"}, dHue ${gate && gate.dHue !== null ? gate.dHue.toFixed(3) : "exempt"}); the reference does not move`,
     };
   }
 

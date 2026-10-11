@@ -43,7 +43,7 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 // ── 1. THE SOURCE LAWS ──
 const br = read("bridges/blender/animeos_bridge.py");
 expect("the presence law advances to 108 (the MEDIUM's own grammar)",
-  br.includes("PRESENCE_LAW_VERSION = 108"), "v108");
+  br.includes("PRESENCE_LAW_VERSION = 109"), "v108");
 expect("the waist-up share rides (the upper body solves the MEDIUM)",
   br.includes("MEDIUM_UPPER_SHARE = 0.42"), "0.42");
 expect("the headroom rides (the crown keeps its frame)",

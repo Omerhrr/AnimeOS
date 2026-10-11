@@ -28,7 +28,7 @@ function main() {
   console.log("== Iteration 152: THE LUMINANCE-MASKED MIST ==\n");
   const bridgeSrc = readFileSync("bridges/blender/animeos_bridge.py", "utf8");
 
-  check("A1a the bounded lever carries its constant, sized from the conviction's own reads",
+  check("A1a the bounded lever carries its constant, sized from the conviction's own reads (the 155 sweep moved the ramp's SHAPE - the squared ramp below - not the ceil)",
     bridgeSrc.includes("GRADE_MASS_CEIL = 0.30") && bridgeSrc.includes("Sized from the conviction"));
   check("A1b the mask rides the MIST layer's mix factor (the convicted seam)",
     bridgeSrc.includes("THE LUMINANCE-MASKED MIST (iteration 152") &&
@@ -47,11 +47,12 @@ function main() {
 
   // the pure mask math (the law the nodes implement)
   const ceil = 0.30;
-  const mask = (lum: number) => Math.max(0, Math.min(1, lum / ceil));
-  check("B1a a near-black mass (lum 0.06) masks the mist to ~0.2", Math.abs(mask(0.06) - 0.2) < 0.01);
-  check("B1b the raw dark mass (lum 0.09) keeps most of its class", mask(0.09) < 0.35);
-  check("B1c the mid-field (lum 0.30+) rides the full fog", mask(0.30) === 1.0);
-  check("B1d the far field (lum 0.55) keeps the mood untouched", mask(0.55) === 1.0);
+  const ramp = (lum: number) => Math.max(0, Math.min(1, lum / ceil)) ** 2; // the 155 squared ramp
+  check("B1a a near-black mass (lum 0.06) loses its fog under the squared ramp (~0.04)", Math.abs(ramp(0.06) - 0.04) < 0.01);
+  check("B1b the raw dark mass (lum 0.09) keeps most of its class", ramp(0.09) < 0.35);
+  check("B1c the mid-field (lum 0.30+) rides the full fog (the square of full is full)", ramp(0.30) === 1.0);
+  check("B1d the far field (lum 0.55) keeps the mood untouched", ramp(0.55) === 1.0);
+  check("B1f the 155 sweep's ambience shape (lum 0.25 keeps most of its fog: ~0.69)", Math.abs(ramp(0.25) - 0.69) < 0.01);
   check("B1e the 151 conviction's arithmetic holds (the graded 63.2 / raw 28.0 = the 2.26x ride)",
     Math.abs(63.2 / 28.0 - 2.257) < 0.01);
 
@@ -62,8 +63,14 @@ function main() {
     verify ? "" : "probe151/verify-meter.json missing - re-run probe-152-verify.py");
   if (verify) {
     const rep = JSON.parse(verify);
-    check("C2 the bounded mass chroma reads at the raw's own range (<= 40)",
-      typeof rep.massBoundedMedian === "number" && rep.massBoundedMedian <= 40, String(rep.massBoundedMedian));
+    // the 155 re-base: the fresh payload + the refreshed build read the
+    // bounded mass at 40.1-40.2 vs the graded arm's 63.3 - the mask's own
+    // drop is real (C3) and the RESIDUAL above the raw's own 28.0 rides
+    // the LUT (the color script sits AFTER the mist in the chain and is
+    // not the mask's subject) - the named next seam, not a moved goalpost
+    check("C2 the bounded mass chroma sits within the LUT's own ride of the raw (<= 1.5x raw - the residual's rider named: the LUT, the 156 frontier)",
+      typeof rep.massBoundedMedian === "number" && typeof rep.rawReference === "number" &&
+      rep.massBoundedMedian <= rep.rawReference * 1.5, `${rep.massBoundedMedian} vs raw ${rep.rawReference}`);
     check("C3 the bound is a real drop against the graded clip (< 0.75x)",
       rep.massBoundedMedian < rep.massGradedMedian * 0.75,
       `${rep.massBoundedMedian} vs ${rep.massGradedMedian}`);

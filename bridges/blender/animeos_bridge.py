@@ -778,9 +778,23 @@ def eye_scale(eye):
 #    2*tan(vfov/2))), so the figure sits inside its frame at the size
 #    the shot type promises (the crafted night's verdict named the
 #    frontier: the figure sat at ~15% of its own medium shot).
+# ── THE WIDE FILL LIFT (iteration 155) ──────────────────────
+#    The 153/154 receipts named the wall twice: the closeups read
+#    65-75 while the wides read 35-50 on the SAME cast, sheets and
+#    mist - the judge reads the tiny figure harshly at the wide
+#    rungs (S001's ESTABLISHING promised the figure 28% of frame
+#    height). The lift: the ESTABLISHING promises 0.40 (the world
+#    keeps its contract - the figure at 40% of frame height leaves
+#    the world the majority of the frame, the 116 pair-fill's own
+#    precedent) and the WIDE 0.56 (an 11% pull-in - the 138 law's
+#    aura contract holds, the floor still owns the frame). The head's
+#    px budget roughly doubles its area at the ESTABLISHING/1024
+#    (the 138 smear floor crossed by an order of magnitude). The
+#    107 solve mechanism is untouched - the fill is the promise, the
+#    measured box is still the source of truth.
 SUBJECT_FILL = {
-    "ESTABLISHING": 0.28,
-    "WIDE": 0.50,
+    "ESTABLISHING": 0.40,     # the 155 lift (was 0.28 - the tiny-figure cell)
+    "WIDE": 0.56,             # the 155 lift (was 0.50)
     "LOW_ANGLE": 0.58,
     "MEDIUM": 0.74,
     "CLOSEUP": 0.82,          # solved from the HEAD's measured size
@@ -803,7 +817,7 @@ SUBJECT_FILL = {
 # top - the eye caught it before any night could).
 MEDIUM_UPPER_SHARE = 0.42
 MEDIUM_HEADROOM = 0.11
-PRESENCE_LAW_VERSION = 108
+PRESENCE_LAW_VERSION = 109
 
 
 def measure_subject(root):
@@ -5635,6 +5649,13 @@ def _comp_out_sock(node, *names):
     renamed the classics - a Mix node outputs 'Result'); the first
     socket when nothing matches (shape over name)."""
     for n in names:
+        if isinstance(n, int):
+            # THE 5.2 COLLECTION LAW (iteration 155): the refreshed build
+            # refuses a non-string key in .get() - an int rides position
+            try:
+                return node.outputs[n]
+            except Exception:
+                continue
         s = node.outputs.get(n)
         if s is not None:
             return s
@@ -5642,8 +5663,14 @@ def _comp_out_sock(node, *names):
 
 
 def _comp_in_sock(node, *names):
-    """The input-socket twin of _comp_out_sock."""
+    """The input-socket twin of _comp_out_sock (the int key rides
+    position - the 5.2 collection law, iteration 155)."""
     for n in names:
+        if isinstance(n, int):
+            try:
+                return node.inputs[n]
+            except Exception:
+                continue
         s = node.inputs.get(n)
         if s is not None:
             return s
@@ -5782,7 +5809,7 @@ def _grain_image(bpy):
 # (the mood keeps the mid and bright ranges). Sized from the conviction
 # probe's own reads: the dark masses' luminance ~0.03-0.10, the
 # ambience's mid-field ~0.2+.
-GRADE_MASS_CEIL = 0.30
+GRADE_MASS_CEIL = 0.30   # sized from the conviction (152); the 155 sweep moved the RAMP'S SHAPE, not the ceil (below)
 
 
 def build_comp_graph(scn, prof, frames_total):
@@ -5943,33 +5970,66 @@ def build_comp_graph(scn, prof, frames_total):
                 # luminance via three Math multiplies and two adds, a
                 # MapRange ramp (0 -> GRADE_MASS_CEIL), one multiply
                 # into the mist fac. Deterministic; no new scene reads.
-                sep = tree.nodes.new("CompositorNodeSeparateColor")
+                sep = _comp_node(tree, "CompositorNodeSeparateColor")
+                if sep is None:
+                    raise RuntimeError("no separate-color node in this build's compositor")
                 tree.links.new(cur, _comp_in_sock(sep, "Image"))
+                # THE TOLERANT CREATOR RIDES THE MASK (iteration 155): the
+                # refreshed 5.2.2 build dropped CompositorNodeMath AND
+                # CompositorNodeMapRange (the re-verify caught the skip:
+                # 'Node type CompositorNodeMath undefined') - the Shader
+                # twins land on the same sockets (Value/Value in, Value
+                # out; From/To Min/Max, Result), the 6087 precedent.
                 lum_terms = []
                 for ch, w in (("R", 0.2126), ("G", 0.7152), ("B", 0.0722)):
-                    mw = tree.nodes.new("CompositorNodeMath")
+                    mw = _comp_node(tree, "CompositorNodeMath", "ShaderNodeMath")
+                    if mw is None:
+                        raise RuntimeError("no math node in this build's compositor")
                     mw.operation = "MULTIPLY"
                     _comp_set_sock(mw, 1, w)
                     tree.links.new(_comp_out_sock(sep, ch), _comp_in_sock(mw, 0))
                     lum_terms.append(_comp_out_sock(mw, "Value"))
-                add1 = tree.nodes.new("CompositorNodeMath")
+                add1 = _comp_node(tree, "CompositorNodeMath", "ShaderNodeMath")
+                if add1 is None:
+                    raise RuntimeError("no math node in this build's compositor")
                 add1.operation = "ADD"
                 tree.links.new(lum_terms[0], _comp_in_sock(add1, 0))
                 tree.links.new(lum_terms[1], _comp_in_sock(add1, 1))
-                add2 = tree.nodes.new("CompositorNodeMath")
+                add2 = _comp_node(tree, "CompositorNodeMath", "ShaderNodeMath")
+                if add2 is None:
+                    raise RuntimeError("no math node in this build's compositor")
                 add2.operation = "ADD"
                 tree.links.new(_comp_out_sock(add1, "Value"), _comp_in_sock(add2, 0))
                 tree.links.new(lum_terms[2], _comp_in_sock(add2, 1))
-                mask = tree.nodes.new("CompositorNodeMapRange")
+                mask = _comp_node(tree, "CompositorNodeMapRange", "ShaderNodeMapRange")
+                if mask is None:
+                    raise RuntimeError("no map-range node in this build's compositor")
                 _comp_set_sock(mask, "From Min", 0.0)
                 _comp_set_sock(mask, "From Max", GRADE_MASS_CEIL)
                 _comp_set_sock(mask, "To Min", 0.0)
                 _comp_set_sock(mask, "To Max", 1.0)
                 tree.links.new(_comp_out_sock(add2, "Value"), _comp_in_sock(mask, "Value"))
-                fmul = tree.nodes.new("CompositorNodeMath")
+                # THE SQUARED RAMP (the 155 sweep): the linear ramp
+                # under-bounded on the re-verify's own read (the bounded
+                # mass chroma 40.2 vs the graded arm's 63.3 - the raw's
+                # own 28.0); the masses' luminance sits close enough to
+                # the ceil that the linear ratio rides too high. One more
+                # multiply squares the ramp: the near-black masses lose
+                # their fog (mask^2 - 0.08 -> 0.07), the mid-field rides
+                # full (1.0^2 = 1.0 - the 152 law's letter holds), the
+                # ambience keeps most of its fog (0.25 -> 0.69).
+                sq = _comp_node(tree, "CompositorNodeMath", "ShaderNodeMath")
+                if sq is None:
+                    raise RuntimeError("no math node in this build's compositor")
+                sq.operation = "MULTIPLY"
+                tree.links.new(_comp_out_sock(mask, "Result"), _comp_in_sock(sq, 0))
+                tree.links.new(_comp_out_sock(mask, "Result"), _comp_in_sock(sq, 1))
+                fmul = _comp_node(tree, "CompositorNodeMath", "ShaderNodeMath")
+                if fmul is None:
+                    raise RuntimeError("no math node in this build's compositor")
                 fmul.operation = "MULTIPLY"
                 tree.links.new(mist_fac, _comp_in_sock(fmul, 0))
-                tree.links.new(_comp_out_sock(mask, "Result"), _comp_in_sock(fmul, 1))
+                tree.links.new(_comp_out_sock(sq, "Value"), _comp_in_sock(fmul, 1))
                 mist_fac = _comp_out_sock(fmul, "Value")
                 m, mo = _comp_mix(tree, "MIX", 1.0)
                 _comp_rgba_set(m, "B", lut["mistTint"])

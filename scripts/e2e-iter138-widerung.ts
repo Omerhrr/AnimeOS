@@ -53,7 +53,7 @@ function sourceLaw() {
   expect("the 138 receipt names the law (the comment carries the probe's own read)",
     br.includes("THE WIDE RUNG (iteration 138)") && br.includes("the face\n        # reads DRAWN"), "the comment");
   expect("the versions stand (the ladder rides source law as 123/126 left it)",
-    br.includes("PRESENCE_LAW_VERSION = 108"), "presence 108");
+    br.includes("PRESENCE_LAW_VERSION = 109"), "presence 109");
   const anime = read("bridges/blender/anime_character.py");
   expect("ANIME 125 stands", anime.includes("ANIME_LAW_VERSION = 125"), "anime 125");
   const toon = read("bridges/blender/toon_pass.py");
@@ -98,7 +98,7 @@ function moduleTruth() {
       && probe.ladder.lowangle === 640 && probe.ladder.none === 640, probe.ladder);
   expect("FINAL stays 1280 at every framing",
     probe.ladder.wide_final === 1280 && probe.ladder.establishing_final === 1280 && probe.ladder.medium_final === 1280, probe.ladder);
-  expect("PRESENCE 108 answers from the real module", probe.versions.presence === 108, probe.versions);
+  expect("PRESENCE 109 answers from the real module (the 155 lift)", probe.versions.presence === 109, probe.versions);
 }
 
 // ── 3. THE REAL BLENDER PROBE (the node truth on the REAL worker_run) ──
@@ -147,10 +147,10 @@ def build(shot_type, lens, mode="PREVIEW", movement="PAN"):
 st_w, rx_w, ry_w, ev_w = build("WIDE", "35mm")
 ok("the WIDE previews at the 1024 rung (1024x576 from the 1920x1080 base)",
    rx_w == 1024 and ry_w == 576, {"rx": rx_w, "ry": ry_w})
-ok("the presence law rides 108 at the wide",
-   ((ev_w.get("presence") or {}).get("lawVersion")) == 108, ev_w.get("presence"))
-ok("the WIDE's solve keeps the 108 law's shape (fill 0.5, the full-figure solve - never cut down)",
-   abs((ev_w.get("presence") or {}).get("fill", 0) - 0.5) < 1e-9
+ok("the presence law rides 109 at the wide (the 155 wide-fill lift advanced it legitimately)",
+   ((ev_w.get("presence") or {}).get("lawVersion")) == 109, ev_w.get("presence"))
+ok("the WIDE's solve keeps the full-figure contract at the 155 fill (0.56, never cut down)",
+   abs((ev_w.get("presence") or {}).get("fill", 0) - 0.56) < 1e-9
      and (ev_w.get("presence") or {}).get("rung") is None, ev_w.get("presence"))
 ok("the toon law rides 132 at the wide (the 136 bold rung's framings)",
    ((ev_w.get("look") or {}).get("lawVersion")) == 133, ev_w.get("look"))

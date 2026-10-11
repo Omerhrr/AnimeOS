@@ -72,8 +72,8 @@ const tp = read("bridges/blender/toon_pass.py");
 expect("the toon pass holds its 132 version (no look-side change this iteration)",
   tp.includes("TOON_LAW_VERSION = 133"), "v133");
 const br = read("bridges/blender/animeos_bridge.py");
-expect("the presence law holds its 108 rung (the 133 grammar stands)",
-  br.includes("PRESENCE_LAW_VERSION = 108"), "v108");
+expect("the presence law holds its 109 rung (the 155 wide-fill lift)",
+  br.includes("PRESENCE_LAW_VERSION = 109"), "v108");
 
 // ── 2. THE REAL BLENDER PROBE (the paint metrics + the cap profile
 //       under the real bpy on a real figure build) ──
