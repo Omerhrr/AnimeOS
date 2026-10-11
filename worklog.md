@@ -2942,3 +2942,17 @@ Work Log:
 
 Stage Summary:
 - The seven-night violet flood's seam is NAMED AND MEASURED: the post-process grade. 152 lands the bounded-grade lever + verify, then the night reads the medians.
+
+---
+Task ID: iter-152
+Agent: main (Super Z)
+Task: Iteration 152 - the luminance-masked mist (the convicted seam's bounded lever) + the verify arm + the full cascade.
+
+Work Log:
+- Landed the lever: build_comp_graph's mist layer mixes through a Rec.601 luminance ramp (GRADE_MASS_CEIL 0.30, sized from the 151 conviction's reads) - near-black masses mask the fog, the mid/bright ranges ride full; mistMassMask rides the landed evidence.
+- The verify arm (one real S006 cut): BOTH CELLS GREEN - the mass chroma 35.0 (graded 63.2, raw 28.0), the ambience kept its violet.
+- Gates: e2e-iter152-gradebound ALL GREEN (13 asserts); the FULL CASCADE 117..152 + 103a ALL GREEN (29 gates); toon + fx smokes green; src tsc 0 errors.
+- README item 66 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The transport hunt is CLOSED AND CURED: the seam convicted (151), the lever landed with its verify (152), the cascade green. The 153 night reads the medians under the stable reference AND the bounded flood - the crossing's honest question.

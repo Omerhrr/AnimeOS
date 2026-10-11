@@ -5776,6 +5776,15 @@ def _grain_image(bpy):
     return img
 
 
+# THE LUMINANCE-MASKED MIST (iteration 152): the 151 conviction's
+# bounded lever - the mist pull fades to zero on the near-black masses
+# (their luminance sits under this ceiling) and rides full past it
+# (the mood keeps the mid and bright ranges). Sized from the conviction
+# probe's own reads: the dark masses' luminance ~0.03-0.10, the
+# ambience's mid-field ~0.2+.
+GRADE_MASS_CEIL = 0.30
+
+
 def build_comp_graph(scn, prof, frames_total):
     """THE FRAME IS FINISHED IN COMP (iteration 86): build the shot's
     compositor graph from its own profile on BOTH modes - the preview
@@ -5906,6 +5915,21 @@ def build_comp_graph(scn, prof, frames_total):
         #    fac 0 - the FIGURE - and B = the tint the far field fogs
         #    toward; inverted, the subject wears the fog and the sky
         #    keeps its depth - the wash the layer bisect caught)
+        #
+        #    THE LUMINANCE-MASKED MIST (iteration 152 - THE TRANSPORT
+        #    HUNT'S LANDING): the 151 probes convicted the comp grade
+        #    as the violet flood's rider (the comp-off cut's dark-mass
+        #    chroma 28.0 vs the graded clip's 63.2 - 2.26x) after the
+        #    dye chain (141), the fx emitters (149) and the lightning
+        #    (151) stood exonerated. The mist pull is the layer that
+        #    lerps the frame toward the night's blue-violet mistTint -
+        #    and the subject's near-black masses (the hair) wear the
+        #    fog like every other depth. The mask: the mist's mix
+        #    factor is multiplied by a luminance ramp (near-black ->
+        #    0, past GRADE_MASS_CEIL -> 1) - the mood keeps the mid
+        #    and bright ranges (the far field fogs exactly as before),
+        #    the dark masses keep their dye's own class. Comp-side,
+        #    NOT one of the 141 shader refusals.
         try:
             mist = rl.outputs.get("Mist")
             if mist is not None:
@@ -5914,12 +5938,46 @@ def build_comp_graph(scn, prof, frames_total):
                     raise RuntimeError("no map-range node in this build's compositor")
                 _comp_set_sock(mr, "To Max", round(0.15 + 0.65 * f["mist"], 3))
                 tree.links.new(mist, _comp_in_sock(mr, "Value"))
+                mist_fac = _comp_out_sock(mr, "Result")
+                # THE LUMINANCE MASK: sep the frame's RGB, the Rec.601
+                # luminance via three Math multiplies and two adds, a
+                # MapRange ramp (0 -> GRADE_MASS_CEIL), one multiply
+                # into the mist fac. Deterministic; no new scene reads.
+                sep = tree.nodes.new("CompositorNodeSeparateColor")
+                tree.links.new(cur, _comp_in_sock(sep, "Image"))
+                lum_terms = []
+                for ch, w in (("R", 0.2126), ("G", 0.7152), ("B", 0.0722)):
+                    mw = tree.nodes.new("CompositorNodeMath")
+                    mw.operation = "MULTIPLY"
+                    _comp_set_sock(mw, 1, w)
+                    tree.links.new(_comp_out_sock(sep, ch), _comp_in_sock(mw, 0))
+                    lum_terms.append(_comp_out_sock(mw, "Value"))
+                add1 = tree.nodes.new("CompositorNodeMath")
+                add1.operation = "ADD"
+                tree.links.new(lum_terms[0], _comp_in_sock(add1, 0))
+                tree.links.new(lum_terms[1], _comp_in_sock(add1, 1))
+                add2 = tree.nodes.new("CompositorNodeMath")
+                add2.operation = "ADD"
+                tree.links.new(_comp_out_sock(add1, "Value"), _comp_in_sock(add2, 0))
+                tree.links.new(lum_terms[2], _comp_in_sock(add2, 1))
+                mask = tree.nodes.new("CompositorNodeMapRange")
+                _comp_set_sock(mask, "From Min", 0.0)
+                _comp_set_sock(mask, "From Max", GRADE_MASS_CEIL)
+                _comp_set_sock(mask, "To Min", 0.0)
+                _comp_set_sock(mask, "To Max", 1.0)
+                tree.links.new(_comp_out_sock(add2, "Value"), _comp_in_sock(mask, "Value"))
+                fmul = tree.nodes.new("CompositorNodeMath")
+                fmul.operation = "MULTIPLY"
+                tree.links.new(mist_fac, _comp_in_sock(fmul, 0))
+                tree.links.new(_comp_out_sock(mask, "Result"), _comp_in_sock(fmul, 1))
+                mist_fac = _comp_out_sock(fmul, "Value")
                 m, mo = _comp_mix(tree, "MIX", 1.0)
                 _comp_rgba_set(m, "B", lut["mistTint"])
                 tree.links.new(cur, _comp_rgba_in(m, "A"))
-                _comp_mix_factor(m, _comp_out_sock(mr, "Result"))
+                _comp_mix_factor(m, mist_fac)
                 cur = mo
                 landed.append("mist")
+                landed.append("mistMassMask")
         except Exception:
             skipped.append("mist")
 
