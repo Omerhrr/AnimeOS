@@ -3156,3 +3156,18 @@ Work Log:
 
 Stage Summary:
 - The ladder and the contract agree; the p110 cohort opens. 165 = its first night at samples=5 under the fixed rungs (S005's own answer).
+
+---
+Task ID: night-165
+Agent: main (Super Z)
+Task: Iteration 165 night - the p110 cohort's first night (samples=5 under the fixed rungs), end-to-end.
+
+Work Log:
+- Warm-pool a+b green; reset clean; drain 6/6 ~60 min (S005 at the 1024 rung); the watcher chained the rescore (four 429s rode the burst - the backoff's retries; the medians rode the survivors).
+- Board: S001 55 / S002 75 (face 90) / S003 60 / S004 55 / S005 65 (THE RUNG LAW'S OWN CELL - from the 35-40 majority at 640 to 65 at 1024) / S006 75+70; sweep mean 63.
+- Gate: the p110 cohort's first night - PROVISIONAL mean 65 / median 65 / p10 55 -> BELOW; the medians build.
+- Eye: S005's 1024 frame visibly crisper (the face legible); the ghost law's eleventh night.
+- No repair pass (the eye before the hand); receipts staged (78 lines); commit + push + remote verification.
+
+Stage Summary:
+- S005 answered its rung law; the fresh cohort builds. 166 = the second night (the medians converge); the LUT probe waits.
