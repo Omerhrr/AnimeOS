@@ -3292,3 +3292,18 @@ Work Log:
 
 Stage Summary:
 - The convergence moves: mean 65->69, a HOLD cell named, the swing cells climbing. 175 = the LUT probe's own arm + the sixth night.
+
+---
+Task ID: iter-175
+Agent: main (Super Z)
+Task: Iteration 175 - the LUT probe's own arm, end-to-end.
+
+Work Log:
+- Named the mechanism with code in hand: S006's 'Lightning detonation' -> parseCompProfile -> tribulation (gain R+0.08/G-0.03, sat 1.12, mistTint violet); the standing job file carries the receipt verbatim.
+- Built the paired arm (the 141 discipline): the standing arm via createRenderJob's own assembly with the payload captured at the bridge's job-file door (the namespace spy failed honestly - ESM sealed); the neutral arm with ONE variable (comp.lut -> neutral), both through the REAL submission path.
+- Both arms rode (~26 min, two S006-rung renders); the measurement: standing hue 225.7 vs neutral 209.3 - THE VIOLET SHIFT IS +16.3 DEG THE LUT ADDS (S -0.051, V +0.030).
+- VERDICT: THE LUT RIDES THE VIOLET - the correction lever is named (the LUT itself).
+- README item 89 + both worklogs; probe175-lut.ts staged; commit + push + remote verification.
+
+Stage Summary:
+- The 159 rider measured: the violet is the tribulation grade's own contribution; the correction is a named craft lever awaiting its own iteration. 176 = the sixth night; the LUT decision waits for craft's move.
