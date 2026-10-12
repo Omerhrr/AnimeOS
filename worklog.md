@@ -3215,3 +3215,19 @@ Work Log:
 
 Stage Summary:
 - The night self-drives when the door opens; the next check reads resume169.done / chain169.done and rides the record.
+
+---
+Task ID: iter-170
+Agent: main (Super Z)
+Task: Iteration 170 - the eleventh drift's rebuild + the restore-first resume law, end-to-end.
+
+Work Log:
+- The eleventh drift found mid-hostility: the sandbox wiped, the rebuild law rode (npm/prisma/Blender/dev/OWNER/ensureSeed green; night122-restore rode its wiring honestly), and the restore gate REFUSED as the law intends - the four production sheets need the image door, the door refused (429 at 0s), modelSheetUrl null for the whole cast, e2e-iter137-restore's sheet-exists FAILs + merge cascades honest.
+- Pre-flights: 08:05 HOSTILE / 08:09:34 HOSTILE (0s, 429) - the outage extends past 6h.
+- THE RESUME LAW ADVANCES (resume170.mjs, LIVE PID 2315): restore-first on the first breath - night122-restore -> e2e-iter137-restore (HARD gate) -> warm-pool a+b -> the three generation-heavy gates (soft receipts) -> reset -> drain -> chain170 -> the paced rescore at samples=5; probe every 10 min, cap 6h.
+- New instruments: detached-night170.mjs (tag night-170, samples=5) + chain170.mjs; the resume law re-creates them.
+- The rebuilt env's source truth verified: e2e-iter162-damping ALL GREEN, e2e-iter164-rungladder ALL GREEN (the real bpy: PRESENCE 110 / LOW_ANGLE 1024 / tights 640 / FINAL 1280), src tsc 0.
+- README item 84 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The rebuild law completed what the sandbox's own tools restore; the window now guards the restore as well as the rescore, and the watcher holds the chain's hand. The markers (resume170.done / chain170.done) carry the night's state; the LUT probe waits behind the window.
