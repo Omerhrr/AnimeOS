@@ -484,36 +484,48 @@ export async function rawIdentityCall(
   faceStrip?: { dataUrl: string; members: string[]; frames: number } | null,
   figureStrip?: { dataUrl: string; members: string[]; frames: number } | null,
 ): Promise<{ ok: true; raw: string } | { ok: false; error: string }> {
-  try {
-    const zai = await ZAI.create();
-    const res = (await zai.chat.completions.createVision({
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: buildIdentityPrompt(ctx.sheets, frames, ctx.framingView, faceStrip ? { members: faceStrip.members, frames: faceStrip.frames } : undefined, figureStrip ? { members: figureStrip.members, frames: figureStrip.frames } : undefined) },
-            { type: "image_url", image_url: { url: ctx.artData } },
-            // THE JUDGE SEES THE FACE (iteration 123): the face crop
-            // strip rides right after the full frames
-            ...(faceStrip ? [{ type: "image_url" as const, image_url: { url: faceStrip.dataUrl } }] : []),
-            // THE PALETTE GETS ITS ADDRESS (iteration 125): the figure
-            // crop strip rides right after the face's
-            ...(figureStrip ? [{ type: "image_url" as const, image_url: { url: figureStrip.dataUrl } }] : []),
-            // each sheet rides its framing-matched view right after it
-            // (THE SHEET ANSWERS IN THE SHOT'S FRAMING, iteration 121)
-            ...ctx.sheets.flatMap((s) => [
-              { type: "image_url" as const, image_url: { url: s.data } },
-              ...(s.framingRef ? [{ type: "image_url" as const, image_url: { url: s.framingRef.data } }] : []),
-            ]),
-          ],
-        },
-      ],
-      thinking: { type: "disabled" },
-    } as never)) as { choices?: Array<{ message?: { content?: string } }> };
-    return { ok: true, raw: res.choices?.[0]?.message?.content ?? "" };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "identity scoring failed" };
+  // THE 164 BACKOFF: one bounded retry on the rate limit (the 163
+  // night's own receipt: two 429s rode the 30-call burst and the
+  // median rode the survivors) - the same call twice, no other
+  // change; the second failure returns honestly.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const zai = await ZAI.create();
+      const res = (await zai.chat.completions.createVision({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: buildIdentityPrompt(ctx.sheets, frames, ctx.framingView, faceStrip ? { members: faceStrip.members, frames: faceStrip.frames } : undefined, figureStrip ? { members: figureStrip.members, frames: figureStrip.frames } : undefined) },
+              { type: "image_url", image_url: { url: ctx.artData } },
+              // THE JUDGE SEES THE FACE (iteration 123): the face crop
+              // strip rides right after the full frames
+              ...(faceStrip ? [{ type: "image_url" as const, image_url: { url: faceStrip.dataUrl } }] : []),
+              // THE PALETTE GETS ITS ADDRESS (iteration 125): the figure
+              // crop strip rides right after the face's
+              ...(figureStrip ? [{ type: "image_url" as const, image_url: { url: figureStrip.dataUrl } }] : []),
+              // each sheet rides its framing-matched view right after it
+              // (THE SHEET ANSWERS IN THE SHOT'S FRAMING, iteration 121)
+              ...ctx.sheets.flatMap((s) => [
+                { type: "image_url" as const, image_url: { url: s.data } },
+                ...(s.framingRef ? [{ type: "image_url" as const, image_url: { url: s.framingRef.data } }] : []),
+              ]),
+            ],
+          },
+        ],
+        thinking: { type: "disabled" },
+      } as never)) as { choices?: Array<{ message?: { content?: string } }> };
+      return { ok: true, raw: res.choices?.[0]?.message?.content ?? "" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "identity scoring failed";
+      if (attempt === 0 && (msg.includes("429") || msg.toLowerCase().includes("too many requests"))) {
+        await new Promise((r) => setTimeout(r, 20_000));
+        continue;
+      }
+      return { ok: false, error: msg };
+    }
   }
+  return { ok: false, error: "identity scoring failed" };
 }
 
 /**

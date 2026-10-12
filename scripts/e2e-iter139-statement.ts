@@ -93,7 +93,7 @@ function sourceLaw() {
   const bridge = read("bridges/blender/animeos_bridge.py");
   expect("no build-law bump (the design is DATA - the dials ride inside the standing clamps)",
     anime.includes("ANIME_LAW_VERSION = 125") && toon.includes("TOON_LAW_VERSION = 133")
-      && bridge.includes("PRESENCE_LAW_VERSION = 109"), "the versions");
+      && bridge.includes("PRESENCE_LAW_VERSION = 110"), "the versions");
   expect("the clamp law is the dials' own net (headScale floor 0.85, eyes floor 0.70)",
     anime.includes('"headScale": _num(b0, "headScale", 1.0, 0.85, 1.2)')
       && anime.includes('"size": _num(e0, "size", 0.92 if gender == "male" else 1.0, 0.7, 1.4)'), "the clamps");
@@ -241,7 +241,7 @@ hh = presence.get("headH")
 ok("the r3 skull measure lands at the probe's own witness (headH ~0.094, r2 rode 0.1051)",
    isinstance(hh, (int, float)) and abs(hh - 0.094) < 0.002, presence)
 ok("the presence law rides 109 (the 155 wide-fill lift advanced it legitimately)",
-   presence.get("lawVersion") == 109, presence)
+   presence.get("lawVersion") == 110, presence)
 ok("the toon law rides 133 (the 140 wide-end paint statement advances this pin)",
    look.get("lawVersion") == 133, look)
 ok("the WIDE's solve keeps the full-figure contract (fill 0.56, never cut down)",

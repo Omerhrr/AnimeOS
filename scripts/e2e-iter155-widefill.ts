@@ -38,8 +38,8 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 
 // ── 1. THE SOURCE LAWS ──
 const br = read("bridges/blender/animeos_bridge.py");
-expect("the presence law advances to 109 (the wide fill lift moved the grammar)",
-  br.includes("PRESENCE_LAW_VERSION = 109"), "v109");
+expect("the presence law advances to 110 (the wide fill lift moved the grammar; the 164 rung law moved it again)",
+  br.includes("PRESENCE_LAW_VERSION = 110"), "v109");
 expect("the ESTABLISHING fill lifts to 0.40 (the world keeps the majority of the frame)",
   br.includes('"ESTABLISHING": 0.40'), "0.40");
 expect("the WIDE fill lifts to 0.56 (the 11% pull-in)",
@@ -87,7 +87,7 @@ def ok(name, cond, detail=None):
 ok("the module fills ride the lift",
    m.SUBJECT_FILL["ESTABLISHING"] == 0.40 and m.SUBJECT_FILL["WIDE"] == 0.56,
    dict(m.SUBJECT_FILL))
-ok("the module version rides 109", m.PRESENCE_LAW_VERSION == 109, m.PRESENCE_LAW_VERSION)
+ok("the module version rides 110", m.PRESENCE_LAW_VERSION == 110, m.PRESENCE_LAW_VERSION)
 
 scn = bpy.context.scene
 fig_mats = {

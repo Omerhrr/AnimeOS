@@ -80,7 +80,7 @@ expect("the evidence's scope pair stands (the 135 rung vs the 128 brush scope)",
   tp.includes('"the trim weave\'s own rung (135)"') && tp.includes('("the wide-end brush scope (128)" if p_depth > 0 else'), "the scope pair");
 const br = read("bridges/blender/animeos_bridge.py");
 expect("the presence law holds its 109 rung (the 155 lift advanced it legitimately)",
-  br.includes("PRESENCE_LAW_VERSION = 109"), "v108");
+  br.includes("PRESENCE_LAW_VERSION = 110"), "v108");
 expect("the tag's staging sweep stands (the 135 side-door fix)",
   br.includes("_tagged_set") && br.includes('state["setSurfaceMats"] = _tagged_set'), "the sweep");
 

@@ -53,7 +53,7 @@ expect("the anime law stands at 125 (no bridge law moved)",
 expect("the toon law stands at 133 (the 140 wide-end paint statement)",
   tp.includes("TOON_LAW_VERSION = 133"), "v133");
 expect("the presence law stands at 109",
-  bridge.includes("PRESENCE_LAW_VERSION = 109"), "v108");
+  bridge.includes("PRESENCE_LAW_VERSION = 110"), "v108");
 
 // ── 2. THE DB LEDGER (the restored rows' own truth) ──
 async function main() {

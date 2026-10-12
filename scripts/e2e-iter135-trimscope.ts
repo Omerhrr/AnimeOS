@@ -75,7 +75,7 @@ expect("the trim's address counting gates on the weave, not the brush",
   /if weave_on and kind == "cloth" and not mat\.get\("animeos_set_surface"\):/.test(tp), "the counting gate");
 const br = read("bridges/blender/animeos_bridge.py");
 expect("the presence law holds its 109 rung (the 155 lift advanced it legitimately)",
-  br.includes("PRESENCE_LAW_VERSION = 109"), "v108");
+  br.includes("PRESENCE_LAW_VERSION = 110"), "v108");
 expect("the tag's side doors close: the staging sweep runs at the end of the set block",
   br.includes("_tagged_set") && br.includes('state["setSurfaceMats"] = _tagged_set'), "the sweep");
 expect("the sweep is the 114 law's own sentence (every material that exists now is set-owned)",

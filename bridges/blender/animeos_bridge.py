@@ -817,7 +817,7 @@ SUBJECT_FILL = {
 # top - the eye caught it before any night could).
 MEDIUM_UPPER_SHARE = 0.42
 MEDIUM_HEADROOM = 0.11
-PRESENCE_LAW_VERSION = 109
+PRESENCE_LAW_VERSION = 110
 
 
 def measure_subject(root):
@@ -4127,13 +4127,25 @@ FINAL_CAP = 1280
 
 def preview_cap_for(shot_type, mode):
     """The rung ladder: FINAL renders at the FINAL cap; a PREVIEW of
-    the wide-end framings (ESTABLISHING, WIDE) rides the 1024 rung
-    (the 138 wide rung - the 126 precedent: the crops feed the judge
-    real texels, the head gains ~1.6x linear); every other preview
-    keeps the 640 rung."""
+    the wide-end framings (ESTABLISHING, WIDE, and - the 164 law -
+    LOW_ANGLE) rides the 1024 rung (the 138 wide rung - the 126
+    precedent: the crops feed the judge real texels, the head gains
+    ~1.6x linear); every other preview keeps the 640 rung.
+
+    THE 164 RUNG LAW (the ladder and the contract agree): the 163
+    night named the seam - S005 is a LOW_ANGLE the 157 contract
+    judges front-scale while the ladder grouped it with the 640
+    tights, and the cell is the arc's worst. THE VERIFY ARM (the
+    probe's own receipt): the same S005 payload rendered at both
+    rungs - the judge's own face-crop source reads 49x45 = 2205px at
+    the 640 and 72x64 = 4608px at the 1024 (2.09x the area), and the
+    eye reads the difference (the 640 crop's eyes are smudges the
+    upscaler invents; the 1024 crop resolves the iris, the bangs'
+    strands, the brow, the hair pin). A framing the contract judges
+    front-scale owes the wide rung's texels."""
     if str(mode or "PREVIEW").upper() == "FINAL":
         return FINAL_CAP
-    return ESTABLISHING_CAP if str(shot_type or "").upper() in ("ESTABLISHING", "WIDE") else PREVIEW_CAP
+    return ESTABLISHING_CAP if str(shot_type or "").upper() in ("ESTABLISHING", "WIDE", "LOW_ANGLE") else PREVIEW_CAP
 
 
 def comp_profile(shot):

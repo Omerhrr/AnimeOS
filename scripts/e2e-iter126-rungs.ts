@@ -130,9 +130,9 @@ async function main() {
       && probe.keep.s1 > probe.keep.s0, probe.keep);
   expect("keep <= 1.0 is the identity (no wash, no bank)",
     probe.keep.identityAt1 && probe.keep.identityBelow1, probe.keep);
-  expect("the ladder answers for real (1024 the wide end per the 138 rung / 640 the rest / 1280 FINAL)",
+  expect("the ladder answers for real (1024 the wide end per the 138 rung + the 164 LOW_ANGLE / 640 the rest / 1280 FINAL)",
     probe.ladder.establishing_preview === 1024 && probe.ladder.wide_preview === 1024
-      && probe.ladder.medium_preview === 640 && probe.ladder.lowangle_preview === 640
+      && probe.ladder.medium_preview === 640 && probe.ladder.lowangle_preview === 1024
       && probe.ladder.none_preview === 640 && probe.ladder.establishing_final === 1280
       && probe.ladder.wide_final === 1280, probe.ladder);
   expect("the brush swing is the 127 statement law (base + gain x depth, bounded)",

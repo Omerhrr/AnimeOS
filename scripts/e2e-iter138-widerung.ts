@@ -45,15 +45,15 @@ function sourceLaw() {
   const br = read("bridges/blender/animeos_bridge.py");
   expect("the ladder constants stand (640 preview / 1024 wide-end / 1280 FINAL)",
     br.includes("PREVIEW_CAP = 640") && br.includes("ESTABLISHING_CAP = 1024") && br.includes("FINAL_CAP = 1280"), "the constants");
-  expect("the wide rung rides: the wide-end framings key the 1024 rung",
-    br.includes('return ESTABLISHING_CAP if str(shot_type or "").upper() in ("ESTABLISHING", "WIDE") else PREVIEW_CAP'), "the rung");
+  expect("the wide rung rides: the wide-end framings key the 1024 rung (the 164 law adds the LOW_ANGLE)",
+    br.includes('return ESTABLISHING_CAP if str(shot_type or "").upper() in ("ESTABLISHING", "WIDE", "LOW_ANGLE") else PREVIEW_CAP'), "the rung");
   expect("the worker rides the ladder (no hardcoded ternary)",
     br.includes('cap = preview_cap_for(shot.get("shotType"), mode)')
       && !br.includes('cap = 1280 if mode == "FINAL" else 640'), "the call");
   expect("the 138 receipt names the law (the comment carries the probe's own read)",
     br.includes("THE WIDE RUNG (iteration 138)") && br.includes("the face\n        # reads DRAWN"), "the comment");
   expect("the versions stand (the ladder rides source law as 123/126 left it)",
-    br.includes("PRESENCE_LAW_VERSION = 109"), "presence 109");
+    br.includes("PRESENCE_LAW_VERSION = 110"), "presence 110");
   const anime = read("bridges/blender/anime_character.py");
   expect("ANIME 125 stands", anime.includes("ANIME_LAW_VERSION = 125"), "anime 125");
   const toon = read("bridges/blender/toon_pass.py");
@@ -93,12 +93,13 @@ function moduleTruth() {
   const probe = JSON.parse(r.stdout.slice(r.stdout.indexOf("PROBE_JSON ") + "PROBE_JSON ".length).split("\n")[0]);
   expect("the wide rung answers 1024 from the real module", probe.ladder.wide === 1024, probe.ladder);
   expect("the establishing rung stands at 1024", probe.ladder.establishing === 1024, probe.ladder);
-  expect("the tight framings keep the 640 rung (MEDIUM/CLOSEUP/MCU/LOW_ANGLE/None)",
+  expect("the tight framings keep the 640 rung (MEDIUM/CLOSEUP/MCU/None) and LOW_ANGLE rides the 1024 wide rung (the 164 law)",
     probe.ladder.medium === 640 && probe.ladder.closeup === 640 && probe.ladder.mcu === 640
-      && probe.ladder.lowangle === 640 && probe.ladder.none === 640, probe.ladder);
+      && probe.ladder.none === 640
+      && probe.ladder.lowangle === 1024, probe.ladder);
   expect("FINAL stays 1280 at every framing",
     probe.ladder.wide_final === 1280 && probe.ladder.establishing_final === 1280 && probe.ladder.medium_final === 1280, probe.ladder);
-  expect("PRESENCE 109 answers from the real module (the 155 lift)", probe.versions.presence === 109, probe.versions);
+  expect("PRESENCE 110 answers from the real module (the 164 rung law)", probe.versions.presence === 110, probe.versions);
 }
 
 // ── 3. THE REAL BLENDER PROBE (the node truth on the REAL worker_run) ──
@@ -147,8 +148,8 @@ def build(shot_type, lens, mode="PREVIEW", movement="PAN"):
 st_w, rx_w, ry_w, ev_w = build("WIDE", "35mm")
 ok("the WIDE previews at the 1024 rung (1024x576 from the 1920x1080 base)",
    rx_w == 1024 and ry_w == 576, {"rx": rx_w, "ry": ry_w})
-ok("the presence law rides 109 at the wide (the 155 wide-fill lift advanced it legitimately)",
-   ((ev_w.get("presence") or {}).get("lawVersion")) == 109, ev_w.get("presence"))
+ok("the presence law rides 110 at the wide (the 164 rung law advanced it legitimately)",
+   ((ev_w.get("presence") or {}).get("lawVersion")) == 110, ev_w.get("presence"))
 ok("the WIDE's solve keeps the full-figure contract at the 155 fill (0.56, never cut down)",
    abs((ev_w.get("presence") or {}).get("fill", 0) - 0.56) < 1e-9
      and (ev_w.get("presence") or {}).get("rung") is None, ev_w.get("presence"))
@@ -169,8 +170,8 @@ ok("the MEDIUM keeps the 640 rung (640x360 - the 133 waist-up solve's own scale)
 
 # ── LOW_ANGLE: the scope discipline (the 137 night's one clear keeps its rung) ──
 st_l, rx_l, ry_l, ev_l = build("LOW_ANGLE", "50mm", movement="ORBIT")
-ok("the LOW_ANGLE keeps the 640 rung (the scope keys exactly the wide end)",
-   rx_l == 640 and ry_l == 360, {"rx": rx_l, "ry": ry_l})
+ok("the LOW_ANGLE rides the 1024 rung (the 164 law: the ladder and the contract agree)",
+   rx_l == 1024 and ry_l == 576, {"rx": rx_l, "ry": ry_l})
 
 # ── FINAL: the FINAL cap stands at the wide too ──
 st_f, rx_f, ry_f, ev_f = build("WIDE", "35mm", mode="FINAL")

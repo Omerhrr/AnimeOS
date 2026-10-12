@@ -3140,3 +3140,19 @@ Work Log:
 
 Stage Summary:
 - The damping converted coin flips into measurements; the named seam is the LOW_ANGLE rung grouping. 164 = the rung question (the 1024-vs-640 verify arm), then the ladder law if the evidence names it.
+
+---
+Task ID: iter-164
+Agent: main (Super Z)
+Task: Iteration 164 - the rung law (the ladder and the contract agree), end-to-end.
+
+Work Log:
+- VERIFY ARM: the S005 payload captured off the drain's own assembly; both arms through the real worker_run - the face-crop sources 49x45=2205px (640) vs 72x64=4608px (1024), 2.09x; the eye: the 640 crop's eyes are smudges, the 1024 crop resolves the iris/bangs/brow/pin.
+- LAW: preview_cap_for keys ("ESTABLISHING", "WIDE", "LOW_ANGLE"); the tights keep 640; FINAL 1280; the receipt rides the source comment. PRESENCE 109 -> 110 (the p109 cohort archives; the p110 cohort opens at 165 - the crossing's clock restarts, named).
+- BACKOFF: one bounded 429 retry (20s) in rawIdentityCall (the 163 night's two survivors named it).
+- RE-PINS: e2e-iter123/126/138 (the ladder letters) + the ten version pins 109->110.
+- GATES: e2e-iter164-rungladder ALL GREEN (16 asserts incl. the real bpy module probe); the cascade's first pass caught the three stale pins (the discipline working), the re-pin rode, THE RERUN ALL GREEN (35 gates); 5 smokes green; src tsc 0.
+- README item 78 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The ladder and the contract agree; the p110 cohort opens. 165 = its first night at samples=5 under the fixed rungs (S005's own answer).

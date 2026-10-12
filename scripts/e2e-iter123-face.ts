@@ -64,9 +64,9 @@ async function main() {
     bridge.includes('out.append({"name": str(name), "box": None})'), "the null");
 
   // ── 2. THE RESOLUTION RUNG ──
-  expect("the preview cap steps to 640 (the wide face gains pixels; the 126 ladder carries it)",
+  expect("the preview cap steps to 640 (the wide face gains pixels; the 126 ladder carries it; the 164 law adds the LOW_ANGLE to the wide end)",
     bridge.includes("PREVIEW_CAP = 640")
-      && bridge.includes('return ESTABLISHING_CAP if str(shot_type or "").upper() in ("ESTABLISHING", "WIDE") else PREVIEW_CAP'), "the cap");
+      && bridge.includes('return ESTABLISHING_CAP if str(shot_type or "").upper() in ("ESTABLISHING", "WIDE", "LOW_ANGLE") else PREVIEW_CAP'), "the cap");
 
   // ── 3. THE NOSE IS A LINE (the decal craft) ──
   const ac = read("bridges/blender/anime_character.py");
