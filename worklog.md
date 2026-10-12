@@ -3277,3 +3277,18 @@ Work Log:
 
 Stage Summary:
 - The stable cells hold (75/85/70), the swing cells wander on unchanged grammar - the 161 split now measured at the damped instrument across four nights. 174 = the fifth night + the LUT probe's evidence question.
+
+---
+Task ID: night-174
+Agent: main (Super Z)
+Task: Iteration 174 night - the p110 cohort's fifth night, end-to-end.
+
+Work Log:
+- Launched the night (detached-night174 + chain174, the resume law re-created them); drain 6/6 ~67 min; the paced rescore scored 6 REFUSED 0 (third consecutive).
+- Board: S001 75 / S002 60 / S003 85 / S004 45 / S005 40 / S006 70; sweep mean 63, median 65.
+- Gate: arc union mean 69 / median 70 / p10 55 across 5 nights -> BELOW, AND SHADOW FLIPPED TO HOLD (the gate's own refusal carries it); publish gate refused honestly (400); ledger 101 lines.
+- Eye: S006 receipt-identical; the violet cast again (the LUT evidence grows).
+- No repair pass; README item 88 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The convergence moves: mean 65->69, a HOLD cell named, the swing cells climbing. 175 = the LUT probe's own arm + the sixth night.
