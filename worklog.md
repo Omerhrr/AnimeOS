@@ -3261,3 +3261,19 @@ Work Log:
 
 Stage Summary:
 - The chain self-drove across the window: restore -> gate -> gates -> night -> paced rescore, zero refusals. 173 = the fourth night (the medians drink the new highs); the ghost law's eye; the LUT evidence grows.
+
+---
+Task ID: night-173
+Agent: main (Super Z)
+Task: Iteration 173 night - the p110 cohort's fourth night, end-to-end.
+
+Work Log:
+- Launched the night on the open window (the double-fork lesson re-learned: the backgrounded chain got reaped, the reset survived via its own detach; drain + chain173 relaunched each through their own double-fork).
+- Drain 6/6 ~66 min (DSH revisions every clip; S005 at 1024); chain173 fired; the paced rescore scored 6 REFUSED 0 (second consecutive).
+- Board: S001 75 / S002 40 / S003 85 / S004 35 / S005 35 / S006 70; sweep mean 57, median 55 - the hardest sweep.
+- Gate: arc union mean 65 / median 70 / p10 50 across 4 nights -> BELOW (3/6 under); the publish gate refused honestly (400); ledger 95 lines.
+- Eye: S005 RECEIPT-IDENTICAL to 170 (the same grammar read 75 then, 35 now) - the variance receipt unambiguous at samples=5; S002's face well-built, the 40 the coin. No repair pass (the eye before the hand).
+- README item 87 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The stable cells hold (75/85/70), the swing cells wander on unchanged grammar - the 161 split now measured at the damped instrument across four nights. 174 = the fifth night + the LUT probe's evidence question.
