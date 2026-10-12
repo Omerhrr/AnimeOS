@@ -3307,3 +3307,18 @@ Work Log:
 
 Stage Summary:
 - The 159 rider measured: the violet is the tribulation grade's own contribution; the correction is a named craft lever awaiting its own iteration. 176 = the sixth night; the LUT decision waits for craft's move.
+
+---
+Task ID: night-176
+Agent: main (Super Z)
+Task: Iteration 176 night - the p110 cohort's sixth night, end-to-end.
+
+Work Log:
+- Launched the night (detached-night176 + chain176 re-created); drain 6/6 ~66 min; the rescore scored 6 REFUSED 0 (fourth consecutive).
+- Board: S001 85 (NEW HIGH - the two-figure grammar rewarded) / S002 45 / S003 85 / S004 35 / S005 65 (climbing) / S006 70; sweep mean 64, median 68.
+- Gate: arc union mean 67 / median 70 / p10 50 across 6 nights -> BELOW; publish refused honestly (400); ledger 107 lines.
+- Eye: S001 receipt-identical two-figure grammar at its high; no repair pass.
+- README item 90 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- Six nights: the stable cells hold or climb, the swing cells ride their coins; the crossing BELOW with real convergence. 177 = the seventh night + the LUT decision waits for craft.
