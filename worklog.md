@@ -3201,3 +3201,17 @@ Work Log:
 
 Stage Summary:
 - The escalation's remedy landed on all three doors. 168 = the pre-flight proves the window, the three gates re-run, the paced rescore's own receipt.
+
+---
+Task ID: iter-169
+Agent: main (Super Z)
+Task: Iteration 169 - the resume watcher rolls (the self-driving night), end-to-end.
+
+Work Log:
+- Four more pre-flight probes hostile (06:15-06:29; the outage 4+ hours).
+- THE WATCHER (resume169.mjs, double-fork detached): probes every 10 min (cap 6h); on the first breath runs the three generation-heavy gates then launches the night (reset -> drain -> the chain169 watcher -> the paced rescore); the done markers carry the state.
+- The watcher is LIVE (PID verified) - the night self-drives when the window opens.
+- README item 83 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The night self-drives when the door opens; the next check reads resume169.done / chain169.done and rides the record.
