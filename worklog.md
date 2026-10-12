@@ -3171,3 +3171,18 @@ Work Log:
 
 Stage Summary:
 - S005 answered its rung law; the fresh cohort builds. 166 = the second night (the medians converge); the LUT probe waits.
+
+---
+Task ID: night-166
+Agent: main (Super Z)
+Task: Iteration 166 night - the p110 cohort's second night, end-to-end.
+
+Work Log:
+- Warm-pool a+b green; reset clean; drain 6/6 ~60 min; the watcher chained the rescore at samples=5.
+- Board: S001 55 / S002 55 / S003 45 / S004 75 (lifted) / S005 75 (THE RUNG LAW'S CELL BUILDING: 35-40 -> 65 -> 75) / S006 REFUSED (7+ 429s - the backoff beaten; the rescore rode 5/6 honestly); sweep mean 61.
+- Gate: the 2-night arc medians mean 65 / p10 53 -> BELOW; the medians build (S005's 70, S004's 65).
+- Eye: S005's second 1024 night receipt-identical, the judge answered 75; the ghost law's twelfth night.
+- No repair pass; receipts staged; commit + push + remote verification.
+
+Stage Summary:
+- The rung law's cells build toward the crossing; the rate limit is the rescore's recurring cost. 167 = the third night; the pacing question if the limit recurs; the LUT probe waits.
