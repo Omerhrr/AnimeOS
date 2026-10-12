@@ -3231,3 +3231,17 @@ Work Log:
 
 Stage Summary:
 - The rebuild law completed what the sandbox's own tools restore; the window now guards the restore as well as the rescore, and the watcher holds the chain's hand. The markers (resume170.done / chain170.done) carry the night's state; the LUT probe waits behind the window.
+
+---
+Task ID: iter-171
+Agent: main (Super Z)
+Task: Iteration 171 - the cap ride and the re-arm, end-to-end.
+
+Work Log:
+- The restore-first watcher rode its full 6h cap: 36 probes (08:12 -> 14:13), every one 429 at the door in 0s; the marker carried 'window never breathed (6h cap)' honestly; the watcher exited.
+- Nothing else could honestly ride: the restore/gates need the door, the drain's frames are wiped, the LUT probe waits behind the night, the ghost law waits behind renders.
+- THE RE-ARM LAW: the cap doubles when a cap expires without a breath - resume170.mjs edited (36 -> 72 probes, 12h cap; the marker message and the receipt line follow), marker cleared, the watcher relaunched double-fork detached (LIVE PID 4486, first probe 14:14 HOSTILE).
+- README item 85 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The longest dependency receipt in the pipeline's record: an 8-hour outage across two watches; the watcher now holds the chain with twice the patience; the night self-drives restore-first when the door breathes.
