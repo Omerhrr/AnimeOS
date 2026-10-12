@@ -3322,3 +3322,18 @@ Work Log:
 
 Stage Summary:
 - Six nights: the stable cells hold or climb, the swing cells ride their coins; the crossing BELOW with real convergence. 177 = the seventh night + the LUT decision waits for craft.
+
+---
+Task ID: night-177
+Agent: main (Super Z)
+Task: Iteration 177 night - the p110 cohort's seventh night, end-to-end.
+
+Work Log:
+- Launched the night (detached-night177 + chain177 re-created); drain 6/6 ~67 min; the rescore scored 6 REFUSED 0 (fifth consecutive).
+- Board: S001 75 / S002 35 / S003 85 (five consecutive) / S004 35 / S005 40 / S006 Lin 60 + Wei 65; sweep mean 55, median 50 - a hard variance night.
+- Gate: arc union mean 66 / median 70 HELD across 7 nights / p10 45 -> BELOW; publish refused honestly (400); ledger 113 lines.
+- Eye: S006's real frame receipt-identical (the violet cast riding again); THE EYE'S LESSON: the newest post-drain job is the DSH revision's re-render (S001's), not the drain's last shot - clip-mapping rides the shotId, not recency.
+- No repair pass; README item 91 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- Seven nights: the union median 70-stable is the builds' truth; the coins wash over it. 178 = the eighth night; the LUT decision waits for craft.
