@@ -3245,3 +3245,19 @@ Work Log:
 
 Stage Summary:
 - The longest dependency receipt in the pipeline's record: an 8-hour outage across two watches; the watcher now holds the chain with twice the patience; the night self-drives restore-first when the door breathes.
+
+---
+Task ID: night-172
+Agent: main (Super Z)
+Task: Iteration 172 night - the window opened; the whole chain rode end to end.
+
+Work Log:
+- Probe 12 BREATHED at 16:05 (real 63s generation); the restore-first law executed: night122-restore anchored the four sheets (16:05-16:09), THE RESTORE GATE ALL GREEN 16:09:40 (the eleventh rebuild completes), warm-pool a+b green, the three generation-heavy gates ALL GREEN (146/147/149), THE NIGHT LAUNCHED 16:33:10.
+- Drain 6/6 ~65 min (DSH revisions every clip; S005 at 1024); chain170 fired at 17:36:43; the paced rescore: scored 6, REFUSED 0 (the pacing law's own receipt).
+- Board: S001 75 / S002 45 / S003 85 / S004 55 / S005 75 / S006 75+70; sweep mean 68, median 73 - the cohort's best sweep.
+- Gate: arc mean 64 / median 60 / p10 55 across 3 nights -> BELOW (2/6 under); the REAL publish gate rode and refused honestly (400).
+- Eye: S001 TWO figures (the ghost streak challenged); S005's third consecutive 75; S003 the night's best face; S006's violet cast visible; S002/S004 pixels clean - variance, not builds.
+- No repair pass (the eye before the hand); ledger 89 lines; commit + push + remote verification.
+
+Stage Summary:
+- The chain self-drove across the window: restore -> gate -> gates -> night -> paced rescore, zero refusals. 173 = the fourth night (the medians drink the new highs); the ghost law's eye; the LUT evidence grows.
