@@ -426,7 +426,12 @@ export async function scoreShotIdentityMedian(
   const n = Math.max(1, Math.min(7, Math.round(samples)));
   const verdicts: IdentityVerdict[] = [];
   let lastError = "";
+  // THE 167 PACING (the four-night receipt: 2 -> 4 -> 7 -> 10+ 429s,
+  // the 167 night refusing all six) - the samples' burst is spaced
+  // (5s between calls, the first rides immediately): the same
+  // instrument, the reads spaced so the provider's window breathes.
   for (let i = 0; i < n; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 5_000));
     const call = await rawIdentityCall(ctx, strip?.frames, faceStrip, figureStrip);
     if (!call.ok) { lastError = call.error; continue; }
     const v = parseIdentityVerdict(call.raw, names);
@@ -484,11 +489,12 @@ export async function rawIdentityCall(
   faceStrip?: { dataUrl: string; members: string[]; frames: number } | null,
   figureStrip?: { dataUrl: string; members: string[]; frames: number } | null,
 ): Promise<{ ok: true; raw: string } | { ok: false; error: string }> {
-  // THE 164 BACKOFF: one bounded retry on the rate limit (the 163
-  // night's own receipt: two 429s rode the 30-call burst and the
-  // median rode the survivors) - the same call twice, no other
-  // change; the second failure returns honestly.
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // THE 164 BACKOFF, the 167 ESCALATION: the four-night receipt (2 ->
+  // 4 -> 7 -> 10+ 429s, the 167 night refusing all six) deepened the
+  // retry - two bounded retries (20s, then 45s) on the rate limit,
+  // the same call each time, no other change; the final failure
+  // returns honestly.
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const zai = await ZAI.create();
       const res = (await zai.chat.completions.createVision({
@@ -518,8 +524,8 @@ export async function rawIdentityCall(
       return { ok: true, raw: res.choices?.[0]?.message?.content ?? "" };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "identity scoring failed";
-      if (attempt === 0 && (msg.includes("429") || msg.toLowerCase().includes("too many requests"))) {
-        await new Promise((r) => setTimeout(r, 20_000));
+      if (attempt < 2 && (msg.includes("429") || msg.toLowerCase().includes("too many requests"))) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 20_000 : 45_000));
         continue;
       }
       return { ok: false, error: msg };

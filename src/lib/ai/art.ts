@@ -516,7 +516,18 @@ async function renderImage(prompt: string, size: ImageSize, retries = 2): Promis
       return base64;
     } catch (err) {
       lastError = err;
-      if (attempt < retries) await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      // THE 167 ESCALATION (the image door joins the vision door's
+      // own letter): a 429 rides the provider's sustained window -
+      // the 800ms blip waits cannot cross it; the rate-limit waits
+      // ride 20s/45s, the other errors keep the fast retries.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt < retries) {
+        if (msg.includes("429") || msg.toLowerCase().includes("too many requests")) {
+          await new Promise((r) => setTimeout(r, attempt === 0 ? 20_000 : 45_000));
+        } else {
+          await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        }
+      }
     }
   }
   throw lastError instanceof Error ? lastError : new Error("Image generation failed");

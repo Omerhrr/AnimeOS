@@ -44,9 +44,9 @@ expect("the constants stand (640 preview / 1024 wide-end / 1280 FINAL)",
   br.includes("PREVIEW_CAP = 640") && br.includes("ESTABLISHING_CAP = 1024") && br.includes("FINAL_CAP = 1280"), "the constants");
 expect("the tights keep the 640 rung (MEDIUM/CLOSEUP/MCU untouched)",
   br.includes("PREVIEW_CAP = 640") && !br.includes('("ESTABLISHING", "WIDE", "LOW_ANGLE", "MEDIUM")'), "the tights");
-expect("the 429 backoff rides (one bounded retry, the 163 receipt named)",
-  read("src/lib/identity.ts").includes("THE 164 BACKOFF") &&
-  read("src/lib/identity.ts").includes("setTimeout(r, 20_000)"), "the backoff");
+expect("the 429 backoff rides (the 163 receipt, deepened by the 167 escalation: two bounded retries 20s/45s)",
+  read("src/lib/identity.ts").includes("the 167 ESCALATION") &&
+  read("src/lib/identity.ts").includes("setTimeout(r, attempt === 0 ? 20_000 : 45_000)"), "the backoff");
 
 // ── 2. THE REAL MODULE PROBE (preview_cap_for under the real bpy) ──
 const PROBE = `

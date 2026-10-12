@@ -51,6 +51,18 @@ check("B3 the probe names the cells (the swing cells vs the control)",
 const identity = fs.readFileSync("src/lib/identity.ts", "utf8");
 check("C1 the median law stands (the verdict is the median of its samples - the 117 letter)",
   identity.includes("THE VERDICT IS THE MEDIAN OF ITS SAMPLES (iteration 117)"), "117");
+// THE 167 PACING (the four-night 429 escalation - 2 -> 4 -> 7 -> 10+
+// with the 167 night refusing all six): the burst is spaced.
+check("C1b the inter-sample pacing rides (5s between the samples' calls)",
+  identity.includes("THE 167 PACING (the four-night receipt") &&
+  identity.includes("setTimeout(r, 5_000)"), "the sample pace");
+check("C1c the deepened backoff rides (two bounded retries: 20s, 45s)",
+  identity.includes("the 167 ESCALATION") &&
+  identity.includes("attempt === 0 ? 20_000 : 45_000") &&
+  /attempt < 2 &&/.test(identity), "the retries");
+check("C1d the rescore's inter-shot pacing rides (10s between the shots)",
+  rescore.includes("THE 167 PACING (the four-night receipt") &&
+  rescore.includes("setTimeout(r, 10_000)"), "the shot pace");
 check("C2 the probe's door rides (the four exports, no behavior change)",
   /export async function loadIdentityShot/.test(identity) &&
   /export async function prepareIdentityContext/.test(identity) &&

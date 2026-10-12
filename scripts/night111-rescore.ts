@@ -75,7 +75,14 @@ async function main() {
   const NIGHT = process.env.ANIMEOS_NIGHT_TAG ?? defaultNightTag();
   const COHORT = bridgeLawCohort();
   console.log(`arc: appending to night ${NIGHT} in cohort ${COHORT}`);
+  // THE 167 PACING (the four-night receipt: 2 -> 4 -> 7 -> 10+ 429s,
+  // the 167 night refusing all six) - the shots' burst is spaced
+  // (10s between shots): the same instrument, the reads spaced so
+  // the provider's window breathes.
+  let shotIndex = 0;
   for (const s of shots) {
+    if (shotIndex > 0) await new Promise((r) => setTimeout(r, 10_000));
+    shotIndex += 1;
     const res = SAMPLES > 1
       ? await scoreShotIdentityMedian(s.id, "RENDER", SAMPLES)
       : await scoreShotIdentity(s.id, "RENDER");

@@ -3186,3 +3186,18 @@ Work Log:
 
 Stage Summary:
 - The rung law's cells build toward the crossing; the rate limit is the rescore's recurring cost. 167 = the third night; the pacing question if the limit recurs; the LUT probe waits.
+
+---
+Task ID: iter-167
+Agent: main (Super Z)
+Task: Iteration 167 - the pacing law under the provider's sustained window, end-to-end.
+
+Work Log:
+- Drain 6/6 rode (~50 min); the rescore REFUSED 6/6 (the four-night escalation completing: 2 -> 4 -> 7 -> 10+ -> total); the arc appended nothing (83 lines, honest).
+- THE PACING LAW: 5s between samples (identity.ts), 10s between shots (night111-rescore.ts); the vision backoff deepened (two retries 20s/45s); the IMAGE DOOR joined the letter (renderImage's 429s ride 20s/45s — the 800ms blip waits cannot cross a sustained window).
+- GATES: e2e-iter162-damping ALL GREEN (12 asserts incl. the pacing); e2e-iter164-rungladder re-pinned to the escalation letter, ALL GREEN; src tsc 0.
+- THE PROVIDER'S RECEIPT (named, not hidden): 146/147/149 (the generation-heavy gates) refused their real generations 429 twice tonight — their code rode green at 164's cascade; the resume law re-runs them at the next window. NO FALSE GREEN.
+- README item 81 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The escalation's remedy landed on all three doors. 168 = the pre-flight proves the window, the three gates re-run, the paced rescore's own receipt.
