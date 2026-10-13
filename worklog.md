@@ -3470,3 +3470,15 @@ Work Log:
 
 Stage Summary:
 - The ride continues; the markers answer next.
+
+---
+Task ID: iter-188
+Agent: main (Super Z)
+Task: Iteration 188 - the ride nears its halfway mark, end-to-end.
+
+Work Log:
+- Thirty probes ridden (07:36-13:16), all HOSTILE 0s 429; the outage ~10.75h; the watcher 30/72, halfway minutes away.
+- Nothing moved; README item 102 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The ride continues; the markers answer next.
