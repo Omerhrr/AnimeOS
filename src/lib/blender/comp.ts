@@ -92,7 +92,15 @@ export const COMP_LUTS: Record<string, CompLut> = {
     lift: [1.0, 0.96, 1.03, 1.0],
     gain: [1.08, 0.97, 1.0, 1.0],
     sat: 1.12,
-    mistTint: [0.3, 0.24, 0.38, 1.0],
+    // THE 194 CORRECTION: the violet wash dies - the 175 paired arm
+    // measured the standing tint's ride at +16.3deg of hue toward
+    // violet on a teal robe (S 0.583 vs the neutral arm's 0.634),
+    // and the 141c r5 arm already held the answer: the NEUTRAL
+    // depth-fog gray (0.36, 0.36, 0.36) keeps the depth read and
+    // kills the hue lie. The storm's character (lift/gain/sat) is
+    // byte-exact - the red-forward gain and the 1.12 sat ARE the
+    // tribulation; the tint no longer lies about the cast's dyes.
+    mistTint: [0.36, 0.36, 0.36, 1.0],
   },
   dawn: {
     lift: [1.02, 0.99, 0.96, 1.0],

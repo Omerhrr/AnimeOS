@@ -4104,7 +4104,7 @@ COMP_BASE = {"mist": 0.12, "chroma": 0.08, "vignette": 0.15, "speed": 0.04, "bea
 # a bright pastel washes the whole frame pale and the figure ghosts)
 COMP_LUTS = {
     "moonlight": {"lift": (0.97, 1.0, 1.05, 1.0), "gain": (0.94, 0.99, 1.1, 1.0), "sat": 1.0, "mistTint": (0.24, 0.29, 0.44, 1.0)},
-    "tribulation": {"lift": (1.0, 0.96, 1.03, 1.0), "gain": (1.08, 0.97, 1.0, 1.0), "sat": 1.12, "mistTint": (0.3, 0.24, 0.38, 1.0)},
+    "tribulation": {"lift": (1.0, 0.96, 1.03, 1.0), "gain": (1.08, 0.97, 1.0, 1.0), "sat": 1.12, "mistTint": (0.36, 0.36, 0.36, 1.0)},  # the 194 correction: the 175 probe's +16.3deg violet ride dies - the 141c r5 neutral depth-fog gray, the storm character (lift/gain/sat) byte-exact
     "dawn": {"lift": (1.02, 0.99, 0.96, 1.0), "gain": (1.08, 1.02, 0.94, 1.0), "sat": 1.06, "mistTint": (0.55, 0.44, 0.34, 1.0)},
     "neutral": {"lift": (0.98, 0.985, 1.02, 1.0), "gain": (1.03, 1.0, 0.965, 1.0), "sat": 1.06, "mistTint": (0.36, 0.4, 0.46, 1.0)},
 }

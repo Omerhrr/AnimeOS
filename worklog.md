@@ -3548,3 +3548,19 @@ Work Log:
 
 Stage Summary:
 - The pixels hold across seven drains; the coins wash; the medians build. 194 = the LUT correction decision or the eleventh night.
+
+---
+Task ID: iter-194
+Agent: main (Super Z)
+Task: Iteration 194 - the craft iteration: the LUT correction landed, measured, and honestly bounded, end-to-end.
+
+Work Log:
+- The correction landed as ONE variable in both mirrors (comp.ts + the bridge): tribulation mistTint (0.3,0.24,0.38) -> (0.36,0.36,0.36) (the 141c r5 arm's gray); lift/gain/sat byte-exact.
+- The resident restarted on current code (port 8101 killed first); e2e-iter194-lutcorrection ALL GREEN (14 asserts); src tsc 0 errors.
+- The verification arm (detached after one reaped launch - the law re-learned): one real S006 corrected render vs the night-182 standing clip; frame-wide dR +0.0018/dG +0.0011/dB -0.0005 (the predicted direction), hue histogram stable (the storm look intact).
+- The honest boundary measured: the 175's +16.3deg was the WHOLE script's ride; the tint was the smallest carrier and the lie; the 152 mask bounds the tint on the dark masses; the remaining violet is the storm look - the director's steer is the frontier.
+- The comp smoke's DIRECT half carries a 4.x-era relic on 5.2.2 (Scene.node_tree; predates 194); the three real render halves PASS; the 5.x probe fix named.
+- README item 108 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The tint lie is dead, the storm stands, the receipts complete. 195 = the eleventh night under the corrected tint.
