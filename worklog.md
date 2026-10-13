@@ -3422,3 +3422,15 @@ Work Log:
 
 Stage Summary:
 - The watch is the work; the markers answer next. 184 = the launch receipt or the cap ride continues.
+
+---
+Task ID: iter-184
+Agent: main (Super Z)
+Task: Iteration 184 - the watch rides on, end-to-end.
+
+Work Log:
+- Eleven probes ridden (07:36-09:26), all HOSTILE 0s 429; the outage ~6.75h; the watcher 11/72 through its cap.
+- Env verified; nothing moved; README item 98 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The ride continues; the markers answer next.
