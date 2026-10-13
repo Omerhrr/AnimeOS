@@ -3352,3 +3352,17 @@ Work Log:
 
 Stage Summary:
 - S004's persistence becomes the question; the probe instrument already exists (the 175 pattern). 179 = the S004 probe + the ninth night.
+
+---
+Task ID: iter-179
+Agent: main (Super Z)
+Task: Iteration 179 - the S004 probe, end-to-end.
+
+Work Log:
+- Retargeted the 175 instrument at S004 (the gate's worst cell, four consecutive 35s); the standing job file confirmed lut=tribulation at S004 too.
+- The paired arm rode (~26 min): standing hue FACE 250.0/ROBE 304.8 vs neutral FACE 244.1/ROBE 311.5 - the LUT shifts the face +5.9deg (sat +0.106) and the robe -6.7deg (sat +0.116).
+- VERDICT: the LUT is a material rider at S004; the boundary named (the shift smaller than S006's - the wide-distance face likely composes).
+- README item 93 + both worklogs; probe179-s004.ts staged; commit + push + remote verification.
+
+Stage Summary:
+- Both tribulation cells now carry measured LUT evidence (S006 +16.3deg, S004 face/robe shifts). 180 = the ninth night; the correction decision waits for craft.
