@@ -3458,3 +3458,15 @@ Work Log:
 
 Stage Summary:
 - The ride continues; the markers answer next.
+
+---
+Task ID: iter-187
+Agent: main (Super Z)
+Task: Iteration 187 - the ride at a quarter-cap plus one, end-to-end.
+
+Work Log:
+- Twenty-five probes ridden (07:36-12:16), all HOSTILE 0s 429; the outage ~9.75h; the watcher 25/72.
+- Nothing moved; README item 101 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The ride continues; the markers answer next.
