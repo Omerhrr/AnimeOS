@@ -3366,3 +3366,17 @@ Work Log:
 
 Stage Summary:
 - Both tribulation cells now carry measured LUT evidence (S006 +16.3deg, S004 face/robe shifts). 180 = the ninth night; the correction decision waits for craft.
+
+---
+Task ID: night-180
+Agent: main (Super Z)
+Task: Iteration 180 night - the p110 cohort's ninth night, end-to-end.
+
+Work Log:
+- Launched the night (detached-night180 + chain180 re-created); drain 6/6 ~68 min; the rescore rode 4/6 - S005/S006 REFUSED (the rate limit's return, the 429s beating the backoffs).
+- Board (4 scored): S001 85 / S002 40 / S003 85 (seven consecutive) / S004 50 (THE FOUR-NIGHT MODE BROKE).
+- Gate: arc union mean 66 / median 70 HELD / p10 45 -> BELOW; publish refused honestly (400); ledger 123 lines (4 appended).
+- No repair pass (the refused need a window, not a lever); README item 94 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- Nine nights: the median 70-stable, S004's mode broken upward, the rate limit's honest refusal carried. 181 = the tenth night.
