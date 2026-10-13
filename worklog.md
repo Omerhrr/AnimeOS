@@ -3520,3 +3520,17 @@ Work Log:
 
 Stage Summary:
 - The tenth night is riding; 192 = the drain's 6/6, the paced rescore, the tenth night's scores and the medians' build.
+
+---
+Task ID: night-192
+Agent: main (Super Z)
+Task: Iteration 192 - the tenth night's record, end-to-end.
+
+Work Log:
+- Drain 6/6 (~62 min, 16:28->17:31); chain182 fired 17:31:53; the paced rescore scored 6 REFUSED 0 (samples=5).
+- Board: S001 75 / S002 55 / S003 85 (eight consecutive) / S004 45 / S005 65 / S006 Lin 35 + Wei 45; sweep mean 60, median 60, p10 35.
+- Gate: arc union mean 66 / median 70 HELD / p10 45 over 10 nights -> BELOW; publish refused honestly (400); the letter names the repair door.
+- Ledger 129 lines (night-182's 6 appended). No repair pass (the eye before the hand); README item 106 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- Ten nights: the median 70-stable, S003's 85-streak, the swing coins washing. 193 = the eye + the repair decision (the window is open, the 149 law's scaled renderWait rides).
