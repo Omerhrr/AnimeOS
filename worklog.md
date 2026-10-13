@@ -3393,3 +3393,19 @@ Work Log:
 
 Stage Summary:
 - The watcher holds the night's hand until the door opens; the next check reads resume181.done / chain181.done. 182 rides the markers.
+
+---
+Task ID: iter-182
+Agent: main (Super Z)
+Task: Iteration 182 - the twelfth drift's full rebuild + the re-arm with the restore-first arm, end-to-end.
+
+Work Log:
+- The sandbox wiped entirely; the fresh clone verified at 54fbc06 (= 181, remote-checked); npm/prisma/Blender 5.2.2 LTS/dev-server/OWNER/seed ALL GREEN.
+- The db/custom.db symlink unifies the two DATABASE_URL wirings (dev server repo-internal vs night runner container) - one file, no split-brain.
+- The auto-seed returned the production byte-faithful (5 cast / Sc12 / 6 shots / 14 cues); the cast rides no sheets - the restore arm waits for the door.
+- Instruments re-created: detached-night182.mjs (samples=5), chain182.mjs (colon lesson), resume182.mjs (restore-first: restore -> HARD gate -> warm-pool -> gates 146/147/149 -> reset -> drain -> chain -> rescore).
+- Pre-flight 07:36 HOSTILE (0s, 429); the watcher armed LIVE, probing every 10 min, 12h cap (the 171 law).
+- src tsc 0 errors; README item 96 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The rebuild is complete and the watcher holds the night's hand; the next check reads resume182.done / chain182.done. 183 rides the markers.
