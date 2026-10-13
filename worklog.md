@@ -3494,3 +3494,15 @@ Work Log:
 
 Stage Summary:
 - The ride continues; the markers answer next.
+
+---
+Task ID: iter-190
+Agent: main (Super Z)
+Task: Iteration 190 - the ride at forty probes, end-to-end.
+
+Work Log:
+- Forty probes ridden (07:36-15:16), all HOSTILE 0s 429; the outage ~12.75h; the watcher 40/72.
+- Nothing moved; README item 104 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The ride continues; the markers answer next.
