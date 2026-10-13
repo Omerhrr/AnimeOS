@@ -3608,3 +3608,17 @@ Work Log:
 
 Stage Summary:
 - The corrected tint's second coin; the union drifts up; S004 is the gate's singular name. 198 = the thirteenth night.
+
+---
+Task ID: night-198
+Agent: main (Super Z)
+Task: Iteration 198 - the thirteenth night's record, end-to-end.
+
+Work Log:
+- The worker hunt pre-launch; the reset clean; the drain: NIGHT RESULT 6/6 real first try (the second consecutive clean full-cold drain); chain198 fired; scored 6 REFUSED 0.
+- Board: S001 55 / S002 55 / S003 75 (face 90 holds) / S004 35 / S005 65 / S006 Lin 40 + Wei 55; sweep mean 54 - the corrected-tint era's hardest.
+- Gate: union mean 67 / median 70 HELD / p10 45 over 13 nights -> BELOW; S004 worst in all four cells; ledger 147 lines.
+- README item 112 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- Three corrected-tint nights: 70/64/54 - the coins wash, the union holds. 199 = the fourteenth night.
