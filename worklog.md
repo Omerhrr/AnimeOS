@@ -3506,3 +3506,17 @@ Work Log:
 
 Stage Summary:
 - The ride continues; the markers answer next.
+
+---
+Task ID: iter-191
+Agent: main (Super Z)
+Task: Iteration 191 - the window opened and the night launched, end-to-end.
+
+Work Log:
+- Probe 52 BREATHED 16:07:29 (75s real generation); the outage over at ~13.4h (02:44 -> 16:07).
+- Restore-first rode green: night122-restore 3.5m -> e2e-iter137-restore HARD gate 15s -> warm-pool 3.4m -> gates 146/147/149 all OK -> reset 11s.
+- resume182.done = 'night launched at 2026-10-13T16:28:21.150Z'; the drain rides; chain182 armed on 6/6.
+- README item 105 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The tenth night is riding; 192 = the drain's 6/6, the paced rescore, the tenth night's scores and the medians' build.
