@@ -3593,3 +3593,18 @@ Work Log:
 
 Stage Summary:
 - The corrected tint's first coin reads the tribulation cells up; the medians are the instrument. 197 = the twelfth night.
+
+---
+Task ID: night-197
+Agent: main (Super Z)
+Task: Iteration 197 - the twelfth night's record (the full-cold drain), end-to-end.
+
+Work Log:
+- Pre-launch ops: the second leaked lab worker found and killed (36+ min on an already-landed job); the reset clean.
+- The drain rode full-cold: NIGHT RESULT 6/6 real Blender clips first try (~59 min); chain197 fired; the rescore scored 6 REFUSED 0.
+- Board: S001 75 (face 60 recovered) / S002 60 / S003 75 / S004 65 (face 40) / S005 45 (the low coin) / S006 Lin 65 + Wei 70 (Wei face 80); sweep mean 64, median 65.
+- Gate: union mean 67 / median 70 HELD / p10 48 over 12 nights -> BELOW; S004 named worst in ALL FOUR cells; ledger 141 lines.
+- README item 111 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The corrected tint's second coin; the union drifts up; S004 is the gate's singular name. 198 = the thirteenth night.
