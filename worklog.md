@@ -3337,3 +3337,18 @@ Work Log:
 
 Stage Summary:
 - Seven nights: the union median 70-stable is the builds' truth; the coins wash over it. 178 = the eighth night; the LUT decision waits for craft.
+
+---
+Task ID: night-178
+Agent: main (Super Z)
+Task: Iteration 178 night - the p110 cohort's eighth night, end-to-end.
+
+Work Log:
+- Launched the night (detached-night178 + chain178 re-created); drain 6/6 ~68 min; the rescore scored 6 REFUSED 0 (sixth consecutive).
+- Board: S001 75 / S002 40 / S003 85 (six consecutive) / S004 35 (FOUR consecutive - a mode, not a coin) / S005 65 / S006 70; sweep mean 62, median 68.
+- Gate: arc union mean 65 / median 70 HELD / p10 40 -> BELOW; the gate names S004 the worst in every under cell; publish refused honestly (400); ledger 119 lines.
+- The evidence-first move named: S004 is the next probe's cell (the paired-arm discipline: standing vs the neutral LUT arm, the face crops measured) BEFORE any repair pass.
+- No repair pass; README item 92 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- S004's persistence becomes the question; the probe instrument already exists (the 175 pattern). 179 = the S004 probe + the ninth night.
