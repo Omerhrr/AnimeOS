@@ -3446,3 +3446,15 @@ Work Log:
 
 Stage Summary:
 - The ride continues; the markers answer next.
+
+---
+Task ID: iter-186
+Agent: main (Super Z)
+Task: Iteration 186 - the longest receipt in the making, end-to-end.
+
+Work Log:
+- Twenty probes ridden (07:36-11:26), all HOSTILE 0s 429; the outage ~8.75h, past the 169-171 precedent; the watcher 20/72.
+- Nothing moved; README item 100 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The ride continues; the markers answer next.
