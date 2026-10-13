@@ -3534,3 +3534,17 @@ Work Log:
 
 Stage Summary:
 - Ten nights: the median 70-stable, S003's 85-streak, the swing coins washing. 193 = the eye + the repair decision (the window is open, the 149 law's scaled renderWait rides).
+
+---
+Task ID: iter-193
+Agent: main (Super Z)
+Task: Iteration 193 - the eye's receipts and the repair decision, end-to-end.
+
+Work Log:
+- eye193-extract.ts created from the 148 pattern; all six frames + crops extracted.
+- Eye-read: S001 two-figure grammar rides; S003 closeup fully resolved; S004 regal arch clean (magenta-washed robe); S005 rich at 1024; S006 both figures ride, Lin's face clean at 8x; S002 crop drifted (torso clean).
+- REPAIR DECISION: none - the 173 law (reading problem != build problem); the LUT correction stays craft's frontier.
+- README item 107 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The pixels hold across seven drains; the coins wash; the medians build. 194 = the LUT correction decision or the eleventh night.
