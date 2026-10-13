@@ -3380,3 +3380,16 @@ Work Log:
 
 Stage Summary:
 - Nine nights: the median 70-stable, S004's mode broken upward, the rate limit's honest refusal carried. 181 = the tenth night.
+
+---
+Task ID: iter-181
+Agent: main (Super Z)
+Task: Iteration 181 - the stand-down and the re-arm, end-to-end.
+
+Work Log:
+- The pre-flight proved the window closed (02:44 HOSTILE, 0s, 429 - the 180 mid-sweep refusal was the closing).
+- The night stood down per the 168 law (a drain during a closed window wastes its clips); the resume watcher re-armed (resume181.mjs, LIVE: probe -> on breath -> the full night; the 171 cap law 12h; no restore arm - the rebuild is complete).
+- README item 95 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The watcher holds the night's hand until the door opens; the next check reads resume181.done / chain181.done. 182 rides the markers.
