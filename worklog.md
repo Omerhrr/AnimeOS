@@ -3434,3 +3434,15 @@ Work Log:
 
 Stage Summary:
 - The ride continues; the markers answer next.
+
+---
+Task ID: iter-185
+Agent: main (Super Z)
+Task: Iteration 185 - the ride holds, end-to-end.
+
+Work Log:
+- Sixteen probes ridden (07:36-10:26), all HOSTILE 0s 429; the outage ~7.75h; the watcher 16/72 through its cap.
+- Nothing moved; README item 99 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The ride continues; the markers answer next.
