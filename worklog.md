@@ -3578,3 +3578,18 @@ Work Log:
 
 Stage Summary:
 - The eleventh night rides; 196 = the drain's 6/6, the paced rescore, the scores under the corrected tint.
+
+---
+Task ID: night-196
+Agent: main (Super Z)
+Task: Iteration 196 - the eleventh night's record (the corrected tint's first production night), end-to-end.
+
+Work Log:
+- The drain's honest census: 5/6 (S001 simulator stand-in; the leaked lab worker held the pool); the kill freed the slot; the chain held its 6/6 line.
+- The re-render: the pool ack window failed twice (boot latency under load); the cold worker rendered S001 perfectly (101 frames); the conclusion landed by hand per the 107 law; the census 6/6 real.
+- The rescore: scored 6 REFUSED 0 (samples=5). Board: S001 75 (face 0) / S002 65 / S003 75 (the streak breaks) / S004 65 / S005 75 / S006 Lin 65 + Wei 70; sweep mean 70 - THE COHORT'S BEST.
+- Gate: union mean 66 / median 70 HELD / p10 45 over 11 nights -> BELOW; publish refused 400; ledger 135 lines.
+- README item 110 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The corrected tint's first coin reads the tribulation cells up; the medians are the instrument. 197 = the twelfth night.
