@@ -3564,3 +3564,17 @@ Work Log:
 
 Stage Summary:
 - The tint lie is dead, the storm stands, the receipts complete. 195 = the eleventh night under the corrected tint.
+
+---
+Task ID: iter-195
+Agent: main (Super Z)
+Task: Iteration 195 - the eleventh night launches under the corrected tint, end-to-end.
+
+Work Log:
+- Warm-pool: A1-A7 ALL GREEN; B3-B7 FAILED - diagnosed honestly: the lab's clean-field assumption confounded by the standing resident (pool 1, the 17:55 restart law) + the slow window's DSH latency; both endpoints breathe; no 429; the boots already paid by the verification arm's render.
+- Decision: the night launches. Reset clean (the ledger untouched); the drain riding under the corrected tint (the first production night for the tint law); chain195 armed.
+- The lab's standing-resident-aware rewrite named as frontier.
+- README item 109 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The eleventh night rides; 196 = the drain's 6/6, the paced rescore, the scores under the corrected tint.
