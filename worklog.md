@@ -3694,3 +3694,18 @@ Work Log:
 
 Stage Summary:
 - The framing law's first reading is partial; the completion path is armed. 204 = the completion's receipt.
+
+---
+Task ID: iter-204
+Agent: main (Super Z)
+Task: Iteration 204 - the thirteenth drift's rebuild + the re-arm with the restore-first completion, end-to-end.
+
+Work Log:
+- The sandbox wiped mid-watch; the fresh clone verified at 0866b4b (= 203); npm/prisma/Blender/dev-server/OWNER/seed ALL GREEN.
+- THE SEAM: the auto-seed carried no framing override (S004 NULL on the fresh box) - the law now lives at BOTH levels: the seed carries S004's 0.6 (durable), the row restored, e2e-iter202-framing ALL GREEN on the rebuilt env.
+- The resident restarted (PRESENCE 111); the completion watcher re-created with the restore-first arm (restore -> HARD gate -> the completion).
+- The door's new shape: 401 'missing X-Token header' (auth-level, persistent 06:16-06:31) - different from the 429 rate limit; the watcher rides.
+- src tsc 0 errors; README item 118 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The rebuild complete, the seed now carries the framing law, the completion waits for the door. 205 = the completion's receipt.
