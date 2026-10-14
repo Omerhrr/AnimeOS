@@ -453,7 +453,8 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
         fogDensity: shot.scene.fogDensity,
         lightningIntensity: shot.scene.lightningIntensity,
         energyIntensity: shot.scene.energyIntensity,
-        cameraDistance: shot.scene.cameraDistance,
+        // THE 202 FRAMING LAW: the per-shot override (null rides the scene)
+        cameraDistance: shot.cameraDistanceOverride ?? shot.scene.cameraDistance,
         rimLightIntensity: shot.scene.rimLightIntensity,
         ...(env ? { environment: env } : {}),
       },
@@ -621,7 +622,7 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
 
 // ── MOTION engine runner (async, updates the job as ffmpeg encodes) ──
 
-function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number }; shotType: string; lens: string | null; movement: string | null; poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number; number: number; artworkUrl: string | null }, mode: "PREVIEW" | "FINAL", speech: SpeechProgram | null = null) {
+function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: number; lightningIntensity: number; energyIntensity: number; cameraDistance: number; rimLightIntensity: number }; shotType: string; lens: string | null; movement: string | null; poseStart: string | null; poseEnd: string | null; lighting: string | null; duration: number; number: number; artworkUrl: string | null; cameraDistanceOverride?: number | null }, mode: "PREVIEW" | "FINAL", speech: SpeechProgram | null = null) {
   void (async () => {
     let lastPct = -1;
     try {
@@ -640,7 +641,8 @@ function startMotionJob(jobId: string, shot: { scene: { id: string; fogDensity: 
         fogDensity: shot.scene.fogDensity,
         lightningIntensity: shot.scene.lightningIntensity,
         energyIntensity: shot.scene.energyIntensity,
-        cameraDistance: shot.scene.cameraDistance,
+        // THE 202 FRAMING LAW: the per-shot override (null rides the scene)
+        cameraDistance: shot.cameraDistanceOverride ?? shot.scene.cameraDistance,
         rimLightIntensity: shot.scene.rimLightIntensity,
         duration: shot.duration,
         fps: projectRow?.fps ?? 24,

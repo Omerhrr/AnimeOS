@@ -3666,3 +3666,16 @@ Work Log:
 
 Stage Summary:
 - The framing lever is measured (+15 at the named cell). 202 = the framing law (the per-shot override, the version discipline) or the sixteenth night.
+
+---
+Task ID: iter-202
+Agent: main (Super Z)
+Task: Iteration 202 - the framing law lands, end-to-end.
+
+Work Log:
+- The lever landed: cameraDistanceOverride Float? on Shot (null = the scene byte-exact); both assembly sites honor it; S004 carries 0.6; PRESENCE 110 -> 111.
+- Gates: e2e-iter202-framing ALL GREEN (8 asserts); src tsc 0 errors; prisma db push + generate; the resident restarted per the law-change law.
+- README item 116 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The framing law is live for S004. 203 = the sixteenth night - the law's first production reading.

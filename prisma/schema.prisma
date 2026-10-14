@@ -382,6 +382,15 @@ model Shot {
   shotType       String          @default("MEDIUM") // ESTABLISHING | WIDE | MEDIUM | CLOSEUP | EXTREME_CLOSEUP | LOW_ANGLE
   lens           String? // e.g. "50mm"
   movement       String? // ORBIT | DOLLY_IN | STATIC | PAN | TRACKING | CRANE
+  // THE PER-SHOT CAMERA OVERRIDE (iteration 202, the framing law):
+  // the 201 paired arm measured the closer camera at +15 on the
+  // gate's named cell (S004: 40 -> 55, the face 20 -> 30, the arch
+  // composition intact) - the override tightens ONE shot's camera
+  // without re-framing the scene's other shots (the closeup that
+  // holds its 85 keeps its distance). Null rides the scene's own
+  // cameraDistance byte-exact - the standing grammar is the null
+  // case, the override is the named cell's craft answer.
+  cameraDistanceOverride Float?
   poseStart      String? // character start pose (see src/lib/animation/poses.ts)
   poseEnd        String? // character end pose - drivers interpolate start -> end across the clip
   duration       Float           @default(4.0)

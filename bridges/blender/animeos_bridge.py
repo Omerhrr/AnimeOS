@@ -817,7 +817,7 @@ SUBJECT_FILL = {
 # top - the eye caught it before any night could).
 MEDIUM_UPPER_SHARE = 0.42
 MEDIUM_HEADROOM = 0.11
-PRESENCE_LAW_VERSION = 110
+PRESENCE_LAW_VERSION = 111  # the 202 framing law: the per-shot camera override (the 201 arm: +15 at the named cell)
 
 
 def measure_subject(root):
