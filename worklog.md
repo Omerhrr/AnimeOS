@@ -3636,3 +3636,18 @@ Work Log:
 
 Stage Summary:
 - Four corrected-tint nights: 70/64/54/62 - the coins wash, the union holds. 200 = the fifteenth night.
+
+---
+Task ID: night-200
+Agent: main (Super Z)
+Task: Iteration 200 - the fifteenth night's record (the honest inflection), end-to-end.
+
+Work Log:
+- The fourth consecutive clean full-cold drain (6/6 first try, ~59 min); chain200 fired; scored 6 REFUSED 0.
+- Board: S001 75 / S002 45 / S003 85 (holds twice) / S004 35 / S005 65 / S006 Lin 60 + Wei 70; sweep mean 61.
+- Gate: the rolling union median moved 70 -> 65 (the corrected era's coins fill the window); mean 64 / p10 45 -> BELOW; S004 + S002 named; ledger 159 lines.
+- The evidence-complete frontier named: the framing/rung question at the wide cells (S004's ~15px face crop).
+- README item 114 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- Five corrected-tint nights: 70/64/54/62/61 - the coins hold the rolling medians down; the framing question is the named frontier. 201 = the framing/rung decision or the sixteenth night.
