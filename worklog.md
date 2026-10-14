@@ -3709,3 +3709,20 @@ Work Log:
 
 Stage Summary:
 - The rebuild complete, the seed now carries the framing law, the completion waits for the door. 205 = the completion's receipt.
+
+---
+Task ID: iter-205
+Agent: main (Super Z)
+Task: Iteration 205 - the fourteenth drift's rebuild + the arm gains its missing drain, end-to-end.
+
+Work Log:
+- The sandbox wiped after the 204 push; the fresh clone verified at b1c3718 (= 204, remote-checked); npm/prisma/Blender 5.2.2 LTS/dev-server/OWNER/auto-seed ALL GREEN.
+- The seed carried S004's 0.6 (the 204 fix held at seed level); e2e-iter202-framing ALL GREEN (8 asserts) on the rebuilt env; the Clone 001 verified canonical (the seed's own row).
+- The door's shape evolved: 401 (204) -> 429 now; the restore's four sheet anchors REFUSED honestly; the COMMITTED designs wired byte-exact (Lin 514 / Wei 517); DNA waits for sheets.
+- THE SEAM TAUGHT: the 204 arm had no drain - the completion's RENDER source needs finished clips; the wipe took night-203's clips. The arm now carries the whole ladder: drain (door-free) -> restore (idempotent) -> HARD gate -> complete.
+- The watcher's own seam caught before it lied: the done-key corrected 6 -> 4 (the completion appends S003-S006; S001/S002's rows live in the committed receipts). The completion's idempotence verified structural (upsert on shotId+source+night).
+- detached-night205.mjs committed (drain|restore|complete); watch205.mjs armed (10-min probes, 12h cap); the drain riding (6/6 target).
+- Gates: src tsc 0 errors; e2e-iter202-framing ALL GREEN. README item 119 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The rebuild complete, the arm whole (drain included), the drain riding, the watcher on the ladder. 206 = the completion's receipt.

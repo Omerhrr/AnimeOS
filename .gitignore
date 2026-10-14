@@ -128,3 +128,4 @@ probe127/
 
 # the 128 probe frames (regenerable)
 probe128/
+.env
