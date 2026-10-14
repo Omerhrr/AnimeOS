@@ -3788,3 +3788,18 @@ Work Log:
 
 Stage Summary:
 - The completed board's verdict recorded with the eye's receipts. The 210 frontier: the craft lever on the closeup cells or the second real repair pass - the evidence before the lever.
+
+---
+Task ID: iter-210
+Agent: main (Super Z)
+Task: Iteration 210 - the full fresh board (the rescore on the standing clips) + the gate's converged blocker, end-to-end.
+
+Work Log:
+- The rescore rode detached (night-2026-10-14 tag, 5-sample medians, the damped instrument): 6 scored, 0 refused (the seventh consecutive zero-refusal sweep).
+- THE FRESH BOARD: S001 75 (the stale receipt answered - the fresh clip reads high) / S002 35 (style 20 - the judge's low mode at the dark closeup, the eye's clean read standing against it) / S003 75 / S004 55 / S005 75 / S006 75. Night distribution: mean 64 / median 73 / p10 35, BELOW (2/6 under); the real publish gate refused honestly (400).
+- THE GATE'S RE-READ: BELOW, p10 40 - the blocking CONVERGED: all four cells' worst is S002. The board's single named lever.
+- The tension stands with both receipts (the eye's clean closeup vs the judge's 35); no build lever on a measurement question - the 211 frontier is the S002 paired arm.
+- src tsc 0 errors; README item 124 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The full fresh board recorded; the blocker converged on S002. The 211 frontier: the closeup instrument's paired arm before any lever.
