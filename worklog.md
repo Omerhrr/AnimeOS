@@ -3651,3 +3651,18 @@ Work Log:
 
 Stage Summary:
 - Five corrected-tint nights: 70/64/54/62/61 - the coins hold the rolling medians down; the framing question is the named frontier. 201 = the framing/rung decision or the sixteenth night.
+
+---
+Task ID: iter-201
+Agent: main (Super Z)
+Task: Iteration 201 - the framing probe's own arm, end-to-end.
+
+Work Log:
+- The paired arm rode: A-STANDING (cameraDistance 1) Wei 40 [face 20] vs B-CLOSER (0.6) Wei 55 [face 30] - SHOT WORST 40 -> 55 (+15); one variable, real renders, the damped instrument, the arc not appended.
+- The eye's receipt: the arch composition intact, the face resolved (inspect/eye201/closer.png).
+- The ops chain honest: the tick's REVIEW seam (712) cost two driver failures; the compact driver reused arm A's clip; the capture-fresh pattern fed arm B; the raw submit's row landed by hand (107).
+- The lever's shape named: the PER-SHOT camera override (scene-level would re-frame the closeup).
+- README item 115 + this worklog; probe201c/d/e.ts staged; commit + push + remote verification.
+
+Stage Summary:
+- The framing lever is measured (+15 at the named cell). 202 = the framing law (the per-shot override, the version discipline) or the sixteenth night.
