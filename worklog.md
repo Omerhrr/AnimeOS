@@ -3818,3 +3818,18 @@ Work Log:
 
 Stage Summary:
 - The instrument question answered: systematic style-gap read. The 212 frontier: the lever's door.
+
+---
+Task ID: iter-212
+Agent: main (Super Z)
+Task: Iteration 212 - the lever's door (the build-side probe), end-to-end.
+
+Work Log:
+- The build door opened first (the judge measures a real gap - damping an honest read would lie).
+- The source truth: paint_collar_band (the 120 law) paints the yunwen chest band on EVERY build (the decal plane, strength 0.72, the wardrobe ledger's embroidery field).
+- The eye's S002 receipt re-read: the 'dark panel' is the crossed collar's inner panel; the band sits at the frame's edge at the closeup's camera.
+- THE GAP NAMED: the sheet's full-robe embroidery vs ONE chest band - a design-scale delta; the lever's shape is the embroidery class language (the 132 mesh-trim pattern repeated) as the r4 content through the paired-arm discipline.
+- src tsc 0 errors; README item 126 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The lever's door opened with the code truth in hand. The 213 frontier: the embroidery class arm (the r4 content).
