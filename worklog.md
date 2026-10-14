@@ -3773,3 +3773,18 @@ Work Log:
 
 Stage Summary:
 - Night-203 WHOLE on the ledger (6/6). The completion's receipt recorded. The 209 frontier: the eye's read of the completed board - the arc union across the nights, the gate's verdict on the completed numbers.
+
+---
+Task ID: iter-209
+Agent: main (Super Z)
+Task: Iteration 209 - the eye's read of the completed board + the gate's verdict, end-to-end.
+
+Work Log:
+- The union read across the whole ledger: 165 rows, 29 nights (night-144 -> night-203), the completion's four rows riding.
+- THE GATE'S VERDICT: BELOW - mean 66 / median 75 / p10 45, floor 70; blocking: calm 45 (S004), med 45 (S002), shadow 45 (S002), storm 45 (S004).
+- The eye rode the fresh six (inspect/eye208/): S001 two figures (no ghost), S002 Lin's closeup resolves, S003 ink holds (big-iris cell known), S004 the framing law reads geometrically (~1/3 height, ring teal, arch spans), S005 the emissive sword rides, S006 the crouch-recoil performs (storm grade accepted, crimson-in-robe PARTIAL holds).
+- The board's one tension NAMED: S004's 45 is the framing law's own geometry (the face small because the camera moved out) - no repair on a measurement question.
+- src tsc 0 errors; probe209 committed; README item 123 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The completed board's verdict recorded with the eye's receipts. The 210 frontier: the craft lever on the closeup cells or the second real repair pass - the evidence before the lever.
