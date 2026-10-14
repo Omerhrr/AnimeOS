@@ -3679,3 +3679,18 @@ Work Log:
 
 Stage Summary:
 - The framing law is live for S004. 203 = the sixteenth night - the law's first production reading.
+
+---
+Task ID: night-203
+Agent: main (Super Z)
+Task: Iteration 203 - the sixteenth night's record (the framing law's first drain, the partial sweep), end-to-end.
+
+Work Log:
+- The fifth consecutive clean drain (6/6 real, ~59 min); chain203 fired; the rate limit refused S003-S006 mid-sweep (the 429s beat the backoffs).
+- S001 65 / S002 45 scored honestly; the arc appended the two PROVISIONAL rows (161 lines); the refused ride no rows.
+- S004 rode cameraDistance 0.6 - the framing law's first production pixels on disk; the judge's answer waits for the window.
+- The completion armed: night203-complete.ts (the targeted scorer, no duplicate rows) rides resume203.mjs (10-min probes, 12h cap).
+- README item 117 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The framing law's first reading is partial; the completion path is armed. 204 = the completion's receipt.
