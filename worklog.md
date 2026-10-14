@@ -3726,3 +3726,18 @@ Work Log:
 
 Stage Summary:
 - The rebuild complete, the arm whole (drain included), the drain riding, the watcher on the ladder. 206 = the completion's receipt.
+
+---
+Task ID: iter-206
+Agent: main (Super Z)
+Task: Iteration 206 - the rebuilt box's first drain (6/6) + the eye's receipts, end-to-end.
+
+Work Log:
+- NIGHT RESULT: 6/6 real Blender clips (~75 min, fresh-box first builds, the COMMITTED r3 specs riding, null-DNA tolerance proven in production).
+- Inspection flags honest (door 429 -> 'Inspection failed - manual review'; clips real, completion-compatible).
+- The eye rode the six frames (inspect/eye205/): S004's framing geometry READS (~1/3 frame height, resolved); S001 two solid figures (no ghost reproduction); S006 paired crouch performs; transport ring teal; no clone ghost.
+- watch205 riding: renders 6/6, sheets 0/4 (31 honest refusals), the four reads append when the window opens.
+- README item 120 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The sixth clean drain recorded with eye receipts. 207 = the completion's receipt.
