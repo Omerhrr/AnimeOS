@@ -21,7 +21,12 @@ async function main() {
   const NIGHT = process.env.ANIMEOS_NIGHT_TAG ?? "night-203";
   const { bridgeLawCohort } = await import("../src/lib/identity-arc");
   const COHORT = bridgeLawCohort();
-  const { scoreShotIdentityMedian, appendIdentityArcReading } = await import("../src/lib/identity");
+  const { scoreShotIdentityMedian } = await import("../src/lib/identity");
+  // THE COMPLETION'S OWN SEAM (the 208 first-execution lesson): the
+  // arc append lives in the LEDGER module, not the scorer - the 205
+  // idempotence was verified structurally, the window only opened on
+  // this rebuild; the import is now the real home.
+  const { appendIdentityArcReading } = await import("../src/lib/identity-arc");
   console.log(`completing night ${NIGHT} in cohort ${COHORT}: scoring S003-S006`);
 
   let worsts: number[] = [];
@@ -53,6 +58,11 @@ async function main() {
   }
   console.log(`COMPLETION: ${worsts.length}/4 scored, appended to ${NIGHT}`);
   await db.$disconnect();
+  // THE WATCHER'S HELPER LAW (the 208 seam): exit explicitly - the
+  // Prisma pool keeps the tsx event loop alive after disconnect and
+  // the watcher's exit listener never fires, stalling the chain
+  // after the receipt is already on the ledger.
+  process.exit(0);
 }
 
 main().catch((e) => { console.error("COMPLETION FAILED:", e instanceof Error ? e.message : e); process.exit(1); });

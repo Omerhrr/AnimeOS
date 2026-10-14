@@ -3756,3 +3756,20 @@ Work Log:
 
 Stage Summary:
 - The storm grade closed with evidence; the smoke whole on 5.2.2. 208 = the completion's receipt.
+
+---
+Task ID: iter-208
+Agent: main (Super Z)
+Task: Iteration 208 - the fifteenth drift's rebuild + the completion's receipt, end-to-end.
+
+Work Log:
+- The sandbox wiped after the 207 push; the fresh clone verified at 3343019 (= 207, remote-checked); npm/prisma/dev-server/OWNER/auto-seed ALL GREEN.
+- THE LAUNCHER SEAM: the committed dev-server pin pointed inside the repo (a second tableless SQLite, P2021 on User on every fresh clone); the launcher now rides the .env/runner convention (the DB outside).
+- THE RESTORE'S DOOR BREATHED: 4/4 sheets anchored, Lin 514 / Wei 517 byte-exact, 4/4 DNA read, Clone 001 canonical - zero refusals (the 205 pass's 31 answered by one open window).
+- THE DRAIN'S COLD-START TAX: the first drain rode cold (S001-S003 -> MOTION fallback, NIGHT RESULT 3/6, the night driver refused stand-ins); the warm-pool law re-honored (A+B+C1 ALL GREEN), the repair drain redid exactly the three - NIGHT RESULT 6/6 real Blender clips.
+- THE WATCHER'S FOUR SEAMS died before they lied: the done-key (DB truth, not a log regex - the repair prints 3/3), the verdict-file (a timestamped log marker never literal-matches), the Prisma-hang (explicit exits in the helpers), the stale pin (the 137 gate's 110 refreshed to the standing 111).
+- THE COMPLETION EXECUTED for the first time: the import seam (the arc append lives in the ledger module) fixed; 4/4 scored - S003 75 / S004 45 / S005 75 / S006 75 (RENDER, a125/t133/p111) - appended to night-203; the watcher's own cycle re-ran the gate + completion honestly (the keyed upsert replaced S004's median; re-runs duplicate nothing); chain208.done written.
+- Gates: comp smoke ALL GREEN (fresh box), HARD gate ALL GREEN, framing e2e ALL GREEN, warm-pool ALL GREEN, src tsc 0 errors. README item 122 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- Night-203 WHOLE on the ledger (6/6). The completion's receipt recorded. The 209 frontier: the eye's read of the completed board - the arc union across the nights, the gate's verdict on the completed numbers.

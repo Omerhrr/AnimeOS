@@ -16,7 +16,12 @@ if (process.argv[2] === "--child") {
     stdio: ["ignore", out, out],
     env: {
       ...process.env,
-      DATABASE_URL: "file:/home/z/my-project/AnimeOS/db/custom.db",
+      // THE DB CONVENTION (the 208 rebuild seam): the studio's DB lives
+      // OUTSIDE the repo at /home/z/my-project/db/custom.db - the .env
+      // convention and the night runners' default agree on it; the old
+      // inner path created a second, tableless SQLite on fresh clones
+      // (P2021 on User) - the launcher now rides the same convention.
+      DATABASE_URL: "file:/home/z/my-project/db/custom.db",
       ANIMEOS_INK: "hull",
     },
   });
