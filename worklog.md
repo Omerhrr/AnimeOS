@@ -3741,3 +3741,18 @@ Work Log:
 
 Stage Summary:
 - The sixth clean drain recorded with eye receipts. 207 = the completion's receipt.
+
+---
+Task ID: iter-207
+Agent: main (Super Z)
+Task: Iteration 207 - the storm's grade answered + the 194 comp-smoke seam dies, end-to-end.
+
+Work Log:
+- The violet question's last mile: the strobe/baseline eye on the existing S006 clip (brightness profile = the strobe bump at f_007-f_012); hair violet at BOTH strobe and baseline on both figures - the lightning CLEARED as the rider (194's boundary confirmed).
+- The craft steer: the storm's grade ACCEPTED (the arc's best reads rode with it; the tint lie died at 194; the scene-level LUT call stays the director's unexercised door).
+- The 194-named seam fixed: the comp smoke's DIRECT half rides the build_comp_graph probe pattern (compositing_node_group first, node_tree fallback); the fac-drive assert reads whichever tree exists.
+- Gates: comp smoke ALL GREEN (DIRECT_FAILS 0, first whole green since the 128-era box); src tsc 0 errors.
+- README item 121 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- The storm grade closed with evidence; the smoke whole on 5.2.2. 208 = the completion's receipt.

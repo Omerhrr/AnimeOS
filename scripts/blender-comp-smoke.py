@@ -90,8 +90,22 @@ ok("nothing skipped on the healthy path", ev["skipped"] == [], json.dumps(ev["sk
 # MIST mix leaves the 1.0 default and paints EVERY frame with the
 # mistTint - the 128 night's flat gray wash (mean stdev ~1), caught
 # by the eye before the pen.
-_tree = scn.node_tree if scn.use_nodes else None
-_mist_mixes = [n for n in _tree.nodes if n.bl_idname in ("CompositorNodeMixRGB", "ShaderNodeMix")
+# THE 5.X PROBE (the 207 fix of the 194 seam: the 4.x-era relic
+# 'Scene.node_tree' is ABSENT on the 5.2.2 LTS box - the 128 record's
+# own law: the scene's compositor is a CompositorNodeTree on
+# compositing_node_group, and the build_comp_graph's own probe is the
+# pattern; the smoke reads whichever tree exists, both runtimes):
+_tree = None
+try:
+    _tree = scn.compositing_node_group
+except Exception:
+    _tree = None
+if _tree is None and getattr(scn, "use_nodes", False):
+    try:
+        _tree = scn.node_tree
+    except Exception:
+        _tree = None
+_mist_mixes = [n for n in (_tree.nodes if _tree else []) if n.bl_idname in ("CompositorNodeMixRGB", "ShaderNodeMix")
                and getattr(n, "blend_type", "") == "MIX"]
 ok("the mist mix's fac is DRIVEN by the map range (the build's own socket name)",
    _mist_mixes and all(n.inputs.get("Fac").is_linked if n.inputs.get("Fac") else
