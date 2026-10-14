@@ -3803,3 +3803,18 @@ Work Log:
 
 Stage Summary:
 - The full fresh board recorded; the blocker converged on S002. The 211 frontier: the closeup instrument's paired arm before any lever.
+
+---
+Task ID: iter-211
+Agent: main (Super Z)
+Task: Iteration 211 - the S002 paired arm (the closeup instrument's question), end-to-end.
+
+Work Log:
+- The mode map rode (probe211, five rounds x the damped instrument on the fresh clip): 35/35/40/35/35 - clustered at the low mode, style pinned at 20 five-for-five.
+- The judge's notes name the same comparison every read: 'simplified', 'rounder than the sheet's sharp features', 'more feminine than the sheet', 'lacks the intricate gold embroidery' - the panel-vs-render gap measured systematically at the closeup.
+- THE ANSWER: S002's 35 is a real, consistent measurement of the style gap (not the 162 bimodality); the instrument is doing its job.
+- The lever question named with both doors: the build lever (the closeup's ink detail rides the sheet's class) or the law lever (the scale law's closeup clause). The door choice is 212's move.
+- src tsc 0 errors; probe211 committed; README item 125 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The instrument question answered: systematic style-gap read. The 212 frontier: the lever's door.
