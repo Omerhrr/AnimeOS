@@ -3622,3 +3622,17 @@ Work Log:
 
 Stage Summary:
 - Three corrected-tint nights: 70/64/54 - the coins wash, the union holds. 199 = the fourteenth night.
+
+---
+Task ID: night-199
+Agent: main (Super Z)
+Task: Iteration 199 - the fourteenth night's record, end-to-end.
+
+Work Log:
+- The third consecutive clean full-cold drain: 6/6 real first try (~59 min); chain199 fired; scored 6 REFUSED 0.
+- Board: S001 75 / S002 35 / S003 85 (the 85 returns) / S004 45 / S005 65 / S006 Lin 65 + Wei 75; sweep mean 62.
+- Gate: union mean 66 / median 70 HELD / p10 45 over 14 nights -> BELOW; S004 named in all four cells; ledger 153 lines.
+- README item 113 + this worklog; commit + push + remote verification.
+
+Stage Summary:
+- Four corrected-tint nights: 70/64/54/62 - the coins wash, the union holds. 200 = the fifteenth night.
