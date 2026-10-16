@@ -66,7 +66,7 @@ const labDir = path.join(process.cwd(), "inspect", "aiart223");
 const labReport = path.join(labDir, "smoke223-lab-report.json");
 const r = writeWatchReport(
   {
-    watch: WATCH_NAME, startedAt: "lab", endedAt: "lab", deadlineHours: 0, waitMs: 0,
+    watch: WATCH_NAME, generation: 1, startedAt: "lab", endedAt: "lab", deadlineHours: 0, waitMs: 0,
     probeCycles: 0, windowOpenedAt: null, wallVerbatim: "lab - the wall's words",
     legs: [], complete: false, windowBound: ["restore", "night", "arms"],
   },
@@ -77,7 +77,7 @@ const onDisk = JSON.parse(fs.readFileSync(labReport, "utf8"));
 ok(onDisk.complete === false && onDisk.windowBound.length === 3 && onDisk.wallVerbatim.includes("wall"), "the honest incomplete shape lands on disk");
 // a path whose PARENT is a file cannot be created - name the failure
 const blocked = writeWatchReport(
-  { ...onDisk, startedAt: "lab3" },
+  { ...onDisk, generation: 1, startedAt: "lab3" },
   path.join(process.cwd(), "package.json", "impossible", "lab.json"),
 );
 ok(Boolean(blocked.reportError), "a failed write names itself in reportError (nothing hidden)");

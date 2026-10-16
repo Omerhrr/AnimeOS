@@ -27,7 +27,7 @@
 // Run (foreground): npx tsx scripts/window-watch223.ts [watchHours] [waitMs]
 import fs from "fs";
 import path from "path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import ZAI from "z-ai-web-dev-sdk";
 
 // ── the watch's own constants (the smoke asserts these by name) ──
@@ -39,6 +39,19 @@ export const PROOF_PATH = path.join(process.cwd(), "inspect", "aiart223", "probe
 export const DEFAULT_WATCH_HOURS = 8;
 export const DEFAULT_WAIT_MS = 600_000; // the 10-minute pace - honest, never a tight loop
 export const LEG_TIMEOUT_MS = 2 * 60 * 60 * 1000; // a leg has two hours before the watch names it timed out
+
+// THE STANDING WATCH (the 224 graduation): a single-shot watch dies
+// at its deadline and the box's remaining lifetime goes unwatched -
+// the 221 window opened ONCE in four days, so a 12h watch will most
+// likely MISS the next window. The law: an expired generation hands
+// off to the next (detached, the 129 law), each generation's line
+// durable in the ledger, the chain BOUNDED (the honest stop - a
+// week of coverage by default, CLI-overridable by the bound) and
+// the chain STOPS THE MOMENT THE LEGS RIDE (the frontier's answer
+// is on the receipts; more watching is waste - the next session's
+// drift law takes over from the watch's own report).
+export const GENERATIONS_LEDGER_PATH = path.join(process.cwd(), "receipts", "watch223-generations.jsonl");
+export const MAX_GENERATIONS = 14; // 14 x 12h ~= a week of standing coverage, then the honest stop
 
 // ── the plan law (PURE - the e2e asserts exact outputs) ──
 
@@ -118,6 +131,7 @@ export async function probeWindow(): Promise<ProbeResult> {
 
 export interface WatchReport {
   watch: string;
+  generation: number; // the standing watch's own generation (the chain law's input)
   startedAt: string;
   endedAt: string;
   deadlineHours: number;
@@ -136,9 +150,44 @@ export interface WatchReport {
   }>;
   complete: boolean; // the watch's own purpose: the legs rode
   windowBound: string[]; // the honest remainder when the deadline expired
+  nextGeneration?: number; // set when the chain hands off (the standing watch)
   writtenAt: string;
   reportPath: string;
   reportError?: string;
+}
+
+// ── the chain law (PURE - the e2e asserts exact outputs) ──
+
+export interface ChainDecision {
+  continueChain: boolean;
+  reason: string;
+}
+
+/** The standing watch's one decision: the legs rode -> the chain
+ *  stops (the work is done); the bound reached -> the honest stop;
+ *  otherwise the deadline expired standing and the next generation
+ *  rides. Pure so the gates can hold it without pixels. */
+export function shouldChainContinue(report: Pick<WatchReport, "complete" | "generation">, maxGenerations: number = MAX_GENERATIONS): ChainDecision {
+  if (report.complete) return { continueChain: false, reason: "the legs rode - the frontier's answer is on the receipts, the chain stops" };
+  if (report.generation >= maxGenerations) return { continueChain: false, reason: `the generation bound (${maxGenerations}) - the honest stop, the next session's drift law takes over` };
+  return { continueChain: true, reason: `the deadline expired standing - generation ${report.generation + 1} rides` };
+}
+
+/** One generation's line in the ledger (the arc's own pattern:
+ *  append-only, the chain's durable history). Never breaks the
+ *  watch - a failed append names itself and stands down. */
+export function appendGenerationLine(line: {
+  watch: string; generation: number; startedAt: string; endedAt: string;
+  outcome: "rode" | "expired"; probes: number; windowOpenedAt: string | null;
+  legs: string[]; nextGeneration: number | null;
+}, ledgerPath: string = GENERATIONS_LEDGER_PATH): { written: boolean; error?: string } {
+  try {
+    fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
+    fs.appendFileSync(ledgerPath, JSON.stringify({ ...line, writtenAt: new Date().toISOString() }) + "\n");
+    return { written: true };
+  } catch (e) {
+    return { written: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export function writeWatchReport(report: WatchReport, reportPath = REPORT_PATH): WatchReport {
@@ -216,6 +265,7 @@ function rideLeg(name: string, target: string, legs: WatchReport["legs"]): void 
 async function main() {
   const watchHours = Number(process.argv[2] ?? DEFAULT_WATCH_HOURS) || DEFAULT_WATCH_HOURS;
   const waitMs = Number(process.argv[3] ?? DEFAULT_WAIT_MS) || DEFAULT_WAIT_MS;
+  const generation = Number(process.argv[4] ?? 1) || 1; // the standing watch's chain position
   const deadline = Date.now() + watchHours * 60 * 60 * 1000;
 
   acquireLock();
@@ -276,6 +326,7 @@ async function main() {
   releaseLock();
   const report = writeWatchReport({
     watch: WATCH_NAME,
+    generation,
     startedAt,
     endedAt: new Date().toISOString(),
     deadlineHours: watchHours,
@@ -288,6 +339,36 @@ async function main() {
     windowBound: windowOpenedAt ? [] : ["restore", "night", "arms"],
   });
   console.log(`\nWATCH REPORT: ${report.reportPath} (complete: ${report.complete})${report.reportError ? ` (report write FAILED: ${report.reportError})` : ""}`);
+
+  // THE STANDING WATCH (the 224 law): the chain's one decision, the
+  // ledger line, and the detached handoff. The legs rode -> the
+  // chain stops; the bound reached -> the honest stop; otherwise the
+  // next generation spawns detached (the lock is already released -
+  // the child acquires its own).
+  const chain = shouldChainContinue(report);
+  const nextGeneration = chain.continueChain ? generation + 1 : null;
+  const genLine = appendGenerationLine({
+    watch: WATCH_NAME,
+    generation,
+    startedAt: report.startedAt,
+    endedAt: report.endedAt,
+    outcome: report.complete ? "rode" : "expired",
+    probes: probeCycles,
+    windowOpenedAt,
+    legs: legs.map((l) => `${l.name}:${l.exitCode}${l.timedOut ? "!" : ""}`),
+    nextGeneration,
+  });
+  console.log(`CHAIN: generation ${generation} ${report.complete ? "rode" : "expired"} - ${chain.reason}${genLine.written ? "" : ` (ledger append FAILED: ${genLine.error})`}`);
+  if (chain.continueChain && nextGeneration) {
+    const mjs = path.join(process.cwd(), "scripts", "window-watch223.mjs");
+    const child = spawn(process.execPath, [mjs, String(watchHours), String(waitMs), String(nextGeneration)], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    console.log(`CHAIN: generation ${nextGeneration} spawned detached (pid ${child.pid})`);
+  }
 }
 
 // the entry guard: the e2e imports this file for the pure law; only

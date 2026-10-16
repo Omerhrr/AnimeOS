@@ -4027,3 +4027,19 @@ Work Log:
 
 Stage Summary:
 - The patience is no longer session-bound: the watch rides the frontier when the window opens, the receipts are the truth, and every gate knows the watch's law. The 224 frontier: the watch's own answer - the sheets land, the second kf-v4 night exits PROVISIONAL (the clock's verdict), the arms ride their probe (the graduation), the smokes fall through.
+
+---
+Task ID: iter-224
+Agent: main (Super Z)
+Task: Iteration 224 - the standing watch: the 223 watch graduated to the generation chain (the honest takeover; the patience that never sleeps, for real).
+
+Work Log:
+- Drift check clean (remote f73b482 = 223); the watch found alive (pid 6152, 51min) and honest (6 cycles all 429) - the frontier's answer not yet in, every leg window-bound.
+- The gap the watch's own shape named: single-shot patience - a 12h watch dies at deadline and the box's remaining lifetime goes unwatched (the 221 window opened once in four days).
+- THE GRADUATION (window-watch223.ts + .mjs, no src change): the generation chain - the expired generation hands off detached, the ledger (receipts/watch223-generations.jsonl) append-only per generation, the chain law PURE (rode -> stop; the bound MAX_GENERATIONS=14 -> the honest stop; else the next generation), the report carries its generation, the failed ledger append names itself and stands down.
+- THE HONEST TAKEOVER: the gen-0 watch stood down by name (6 honest cycles in the log), the stale lock removed, chain generation 1 launched with the graduated law (pid 6938, cycle 1 honest 429, 12h).
+- Gates: src tsc 0; smoke224 20/20 (the 223 laws UNREMOVED + the chain law exact + the ledger law + the detached handoff); e2e-iter224 20/20 (six legs incl. the live both-ways probe, the lab ledger story, the union-arc teeth, the gate continuity); smoke223 24/24 + e2e-iter223 20/20 re-run (the grown report shape taught to the standing gates - the 222 precedent); e2e-iter218-222 ALL PASS re-run.
+- README item 138 + this worklog + the shared worklog; commit + push + remote verification.
+
+Stage Summary:
+- The patience is now standing: a bounded generation chain covers the box's lifetime, the legs' ride stops the chain on the receipts, and every gate knows the chain's law. The 225 frontier: the chain's own answer.

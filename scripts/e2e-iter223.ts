@@ -60,7 +60,7 @@ async function main() {
   const labPath = path.join(process.cwd(), "inspect", "aiart223", "e2e223-lab-watch-report.json");
   const report = writeWatchReport(
     {
-      watch: WATCH_NAME, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(),
+      watch: WATCH_NAME, generation: 1, startedAt: new Date().toISOString(), endedAt: new Date().toISOString(),
       deadlineHours: 8, waitMs: 600_000, probeCycles: 1,
       windowOpenedAt: null, wallVerbatim: probe.error ?? null,
       legs: [], complete: false, windowBound: ["restore", "night", "arms"],
