@@ -1,0 +1,94 @@
+{
+  "night": "night-219-aikeyframe",
+  "cohort": "kf-v3",
+  "lawVersion": 3,
+  "source": "AI_KEYFRAME",
+  "results": [
+    {
+      "ref": "E? Sc12 S004",
+      "shotId": "cmvapbg8f001knt90o5v9auv8",
+      "ok": false,
+      "error": "E7 Sc12 S004: the image channel failed - API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+    }
+  ],
+  "appended": 0,
+  "gate": {
+    "episodeId": "cmvapbg7u0005nt90na51pybd",
+    "source": "AI_KEYFRAME",
+    "floor": 0.7,
+    "readings": 3,
+    "verdict": "HOLD",
+    "overall": {
+      "key": "overall",
+      "n": 3,
+      "mean": 0.7166666666666667,
+      "median": 0.85,
+      "p10": 0.4,
+      "worst": 0.4,
+      "best": 0.9,
+      "belowFloor": 1,
+      "belowFraction": 0.3333333333333333,
+      "verdict": "HOLD",
+      "worstRef": "E7 Sc12 S003"
+    },
+    "blocking": [
+      {
+        "key": "calm",
+        "n": 3,
+        "mean": 0.7166666666666667,
+        "median": 0.85,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.9,
+        "belowFloor": 1,
+        "belowFraction": 0.3333333333333333,
+        "verdict": "HOLD",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "close",
+        "n": 1,
+        "mean": 0.4,
+        "median": 0.4,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.4,
+        "belowFloor": 1,
+        "belowFraction": 1,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "locked",
+        "n": 1,
+        "mean": 0.4,
+        "median": 0.4,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.4,
+        "belowFloor": 1,
+        "belowFraction": 1,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "shadow",
+        "n": 2,
+        "mean": 0.65,
+        "median": 0.65,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.9,
+        "belowFloor": 1,
+        "belowFraction": 0.5,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S003"
+      }
+    ],
+    "arc": true,
+    "nights": 1,
+    "provisional": true
+  },
+  "writtenAt": "2026-10-16T15:28:35.758Z",
+  "reportPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/night-report-night-219-aikeyframe.json"
+}

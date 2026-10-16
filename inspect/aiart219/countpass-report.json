@@ -1,0 +1,70 @@
+{
+  "probe": "probe219-countpass",
+  "at": "2026-10-16T13:14:18.085Z",
+  "results": [
+    {
+      "file": "inspect/aiart219/S006-count1-keyframe.png",
+      "label": 3,
+      "note": "the gallery echo (219A COUNT1, scored 92)",
+      "calls": [
+        3,
+        3
+      ],
+      "agree": true
+    },
+    {
+      "file": "inspect/aikeyframes/E7Sc12S006-keyframe.png",
+      "label": 3,
+      "note": "night-218's shipped lineup (scored 85)",
+      "calls": [
+        3,
+        3
+      ],
+      "agree": true
+    },
+    {
+      "file": "inspect/aiart219/S006-count2-keyframe.png",
+      "label": 2,
+      "note": "the pre-clash two-shot (219A COUNT2, scored 85)",
+      "calls": [
+        2,
+        2
+      ],
+      "agree": true
+    },
+    {
+      "file": "inspect/aiart219/S006-control-keyframe.png",
+      "label": 2,
+      "note": "the full-grammar clash (219A CONTROL, scored 85)",
+      "calls": [
+        2,
+        2
+      ],
+      "agree": true
+    },
+    {
+      "file": "inspect/aikeyframes/night-216-aikeyframe/E7Sc12S006-keyframe.png",
+      "label": 2,
+      "note": "night-216's fist-clash two-shot",
+      "calls": [
+        2,
+        2
+      ],
+      "agree": true
+    },
+    {
+      "file": "inspect/aikeyframes/E7Sc12S001-keyframe.png",
+      "label": 1,
+      "note": "night-218's solo mountain (scored 90)",
+      "calls": [
+        1,
+        1
+      ],
+      "agree": true
+    }
+  ],
+  "judged": 6,
+  "agreed": 6,
+  "echoDraws": 2,
+  "echoCaught": 2
+}

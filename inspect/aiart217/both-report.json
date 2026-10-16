@@ -1,0 +1,50 @@
+{
+  "probe": "probe217-both",
+  "at": "2026-10-16T11:07:56.395Z",
+  "results": [
+    {
+      "ref": "E7Sc12S003",
+      "arm": "BOTH",
+      "anchorNote": "Lin Yue:[sheet],Lin Yue:[view:close]",
+      "worst": 0.65,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.65,
+          "aspects": {
+            "face": 0.5,
+            "hair": 0.8,
+            "wardrobe": 0.7,
+            "weapon": 0.8,
+            "palette": 0.8,
+            "style": 0.3
+          },
+          "note": "The character's core design elements (green robe, gold trim, hairstyle) are preserved, but the art style has shifted from a 3D toon model to a hyper-realistic render, and facial features have been significantly altered to match a more realistic human aesthetic."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart217/E7Sc12S003-BOTH-keyframe.png"
+    },
+    {
+      "ref": "E7Sc12S002",
+      "arm": "BOTH",
+      "anchorNote": "Lin Yue:[sheet],Lin Yue:[view:three]",
+      "worst": 0.95,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.95,
+          "aspects": {
+            "face": 0.9,
+            "hair": 0.95,
+            "wardrobe": 0.95,
+            "weapon": 0.9,
+            "palette": 0.9,
+            "style": 0.9
+          },
+          "note": "The character's facial features, hairstyle, and intricate green and gold wardrobe match the canonical model sheet with high fidelity; the style is a realistic 3D interpretation of the reference design."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart217/E7Sc12S002-BOTH-keyframe.png"
+    }
+  ]
+}

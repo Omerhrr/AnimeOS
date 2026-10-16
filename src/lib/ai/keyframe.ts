@@ -803,6 +803,9 @@ export interface AiKeyframeNightReport {
   appended: number;
   gate: EpisodeReleaseRead | null;
   gateError?: string;
+  writtenAt: string; // the 220 report law: the write's own receipt
+  reportPath: string; // where the durable copy landed
+  reportError?: string; // a failed write names itself (nothing hidden)
 }
 
 /**
@@ -887,5 +890,32 @@ export async function runAiKeyframeNight(
   } catch (e) {
     gateError = e instanceof Error ? e.message : String(e);
   }
-  return { night, cohort, lawVersion: AI_KEYFRAME_LAW_VERSION, source: AI_KEYFRAME_SOURCE, results, appended, gate, gateError };
+
+  // THE NIGHT REPORT MADE DURABLE (the 220 law - the wall's own
+  // evidence): the take-level receipts (every take's error verbatim,
+  // every figure count, the gate read) have been dying with the
+  // terminal - the 219 night's S003 count abstention's own cause is
+  // unrecoverable from durable state (the stdout said "one count
+  // abstained" and said nothing else; the report that would have
+  // carried the raw error was never written). The law: the report
+  // writes where the pixels land (the out dir; the receipts dir when
+  // no out dir rides), the SAME data the caller receives, plus the
+  // write's own receipts (writtenAt / reportPath). The write is
+  // NON-FATAL: the ledger and the return value are the primary
+  // truth; a failed write names itself in reportError (nothing
+  // hidden). A lab scope redirects nothing here - the lab's own
+  // outDir/receiptPath options already carry it.
+  const body = { night, cohort, lawVersion: AI_KEYFRAME_LAW_VERSION, source: AI_KEYFRAME_SOURCE, results, appended, gate, ...(gateError ? { gateError } : {}) };
+  const reportPath = path.join(
+    outDir ?? path.join(process.cwd(), "receipts"),
+    `night-report-${night}.json`,
+  );
+  let reportError: string | undefined;
+  try {
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(reportPath, JSON.stringify({ ...body, writtenAt: new Date().toISOString(), reportPath }, null, 2));
+  } catch (e) {
+    reportError = e instanceof Error ? e.message : String(e);
+  }
+  return { ...body, writtenAt: new Date().toISOString(), reportPath, ...(reportError ? { reportError } : {}) };
 }

@@ -1,0 +1,48 @@
+{
+  "probe": "probe218-closemode",
+  "at": "2026-10-16T12:09:42.556Z",
+  "results": [
+    {
+      "name": "S003-medium-M1",
+      "ok": true,
+      "worst": 0.5,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.5,
+          "aspects": {
+            "face": 0.3,
+            "hair": 0.8,
+            "wardrobe": 0.7,
+            "weapon": 1,
+            "palette": 0.9,
+            "style": 0.2
+          },
+          "note": "Hair and wardrobe colors match well, but the face is heavily stylized into a chibi form with different eye shapes and markings; the overall style is 3D rendered rather than the 2D/3D hybrid of the sheet."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart218/S003-medium-M1-keyframe.png"
+    },
+    {
+      "name": "S003-medium-M2",
+      "ok": true,
+      "worst": 0.7,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.7,
+          "aspects": {
+            "face": 0.2,
+            "hair": 0.9,
+            "wardrobe": 0.8,
+            "weapon": 0.3,
+            "palette": 0.9,
+            "style": 0.9
+          },
+          "note": "Framing hides face; hair matches the topknot style but lacks the long trailing strands seen in the sheet; wardrobe is a simplified version of the green robe."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart218/S003-medium-M2-keyframe.png"
+    }
+  ]
+}

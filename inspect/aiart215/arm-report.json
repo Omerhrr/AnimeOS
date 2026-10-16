@@ -1,0 +1,105 @@
+[
+  {
+    "ref": "S001",
+    "shotType": "ESTABLISHING",
+    "arm": "weapon-fidelity",
+    "featured": [
+      "Lin Yue"
+    ],
+    "featuredWorst": 65,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 65,
+        "aspects": {
+          "face": 80,
+          "hair": 85,
+          "wardrobe": 70,
+          "weapon": 60,
+          "palette": 40,
+          "style": 60
+        },
+        "note": "Face structure and hairstyle (topknot with long tail) are accurate; wardrobe silhouette and cut match well, though the panel's teal/cyan palette drifts from the sheet's deep emerald green, and the weapon's hilt design is simplified."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ]
+  },
+  {
+    "ref": "S003",
+    "shotType": "CLOSEUP",
+    "arm": "sheet-anchor",
+    "featured": [
+      "Lin Yue"
+    ],
+    "featuredWorst": 75,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 75,
+        "aspects": {
+          "face": 70,
+          "hair": 80,
+          "wardrobe": 85,
+          "weapon": 50,
+          "palette": 90,
+          "style": 40
+        },
+        "note": "Wardrobe and palette are highly accurate to the model sheet; the face is a realistic interpretation of the anime style; the sword's glowing effect is a significant deviation from the canonical dark blade."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ]
+  },
+  {
+    "ref": "S006",
+    "shotType": "WIDE",
+    "arm": "contrast-dye",
+    "featured": [
+      "Lin Yue",
+      "Demon Lord Wei"
+    ],
+    "featuredWorst": 60,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 60,
+        "aspects": {
+          "face": 50,
+          "hair": 70,
+          "wardrobe": 50,
+          "weapon": 40,
+          "palette": 90,
+          "style": 60
+        },
+        "note": "Face structure is softer and more anime-styled than the sharp, defined features of the sheet; wardrobe cut is simplified (missing the sheer outer layer and intricate embroidery) but color blocking is accurate; sword hilt matches but blade is glowing blue instead of dark steel."
+      },
+      {
+        "characterName": "Demon Lord Wei",
+        "similarity": 65,
+        "aspects": {
+          "face": 60,
+          "hair": 80,
+          "wardrobe": 60,
+          "palette": 95,
+          "style": 60
+        },
+        "note": "Face structure is a close match for the stern expression and brow placement; hair silhouette and topknot are consistent; wardrobe captures the deep purple robe and gold trim correctly but omits the complex embroidery and specific belt hardware seen on the sheet."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ]
+  }
+]

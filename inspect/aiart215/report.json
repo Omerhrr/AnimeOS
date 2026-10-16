@@ -1,0 +1,105 @@
+[
+  {
+    "ref": "S001",
+    "shotType": "ESTABLISHING",
+    "featured": [
+      "Lin Yue"
+    ],
+    "featuredWorst": 60,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 60,
+        "aspects": {
+          "face": 80,
+          "hair": 70,
+          "wardrobe": 50,
+          "weapon": 40,
+          "palette": 70,
+          "style": 50
+        },
+        "note": "Face structure and hair color match well, and the green robe palette is correct, but the wardrobe is heavily simplified (missing embroidery, belt hardware, and layered skirt) and the sword is depicted as glowing energy rather than a physical blade."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ],
+    "note": "The panel depicts a male character in a night landscape holding a glowing sword, matching the general archetype of Lin Yue but with significant deviations in wardrobe complexity and weapon state."
+  },
+  {
+    "ref": "S003",
+    "shotType": "CLOSEUP",
+    "featured": [
+      "Lin Yue"
+    ],
+    "featuredWorst": 40,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 40,
+        "aspects": {
+          "face": 20,
+          "hair": 70,
+          "wardrobe": 50,
+          "weapon": 60,
+          "palette": 80,
+          "style": 10
+        },
+        "note": "While the green palette and topknot hairstyle are consistent, the face is much more mature and angular than the canonical model, and the art style is a detailed anime render rather than the simple 3D toon style of the reference sheet."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ],
+    "note": "The panel depicts a character in a rain-soaked courtyard who shares the color palette and general silhouette of Lin Yue but exhibits significant deviations in facial features, artistic style, and specific costume details."
+  },
+  {
+    "ref": "S006",
+    "shotType": "WIDE",
+    "featured": [
+      "Lin Yue",
+      "Demon Lord Wei"
+    ],
+    "featuredWorst": 65,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 65,
+        "aspects": {
+          "face": 80,
+          "hair": 90,
+          "wardrobe": 50,
+          "weapon": 60,
+          "palette": 50,
+          "style": 70
+        },
+        "note": "Face structure and high ponytail match well, but the wardrobe color is shifted from deep green to pale cyan, and the robe's cut is simplified compared to the detailed sheet."
+      },
+      {
+        "characterName": "Demon Lord Wei",
+        "similarity": 85,
+        "aspects": {
+          "face": 90,
+          "hair": 90,
+          "wardrobe": 85,
+          "palette": 85,
+          "style": 80
+        },
+        "note": "Excellent match on face structure, hair silhouette, and the deep purple palette with gold trim; the robe's flow and layering are consistent with the canonical design."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ],
+    "note": "The panel depicts a moonlit courtyard confrontation between two figures in traditional robes, one wielding a glowing sword."
+  }
+]

@@ -3955,3 +3955,21 @@ Work Log:
 
 Stage Summary:
 - The take law's selection now carries the grammar signal identity cannot see: an echo draw is demoted whatever its identity score, and the instrument was validated against the eye's own labeled pixels before it graduated. The v3 law's first night is 3/6 with the guard's live saves named (a solo-cell echo caught, a four-figure echo caught); the 429 wall named the pixels call's own missing ladder and the fix landed. The 220 frontier: the completion ride + the second kf-v3 night + the close cell's band.
+
+---
+Task ID: iter-220
+Agent: main (Super Z)
+Task: Iteration 220 - the wall's own iteration: the account-total 429 window measured, the close cell's trade axis named, the night report made durable.
+
+Work Log:
+- Drift law first: remote HEAD 82af850 = Iteration 219 ALREADY complete and pushed (the inherited context claimed 215 untouched - the twentieth correction, four iterations of compaction lag); the proceed opened the 219 commit's own named frontier.
+- THE WALL MEASURED (probe220-wallshape.ts + channel probes): edit 429 (since 13:29), create 429 (80ms fast-reject - the anchor-fallback arm REFUSED by the evidence before it was proposed), vision 429 (the judge AND the count instrument), plain text 429 (76ms) - an ACCOUNT-TOTAL quota window, the 216-219 marathon's own bill. The patience law rode honest: night220-complete219.ts (deep-patience wrapper: 240s spacing, bounded deadline, the done-set idempotence) three invocations, every attempt an HONEST MISS, the gate still reading; S004/S005/S006 PENDING, the wall's duration (2h10m+) part of the evidence.
+- THE EYE'S PIXELS-FREE WORK: the 219 S003 takes read directly - the close cell's band is a TRADE AXIS, not a random swing: take1 full-body wide (identity TRUE, framing lost - the anchor's presentation pull), take2 framing held, medium drifted photoreal (the 218 trade reproduced). The modes ALTERNATE; k=2 can only ship the better of two misses when the draws sit on opposite sides - the mechanism behind the 35/40/60/90 band.
+- THE COUNT ABSTENTION DIAGNOSED (probe220-countdiag.ts): the 219 "one count abstained" was unattributable from durable state (take-level receipts died with stdout); tonight's re-reads reproduced the wall (both 429 through the ladder) - the abstention was the wall's early reach, and the receipt seam was REAL.
+- THE GRADUATE (src/lib/ai/keyframe.ts, tsc 0): THE NIGHT REPORT MADE DURABLE - runAiKeyframeNight writes night-report-<night>.json (results with every take's error verbatim + countedFigures, appended, the gate read, cohort/lawVersion, writtenAt/reportPath), non-fatal (a failed write names itself in reportError); AiKeyframeNightReport carries the fields.
+- e2e-iter220.ts ALL PASS (35 asserts): leg 2 rode ONE REAL night ride in a lab scope with THE WALL AS THE LEG - the ride missed honestly and the durable report EXISTS carrying the error verbatim; the assertions hold both ways (the report's honesty is the contract, not the weather). One e2e assertion bug fixed (mine: the miss-shape assert was wrong, not the code). Leg 3: the production ledger untouched (newest AI_KEYFRAME row still the 219 night's S003, gate HOLD / nights 1 / PROVISIONAL).
+- smoke220-aikeyframe.ts ALL PASS (the six cells' prompt law UNREMOVED, NO report artifacts in any prompt, the durable schema from disk, the 219 teeth unchanged); smoke219 re-run ALL PASS. Grep law clean.
+- README item 134 + this worklog; commit + push + remote verification pending the standard close.
+
+Stage Summary:
+- The wall's shape is now EVIDENCE (all four channels measured), the close cell's band has a MECHANISM (the trade axis), and the night report survives the process - the take-level receipts that died with the terminal are durable law. The 221 frontier: the window's answer - the completion ride (S004/S005/S006), the second kf-v3 night (the clock), and the close rung's take-fan evidence (the k=3 paired probe, the graduation waits for its live ride).

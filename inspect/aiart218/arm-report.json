@@ -1,0 +1,110 @@
+{
+  "probe": "probe218-arms",
+  "at": "2026-10-16T12:04:04.253Z",
+  "results": [
+    {
+      "ride": "S002-shadowdye",
+      "cell": "S002",
+      "ref": "E7Sc12S002",
+      "arm": "SHADOW-DYE",
+      "anchorNote": "Lin Yue:[sheet]",
+      "ok": true,
+      "worst": 0.92,
+      "arcBaseline": 0.76,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.92,
+          "aspects": {
+            "face": 0.95,
+            "hair": 0.95,
+            "wardrobe": 0.95,
+            "weapon": 0.7,
+            "palette": 0.95,
+            "style": 0.9
+          },
+          "note": "Face, hair, and wardrobe details (embroidery, belt, cuffs) are highly consistent with the canonical sheet; the sword hilt matches but the blade is glowing cyan instead of dark steel."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart218/S002-shadowdye-keyframe.png"
+    },
+    {
+      "ride": "S003-artifact",
+      "cell": "S003",
+      "ref": "E7Sc12S003",
+      "arm": "ARTIFACT",
+      "anchorNote": "Lin Yue:[sheet],Lin Yue:[view:close]",
+      "ok": true,
+      "worst": 0,
+      "arcBaseline": 0.55,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0,
+          "aspects": {
+            "face": 0,
+            "hair": 0,
+            "wardrobe": 0,
+            "weapon": 0.95,
+            "palette": 0.5,
+            "style": 0.2
+          },
+          "note": "Character is absent from this shot; framing hides face, hair, wardrobe, weapon, palette, and style."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart218/S003-artifact-keyframe.png"
+    },
+    {
+      "ride": "S003-take1",
+      "cell": "S003",
+      "ref": "E7Sc12S003",
+      "arm": "TAKE1",
+      "anchorNote": "Lin Yue:[sheet],Lin Yue:[view:close]",
+      "ok": true,
+      "worst": 0.4,
+      "arcBaseline": 0.55,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.4,
+          "aspects": {
+            "face": 0.3,
+            "hair": 0.7,
+            "wardrobe": 0.6,
+            "weapon": 0.8,
+            "palette": 0.9,
+            "style": 0.1
+          },
+          "note": "While the color palette, hair arrangement, and weapon details are consistent, the facial features and overall art style (realistic vs. stylized 3D) have drifted significantly from the canonical model."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart218/S003-take1-keyframe.png"
+    },
+    {
+      "ride": "S003-take2",
+      "cell": "S003",
+      "ref": "E7Sc12S003",
+      "arm": "TAKE2",
+      "anchorNote": "Lin Yue:[sheet],Lin Yue:[view:close]",
+      "ok": true,
+      "worst": 0.4,
+      "arcBaseline": 0.55,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.4,
+          "aspects": {
+            "face": 0.3,
+            "hair": 0.6,
+            "wardrobe": 0.5,
+            "weapon": 0.8,
+            "palette": 0.7,
+            "style": 0.1
+          },
+          "note": "The character's color palette and general silhouette (green robes, topknot, sword) are consistent with the sheet, but the art style is photorealistic rather than the stylized 3D look of the reference; facial features and hair details are more detailed and mature than the reference model."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart218/S003-take2-keyframe.png"
+    }
+  ]
+}

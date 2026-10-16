@@ -1,0 +1,86 @@
+[
+  {
+    "ref": "S002",
+    "shotType": "MEDIUM",
+    "featured": [
+      "Lin Yue"
+    ],
+    "featuredWorst": 90,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 90,
+        "aspects": {
+          "face": 85,
+          "hair": 95,
+          "wardrobe": 92,
+          "weapon": 90,
+          "palette": 88,
+          "style": 92
+        },
+        "note": "Face and hair are highly consistent with the sheet; wardrobe details like the gold embroidery and teal fabric match well; the sword hilt is accurately depicted; the style shifts from a clean 3D reference to a detailed 2D illustration."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ],
+    "note": "The panel depicts Lin Yue in a dynamic, atmospheric pose that closely follows the detailed model sheet's design."
+  },
+  {
+    "ref": "S004",
+    "shotType": "WIDE",
+    "featured": [
+      "Demon Lord Wei"
+    ],
+    "featuredWorst": 85,
+    "entries": [
+      {
+        "characterName": "Demon Lord Wei",
+        "similarity": 85,
+        "aspects": {
+          "face": 90,
+          "hair": 85,
+          "wardrobe": 85,
+          "weapon": 90,
+          "palette": 80,
+          "style": 85
+        },
+        "note": "The character's face structure, long black hair with crown, and purple/gold wardrobe are highly consistent with the sheet; the weapon and dynamic pose are well-integrated, while the palette shifts to match the dark, stormy ambient lighting of the scene."
+      }
+    ],
+    "note": "The panel depicts Demon Lord Wei in a dynamic, wind-swept pose in front of the Yuntai Arena during a stormy night."
+  },
+  {
+    "ref": "S005",
+    "shotType": "LOW_ANGLE",
+    "featured": [
+      "Lin Yue"
+    ],
+    "featuredWorst": 85,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 85,
+        "aspects": {
+          "face": 90,
+          "hair": 80,
+          "wardrobe": 90,
+          "weapon": 70,
+          "palette": 95,
+          "style": 85
+        },
+        "note": "Face structure and wardrobe silhouette are highly accurate; the hair is shorter than the canonical long-flowing style, and the sword is glowing blue instead of the standard steel blade."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ],
+    "note": "The panel depicts a male warrior in a green robe holding a glowing blue sword in a ruined temple courtyard at night."
+  }
+]

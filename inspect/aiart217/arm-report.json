@@ -1,0 +1,106 @@
+{
+  "probe": "probe217-arms",
+  "at": "2026-10-16T11:05:23.197Z",
+  "results": [
+    {
+      "cell": "S002",
+      "ref": "E7Sc12S002",
+      "arm": "CLAUSE",
+      "anchorNote": "Lin Yue:[sheet]",
+      "ok": true,
+      "worst": 0.9,
+      "baseline": null,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.9,
+          "aspects": {
+            "face": 0.9,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.9,
+            "palette": 0.9,
+            "style": 0.8
+          },
+          "note": "Face, hair, and weapon are highly accurate to the sheet; wardrobe details like the belt and embroidery are present but simplified by the dynamic wind and lighting; palette is consistent with the deep green and gold theme; style shifts from the clean model sheet look to a dark, atmospheric render."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart217/E7Sc12S002-CLAUSE-keyframe.png"
+    },
+    {
+      "cell": "S002",
+      "ref": "E7Sc12S002",
+      "arm": "VIEW",
+      "anchorNote": "Lin Yue:[view:three]",
+      "ok": true,
+      "worst": 0.55,
+      "baseline": null,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.55,
+          "aspects": {
+            "face": 0.6,
+            "hair": 0.7,
+            "wardrobe": 0.5,
+            "weapon": 0.4,
+            "palette": 0.7,
+            "style": 0.5
+          },
+          "note": "Face and hair match the general archetype but lack the specific sharp features and intricate topknot of the sheet; wardrobe is simplified into flat colors without the complex patterns, embroidery, or layered belt; weapon is a glowing energy blade instead of the physical ornate sword; palette capture"
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart217/E7Sc12S002-VIEW-keyframe.png"
+    },
+    {
+      "cell": "S003",
+      "ref": "E7Sc12S003",
+      "arm": "CLAUSE",
+      "anchorNote": "Lin Yue:[sheet]",
+      "ok": true,
+      "worst": 0.35,
+      "baseline": null,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.35,
+          "aspects": {
+            "face": 0.2,
+            "hair": 0.6,
+            "wardrobe": 0.7,
+            "weapon": 0.8,
+            "palette": 0.7,
+            "style": 0.1
+          },
+          "note": "While the wardrobe, weapon, and color palette closely match the canonical model sheet (Image 2), the facial features and artistic style are completely different from the 3D toon-style reference (Image 3)."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart217/E7Sc12S003-CLAUSE-keyframe.png"
+    },
+    {
+      "cell": "S003",
+      "ref": "E7Sc12S003",
+      "arm": "VIEW",
+      "anchorNote": "Lin Yue:[view:close]",
+      "ok": true,
+      "worst": 0.4,
+      "baseline": null,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.4,
+          "aspects": {
+            "face": 0.5,
+            "hair": 0.7,
+            "wardrobe": 0.3,
+            "weapon": 0.2,
+            "palette": 0.5,
+            "style": 0.3
+          },
+          "note": "Face and hair match the close-up reference reasonably well, but the wardrobe is simplified (missing gold embroidery and correct trim), the weapon is a glowing energy blade instead of a physical sword, and the style is realistic 3D rather than the stylized 3D of the sheet."
+        }
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart217/E7Sc12S003-VIEW-keyframe.png"
+    }
+  ]
+}

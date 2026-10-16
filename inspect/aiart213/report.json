@@ -1,0 +1,105 @@
+[
+  {
+    "ref": "S002",
+    "shotType": "MEDIUM",
+    "castNames": [
+      "Lin Yue",
+      "Lin Yue - Clone 001"
+    ],
+    "committedMedian": 55,
+    "committedReadings": 29,
+    "aiKeyframe": {
+      "worst": 0,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 90,
+          "aspects": {
+            "face": 95,
+            "hair": 95,
+            "wardrobe": 85,
+            "weapon": 80,
+            "palette": 95,
+            "style": 90
+          },
+          "note": "Face and hair match the sheet perfectly; wardrobe details like the shoulder embroidery are accurate, though the lower robe is obscured by the pose; the sword hilt matches but the blade is magically glowing blue instead of dark metal."
+        },
+        {
+          "characterName": "Lin Yue - Clone 001",
+          "similarity": 0,
+          "aspects": {},
+          "note": "not detected in the panel by the vision model"
+        }
+      ],
+      "note": "The panel depicts Lin Yue in a dynamic action pose with a glowing sword, showing strong adherence to the detailed model sheet's design."
+    },
+    "promptFile": "S002-prompt.txt",
+    "pngFile": "S002-keyframe.png"
+  },
+  {
+    "ref": "S004",
+    "shotType": "WIDE",
+    "castNames": [
+      "Demon Lord Wei"
+    ],
+    "committedMedian": 45,
+    "committedReadings": 30,
+    "aiKeyframe": {
+      "worst": 30,
+      "entries": [
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 30,
+          "aspects": {
+            "face": 60,
+            "hair": 50,
+            "wardrobe": 10,
+            "palette": 20,
+            "style": 40
+          },
+          "note": "While the face structure and hair color are somewhat recognizable, the wardrobe has been completely changed to a tattered black coat instead of the canonical purple robes, and the overall palette has shifted from rich purples to dark, desaturated tones with green ambient lighting."
+        }
+      ],
+      "note": "The panel depicts a dark, supernatural version of the character in a tattered black coat, which is a significant departure from the canonical purple robes and clean silhouette of Demon Lord Wei."
+    },
+    "promptFile": "S004-prompt.txt",
+    "pngFile": "S004-keyframe.png"
+  },
+  {
+    "ref": "S005",
+    "shotType": "LOW_ANGLE",
+    "castNames": [
+      "Lin Yue",
+      "Lin Yue - Clone 001"
+    ],
+    "committedMedian": 55,
+    "committedReadings": 29,
+    "aiKeyframe": {
+      "worst": 0,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 85,
+          "aspects": {
+            "face": 90,
+            "hair": 95,
+            "wardrobe": 90,
+            "weapon": 70,
+            "palette": 95,
+            "style": 75
+          },
+          "note": "Face structure, hair mass/topknot, and green/gold palette are highly consistent with the sheet; the wardrobe cut matches perfectly though the panel adds dynamic flow; the weapon hilt is recognizable but the blade is a glowing fantasy variant; style shifts from clean scale-readability to cinematic re"
+        },
+        {
+          "characterName": "Lin Yue - Clone 001",
+          "similarity": 0,
+          "aspects": {},
+          "note": "not detected in the panel by the vision model"
+        }
+      ],
+      "note": "The panel depicts a heroic action shot of Lin Yue in a moonlit courtyard, matching the canonical wardrobe and silhouette but rendered in a high-fidelity cinematic style rather than the simplified scale model."
+    },
+    "promptFile": "S005-prompt.txt",
+    "pngFile": "S005-keyframe.png"
+  }
+]

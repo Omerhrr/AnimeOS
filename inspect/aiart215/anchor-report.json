@@ -1,0 +1,82 @@
+[
+  {
+    "ref": "S001",
+    "shotType": "ESTABLISHING",
+    "arm": "sheet-anchor",
+    "anchoredSheets": [
+      "Lin Yue"
+    ],
+    "featured": [
+      "Lin Yue"
+    ],
+    "featuredWorst": 85,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 85,
+        "aspects": {
+          "face": 90,
+          "hair": 85,
+          "wardrobe": 90,
+          "weapon": 70,
+          "palette": 95,
+          "style": 80
+        },
+        "note": "Face structure, hair silhouette, and wardrobe cut match the canonical sheet well; the sword is a glowing energy blade rather than the physical steel blade of the model sheet; the render style is more painterly and atmospheric than the clean studio look of the reference."
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ]
+  },
+  {
+    "ref": "S006",
+    "shotType": "WIDE",
+    "arm": "sheet-anchor",
+    "anchoredSheets": [
+      "Lin Yue",
+      "Demon Lord Wei"
+    ],
+    "featured": [
+      "Lin Yue",
+      "Demon Lord Wei"
+    ],
+    "featuredWorst": 85,
+    "entries": [
+      {
+        "characterName": "Lin Yue",
+        "similarity": 85,
+        "aspects": {
+          "face": 80,
+          "hair": 90,
+          "wardrobe": 85,
+          "weapon": 90,
+          "palette": 85,
+          "style": 80
+        },
+        "note": "Face structure and long black hair in a topknot match well; the green robe with gold embroidery and the sword are clearly identifiable, though the dynamic pose and atmospheric lighting soften the fine details of the wardrobe."
+      },
+      {
+        "characterName": "Demon Lord Wei",
+        "similarity": 85,
+        "aspects": {
+          "face": 80,
+          "hair": 90,
+          "wardrobe": 85,
+          "palette": 85,
+          "style": 80
+        },
+        "note": "Face structure and long black hair in a topknot match well; the purple robe with gold trim is correctly identified, though the specific pattern details are obscured by the action pose and lighting. framing hides weapon"
+      },
+      {
+        "characterName": "Lin Yue - Clone 001",
+        "similarity": 0,
+        "aspects": {},
+        "note": "not detected in the panel by the vision model"
+      }
+    ]
+  }
+]

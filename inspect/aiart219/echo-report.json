@@ -1,0 +1,130 @@
+{
+  "probe": "probe219-echo",
+  "at": "2026-10-16T13:09:05.772Z",
+  "results": [
+    {
+      "ride": "S006-control",
+      "arm": "CONTROL",
+      "anchorNote": "Lin Yue:[sheet],Demon Lord Wei:[sheet]",
+      "ok": true,
+      "worst": 0.85,
+      "arcBaseline": 0.85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.8,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.9,
+            "palette": 0.9,
+            "style": 0.8
+          },
+          "note": "Face structure, long black hair in a topknot, and the green robe with gold trim are accurately represented at this scale; the dynamic pose and cinematic lighting shift the style from the sheet's studio clarity to an atmospheric render."
+        },
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.8,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.9,
+            "palette": 0.9,
+            "style": 0.8
+          },
+          "note": "Face structure, long black hair in a topknot, and the deep purple robe with gold trim are accurately represented at this scale; the dynamic pose and cinematic lighting shift the style from the sheet's studio clarity to an atmospheric render."
+        }
+      ],
+      "notes": [
+        "Face structure, long black hair in a topknot, and the green robe with gold trim are accurately represented at this scale; the dynamic pose and cinematic lighting shift the style from the sheet's studio clarity to an atmospheric render. | Face structure, long black hair in a topknot, and the deep purple robe with gold trim are accurately represented at this scale; the dynamic pose and cinematic lighting shift the style from the sheet's studio clarity to an atmospheric render.",
+        "Face structure is consistent with the sheet; hair mass and topknot match well; wardrobe cut, green color blocking, and gold trim are accurate; sword design matches the reference; palette is correct for the ambient lighting; style is a detailed render that captures the essence of the model sheet at t | Face structure aligns with the canonical model; long hair and topknot silhouette are a strong match; purple robe with gold trim and belt details are clearly represented; weapon matches the expected type; purple palette reads correctly under the scene's lighting; detailed painterly style effectively ",
+        "Face structure and long black hair with topknot match well; green robe with gold trim and belt are accurate in cut and color; sword hilt matches; style shifts from detailed studio sheet to atmospheric cinematic render. | Face structure and long black hair with topknot match well; purple robe with gold trim and belt are accurate in cut and color; sword hilt matches; style shifts from detailed studio sheet to atmospheric cinematic render."
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart219/S006-control-keyframe.png"
+    },
+    {
+      "ride": "S006-count1",
+      "arm": "COUNT1",
+      "anchorNote": "Lin Yue:[sheet],Demon Lord Wei:[sheet]",
+      "ok": true,
+      "worst": 0.92,
+      "arcBaseline": 0.85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.95,
+          "aspects": {
+            "face": 0.95,
+            "hair": 0.95,
+            "wardrobe": 0.95,
+            "weapon": 1,
+            "palette": 0.95,
+            "style": 0.95
+          },
+          "note": "Face structure, hair style (topknot with long ponytail), green robe with gold embroidery, black belt, and sword all match the sheet perfectly; minor variations in ambient lighting on the fabric."
+        },
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.92,
+          "aspects": {
+            "face": 0.95,
+            "hair": 0.95,
+            "wardrobe": 0.95,
+            "palette": 0.95,
+            "style": 0.9
+          },
+          "note": "The purple robe, gold trim, and belt design are a strong match for the canonical sheet; face structure is accurate though the hair ornament differs slightly from the horizontal pin in the reference."
+        }
+      ],
+      "notes": [
+        "Face structure, hair style (topknot with long ponytail), green robe with gold embroidery, black belt, and sword all match the sheet perfectly; minor variations in ambient lighting on the fabric. | Face structure, hair style (topknot with long hair), and deep purple robe with gold trim match the sheet; the sleeve drape in this pose appears slightly softer than the canonical model's structured wide sleeves.",
+        "Both depictions of Lin Yue (front and side) show excellent fidelity to the model sheet's green robe, gold embroidery, black belt, and sword; face structure and hair silhouette are consistent. | The purple robe, gold trim, and belt design are a strong match for the canonical sheet; face structure is accurate though the hair ornament differs slightly from the horizontal pin in the reference.",
+        "Both depictions of this character (front and side) show a very high fidelity to the canonical model sheet in terms of facial structure, green robe silhouette, gold embroidery placement, and sword design. | The depiction matches the canonical model sheet closely, with correct purple robe color blocking, gold trim patterns, belt hardware, and facial features."
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart219/S006-count1-keyframe.png"
+    },
+    {
+      "ride": "S006-count2",
+      "arm": "COUNT2",
+      "anchorNote": "Lin Yue:[sheet],Demon Lord Wei:[sheet]",
+      "ok": true,
+      "worst": 0.85,
+      "arcBaseline": 0.85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.8,
+            "hair": 0.9,
+            "wardrobe": 0.9,
+            "weapon": 1,
+            "palette": 0.9,
+            "style": 0.8
+          },
+          "note": "Face structure and green robe with gold embroidery match the sheet; the wide shot correctly simplifies detail to silhouette and color blocking."
+        },
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.8,
+            "hair": 0.9,
+            "wardrobe": 0.9,
+            "palette": 0.88,
+            "style": 0.8
+          },
+          "note": "Long hair silhouette and purple robe with gold trim are consistent with the sheet; framing hides weapon."
+        }
+      ],
+      "notes": [
+        "Face structure and green robe with gold embroidery match the sheet; the wide shot correctly simplifies detail to silhouette and color blocking. | Purple robe, gold trim, and long hair match the sheet; face structure is slightly softer but consistent with the ambient lighting of the scene.",
+        "Face structure and hair silhouette are highly accurate; the green robe's cut, gold embroidery, and sword match the sheet perfectly, though the render is softer than the detailed sheet. | Hair mass and the deep purple robe with gold trim are consistent with the design; face features are slightly softened but structurally sound at this scale.",
+        "Face structure and green robe with gold embroidery match well; palette is shifted by scene lighting but color blocking is accurate. | Long hair silhouette and purple robe with gold trim are consistent with the sheet; framing hides weapon."
+      ],
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart219/S006-count2-keyframe.png"
+    }
+  ]
+}
