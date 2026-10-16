@@ -50,6 +50,8 @@ import {
   rawIdentityCall,
   parseIdentityVerdict,
   IDENTITY_ASPECTS,
+  framingViewFor,
+  framingViewUrl,
   type IdentityAspect,
   type IdentityScoreEntry,
   type IdentityVerdict,
@@ -147,12 +149,45 @@ export function keyframeWeaponClause(name: string, dna: KeyframeSheetDna | null,
   return `${name}'s WEAPON LAW: the ${dna.weaponType} is SHEATHED at the hip in this shot, hilt visible, NO glow, NO energy emission - the blade only sings out in a shot whose own language draws it.`;
 }
 
+/** THE FRAMING CLAUSE (the 217 arm): the anchor's presentation pull is
+ * REAL (the 216 receipts: S002 rendered a three-view TURNAROUND with
+ * identity superb and the shot grammar lost; S003 delivered full-body
+ * where a closeup was demanded). The clause names the film frame in
+ * words. THE 217 RIDES: S002's turnaround BROKE (90, one figure, one
+ * viewpoint, the temple scene restored). */
+export const AI_KEYFRAME_FRAMING_CLAUSE =
+  "FRAMING LAW (binding): this is ONE film frame from the animated episode - a SINGLE composition, ONE viewpoint, the shot's own framing, ONE moment of the scene. " +
+  "NOT a character model sheet, NOT a turnaround, NO multi-view grid, NO duplicated copies of the same character, NO side-by-side pose studies, NO neutral studio backdrop, no text labels. " +
+  "The figure stands IN the scene's own environment, under the scene's own light, caught mid-moment.";
+
+/** The CLOSE rung (the 121 law's own view letter - the framings whose
+ * sheet reference is the close view). */
+const CLOSE_RUNG_TYPES = new Set(["EXTREME_CLOSEUP", "CLOSEUP", "MCU"]);
+
+export function isCloseRung(shotType: string | null | undefined): boolean {
+  return CLOSE_RUNG_TYPES.has(String(shotType ?? "").toUpperCase());
+}
+
+/** THE CLOSE-FACE CLAUSE (the 217 arm): at close granularity the face
+ * drifts photoreal and invents accessories (the 217 receipts: face
+ * 0.2-0.5, a headband and facial paint invented, hair let down; the
+ * clause rode the face to 0.85 / hair 0.95). Member-generic - the
+ * reference view's own grammar, no per-character words. */
+export function keyframeCloseFaceClause(shotType: string | null | undefined): string | null {
+  if (!isCloseRung(shotType)) return null;
+  return (
+    "CLOSE-FACE LAW (binding): the face is PAINTED CEL-ANIMATION ART - flat color fields, clean ink lineart, sharp stylized 2D facial features on the close-view reference's own proportions. " +
+    "NOT a realistic human face, NOT a 3D render, NO photoreal skin texture, no invented accessories (no headband, no facial markings or paint), and the hairstyle is EXACTLY the close-view reference's own."
+  );
+}
+
 /** What the prompt builder needs from one cast member (sheeted, non-clone). */
 interface AnchorMember {
   name: string;
   look: string | null;
   dna: KeyframeSheetDna | null;
   sheetUrl: string | null;
+  designSheetUrl: string | null; // the designed turnaround (the 122 law) - the anchor-view's own source
 }
 
 export interface KeyframePromptBuild {
@@ -192,6 +227,7 @@ export async function buildKeyframePrompt(shotId: string): Promise<
     look: castLook(c, episode.number),
     dna: c.sheetDna ? (JSON.parse(c.sheetDna) as KeyframeSheetDna) : null,
     sheetUrl: c.modelSheetUrl ?? null,
+    designSheetUrl: c.designSheetUrl ?? null,
   }));
 
   const styleTokens = productionStyleTokens(project);
@@ -219,6 +255,8 @@ export async function buildKeyframePrompt(shotId: string): Promise<
     dyeList.length ? `GARMENT DYES:\n${dyeList.join("\n")}` : null,
     keyframeContrastClause(dyeList),
     members.map((m) => keyframeWeaponClause(m.name, m.dna, shot.description ?? "")).filter(Boolean).join(" "),
+    AI_KEYFRAME_FRAMING_CLAUSE, // the 217 arm: the film-frame law in words (the presentation pull named with receipts)
+    keyframeCloseFaceClause(shot.shotType), // the 217 arm: the CLOSE rung's own face law (null off the rung)
     factCanon,
     "dramatic composition, atmospheric depth, high quality, detailed",
     negativeTail,
@@ -238,6 +276,7 @@ export interface KeyframeRecipe {
   ref: string;
   mode: "anchored" | "unanchored";
   anchoredSheets: string[]; // the member names whose sheets rode the edit channel
+  anchorViews?: string[]; // the 217 anchor-view law: the CLOSE rung's framing views that rode ("Name:close")
   prompt: string;
   generatedAt: string;
   pngPath?: string; // where the SCORED pixels landed (the eye's receipt, the night's own artifact)
@@ -250,9 +289,13 @@ export type GeneratedKeyframe =
 /**
  * THE ANCHORED GENERATION: the featured members' committed sheet PNGs
  * ride the edit channel as base images (the 215 anchor arm - the face
- * proportions and grammar ride the IMAGE); a shot whose cast has no
- * readable sheet file falls back to the text law alone (the honest
- * unanchored mode). Read-only on production.
+ * proportions and grammar ride the IMAGE); at the CLOSE rung the 217
+ * ANCHOR-VIEW LAW adds the member's framing-matched close view as a
+ * SECOND anchor image (the stitched sheet stays the wardrobe/dye
+ * carrier, the view is the face carrier - the images array's own
+ * proven shape); a shot whose cast has no readable sheet file falls
+ * back to the text law alone (the honest unanchored mode). Read-only
+ * on production.
  */
 export async function generateKeyframeForShot(shotId: string): Promise<GeneratedKeyframe> {
   const built = await buildKeyframePrompt(shotId);
@@ -262,14 +305,29 @@ export async function generateKeyframeForShot(shotId: string): Promise<Generated
 
   // THE ANCHOR IMAGES: one sheet file per member, read-only, from the
   // sheeted cast (the clone ghost rides out - no sheet, no anchor).
+  // THE ANCHOR-VIEW LAW (the 217 arm): at the CLOSE rung the member's
+  // framing view (the 121 convention, design turnaround first) rides
+  // as an ADDITIONAL image; no view file on disk, no view - the sheet
+  // alone stands (the honest fallback).
+  const closeRung = isCloseRung(shot.shotType);
+  const viewName = framingViewFor(shot.shotType); // "close" on the rung
   const images: Array<{ url: string }> = [];
   const anchoredSheets: string[] = [];
+  const anchorViews: string[] = [];
   for (const m of build.members) {
     if (!m.sheetUrl) continue;
     const dataUrl = publicImageAsDataUrl(m.sheetUrl);
     if (!dataUrl) continue; // a missing file never breaks the shot - the text law stands
     images.push({ url: dataUrl });
     anchoredSheets.push(m.name);
+    if (closeRung) {
+      const viewUrl = framingViewUrl({ designSheetUrl: m.designSheetUrl, modelSheetUrl: m.sheetUrl }, viewName);
+      const viewData = viewUrl ? publicImageAsDataUrl(viewUrl) : null;
+      if (viewData) {
+        images.push({ url: viewData });
+        anchorViews.push(`${m.name}:${viewName}`);
+      }
+    }
   }
 
   const zai = await ZAI.create();
@@ -301,6 +359,7 @@ export async function generateKeyframeForShot(shotId: string): Promise<Generated
       ref,
       mode: images.length > 0 ? "anchored" : "unanchored",
       anchoredSheets,
+      ...(anchorViews.length > 0 ? { anchorViews } : {}),
       prompt: build.prompt,
       generatedAt: new Date().toISOString(),
     },
@@ -406,6 +465,7 @@ export interface AiKeyframeNightShotResult {
   entries?: IdentityScoreEntry[];
   mode?: KeyframeRecipe["mode"];
   anchoredSheets?: string[];
+  anchorViews?: string[]; // the 217 anchor-view law's own receipt
   sampleCount?: number;
   pngPath?: string; // the scored pixels' receipt (the eye's read rides these)
 }
@@ -472,6 +532,7 @@ export async function runAiKeyframeNight(
       entries: scored.verdict.entries,
       mode: scored.recipe.mode,
       anchoredSheets: scored.recipe.anchoredSheets,
+      anchorViews: scored.recipe.anchorViews,
       sampleCount: scored.sampleCount,
       pngPath: scored.recipe.pngPath,
     });

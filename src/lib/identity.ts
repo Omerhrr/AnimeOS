@@ -226,7 +226,7 @@ const SCALE_LAW_157 = ` THE SCALE LAW: the model sheet is painted in a rich, det
  * canonical art, but its flat full-frame never carries the views.
  * A cast member whose design never landed (or an uploaded sheet)
  * falls to the model-sheet check exactly as before. */
-function framingViewUrl(c: { modelSheetUrl?: string | null; designSheetUrl?: string | null }, view: string): string | null {
+export function framingViewUrl(c: { modelSheetUrl?: string | null; designSheetUrl?: string | null }, view: string): string | null { // exported at 217: the ANCHOR side rides the same view convention (the close rung's face carrier)
   for (const url of [c.designSheetUrl, c.modelSheetUrl]) {
     if (url && /turn_sheet\.png$/.test(url)) return url.replace(/turn_sheet\.png$/, `turn_${view}.png`);
   }

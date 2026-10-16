@@ -3898,3 +3898,23 @@ Work Log:
 
 Stage Summary:
 - The AI-KEYFRAME render source class is PRODUCTION CODE: typed, gated, night-riding, source-named on the durable ledger. First AI-keyframe night on the ledger: median 85, gate HOLD (PROVISIONAL). The 217 frontier: the framing clause + the anchor-view law (FRAMING_SHEET_VIEW for the anchor side) + the second night (the median exits PROVISIONAL).
+
+---
+Task ID: iter-217
+Agent: main (Super Z)
+Task: Iteration 217 - the framing clause + the anchor-view law + the close-face clause graduated, the second AI-keyframe night.
+
+Work Log:
+- Drift law first: remote HEAD 6d4d931 = Iteration 216 ALREADY complete and pushed (the inherited context claimed 216 untouched - the seventeenth correction); the proceed redirected to the 216 frontier itself.
+- THE EYE BEFORE THE HAND: the 216 night's own pixels re-read (S002 a three-view turnaround, S003 full-body where a closeup was demanded); the DB inventory found the designed turnarounds with turn_close/three/front views ON DISK for both featured members - the anchor-view law a direct ride of the judge side's own convention.
+- PAIRED ARMS (probe217-arms.ts, four rides, base prompt = the production's own buildKeyframePrompt, the only delta the named arm): S002 CLAUSE 90 (the TURNAROUND BROKE - one figure, one viewpoint, the temple restored; the eye's receipt), S002 VIEW 55 (the three view alone a weaker anchor), S003 CLAUSE 35 (the pull beats the words), S003 VIEW 40 (the face came up 0.2->0.5, the wardrobe fell 0.3 - each carrier's seam named).
+- THE BOTH ARM (probe217-both.ts): sheet + view + clause - S002 95 (the board's highest read), S003 65 (framing pulled up to waist-up, wardrobe TRUE, the face still 3D-real + invented accessories: headband, facial paint, hair down).
+- THE CLOSE-FACE CLAUSE (probe217-closeface.ts): the closeup's own failure mode in words - S003 90 (face 85 / hair 95 / wardrobe 95 / weapon 100): 50 -> 35/40 -> 65 -> 90, every named seam owned by its named fix.
+- THE GRADUATE (src, tsc 0): AI_KEYFRAME_FRAMING_CLAUSE rides every cell; keyframeCloseFaceClause rides the CLOSE rung only (isCloseRung, the 121 letter's own set); framingViewUrl EXPORTED from identity.ts (one function both sides ride); generateKeyframeForShot adds the framing view as a SECOND anchor at the close rung (the images array's proven shape, honest fallback when no view file); the recipe and the night result carry the anchorViews receipt.
+- e2e-iter217-arms.ts 27/27 ALL PASS (the shape / the two-night PROVISIONAL exit in a lab scope / one REAL generation on S003 with the view receipt 'Lin Yue:close' end to end - the fresh draw's 40 recorded honestly: the swing is the finding). smoke217-aikeyframe.ts ALL PASS (six cells clause-by-clause, read-only).
+- THE SECOND NIGHT (night217-aikeyframe.ts, foreground after the detached setsid ride died silently - the reaper's law tightened): 6/6 scored, 6/6 appended source AI_KEYFRAME, nights 2, PROVISIONAL EXITED, VERDICT HOLD. S001 85 / S002 60 / S003 60 / S004 85 / S005 85 / S006 88 (median 85); two-night medians S001 80 / S002 76 / S003 55 / S004 87.5 / S005 85 / S006 86.5. Blocking cells: close (55, BELOW) and shadow (66, BELOW) - the teeth read the cells.
+- The eye's night receipts: S002's dye SWAPPED one draw (indigo robe under the night-lighting words, green surviving as lining - palette 20 honest); S003's glow artifact again + twin moons + sparkle vortex, the pull persisting (the close cell's band: 35/40/60/90).
+- README item 131 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The production law now carries FIVE named arms (dye / contrast / weapon / framing / close-face) and the anchor carries sheets + framing views; the arc's two-night median stands and the gate's HOLD is the cells' own honest answer. The 218 frontier: the close cell's swing + artifacts and the shadow bucket's lighting-vs-law draws.
