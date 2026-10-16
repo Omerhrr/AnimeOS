@@ -1,0 +1,146 @@
+{
+  "night": "night-221-aikeyframe",
+  "cohort": "kf-v3",
+  "lawVersion": 3,
+  "source": "AI_KEYFRAME",
+  "results": [
+    {
+      "ref": "E7 Sc12 S006",
+      "shotId": "cmvapbg8h001ont90i5h190z7",
+      "ok": true,
+      "worst": 0.88,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.9,
+          "aspects": {
+            "face": 0.85,
+            "hair": 0.95,
+            "wardrobe": 0.92,
+            "weapon": 0.9,
+            "palette": 0.9,
+            "style": 0.85
+          },
+          "note": "Face structure and green robe with gold embroidery match the sheet; sword is present and correctly styled."
+        },
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.88,
+          "aspects": {
+            "face": 0.9,
+            "hair": 0.9,
+            "wardrobe": 0.9,
+            "palette": 0.93,
+            "style": 0.85
+          },
+          "note": "Face structure, long hair mass, and the deep purple robe with gold trim are highly consistent with the canonical design; framing hides weapon."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Lin Yue",
+        "Demon Lord Wei"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S006-take2-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.6,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S006-keyframe.png",
+          "countedFigures": 3,
+          "shipped": false
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.88,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S006-take2-keyframe.png",
+          "countedFigures": 2,
+          "shipped": true
+        }
+      ]
+    }
+  ],
+  "appended": 1,
+  "gate": {
+    "episodeId": "cmvapbg7u0005nt90na51pybd",
+    "source": "AI_KEYFRAME",
+    "floor": 0.7,
+    "readings": 7,
+    "verdict": "HOLD",
+    "overall": {
+      "key": "overall",
+      "n": 7,
+      "mean": 0.8271428571428573,
+      "median": 0.85,
+      "p10": 0.675,
+      "worst": 0.675,
+      "best": 0.9,
+      "belowFloor": 1,
+      "belowFraction": 0.14285714285714285,
+      "verdict": "HOLD",
+      "worstRef": "E7 Sc12 S003"
+    },
+    "blocking": [
+      {
+        "key": "calm",
+        "n": 7,
+        "mean": 0.8271428571428573,
+        "median": 0.85,
+        "p10": 0.675,
+        "worst": 0.675,
+        "best": 0.9,
+        "belowFloor": 1,
+        "belowFraction": 0.14285714285714285,
+        "verdict": "HOLD",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "close",
+        "n": 1,
+        "mean": 0.675,
+        "median": 0.675,
+        "p10": 0.675,
+        "worst": 0.675,
+        "best": 0.675,
+        "belowFloor": 1,
+        "belowFraction": 1,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "locked",
+        "n": 3,
+        "mean": 0.8216666666666667,
+        "median": 0.89,
+        "p10": 0.675,
+        "worst": 0.675,
+        "best": 0.9,
+        "belowFloor": 1,
+        "belowFraction": 0.3333333333333333,
+        "verdict": "HOLD",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "shadow",
+        "n": 2,
+        "mean": 0.7875000000000001,
+        "median": 0.7875000000000001,
+        "p10": 0.675,
+        "worst": 0.675,
+        "best": 0.9,
+        "belowFloor": 1,
+        "belowFraction": 0.5,
+        "verdict": "HOLD",
+        "worstRef": "E7 Sc12 S003"
+      }
+    ],
+    "arc": true,
+    "nights": 2,
+    "provisional": false
+  },
+  "writtenAt": "2026-10-16T17:04:56.533Z",
+  "reportPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/night-report-night-221-aikeyframe.json"
+}

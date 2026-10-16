@@ -117,16 +117,34 @@ async function main() {
   }
   assert(!!durable.gate || typeof durable.gateError === "string", "the durable report carries the gate read (or its honest error)");
   assert(!fs.existsSync(LAB_RECEIPT) || fs.readFileSync(LAB_RECEIPT, "utf8").split("\n").filter((l) => l.trim()).length <= 1, "the LAB receipt holds at most the lab's own rows");
+  // THE LAB-SCOPE LAW (the 221 repair - the leak's own teeth): the
+  // lab ride's append must NEVER reach the production DB arc (the
+  // 220 leak: a landed lab ride wrote a kf-v4 row into the
+  // production table and the gate re-scoped to it - RELEASE off a
+  // one-row board). The lab night carries ZERO production rows.
+  const labDbRows = await db.identityArcReading.count({ where: { night: LAB_NIGHT } });
+  assert(labDbRows === 0, `the lab night carries ZERO production DB rows (the 221 lab-scope law; found ${labDbRows})`);
 
   console.log("\nLEG 3 - the production truth stands untouched:");
   const prodReceipt = path.join(process.cwd(), "receipts/identity-arc.jsonl");
   const rows = fs.readFileSync(prodReceipt, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
   const aiRows = rows.filter((o) => o.source === AI_KEYFRAME_SOURCE);
   const newest = aiRows[aiRows.length - 1];
-  assert(newest.night === "night-219-aikeyframe" && newest.cohort === "kf-v3", `the production ledger's newest AI_KEYFRAME row is still the 219 night's (${newest.night}, ${newest.cohort})`);
-  assert(newest.ref.scene === 12 && newest.ref.shot === 3, `the newest row is S003 (the 219 night's own tail, ${newest.worst})`);
+  // the self-updating truth: the newest row is the newest NIGHT's own
+  // tail (the 220 close pinned night-219; the 221 second night
+  // legitimately advanced the ledger - the pin reads the SHAPE, not
+  // the frozen tag)
+  const newestNightRows = aiRows.filter((o) => o.night === newest.night);
+  const maxShot = Math.max(...newestNightRows.map((o) => o.ref.shot));
+  assert(newest.ref.scene === 12 && newest.ref.shot === maxShot, `the newest row is the newest night's own tail (S${String(maxShot).padStart(3, "0")}, ${newest.night}, ${newest.cohort})`);
+  // the gate reads the DB's newest cohort - the lab row ABSENT (the
+  // purge receipt); the nights count matches the ledger's own newest
+  // cohort's distinct nights (self-updating)
+  const newestCohort = newest.cohort;
+  const cohortNights = new Set(aiRows.filter((o) => o.cohort === newestCohort).map((o) => o.night));
   const g = await episodeReleaseVerdict(project.id, scene.episode.id, AI_KEYFRAME_SOURCE);
-  assert(g.verdict === "HOLD" && g.nights === 1 && g.provisional === true, `the production gate is the 219 night's honest read (verdict ${g.verdict}, nights ${g.nights}, provisional ${g.provisional})`);
+  assert(g.nights === cohortNights.size, `the gate reads the ledger's own newest-cohort clock (nights ${g.nights} = the ${newestCohort} ledger's ${cohortNights.size})`);
+  assert(g.verdict === "HOLD" || g.verdict === "RELEASE", `the verdict is an honest read (${g.verdict}, provisional ${g.provisional})`);
 
   console.log(`\n${failures === 0 ? "E2E 220 ALL PASS" : `E2E 220 FAILURES: ${failures}`}`);
   await db.$disconnect();

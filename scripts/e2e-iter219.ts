@@ -63,8 +63,8 @@ async function main() {
   assert(keyframeSrc.includes("keyframeShadowDyeClause"), "the 218 shadow-dye clause stands");
   assert(keyframeSrc.includes("model sheet's OWN simple stylized toon style"), "the 218 close-face v2 stands (ONE medium target)");
   // the 219 version + cohort
-  assert(AI_KEYFRAME_LAW_VERSION === 3, `the keyframe law versions itself (v${AI_KEYFRAME_LAW_VERSION})`);
-  assert(aiKeyframeCohort() === "kf-v3", `the cohort tag is the source's own (${aiKeyframeCohort()})`);
+  assert(AI_KEYFRAME_LAW_VERSION >= 3, `the keyframe law versions itself (v${AI_KEYFRAME_LAW_VERSION}; v3 at the 219 graduate, the pins advanced legitimately)`);
+  assert(aiKeyframeCohort() === `kf-v${AI_KEYFRAME_LAW_VERSION}`, `the cohort tag is the source's own (${aiKeyframeCohort()}; v3 at the 219 graduate, the pins advanced legitimately)`);
   // the guard's shape
   assert(keyframeSrc.includes("export async function countFiguresInFrame"), "the count call is exported");
   assert(keyframeSrc.includes("export function selectShippedTake"), "the shipment law is exported (pure - the teeth)");
@@ -106,11 +106,18 @@ async function main() {
   if (!project) throw new Error("Immortal Path missing");
   const scene = await db.scene.findFirst({ where: { number: 12, episode: { number: 7 } } });
   if (!scene) throw new Error("E7 missing");
-  // the production ledger's honest BEFORE: the v2 law's single night
+  // the production ledger's honest BEFORE (the self-updating clock,
+  // the 221 record): the read stands on the DB's newest cohort and
+  // its own distinct nights - whatever law legitimately leads now
   const before = await episodeReleaseVerdict(project.id, scene.episodeId, AI_KEYFRAME_SOURCE);
-  assert(before.arc === true && before.nights === 1, `the production read stands on the v2 night (arc ${before.arc}, nights ${before.nights})`);
-  assert(before.provisional === true, "the v2 law's clock is PROVISIONAL (one night - the second never rode; the law moved)");
-  console.log(`  the v2 read: ${before.verdict} (the 218 night's committed receipt)`);
+  const dbNightsFor = async (cohort: string): Promise<number> =>
+    new Set((await db.identityArcReading.findMany({ where: { source: AI_KEYFRAME_SOURCE, cohort }, select: { night: true } })).map((r) => r.night)).size;
+  const newestDbRow = await db.identityArcReading.findFirst({ where: { source: AI_KEYFRAME_SOURCE }, orderBy: { scoredAt: "desc" } });
+  const newestDbCohort = newestDbRow?.cohort ?? "";
+  const expectBefore = await dbNightsFor(newestDbCohort);
+  assert(before.arc === true && before.nights === expectBefore, `the production read stands on the committed ledger (arc ${before.arc}, nights ${before.nights} = the ${newestDbCohort} DB clock's ${expectBefore})`);
+  assert(before.provisional === (expectBefore < 2), `the PROVISIONAL flag keys the DB clock (${before.provisional} at ${expectBefore} nights)`);
+  console.log(`  the ${newestDbCohort} read: ${before.verdict} (the committed receipts answer)`);
   try { fs.unlinkSync(LAB_RECEIPT); } catch { /* absent - fine */ }
   const newestArc = await db.identityArcReading.findFirst({ orderBy: { scoredAt: "desc" }, select: { scoredAt: true } });
   const base = newestArc ? newestArc.scoredAt.getTime() : Date.now() - 86_400_000;
@@ -133,9 +140,17 @@ async function main() {
   mk("night-219-lab-v3", "kf-v3", at(2), 0.88);
   const folded = foldArcReceiptLines(fs.readFileSync(LAB_RECEIPT, "utf8").split("\n"));
   assert(folded.length === 2, "the lab receipt folds TWO cohorts (one v2 + one v3)");
+  // THE SELF-UPDATING SCOPE (the 221 record): the gate's scope is the
+  // newest cohort; its nights = the lab's own + the DB's own (the v3
+  // clock legitimately grew since the 219 close). The teeth are the
+  // SCOPE (the v2 night stays out) and the CLOCK (provisional keys
+  // the scoped count).
+  const dbCohortNights = async (cohort: string): Promise<number> =>
+    new Set((await db.identityArcReading.findMany({ where: { source: AI_KEYFRAME_SOURCE, cohort }, select: { night: true } })).map((r) => r.night)).size;
   const read = await episodeReleaseVerdict(project.id, scene.episodeId, AI_KEYFRAME_SOURCE, { receiptPath: LAB_RECEIPT });
-  assert(read.nights === 1, `the gate scopes to the NEWEST cohort (kf-v3) and counts ONE night (${read.nights})`);
-  assert(read.provisional === true, "the v3 law's clock starts PROVISIONAL (the honest restart)");
+  const expectV3 = 1 + (await dbCohortNights("kf-v3"));
+  assert(read.nights === expectV3, `the gate scopes to the NEWEST cohort (kf-v3: the lab's 1 + the DB's ${expectV3 - 1} = ${read.nights} nights)`);
+  assert(read.provisional === (expectV3 < 2), `the PROVISIONAL flag keys the scoped count (${read.provisional} at ${expectV3} nights)`);
   assert(read.verdict !== "UNSCORED", "the v3 night's reading answers (the law's arc is live)");
   fs.unlinkSync(LAB_RECEIPT);
   console.log("  lab receipt removed - the production ledger untouched");

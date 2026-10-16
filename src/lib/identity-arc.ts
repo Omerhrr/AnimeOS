@@ -205,22 +205,33 @@ export function defaultNightTag(now?: Date): string {
  */
 export async function appendIdentityArcReading(
   a: IdentityArcAppend,
-  opts?: { receiptPath?: string | null },
+  opts?: { receiptPath?: string | null; dbWrite?: boolean },
 ): Promise<void> {
-  const data = {
-    projectId: a.projectId,
-    shotId: a.shotId,
-    source: a.source,
-    night: a.night,
-    cohort: a.cohort,
-    worst: a.worst,
-    scores: JSON.stringify(a.scores),
-  };
-  await db.identityArcReading.upsert({
-    where: { shotId_source_night: { shotId: a.shotId, source: a.source, night: a.night } },
-    create: data,
-    update: data,
-  });
+  // THE LAB-SCOPE LAW (the 221 repair): the e2e's lab scopes signal
+  // themselves by redirecting the receipt (receiptPath defined - the
+  // 216 law's own convention). The DB append is PRODUCTION truth: a
+  // lab scope must never re-scope the production gate's newest
+  // cohort. The leak's own receipt (the 221 record): the 220 e2e's
+  // landed lab ride wrote a kf-v4 lab row into the production arc
+  // table and the gate read RELEASE off a one-row board. dbWrite
+  // defaults true (production); the night writer passes false when
+  // the receipt is redirected (the lab jsonl alone carries the row).
+  if (opts?.dbWrite !== false) {
+    const data = {
+      projectId: a.projectId,
+      shotId: a.shotId,
+      source: a.source,
+      night: a.night,
+      cohort: a.cohort,
+      worst: a.worst,
+      scores: JSON.stringify(a.scores),
+    };
+    await db.identityArcReading.upsert({
+      where: { shotId_source_night: { shotId: a.shotId, source: a.source, night: a.night } },
+      create: data,
+      update: data,
+    });
+  }
   if (opts?.receiptPath === null) return;
   try {
     const shot = await db.shot.findUnique({

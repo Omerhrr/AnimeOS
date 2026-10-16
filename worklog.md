@@ -3973,3 +3973,21 @@ Work Log:
 
 Stage Summary:
 - The wall's shape is now EVIDENCE (all four channels measured), the close cell's band has a MECHANISM (the trade axis), and the night report survives the process - the take-level receipts that died with the terminal are durable law. The 221 frontier: the window's answer - the completion ride (S004/S005/S006), the second kf-v3 night (the clock), and the close rung's take-fan evidence (the k=3 paired probe, the graduation waits for its live ride).
+
+---
+Task ID: iter-221
+Agent: main (Super Z)
+Task: Iteration 221 - the window's answer: the completion ride, the second kf-v3 night, the studio void named, the scene-presence guard graduated v4, the lab-scope leak repaired.
+
+Work Log:
+- Drift law first: remote HEAD 81391d6 = Iteration 220 (clean); the proceed opened the 220 commit's own named frontier.
+- THE WINDOW REOPENED (~2h10m after the wall closed): the completion ride landed 3/3 on first attempts - night-219 complete (85/90/40/60/85/90), the count guard's saves named on all three (60 over the 85-echo; 85 over the 40-echo; 90 best read).
+- THE SECOND kf-v3 NIGHT (night-221-aikeyframe): 6/6 - 85/90/95/85/85/88, mean 88, median 86.5, ZERO sub-floor cells, PROVISIONAL EXITED.
+- THE EYE NAMED THE VOID: the 95 was a studio bust on a gray backdrop - identity-true, grammar-EMPTY; every scene-true draw scored 40-60. The close cell's dilemma fully mapped (the trade axis's third mode); the k=3 fan probe (40/60/40, one sample, no graduation) drew the dye swap in fan-take2.
+- THE SCENE-PRESENCE INSTRUMENT: validated 8/8 against the eye's labeled pixels (the durable labeled set committed); THE GRADUATE (tsc 0): v4/kf-v4, SCENE_PRESENCE_PROMPT + countSceneAnchors, countedAnchors on the receipt, THE STUDIO-VOID RULE the selection's FIRST key (null abstains, the v3 behavior byte-exact), the guard riding k>1 beside the count guard. No scene clause in any prompt (the refusal asserted).
+- THE LAB-SCOPE LEAK: e2e-iter220's re-run lab ride LANDED and wrote a kf-v4 row into the production DB arc (the gate read RELEASE off a one-row board). REPAIRED: the row purged; the writer fixed (dbWrite:false when the receipt is redirected); the leak's own teeth (the lab night asserts ZERO production DB rows); the stale production pins across the four e2es rewritten self-updating.
+- THE V4 LAW'S FIRST NIGHT (night-221-v4aikeyframe): 6/6 - 90/92/40/85/85/86, median 85, gate HOLD (the close cell's honest tail). THE GUARDS' SAVES: S002's echo refused (0/n=2), S003's VOID refused (30/anchors 0 - the scene-true take shipped), S004's echo+void double-refused (40/4/0), S006's count abstained honestly. The durable reports carry every anchor receipt.
+- Gates: src tsc 0; e2e-iter218/219/220/221 ALL PASS; smoke218/219/220/221 ALL PASS. README item 135 + this worklog; commit + push + remote verified.
+
+Stage Summary:
+- The v3 clock's two nights stand on their receipt (the close median 67.5, one arithmetic tail from RELEASE); the v4 law's selection now carries BOTH composition guards (the echo + the void), validated against the eye's own labels, with the lab-scope law sealing the production arc against lab rows. The 222 frontier: the SECOND kf-v4 night (the clock's answer) + the sheathed-steel clause's twice-named disobedience + the eye's reading of the v4 lineup.

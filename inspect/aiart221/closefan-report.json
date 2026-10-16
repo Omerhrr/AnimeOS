@@ -1,0 +1,49 @@
+{
+  "probe": "closefan-k3",
+  "shot": "E7 Sc12 S003",
+  "takes": 3,
+  "ok": true,
+  "worst": 0.6,
+  "takesReceipt": [
+    {
+      "take": 1,
+      "ok": true,
+      "worst": 0.4,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart221/E7Sc12S003-keyframe.png",
+      "countedFigures": 1,
+      "shipped": false
+    },
+    {
+      "take": 2,
+      "ok": true,
+      "worst": 0.6,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart221/E7Sc12S003-take2-keyframe.png",
+      "countedFigures": 1,
+      "shipped": true
+    },
+    {
+      "take": 3,
+      "ok": true,
+      "worst": 0.4,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart221/E7Sc12S003-take3-keyframe.png",
+      "countedFigures": 1,
+      "shipped": false
+    }
+  ],
+  "entries": [
+    {
+      "characterName": "Lin Yue",
+      "similarity": 0.6,
+      "aspects": {
+        "face": 0.7,
+        "hair": 0.8,
+        "wardrobe": 0.5,
+        "weapon": 0.9,
+        "palette": 0.2,
+        "style": 0.4
+      },
+      "note": "Face and hair structure match well, but the wardrobe is recolored from green to blue, the style is photorealistic instead of 3D toon, and the palette is completely different."
+    }
+  ],
+  "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart221/E7Sc12S003-take2-keyframe.png"
+}

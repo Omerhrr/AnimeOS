@@ -1,94 +1,82 @@
 {
   "night": "e2e-night-220-report",
-  "cohort": "kf-v3",
-  "lawVersion": 3,
+  "cohort": "kf-v4",
+  "lawVersion": 4,
   "source": "AI_KEYFRAME",
   "results": [
     {
-      "ref": "E? Sc12 S004",
+      "ref": "E7 Sc12 S004",
       "shotId": "cmvapbg8f001knt90o5v9auv8",
-      "ok": false,
-      "error": "E7 Sc12 S004: the image channel failed - API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+      "ok": true,
+      "worst": 0.85,
+      "entries": [
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.7,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.5,
+            "palette": 0.95,
+            "style": 0.75
+          },
+          "note": "Silhouette, wardrobe cut, and color blocking are highly faithful to the sheet; the face structure and topknot match well under the scene's ambient lighting; the weapon is a glowing energy construct rather than a physical blade, which is an acceptable variation for this action context."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Demon Lord Wei"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/E7Sc12S004-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/E7Sc12S004-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": true
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/E7Sc12S004-take2-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": false
+        }
+      ]
     }
   ],
-  "appended": 0,
+  "appended": 1,
   "gate": {
     "episodeId": "cmvapbg7u0005nt90na51pybd",
     "source": "AI_KEYFRAME",
     "floor": 0.7,
-    "readings": 3,
-    "verdict": "HOLD",
+    "readings": 1,
+    "verdict": "RELEASE",
     "overall": {
       "key": "overall",
-      "n": 3,
-      "mean": 0.7166666666666667,
+      "n": 1,
+      "mean": 0.85,
       "median": 0.85,
-      "p10": 0.4,
-      "worst": 0.4,
-      "best": 0.9,
-      "belowFloor": 1,
-      "belowFraction": 0.3333333333333333,
-      "verdict": "HOLD",
-      "worstRef": "E7 Sc12 S003"
+      "p10": 0.85,
+      "worst": 0.85,
+      "best": 0.85,
+      "belowFloor": 0,
+      "belowFraction": 0,
+      "verdict": "RELEASE",
+      "worstRef": "E7 Sc12 S004"
     },
-    "blocking": [
-      {
-        "key": "calm",
-        "n": 3,
-        "mean": 0.7166666666666667,
-        "median": 0.85,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.9,
-        "belowFloor": 1,
-        "belowFraction": 0.3333333333333333,
-        "verdict": "HOLD",
-        "worstRef": "E7 Sc12 S003"
-      },
-      {
-        "key": "close",
-        "n": 1,
-        "mean": 0.4,
-        "median": 0.4,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.4,
-        "belowFloor": 1,
-        "belowFraction": 1,
-        "verdict": "BELOW",
-        "worstRef": "E7 Sc12 S003"
-      },
-      {
-        "key": "locked",
-        "n": 1,
-        "mean": 0.4,
-        "median": 0.4,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.4,
-        "belowFloor": 1,
-        "belowFraction": 1,
-        "verdict": "BELOW",
-        "worstRef": "E7 Sc12 S003"
-      },
-      {
-        "key": "shadow",
-        "n": 2,
-        "mean": 0.65,
-        "median": 0.65,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.9,
-        "belowFloor": 1,
-        "belowFraction": 0.5,
-        "verdict": "BELOW",
-        "worstRef": "E7 Sc12 S003"
-      }
-    ],
+    "blocking": [],
     "arc": true,
     "nights": 1,
     "provisional": true
   },
-  "writtenAt": "2026-10-16T15:25:12.750Z",
+  "writtenAt": "2026-10-16T17:25:52.715Z",
   "reportPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/night-report-e2e-night-220-report.json"
 }

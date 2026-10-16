@@ -20,7 +20,7 @@ function assert(cond: boolean, label: string) {
 async function main() {
   console.log("SMOKE 218 - the v2 prompt law on the six cells\n");
 
-  assert(AI_KEYFRAME_LAW_VERSION === 2 && aiKeyframeCohort() === "kf-v2", "the law versions itself (kf-v2)");
+  assert(AI_KEYFRAME_LAW_VERSION >= 2 && aiKeyframeCohort() === `kf-v${AI_KEYFRAME_LAW_VERSION}`, "the law versions itself (v2 at the 218 graduate; the pins advanced legitimately - the 221 record)");
 
   const eps = await db.episode.findMany({ include: { season: true } });
   const ep = eps.find((e) => e.number === 7 && e.season?.number === 1);

@@ -1,0 +1,56 @@
+{
+  "probe": "scenepresence-validation",
+  "labeled": 8,
+  "agree": 8,
+  "misses": 0,
+  "rows": [
+    {
+      "file": "label-void-bust-95.png",
+      "expected": 0,
+      "count": 0,
+      "hit": true
+    },
+    {
+      "file": "label-scene-wide-60.png",
+      "expected": 3,
+      "count": 3,
+      "hit": true
+    },
+    {
+      "file": "label-scene-s006-88.png",
+      "expected": 3,
+      "count": 3,
+      "hit": true
+    },
+    {
+      "file": "label-scene-216-50.png",
+      "expected": 3,
+      "count": 3,
+      "hit": true
+    },
+    {
+      "file": "label-scene-217-60.png",
+      "expected": 3,
+      "count": 3,
+      "hit": true
+    },
+    {
+      "file": "label-scene-fan1-40.png",
+      "expected": 3,
+      "count": 3,
+      "hit": true
+    },
+    {
+      "file": "label-scene-fan2-swap-60.png",
+      "expected": 3,
+      "count": 3,
+      "hit": true
+    },
+    {
+      "file": "label-scene-fan3-40.png",
+      "expected": 3,
+      "count": 3,
+      "hit": true
+    }
+  ]
+}

@@ -24,7 +24,7 @@ function assert(cond: boolean, label: string) {
 async function main() {
   console.log("SMOKE 220 - the report law + the prompt law unremoved\n");
 
-  assert(AI_KEYFRAME_LAW_VERSION === 3 && aiKeyframeCohort() === "kf-v3", "the law versions itself (kf-v3 - unchanged by 220)");
+  assert(AI_KEYFRAME_LAW_VERSION >= 3 && aiKeyframeCohort() === `kf-v${AI_KEYFRAME_LAW_VERSION}`, "the law versions itself (v3 at the 220 close; the pins advanced legitimately - the 221 record)");
 
   const eps = await db.episode.findMany({ include: { season: true } });
   const ep = eps.find((e) => e.number === 7 && e.season?.number === 1);

@@ -94,7 +94,7 @@ export const AI_KEYFRAME_SOURCE = "AI_KEYFRAME" as const;
  * The v1 nights stay on the committed receipt under their bridge
  * cohort - the ledger answers for every law.
  */
-export const AI_KEYFRAME_LAW_VERSION = 3;
+export const AI_KEYFRAME_LAW_VERSION = 4;
 
 /** The cohort tag the AI_KEYFRAME arc rows ride (the gate scopes the
  *  newest cohort - the 141 band cannot cross a law boundary). */
@@ -592,10 +592,69 @@ export interface KeyframeTakeReceipt {
   worst?: number; // the take's own damped median worst
   pngPath?: string;
   countedFigures?: number | null; // the 219 figure-count guard's reading
+  countedAnchors?: number | null; // the 221 scene-presence guard's reading (0 = the studio void)
   shipped: boolean;
 }
 
 // ── THE FIGURE-COUNT GUARD (the 219 law) ──
+
+// ── THE SCENE-PRESENCE GUARD (the 221 law) ──
+// The 221 night's S003 shipped a 95 the eye read as a STUDIO VOID: a
+// figurine bust on a gray backdrop - identity-true, grammar-EMPTY,
+// no temple, no storm, no rain, no place - while every scene-true
+// draw scored 40-60. The judge's instrument prices identity over
+// place; the 219 count guard fixed figure-count blindness, and this
+// guard fixes SCENE-PRESENCE blindness the same way: one cheap
+// vision call on the drawn frame ALONE, one integer 0-3 (structure /
+// sky / weather), validated 8/8 against the eye's own labeled
+// pixels (probe221-scenepresence.ts, inspect/aiart221/). The
+// selection law demotes a ZERO-anchor take (the studio void) below
+// any take the probe read at one or more anchors; a null read
+// abstains and the v3 behavior stands.
+
+const SCENE_PRESENCE_PROMPT =
+  "You are a composition checker for an animation production. Look at this frame and count how many of these SCENE elements are present in the IMAGE: " +
+  "(1) an architectural structure (a building, temple, ruins, wall, gate, or interior), " +
+  "(2) an environmental background beyond the character (sky, landscape, or room extending behind them), " +
+  "(3) weather or atmosphere effects (rain, snow, mist, lightning, embers, wind-blown debris). " +
+  "A plain studio backdrop, empty gradient, or neutral void counts as NOTHING. " +
+  "Answer with ONLY a single integer digit (0-3) and nothing else.";
+
+/** The scene-presence call (the count call's twin: the same shape,
+ *  the same 164 backoff discipline - two bounded retries on the
+ *  rate limit, the same call each time). */
+export async function countSceneAnchors(
+  dataUrl: string,
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const zai = await ZAI.create();
+      const res = (await zai.chat.completions.createVision({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: SCENE_PRESENCE_PROMPT },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      } as never)) as { choices?: Array<{ message?: { content?: string } }> };
+      const raw = res.choices?.[0]?.message?.content ?? "";
+      const count = parseFigureCount(raw);
+      if (count === null) return { ok: false, error: `unparsable anchor count: ${raw.slice(0, 60)}` };
+      return { ok: true, count: Math.min(3, Math.max(0, count)) };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (attempt < 2 && (msg.includes("429") || msg.toLowerCase().includes("too many requests"))) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 20_000 : 45_000));
+        continue;
+      }
+      return { ok: false, error: msg };
+    }
+  }
+  return { ok: false, error: "unreachable" };
+}
 
 /**
  * THE COUNT PROMPT (the probe219-countpass byte-carrier): one cheap
@@ -667,9 +726,18 @@ export async function countFiguresInFrame(
  * passed array (-1 only when every take failed).
  */
 export function selectShippedTake(
-  takes: Array<{ ok: boolean; worst?: number; countedFigures?: number | null }>,
+  takes: Array<{ ok: boolean; worst?: number; countedFigures?: number | null; countedAnchors?: number | null }>,
   expectedFigures: number | null,
 ): number {
+  // THE STUDIO-VOID RULE (the 221 law, the FIRST comparison key): a
+  // take the scene-presence probe read at ZERO anchors is a studio
+  // void (the 221 receipt: the 95 bust on a gray backdrop outranked
+  // every scene-true draw) - it loses to any take read at one or
+  // more anchors, WHATEVER its identity score. A null/absent read
+  // abstains (the v3 behavior stands when the guard cannot read or
+  // has not run). The figure-count guard and the damped worst keep
+  // their order beneath it.
+  const voided = (t: { countedAnchors?: number | null }): boolean => t.countedAnchors === 0;
   let bestIdx = -1;
   for (let i = 0; i < takes.length; i++) {
     const t = takes[i];
@@ -679,6 +747,12 @@ export function selectShippedTake(
       continue;
     }
     const b = takes[bestIdx];
+    const tVoid = voided(t);
+    const bVoid = voided(b);
+    if (tVoid !== bVoid) {
+      if (bVoid) bestIdx = i; // the scene-true take wins over the void
+      continue; // the void keeps losing whatever its score
+    }
     const tMatch = expectedFigures !== null && t.countedFigures != null && t.countedFigures === expectedFigures;
     const bMatch = expectedFigures !== null && b.countedFigures != null && b.countedFigures === expectedFigures;
     if (tMatch !== bMatch) {
@@ -746,16 +820,26 @@ export async function scoreAiKeyframeWithTakes(
     // reading three figures where two are staged). No png receipt or
     // a missed call: the guard abstains honestly (null).
     let countedFigures: number | null = null;
+    // THE SCENE-PRESENCE GUARD (the 221 law, the same ride): one
+    // cheap vision call reads the take's SCENE anchors; a take read
+    // at ZERO anchors is the studio void the eye named on the 221
+    // night's shipped 95 (identity-true, place-less). Same abstention
+    // law: no png or a missed call reads null - the v3 behavior.
+    let countedAnchors: number | null = null;
     if (k > 1 && okScored.recipe.pngPath) {
       try {
         const b64 = fs.readFileSync(okScored.recipe.pngPath).toString("base64");
-        const counted = await countFiguresInFrame(`data:image/png;base64,${b64}`);
+        const dataUrl = `data:image/png;base64,${b64}`;
+        const counted = await countFiguresInFrame(dataUrl);
         if (counted.ok) countedFigures = counted.count;
+        const anchors = await countSceneAnchors(dataUrl);
+        if (anchors.ok) countedAnchors = anchors.count;
       } catch {
         countedFigures = null;
+        countedAnchors = null;
       }
     }
-    takes.push({ take: t, ok: true, worst: okScored.verdict.worst, pngPath: okScored.recipe.pngPath, countedFigures, shipped: false });
+    takes.push({ take: t, ok: true, worst: okScored.verdict.worst, pngPath: okScored.recipe.pngPath, countedFigures, countedAnchors, shipped: false });
     okByTake.set(t - 1, okScored);
   }
   if (okByTake.size === 0) {
@@ -857,7 +941,13 @@ export async function runAiKeyframeNight(
         worst: scored.verdict.worst,
         scores: scored.verdict.entries,
       },
-      opts?.receiptPath !== undefined ? { receiptPath: opts.receiptPath } : undefined,
+      // THE LAB-SCOPE LAW (the 221 repair): a redirected receipt is a
+      // lab scope - the lab jsonl alone carries the row, the
+      // production DB arc stands untouched (the gate's newest cohort
+      // is never a lab row).
+      opts?.receiptPath !== undefined
+        ? { receiptPath: opts.receiptPath, dbWrite: false }
+        : undefined,
     );
     appended += 1;
     const takeReceipts: KeyframeTakeReceipt[] | undefined =

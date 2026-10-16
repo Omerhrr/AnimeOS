@@ -60,8 +60,8 @@ async function main() {
   assert(keyframeSrc.includes("AI_KEYFRAME_FRAMING_CLAUSE"), "the 217 framing clause stands");
   assert(keyframeSrc.includes("framingViewUrl({ designSheetUrl: m.designSheetUrl, modelSheetUrl: m.sheetUrl }, viewName)"), "the 217 anchor-view law stands (the same convention both sides)");
   // the 218 law version + cohort
-  assert(AI_KEYFRAME_LAW_VERSION === 2, `the keyframe law versions itself (v${AI_KEYFRAME_LAW_VERSION})`);
-  assert(aiKeyframeCohort() === "kf-v2", `the cohort tag is the source's own (${aiKeyframeCohort()})`);
+  assert(AI_KEYFRAME_LAW_VERSION >= 2, `the keyframe law versions itself (v${AI_KEYFRAME_LAW_VERSION}; v2 at the 218 graduate, the pins advanced legitimately)`);
+  assert(aiKeyframeCohort() === `kf-v${AI_KEYFRAME_LAW_VERSION}`, `the cohort tag is the source's own (${aiKeyframeCohort()}; v2 at the 218 graduate, the pins advanced legitimately)`);
   assert(keyframeSrc.includes("const cohort = aiKeyframeCohort();"), "the night appends UNDER THE LAW'S OWN COHORT");
   assert(keyframeSrc.includes("bridgeLawCohort") === false || !keyframeSrc.includes("const cohort = bridgeLawCohort()"), "the night no longer rides the bridge cohort for AI_KEYFRAME rows");
   // the artifact clause
@@ -128,15 +128,25 @@ async function main() {
   mk("night-218-lab-b", "kf-v2", at(2));
   const folded = foldArcReceiptLines(fs.readFileSync(LAB_RECEIPT, "utf8").split("\n"));
   assert(folded.length === 3, "the lab receipt folds THREE nights (one v1 + two v2)");
+  // THE SELF-UPDATING SCOPE (the 221 record): the lab rows join the
+  // DB's rows in the merged stream - the gate's scope is the newest
+  // cohort, and that cohort's nights = the lab's own + the DB's own
+  // (the 218 close froze "two"; the DB legitimately grew same-cohort
+  // nights since). The teeth are the SCOPE (the bridge night stays
+  // out) and the CLOCK (provisional keys the scoped count).
+  const dbCohortNights = async (cohort: string): Promise<number> =>
+    new Set((await db.identityArcReading.findMany({ where: { source: AI_KEYFRAME_SOURCE, cohort }, select: { night: true } })).map((r) => r.night)).size;
   const read = await episodeReleaseVerdict(project.id, scene.episodeId, AI_KEYFRAME_SOURCE, { receiptPath: LAB_RECEIPT });
-  assert(read.nights === 2, `the gate scopes to the newest cohort and counts TWO nights (${read.nights})`);
-  assert(read.provisional === false, "PROVISIONAL exits at the second kf-v2 night");
+  const expectV2 = 2 + (await dbCohortNights("kf-v2"));
+  assert(read.nights === expectV2, `the gate scopes to the newest cohort (kf-v2: the lab's 2 + the DB's ${expectV2 - 2} = ${read.nights} nights)`);
+  assert(read.provisional === (expectV2 < 2), `the PROVISIONAL flag keys the scoped count (${read.provisional} at ${expectV2} nights)`);
   console.log(`  the kf-v2 lab verdict: ${read.verdict} (the v1 night did not pollute the read)`);
   // a NEWER cohort re-scopes: the law bump opens the cohort, the clock restarts
   mk("night-219-lab", "kf-v3", at(3));
   const read2 = await episodeReleaseVerdict(project.id, scene.episodeId, AI_KEYFRAME_SOURCE, { receiptPath: LAB_RECEIPT });
-  assert(read2.nights === 1, `a newer cohort re-scopes the read (${read2.nights} night)`);
-  assert(read2.provisional === true, "the PROVISIONAL clock restarts honestly at the law boundary");
+  const expectV3 = 1 + (await dbCohortNights("kf-v3"));
+  assert(read2.nights === expectV3, `a newer cohort re-scopes the read (${read2.nights} nights = the lab's 1 + the DB's ${expectV3 - 1})`);
+  assert(read2.provisional === (expectV3 < 2), `the PROVISIONAL flag keys the restarted count (${read2.provisional} at ${expectV3} nights)`);
   fs.unlinkSync(LAB_RECEIPT);
   console.log("  lab receipt removed - the production ledger untouched");
 
