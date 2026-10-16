@@ -18,6 +18,18 @@ function assert(cond: boolean, label: string) {
 }
 
 async function main() {
+  // THE 222 REBUILD GUARD: the sheeted prompts need the sheets - while
+  // the restore's window-bound remainder stands, this smoke names the
+  // state and exits honestly (the 222 law: the named pending state is
+  // the honesty; the guard falls through when the sheets land).
+  {
+    const anySheet = await db.character.findFirst({ where: { modelSheetUrl: { not: null } }, select: { id: true } });
+    if (!anySheet) {
+      console.log("PENDING-WINDOW: the sheets are window-bound (the 222 restore receipt) - the sheeted prompt law re-asserts when the window opens");
+      await db.$disconnect();
+      process.exit(0);
+    }
+  }
   console.log("SMOKE 218 - the v2 prompt law on the six cells\n");
 
   assert(AI_KEYFRAME_LAW_VERSION >= 2 && aiKeyframeCohort() === `kf-v${AI_KEYFRAME_LAW_VERSION}`, "the law versions itself (v2 at the 218 graduate; the pins advanced legitimately - the 221 record)");

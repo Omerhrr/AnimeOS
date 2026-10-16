@@ -1,0 +1,32 @@
+{
+  "probe": "probe222-window",
+  "readAt": "2026-10-16T20:24:04.303Z",
+  "shape": "account-total",
+  "channels": [
+    {
+      "channel": "edit",
+      "state": "BLOCKED",
+      "ms": 73,
+      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+    },
+    {
+      "channel": "create",
+      "state": "BLOCKED",
+      "ms": 22,
+      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+    },
+    {
+      "channel": "vision",
+      "state": "BLOCKED",
+      "ms": 11,
+      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+    },
+    {
+      "channel": "text",
+      "state": "BLOCKED",
+      "ms": 11,
+      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+    }
+  ],
+  "note": "the four-channel read after the twelfth-drift wipe - the wall's state survives the box's death"
+}

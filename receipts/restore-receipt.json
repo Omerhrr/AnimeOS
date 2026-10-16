@@ -1,0 +1,50 @@
+{
+  "restore": "night122-restore",
+  "edition": "the 222 degraded-mode law: the committed DNA seed + the honest window-bound remainder",
+  "ranAt": "2026-10-16T20:30:24.159Z",
+  "project": "cmvberd250000rmhx7wy5xzke",
+  "members": [
+    {
+      "name": "Lin Yue",
+      "sheet": "window-bound",
+      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
+      "dnaSource": "committed-seed"
+    },
+    {
+      "name": "Chen Hao",
+      "sheet": "window-bound",
+      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
+      "dnaSource": "absent"
+    },
+    {
+      "name": "Elder Han",
+      "sheet": "window-bound",
+      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
+      "dnaSource": "absent"
+    },
+    {
+      "name": "Demon Lord Wei",
+      "sheet": "window-bound",
+      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
+      "dnaSource": "committed-seed"
+    }
+  ],
+  "designs": [
+    {
+      "name": "Lin Yue",
+      "designSheet": "/designs/cmuq1s4i00007ppgsjqryw9r5/r2/turn_sheet.png"
+    },
+    {
+      "name": "Demon Lord Wei",
+      "designSheet": "/designs/cmuqieinq000cpxz7lp5ohq41/r2/turn_sheet.png"
+    }
+  ],
+  "windowBound": [
+    "Lin Yue",
+    "Chen Hao",
+    "Elder Han",
+    "Demon Lord Wei"
+  ],
+  "complete": false,
+  "note": "the sheets are the image channel's own work - Lin Yue, Chen Hao, Elder Han, Demon Lord Wei wait for the window; the dye law rides the committed seed until then"
+}

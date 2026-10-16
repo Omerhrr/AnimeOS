@@ -1,0 +1,124 @@
+{
+  "night": "night-222-v4aikeyframe",
+  "cohort": "kf-v4",
+  "lawVersion": 4,
+  "source": "AI_KEYFRAME",
+  "results": [
+    {
+      "ref": "E? Sc12 S001",
+      "shotId": "cmvberd2w001drmhxpxgebna5",
+      "ok": false,
+      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+    },
+    {
+      "ref": "E? Sc12 S002",
+      "shotId": "cmvberd2x001frmhx3pi362qh",
+      "ok": false,
+      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+    },
+    {
+      "ref": "E? Sc12 S003",
+      "shotId": "cmvberd2x001hrmhxnf60rl0r",
+      "ok": false,
+      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+    },
+    {
+      "ref": "E? Sc12 S004",
+      "shotId": "cmvberd2y001jrmhxbsirpf8j",
+      "ok": false,
+      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+    },
+    {
+      "ref": "E? Sc12 S005",
+      "shotId": "cmvberd2z001lrmhx35zujqie",
+      "ok": false,
+      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+    },
+    {
+      "ref": "E? Sc12 S006",
+      "shotId": "cmvberd30001nrmhxim2zdgxu",
+      "ok": false,
+      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+    }
+  ],
+  "appended": 0,
+  "gate": {
+    "episodeId": "cmvberd270004rmhxklrco2x4",
+    "source": "AI_KEYFRAME",
+    "floor": 0.7,
+    "readings": 7,
+    "verdict": "HOLD",
+    "overall": {
+      "key": "overall",
+      "n": 7,
+      "mean": 0.812142857142857,
+      "median": 0.865,
+      "p10": 0.4,
+      "worst": 0.4,
+      "best": 0.92,
+      "belowFloor": 1,
+      "belowFraction": 0.14285714285714285,
+      "verdict": "HOLD",
+      "worstRef": "E7 Sc12 S003"
+    },
+    "blocking": [
+      {
+        "key": "calm",
+        "n": 7,
+        "mean": 0.812142857142857,
+        "median": 0.865,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.92,
+        "belowFloor": 1,
+        "belowFraction": 0.14285714285714285,
+        "verdict": "HOLD",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "close",
+        "n": 1,
+        "mean": 0.4,
+        "median": 0.4,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.4,
+        "belowFloor": 1,
+        "belowFraction": 1,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "locked",
+        "n": 3,
+        "mean": 0.7216666666666667,
+        "median": 0.865,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.9,
+        "belowFloor": 1,
+        "belowFraction": 0.3333333333333333,
+        "verdict": "HOLD",
+        "worstRef": "E7 Sc12 S003"
+      },
+      {
+        "key": "shadow",
+        "n": 2,
+        "mean": 0.66,
+        "median": 0.66,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.92,
+        "belowFloor": 1,
+        "belowFraction": 0.5,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S003"
+      }
+    ],
+    "arc": true,
+    "nights": 1,
+    "provisional": true
+  },
+  "writtenAt": "2026-10-16T20:32:00.912Z",
+  "reportPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/night-report-night-222-v4aikeyframe.json"
+}

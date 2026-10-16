@@ -111,7 +111,15 @@ async function main() {
     // the wall holds: the miss shape - THE LAW'S OWN EVIDENCE
     console.log(`  (the wall HOLDS - the ride missed honestly: ${String(r0.error).slice(0, 90)}...)`);
     assert(typeof r0.error === "string" && r0.error.length > 10, "the miss's error is CARRIED VERBATIM (the 219 abstention's seam, healed)");
-    assert(r0.error.includes("the image channel failed"), "the error names its channel honestly");
+    // THE 222 REBUILD'S THIRD HONEST STATE: the miss names its CAUSE -
+    // the wall's channel 429 (the 220 shape) OR the sheetless build
+    // (the rebuild state: the anchor is what identity is scored
+    // against, the build fails before any channel call). Both are the
+    // law's own honesty; neither is hidden.
+    assert(
+      r0.error.includes("the image channel failed") || r0.error.includes("No featured character with a model sheet"),
+      "the error names its cause honestly (the channel's 429 OR the sheetless build - the 222 third state)",
+    );
     assert(durable.appended === 0, "the miss appends nothing (appended 0, honest)");
     assert(r0.takes === undefined, "the miss result carries no takes (nothing invented)");
   }

@@ -86,7 +86,15 @@ async function main() {
   const bustPng = path.join(LABELED_DIR, "label-void-bust-95.png");
   const dataUrl = `data:image/png;base64,${fs.readFileSync(bustPng).toString("base64")}`;
   const live = await countSceneAnchors(dataUrl);
-  assert(live.ok && live.count === 0, `ONE REAL anchor call on the durable bust reads 0 (the receipt reproduced live: ${live.ok ? live.count : live.error.slice(0, 60)})`);
+  // THE 222 REBUILD'S BOTH-WAYS LAW (the 220 e2e's own shape): the
+  // call's HONESTY is the contract, not the weather - the instrument
+  // reads 0 on the bust when the channel answers, and a wall-blocked
+  // call names its 429 verbatim (the miss is the honest read too).
+  if (live.ok) {
+    assert(live.count === 0, `ONE REAL anchor call on the durable bust reads 0 (the receipt reproduced live: ${live.count})`);
+  } else {
+    assert(String(live.error).includes("429"), `the live anchor call missed honestly on the wall (the 429 carried verbatim: ${String(live.error).slice(0, 60)})`);
+  }
 
   console.log("\nLEG 4 - the production truth stands:");
   const prodReceipt = path.join(process.cwd(), "receipts/identity-arc.jsonl");

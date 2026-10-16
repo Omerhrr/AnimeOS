@@ -1,0 +1,34 @@
+{
+  "law": "THE RESTORE CAST-DNA SEED (the 222 rebuild law): the cast's measured sheet DNA commits to the repo - the values the standing prompt law pins (the dye clauses' hexes ride the committed receipts inspect/aiart214+S004/inspect/aiart215+S006 byte-exact). A wiped box restores the DNA from THIS file without the vision channel; the vision re-read (night122-restore, when a sheet lands) updates it under the staleness law and the receipt names which source won. A member absent here (no committed receipt names their DNA) restores only through the vision read - the seed never invents.",
+  "provenance": {
+    "Lin Yue": "inspect/aiart215/S001-arm-prompt.txt + S006-prompt.txt (the COLOR LAW + WEAPON LAW clauses as the production rode them); weaponType from the 215 WEAPON-FIDELITY arm (the clause text 'the sword is SHEATHED' - template the ${dna.weaponType})",
+    "Demon Lord Wei": "inspect/aiart214/S004-prompt.txt + inspect/aiart215/S006-prompt.txt (the COLOR LAW clauses); weaponType none (the 214 receipt: 'the sheet says weaponType none'; the 221 v4 night report: 'weapon is not visible so it is omitted')"
+  },
+  "seededAt": "2026-10-17T00:00:00.000Z",
+  "members": [
+    {
+      "name": "Lin Yue",
+      "sheetDna": {
+        "hairStyle": "topknot",
+        "hairColor": "#1a1a1a",
+        "robeColor": "#2a5c52",
+        "robeAccent": "#b8994f",
+        "bootsColor": "#1f1f1f",
+        "skinTone": "#e8d5c4",
+        "weaponType": "sword"
+      }
+    },
+    {
+      "name": "Demon Lord Wei",
+      "sheetDna": {
+        "hairStyle": "topknot",
+        "hairColor": "#0a0a0a",
+        "robeColor": "#3b2d5c",
+        "robeAccent": "#c4ad7e",
+        "bootsColor": "#111111",
+        "skinTone": "#e8dcc8",
+        "weaponType": "none"
+      }
+    }
+  ]
+}

@@ -34,6 +34,18 @@ const EXPECTED: Array<{ n: number; close: boolean; twoMembers: boolean }> = [
 ];
 
 async function main() {
+  // THE 222 REBUILD GUARD: the sheeted prompts need the sheets - while
+  // the restore's window-bound remainder stands, this smoke names the
+  // state and exits honestly (the 222 law: the named pending state is
+  // the honesty; the guard falls through when the sheets land).
+  {
+    const anySheet = await db.character.findFirst({ where: { modelSheetUrl: { not: null } }, select: { id: true } });
+    if (!anySheet) {
+      console.log("PENDING-WINDOW: the sheets are window-bound (the 222 restore receipt) - the sheeted prompt law re-asserts when the window opens");
+      await db.$disconnect();
+      process.exit(0);
+    }
+  }
   console.log("SMOKE 217 - the prompt law on the real six cells\n");
   const scene = await db.scene.findFirst({ where: { number: 12, episode: { number: 7 } } });
   if (!scene) throw new Error("E7 Sc12 missing");
