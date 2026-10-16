@@ -3851,3 +3851,18 @@ Work Log:
 
 Stage Summary:
 - The AI-art lever VALIDATES at the plateau cells (90/85 where Blender landed 35-65), requires two arms before a night rides it: the dye-law arm (129's explicit color clause) and the style-consistency arm (the sheet as image anchor). The 214 frontier: the arms, then the AI-KEYFRAME render source class through the SAME gate.
+
+---
+Task ID: iter-214
+Agent: main (Super Z)
+Task: Iteration 214 - the arms (dye-law + style pin), probe end-to-end.
+
+Work Log:
+- The paired arm rode (probe214-arms.ts): same three cells, same sizes, same REAL judge - ONLY the two arms the 213 record required changed.
+- DYE-LAW ARM: each member's committed sheetDna hexes as binding color law (the 129 law's keyframe edition). S004: Wei 30 -> 85 (wardrobe 10->85, palette 20->80) - the judge's note flipped from 'tattered black coat' to 'purple/gold wardrobe highly consistent with the sheet'.
+- STYLE-PIN ARM: one cel-donghua grammar pinned; the eye's receipts read S002/S004/S005 in ONE language (the 213 semi-realistic S005 drift did not reproduce); S002 held 90, S005 held 85.
+- Honest drifts named: S004 Wei's glowing sword (sheet says none, weapon read 90 generously), generated banner text, S005's blue-teal blade (the shot's own azure-energy beat), S002 twin moons untested this arm.
+- src tsc 0 errors (no src change); README item 128 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- THE AI-ART BOARD: 90 / 85 / 85 across S002/S004/S005 vs Blender medians 55/45/55 - EVERY probed cell above the 70 publish floor. The 215 frontier: S001/S003/S006 complete the six-cell AI board, then the AI-KEYFRAME render source class wires through the SAME gate.
