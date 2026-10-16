@@ -3883,3 +3883,18 @@ Work Log:
 
 Stage Summary:
 - THE SIX-CELL AI BOARD COMPLETE: 85/90/75/85/85/85, every cell above the 70 floor - the sheet-anchor arm is the lever's strongest tool (words lose what the image carries). The 216 frontier: the AI-KEYFRAME render source class through the night flow, the framing clause after.
+---
+Task ID: iter-216
+Agent: main (Super Z)
+Task: Iteration 216 - the AI-KEYFRAME render source class wired into the night flow through the SAME gate (first src change since 149).
+
+Work Log:
+- THE THIRD SOURCE MEMBER: IdentitySource carries "AI_KEYFRAME" (candidate shipping pixels - the 0.7 shipping bar through the ONE bar function identityThresholdFor; both gate floor sites + the studio pulse ride it; the score-line label names '70% ai-keyframe'; the sweep batch scorer refuses the source in words - the night writer GENERATES what it scores).
+- THE CLASS (src/lib/ai/keyframe.ts): the keyframe prompt law (the production's own anchors + the arms as named functions: keyframeDyeClause / keyframeContrastClause / keyframeWeaponClause with the draw-beat words owning the emission + the STYLE PIN byte-exact); the ANCHOR (the committed sheet PNGs through the edit channel - one member one image, two the images array, the dts narrowing cast documented); the INSTRUMENT (the SAME judge path, the damped median, the same merge law scoreShotIdentityMedian obeys); the clone ghost rides out IN-CLASS (sheeted cast only); the PIXELS LAND (the night persists the SCORED keyframes); runAiKeyframeNight appends WITH THE SOURCE NAMED and reads episodeReleaseVerdict at the source's own bar.
+- THE FIRST NIGHT rode twice under the same tag (ride 1 exposed the pixels-transient seam; the idempotent replace made the re-ride clean): S001 75 / S002 92 / S003 50 / S004 90 / S005 85 / S006 85 - median 85, 6/6 appended with source AI_KEYFRAME, gate: floor 70 / arc true / nights 1 / PROVISIONAL / VERDICT HOLD (the close cell BELOW at n=1 - the honest tail).
+- THE EYE'S RECEIPTS (the TRUE scored pixels): S006's two-shot TRUE (dyes on-design both members); S004's Wei 90; S002's 92 reads a TURNAROUND SHEET (the anchor reproduced the sheet's own format - identity superb, shot grammar lost); S003's 50 is the same seam (closeup demanded, full-body delivered - the face small in frame). THE LAW NAMED: the anchor's identity power is real AND its presentation pull is real.
+- e2e 23/23 ALL PASS (shape / lab gate at the source's own bar / one REAL anchored generation + 3 damped reads); smoke 17/17 ALL PASS (the prompt law clause-by-clause on the real shots).
+- Gates: src tsc 0 errors. README item 130 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The AI-KEYFRAME render source class is PRODUCTION CODE: typed, gated, night-riding, source-named on the durable ledger. First AI-keyframe night on the ledger: median 85, gate HOLD (PROVISIONAL). The 217 frontier: the framing clause + the anchor-view law (FRAMING_SHEET_VIEW for the anchor side) + the second night (the median exits PROVISIONAL).

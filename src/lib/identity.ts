@@ -44,7 +44,18 @@ export const IDENTITY_RENDER_THRESHOLD = 0.7;
 
 /** The identity bar a score answers to, by what was judged. */
 export function identityThresholdFor(source: IdentitySource): number {
-  return source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
+  // THE AI-KEYFRAME BAR (iteration 216): an AI keyframe is not a
+  // storyboard plan - it is candidate SHIPPING pixels (the render
+  // source class the night flow scores), so it answers to the render
+  // bar, not the panel bar. The probe receipts (213-215) read the
+  // class against the SAME instrument and the SAME sheets; the bar
+  // keeps the same teeth.
+  return source === "PANEL" ? IDENTITY_REPAINT_THRESHOLD : IDENTITY_RENDER_THRESHOLD;
+}
+
+/** The bar's own words, for score lines and refusals that name it. */
+export function identityBarLabelFor(source: IdentitySource): string {
+  return source === "PANEL" ? "60% panel" : source === "AI_KEYFRAME" ? "70% ai-keyframe" : "70% shipping-pixel";
 }
 
 export const IDENTITY_ASPECTS = ["face", "hair", "wardrobe", "weapon", "palette", "style"] as const;
@@ -132,8 +143,13 @@ export interface IdentityScoredShot {
   scoredAt: string;
 }
 
-/** What the vision model looked at: the storyboard panel or a frame from the finished clip. */
-export type IdentitySource = "PANEL" | "RENDER";
+/** What the vision model looked at: the storyboard panel, a frame from
+ * the finished clip, or (iteration 216) an AI-generated keyframe still
+ * - the render source class the 213-215 probes validated at the plateau
+ * cells (85/90/75/85/85/85 where the Blender medians sit 65/55/75/45/55/70).
+ * The render source may change; the instrument, the sheets, the floor
+ * and the gate do not. */
+export type IdentitySource = "PANEL" | "RENDER" | "AI_KEYFRAME";
 
 /** The shot row shape the identity pipeline needs (project + cast + sheets). */
 type IdentityShot = NonNullable<Awaited<ReturnType<typeof loadIdentityShot>>>;
@@ -144,6 +160,7 @@ export async function loadIdentityShot(shotId: string) {
     include: {
       scene: {
         include: {
+          environment: true, // the 216 keyframe prompt law reads the setting (additive include)
           episode: {
             include: {
               season: { include: { project: { include: { characters: { include: { states: true } } } } } },
@@ -615,7 +632,7 @@ async function persistIdentityVerdict(
       entityName: verdict.entries[0]?.characterName ?? ctx.sheets[0]?.name ?? "cast",
       kind: drifted ? "IDENTITY_DRIFT" : "IDENTITY_VERIFIED",
       episodeNumber: ctx.episode.number,
-      description: `${tag} ${scoreLine} - worst ${(verdict.worst * 100).toFixed(0)}% vs the ${source === "RENDER" ? "70% shipping-pixel" : "60% panel"} bar${poseNote || verdict.note ? ` (${[poseNote, verdict.note].filter(Boolean).join("; ")})` : ""}`.slice(0, 900),
+      description: `${tag} ${scoreLine} - worst ${(verdict.worst * 100).toFixed(0)}% vs the ${identityBarLabelFor(source)} bar${poseNote || verdict.note ? ` (${[poseNote, verdict.note].filter(Boolean).join("; ")})` : ""}`.slice(0, 900),
       severity: drifted ? "WARNING" : "INFO",
     },
   });
@@ -1184,6 +1201,14 @@ export async function scoreRenderIdentity(shotId: string): Promise<
  * never-scored. Capped - every score is a real vision call.
  */
 export async function scoreProjectIdentity(projectId: string, limit = 4, source: IdentitySource = "PANEL"): Promise<{ scored: IdentityScoredShot[]; errors: Array<{ ref: string; error: string }> }> {
+  // THE HONEST GUARD (iteration 216): the sweep scores panels and
+  // render clips - the AI_KEYFRAME source rides the night writer
+  // (runAiKeyframeNight in ai/keyframe.ts), which generates the
+  // keyframes it scores. A sweep pass over this source would mislabel
+  // panel pixels as keyframes - refuse it in words instead.
+  if (source === "AI_KEYFRAME") {
+    return { scored: [], errors: [{ ref: "project", error: "the AI_KEYFRAME source rides the night writer (runAiKeyframeNight), not the sweep - generate keyframes, then score them, never the reverse" }] };
+  }
   const project = await db.project.findUnique({
     where: { id: projectId },
     include: { characters: { include: { states: true } } },

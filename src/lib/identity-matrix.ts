@@ -47,7 +47,7 @@
  */
 
 import { db } from "@/lib/db";
-import { IDENTITY_RENDER_THRESHOLD, IDENTITY_REPAINT_THRESHOLD, type IdentitySource, type IdentityScoreEntry } from "@/lib/identity";
+import { identityThresholdFor, type IdentitySource, type IdentityScoreEntry } from "@/lib/identity";
 import { parseExpressionClip } from "@/lib/blender/expressions";
 import { IDENTITY_ARC_MIN_NIGHTS, arcMedianRows, readIdentityArcEpisode } from "@/lib/identity-arc";
 
@@ -422,7 +422,7 @@ export async function identityMatrixData(projectId: string, source: IdentitySour
       include: { shot: { include: { scene: { include: { episode: { include: { season: { select: { number: true } } } } } } } } },
     }),
   ]);
-  const floor = source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
+  const floor = identityThresholdFor(source); // the 216 law: one bar function, every source answers its own line
   const cast = project?.characters ?? [];
   const idByName = new Map(cast.map((c) => [c.name, c.id] as const));
   const rows = scoreRowsToMatrixRows(scoreRows, idByName);
@@ -509,7 +509,7 @@ export async function episodeReleaseVerdict(
     }),
     readIdentityArcEpisode(projectId, episodeId, source, opts),
   ]);
-  const floor = source === "RENDER" ? IDENTITY_RENDER_THRESHOLD : IDENTITY_REPAINT_THRESHOLD;
+  const floor = identityThresholdFor(source); // the 216 law: one bar function, every source answers its own line
   const cast = project?.characters ?? [];
   const idByName = new Map(cast.map((c) => [c.name, c.id] as const));
 
