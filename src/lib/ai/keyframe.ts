@@ -66,13 +66,35 @@ import {
 import { publicImageAsDataUrl } from "@/lib/continuity-art";
 import {
   appendIdentityArcReading,
-  bridgeLawCohort,
   defaultNightTag,
 } from "@/lib/identity-arc";
-import { episodeReleaseVerdict, type EpisodeReleaseRead } from "@/lib/identity-matrix";
+import { episodeReleaseVerdict, identityLightingBucket, type EpisodeReleaseRead } from "@/lib/identity-matrix";
 
 /** The source name the arc rows ride (the ledger answers "what pixels?"). */
 export const AI_KEYFRAME_SOURCE = "AI_KEYFRAME" as const;
+
+/**
+ * THE KEYFRAME LAW'S OWN VERSION (iteration 218). v1 = the 216/217 law
+ * (five arms, sheets + views, single-take nights) - its rows rode the
+ * bridge cohort because the class had no version of its own (the seam
+ * 218 fixes). v2 = the 218 law: the shadow-dye clause, the artifact
+ * clause, the close-face clause's ONE-medium rewrite (the sheet's own
+ * simple stylized toon - the M2 evidence: style 10 -> 90), and the
+ * TAKE LAW (best-of-N shipped pixels). The cohort law applied to the
+ * source's own truth: the pixels' law is THIS module's law, so the
+ * AI_KEYFRAME arc rows ride THIS version - a law bump opens a new
+ * cohort and the old law's readings never pollute the new law's
+ * verdict (the 142 law's own letter, now carried by the source).
+ * The v1 nights stay on the committed receipt under their bridge
+ * cohort - the ledger answers for every law.
+ */
+export const AI_KEYFRAME_LAW_VERSION = 2;
+
+/** The cohort tag the AI_KEYFRAME arc rows ride (the gate scopes the
+ *  newest cohort - the 141 band cannot cross a law boundary). */
+export function aiKeyframeCohort(): string {
+  return `kf-v${AI_KEYFRAME_LAW_VERSION}`;
+}
 
 /** The style pin: ONE grammar for the whole episode (the 214 arm, byte-exact). */
 export const AI_KEYFRAME_STYLE_PIN =
@@ -160,6 +182,18 @@ export const AI_KEYFRAME_FRAMING_CLAUSE =
   "NOT a character model sheet, NOT a turnaround, NO multi-view grid, NO duplicated copies of the same character, NO side-by-side pose studies, NO neutral studio backdrop, no text labels. " +
   "The figure stands IN the scene's own environment, under the scene's own light, caught mid-moment.";
 
+/**
+ * THE ARTIFACT CLAUSE (the 218 arm): the eye's named artifacts across
+ * the nights - twin moons (S001 + S003), the sparkle vortex (S003),
+ * the sheathed blade's glow (S001 + S003 + S002's 92 ride). The
+ * scene-prop law in words. Its single probe ride was confounded (the
+ * draw missed the subject entirely - the subject-miss mode named in
+ * the receipts); the clause rides EVERY cell and the nights measure it.
+ */
+export const AI_KEYFRAME_ARTIFACT_CLAUSE =
+  "SCENE ARTIFACT LAW (binding): render ONLY the scene's own props and named light sources - NO second moon or duplicated celestial body, NO floating sparkle particles or swirling light-particle vortex, NO lens-flare clusters, NO invented glowing runes or energy effects the scene does not name. " +
+  "A blade the shot's own language does not draw stays dark steel.";
+
 /** The CLOSE rung (the 121 law's own view letter - the framings whose
  * sheet reference is the close view). */
 const CLOSE_RUNG_TYPES = new Set(["EXTREME_CLOSEUP", "CLOSEUP", "MCU"]);
@@ -168,16 +202,57 @@ export function isCloseRung(shotType: string | null | undefined): boolean {
   return CLOSE_RUNG_TYPES.has(String(shotType ?? "").toUpperCase());
 }
 
-/** THE CLOSE-FACE CLAUSE (the 217 arm): at close granularity the face
- * drifts photoreal and invents accessories (the 217 receipts: face
- * 0.2-0.5, a headband and facial paint invented, hair let down; the
- * clause rode the face to 0.85 / hair 0.95). Member-generic - the
- * reference view's own grammar, no per-character words. */
+/**
+ * THE CLOSE-FACE CLAUSE (v2, the 218 rewrite - ONE medium target).
+ * v1's words aimed at 2D cel art while identity's target is the
+ * SHEET - and the sheet IS a simple 3D toon (the 211 finding's own
+ * words). Two fighting mediums pulled the draws apart (the M1 ride:
+ * chibi drift, 50); ONE target - the sheet's own simple stylized
+ * toon - lifted the style aspect 10 -> 90 (the M2 evidence, the
+ * close campaign's biggest single-aspect lift). The anti-invention
+ * words keep their earned place (the 217 receipts: a headband and
+ * facial paint invented, hair let down). Member-generic.
+ */
 export function keyframeCloseFaceClause(shotType: string | null | undefined): string | null {
   if (!isCloseRung(shotType)) return null;
   return (
-    "CLOSE-FACE LAW (binding): the face is PAINTED CEL-ANIMATION ART - flat color fields, clean ink lineart, sharp stylized 2D facial features on the close-view reference's own proportions. " +
-    "NOT a realistic human face, NOT a 3D render, NO photoreal skin texture, no invented accessories (no headband, no facial markings or paint), and the hairstyle is EXACTLY the close-view reference's own."
+    "CLOSE-FACE LAW (binding): the face is rendered in the model sheet's OWN simple stylized toon style - the same simple flat-shaded, clean-lined rendering as the sheet reference, at the sheet's own level of detail. " +
+    "NOT a cinematic realistic face, NOT a photoreal human, NO high-detail game-cinematic 3D render, no invented accessories (no headband, no facial markings or paint), and the hairstyle is EXACTLY the close-view reference's own."
+  );
+}
+
+/** The DIM families the shadow-dye law rides (the lighting bucket's
+ *  own words: the families whose light dims the scene - the failure
+ *  mode was SEEN in the shadow bucket, and night/dusk dim by the
+ *  same words' mechanism). */
+const DIM_LIGHT_FAMILIES = new Set(["shadow", "night", "dusk"]);
+
+/**
+ * THE SHADOW-DYE CLAUSE (the 218 arm): under the dim-light words the
+ * generator RE-HUES what the dye law bound (S002's receipt: the
+ * night-lighting words pulled Lin's deep teal-green to indigo -
+ * palette 20 honest). The clause restates the committed hexes UNDER
+ * the lighting's failure mode: dim light SHADES the garments, it
+ * never recolors them. The 218 evidence: S002 92 with palette 95
+ * (the swap draw's palette 20) - the named fix owned its seam.
+ * Rides the dim families through the gate's OWN bucket function
+ * (identityLightingBucket - ONE convention both sides ride, the
+ * framingViewUrl lesson).
+ */
+export function keyframeShadowDyeClause(
+  members: Array<{ name: string; dna: KeyframeSheetDna | null }>,
+  lighting: string | null | undefined,
+): string | null {
+  if (!DIM_LIGHT_FAMILIES.has(identityLightingBucket(lighting))) return null;
+  const named = members
+    .map((m) => (m.dna?.robeColor ? `${m.name}'s robe stays exactly ${m.dna.robeColor}` : null))
+    .filter(Boolean) as string[];
+  if (named.length === 0) return null;
+  return (
+    "SHADOW-DYE LAW (binding): this scene's light is dim - dim light SHADES the garments, it never RECOLORS them. " +
+    named.join(", ") +
+    " under this lighting, the shadows and backlight falling OVER the fabric. " +
+    "NOT an indigo, blue, or violet-shifted 'moonlit' variant; no hue swap, no color grade that replaces the committed dye."
   );
 }
 
@@ -256,7 +331,9 @@ export async function buildKeyframePrompt(shotId: string): Promise<
     keyframeContrastClause(dyeList),
     members.map((m) => keyframeWeaponClause(m.name, m.dna, shot.description ?? "")).filter(Boolean).join(" "),
     AI_KEYFRAME_FRAMING_CLAUSE, // the 217 arm: the film-frame law in words (the presentation pull named with receipts)
-    keyframeCloseFaceClause(shot.shotType), // the 217 arm: the CLOSE rung's own face law (null off the rung)
+    AI_KEYFRAME_ARTIFACT_CLAUSE, // the 218 arm: the scene-prop law (the eye's named artifacts)
+    keyframeShadowDyeClause(members, shot.lighting), // the 218 arm: the dim families' dye law (null off the bucket)
+    keyframeCloseFaceClause(shot.shotType), // the 217 arm, v2 (218): ONE medium target - the sheet's own toon
     factCanon,
     "dramatic composition, atmospheric depth, high quality, detailed",
     negativeTail,
@@ -378,17 +455,19 @@ export type AiKeyframeScore =
   | { ok: false; error: string };
 
 /**
- * THE KEYFRAME SCORING PASS - generate ONE keyframe, read it N times
- * through the SAME identity instrument (the judge-variance damping,
- * the 141 band's answer), the median per entry per aspect, the note
- * riding the median-closest sample (the same merge law the render
- * instrument obeys, scoreShotIdentityMedian). Read-only on production
- * - the arc append is the night's own write, never this pass's.
+ * ONE TAKE, SCORED - the take law's own atom (the 218 law): generate
+ * one keyframe, read it N times through the SAME identity instrument
+ * (the judge-variance damping, the 141 band's answer), the median per
+ * entry per aspect, the note riding the median-closest sample (the
+ * same merge law the render instrument obeys, scoreShotIdentityMedian).
+ * Read-only on production - the arc append is the night's own write,
+ * never this pass's. `takeIndex` names the take in the png receipt
+ * (the take law's ledger keeps EVERY take's pixels).
  */
-export async function scoreAiKeyframeForShot(
+async function scoreOneKeyframeTake(
   shotId: string,
-  samples = 3,
-  opts?: { outDir?: string },
+  samples: number,
+  opts?: { outDir?: string; takeIndex?: number },
 ): Promise<AiKeyframeScore> {
   const gen = await generateKeyframeForShot(shotId);
   if (!gen.ok) return gen;
@@ -398,7 +477,8 @@ export async function scoreAiKeyframeForShot(
   if (opts?.outDir) {
     try {
       fs.mkdirSync(opts.outDir, { recursive: true });
-      const pngPath = path.join(opts.outDir, `${gen.recipe.ref.replace(/\s+/g, "")}-keyframe.png`);
+      const take = opts.takeIndex && opts.takeIndex > 1 ? `-take${opts.takeIndex}` : "";
+      const pngPath = path.join(opts.outDir, `${gen.recipe.ref.replace(/\s+/g, "")}${take}-keyframe.png`);
       fs.writeFileSync(pngPath, Buffer.from(gen.dataUrl.split(",")[1] ?? "", "base64"));
       gen.recipe.pngPath = pngPath;
     } catch {
@@ -456,6 +536,101 @@ export async function scoreAiKeyframeForShot(
   };
 }
 
+/**
+ * THE KEYFRAME SCORING PASS (single-take, the v1 shape preserved
+ * byte-exact): one generation, the damped instrument, the honest
+ * number whatever the draw carried.
+ */
+export async function scoreAiKeyframeForShot(
+  shotId: string,
+  samples = 3,
+  opts?: { outDir?: string },
+): Promise<AiKeyframeScore> {
+  return scoreOneKeyframeTake(shotId, samples, opts);
+}
+
+/** One take's receipt line - the take law's own ledger entry: EVERY
+ *  take named, the shipped one flagged. Nothing hidden: the receipt
+ *  answers "what did the other takes score?" */
+export interface KeyframeTakeReceipt {
+  take: number;
+  ok: boolean;
+  error?: string;
+  worst?: number; // the take's own damped median worst
+  pngPath?: string;
+  shipped: boolean;
+}
+
+export type AiKeyframeTakesScore =
+  | {
+      ok: true;
+      ref: string;
+      shotId: string;
+      verdict: IdentityVerdict; // the SHIPPED take's damped median verdict
+      sampleCount: number; // the shipped take's read count
+      recipe: KeyframeRecipe; // the shipped take's recipe
+      takes: KeyframeTakeReceipt[]; // EVERY take, named
+    }
+  | { ok: false; error: string };
+
+/**
+ * THE TAKE LAW (the 218 arm - the draw variance's own answer). The
+ * 141 damping answers the judge's variance on ONE image; the DRAW
+ * variance (different pixels, same law - the measured band: S003
+ * 35..90, S002 60..92) had no answer. The law: the night renders K
+ * takes per shot, the FULL damped instrument scores each, and the
+ * SHIPPED pixels are the best take - the production's own dailies
+ * selection made law. Honest by receipt: every take's score rides
+ * the result (nothing hidden), the arc row records the SHIPPED
+ * take's reading (the gate judges the pixels that ship), and the
+ * named caveat holds - the take law lifts the shipped tail on cells
+ * whose mode clears the floor; it cannot buy what no draw contains
+ * (the 218 evidence: S003's take pair scored 40/40). takes=1 is the
+ * single-take pass, byte-exact.
+ */
+export async function scoreAiKeyframeWithTakes(
+  shotId: string,
+  opts?: { takes?: number; samples?: number; outDir?: string },
+): Promise<AiKeyframeTakesScore> {
+  const k = Math.max(1, Math.min(4, Math.round(opts?.takes ?? 1)));
+  const samples = opts?.samples ?? 3;
+  const takes: KeyframeTakeReceipt[] = [];
+  let best: AiKeyframeScore | null = null;
+  for (let t = 1; t <= k; t++) {
+    if (t > 1) await new Promise((r) => setTimeout(r, 10_000)); // the draw pacing (the night's own breath)
+    const scored = await scoreOneKeyframeTake(shotId, samples, opts?.outDir ? { outDir: opts.outDir, takeIndex: t } : undefined);
+    if (!scored.ok) {
+      takes.push({ take: t, ok: false, error: scored.error, shipped: false });
+      continue;
+    }
+    takes.push({ take: t, ok: true, worst: scored.verdict.worst, pngPath: scored.recipe.pngPath, shipped: false });
+    if (!best || scored.verdict.worst > best.verdict.worst) best = scored;
+  }
+  if (!best || !best.ok) {
+    const err = takes.find((t) => t.error)?.error ?? "no take returned a verdict";
+    return { ok: false, error: err };
+  }
+  // flag the shipped take by png receipt identity (the pngPath names
+  // the pixels the score rode)
+  const shippedPath = (best as Extract<AiKeyframeScore, { ok: true }>).recipe.pngPath;
+  for (const t of takes) t.shipped = !!shippedPath && t.pngPath === shippedPath && t.ok;
+  if (!takes.some((t) => t.shipped)) {
+    // an outDir-less ride has no png receipts - the shipped take is
+    // the best take by index (the receipt still names it)
+    const bestTake = takes.filter((t) => t.ok).reduce((a, b) => ((b.worst ?? 0) > (a.worst ?? 0) ? b : a));
+    for (const t of takes) t.shipped = t.take === bestTake.take;
+  }
+  return {
+    ok: true,
+    ref: best.ref,
+    shotId: best.shotId,
+    verdict: best.verdict,
+    sampleCount: best.sampleCount,
+    recipe: best.recipe,
+    takes,
+  };
+}
+
 export interface AiKeyframeNightShotResult {
   ref: string;
   shotId: string;
@@ -468,11 +643,13 @@ export interface AiKeyframeNightShotResult {
   anchorViews?: string[]; // the 217 anchor-view law's own receipt
   sampleCount?: number;
   pngPath?: string; // the scored pixels' receipt (the eye's read rides these)
+  takes?: KeyframeTakeReceipt[]; // the 218 take law's receipt (every take named, the shipped one flagged)
 }
 
 export interface AiKeyframeNightReport {
   night: string;
   cohort: string;
+  lawVersion: number; // the keyframe law the pixels rendered under
   source: typeof AI_KEYFRAME_SOURCE;
   results: AiKeyframeNightShotResult[];
   appended: number;
@@ -482,21 +659,26 @@ export interface AiKeyframeNightReport {
 
 /**
  * THE AI-KEYFRAME NIGHT - the render source class's own night pass.
- * One keyframe per shot, the damped instrument reads it, the arc row
- * APPENDS WITH THE SOURCE NAMED ("AI_KEYFRAME"), and the SAME release
- * gate reads the source's own board at the source's own bar. The
- * receipt path rides the options (the production default is the
- * committed durable ledger; the e2e's lab scopes redirect).
+ * K takes per shot (opts.takes, the 218 take law - default 1, the v1
+ * shape), the damped instrument reads each, the SHIPPED take's arc
+ * row APPENDS WITH THE SOURCE NAMED ("AI_KEYFRAME") AND THE COHORT
+ * NAMED (the keyframe law's own cohort tag - the 218 law: a law bump
+ * opens a new cohort, the old law's readings never pollute the new
+ * law's verdict), and the SAME release gate reads the source's own
+ * board at the source's own bar. The receipt path rides the options
+ * (the production default is the committed durable ledger; the e2e's
+ * lab scopes redirect).
  */
 export async function runAiKeyframeNight(
   projectId: string,
   episodeId: string,
-  opts?: { night?: string; samples?: number; receiptPath?: string | null; outDir?: string },
+  opts?: { night?: string; samples?: number; takes?: number; receiptPath?: string | null; outDir?: string; onlyShotIds?: string[] },
 ): Promise<AiKeyframeNightReport> {
   const night = opts?.night ?? defaultNightTag();
-  const cohort = bridgeLawCohort();
+  const cohort = aiKeyframeCohort(); // the source's own law cohort (the 218 law)
+  const takes = Math.max(1, Math.min(4, Math.round(opts?.takes ?? 1)));
   const shots = await db.shot.findMany({
-    where: { scene: { episodeId } },
+    where: { scene: { episodeId }, ...(opts?.onlyShotIds?.length ? { id: { in: opts.onlyShotIds } } : {}) },
     orderBy: { number: "asc" },
     include: { scene: { select: { number: true } } }, // the honest ref on a failed shot
   });
@@ -506,7 +688,10 @@ export async function runAiKeyframeNight(
   const outDir = opts?.outDir;
   for (const shot of shots) {
     const ref = `E? Sc${shot.scene.number} S${String(shot.number).padStart(3, "0")}`;
-    const scored = await scoreAiKeyframeForShot(shot.id, opts?.samples ?? 3, outDir ? { outDir } : undefined);
+    const scored =
+      takes > 1
+        ? await scoreAiKeyframeWithTakes(shot.id, { takes, samples: opts?.samples ?? 3, outDir })
+        : await scoreAiKeyframeForShot(shot.id, opts?.samples ?? 3, outDir ? { outDir } : undefined);
     if (!scored.ok) {
       results.push({ ref, shotId: shot.id, ok: false, error: scored.error });
       continue;
@@ -524,6 +709,10 @@ export async function runAiKeyframeNight(
       opts?.receiptPath !== undefined ? { receiptPath: opts.receiptPath } : undefined,
     );
     appended += 1;
+    const takeReceipts: KeyframeTakeReceipt[] | undefined =
+      takes > 1 && scored.ok && "takes" in scored
+        ? (scored as Extract<AiKeyframeTakesScore, { ok: true }>).takes
+        : undefined;
     results.push({
       ref: scored.ref,
       shotId: shot.id,
@@ -535,6 +724,7 @@ export async function runAiKeyframeNight(
       anchorViews: scored.recipe.anchorViews,
       sampleCount: scored.sampleCount,
       pngPath: scored.recipe.pngPath,
+      ...(takeReceipts ? { takes: takeReceipts } : {}),
     });
     // THE NIGHT PACING: one breath between shots (the 429 receipt).
     await new Promise((r) => setTimeout(r, 10_000));
@@ -549,5 +739,5 @@ export async function runAiKeyframeNight(
   } catch (e) {
     gateError = e instanceof Error ? e.message : String(e);
   }
-  return { night, cohort, source: AI_KEYFRAME_SOURCE, results, appended, gate, gateError };
+  return { night, cohort, lawVersion: AI_KEYFRAME_LAW_VERSION, source: AI_KEYFRAME_SOURCE, results, appended, gate, gateError };
 }

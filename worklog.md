@@ -3918,3 +3918,23 @@ Work Log:
 
 Stage Summary:
 - The production law now carries FIVE named arms (dye / contrast / weapon / framing / close-face) and the anchor carries sheets + framing views; the arc's two-night median stands and the gate's HOLD is the cells' own honest answer. The 218 frontier: the close cell's swing + artifacts and the shadow bucket's lighting-vs-law draws.
+---
+Task ID: iter-218
+Agent: main (Super Z)
+Task: Iteration 218 - the swing's answers: the shadow-dye law, the artifact law, the close-face one-medium rewrite, the take law, the keyframe law's own cohort; the third night.
+
+Work Log:
+- Drift law first: remote HEAD a3fe262 = Iteration 217 ALREADY complete and pushed (the inherited context claimed 216 untouched - the eighteenth correction); the proceed opened the 217 commit's own named frontier (the close cell's swing + artifacts, the shadow bucket).
+- THE RECON (probe218-recon.ts, read-only): the two blocking buckets are the SAME two shots - close = S003 alone (two-night median 55), shadow = {S002 "Backlight + interior shadows", S003 "Cold key, deep shadow"} (median 65.5); the aspect ledger named the seams (S003 face 30-40 / style 20; S002 palette 20 the dye swap).
+- THE EVIDENCE PASS (probe218-arms.ts, paired, read-only, receipts inspect/aiart218/): SHADOW-DYE arm LANDED on S002 (92, palette 95 vs the swap's 20); ARTIFACT arm's ride CONFOUNDED (a subject-miss draw - a sword in a pedestal, no Lin; the mode named); the TAKE pair measured the swing 40/40 (both unchanged-law draws at the band's bottom).
+- THE EYE before the graduate: the close rung's TRADE named (big face -> photoreal wins; small face -> identity holds, framing breaks - the 217 90-draw re-read as TWO figures); the close-face clause aimed at the WRONG MEDIUM (2D cel demanded, the sheet IS a simple 3D toon - the 211 finding's own words).
+- THE CLOSEMODE PROBE (probe218-closemode.ts): M1 (two mediums) fought into chibi drift (50); M2 (ONE target - the sheet's own simple stylized toon) lifted STYLE 10 -> 90, the close campaign's biggest single-aspect lift.
+- THE GRADUATE (src/lib/ai/keyframe.ts, tsc 0): AI_KEYFRAME_LAW_VERSION = 2 + aiKeyframeCohort() = kf-v2 (the cohort law applied to the source's own truth - the v1 nights stay under the bridge cohort on the committed receipt); AI_KEYFRAME_ARTIFACT_CLAUSE every cell; keyframeShadowDyeClause rides the dim families through the gate's OWN identityLightingBucket; keyframeCloseFaceClause v2 (ONE medium target, anti-invention kept, 2D-cel words gone); THE TAKE LAW scoreAiKeyframeWithTakes (K takes, the full damped instrument each, the SHIPPED take's reading appends, every take named in the receipt) wired into runAiKeyframeNight at opts.takes with onlyShotIds per-shot idempotence.
+- e2e-iter218.ts ALL PASS (30 asserts: the law's shape; the cohort law's teeth BOTH ways in a lab scope - a v1 night excluded from a kf-v2 read, a newer cohort restarting PROVISIONAL honestly; ONE REAL take-law ride: two takes, one shipped, the shipped worst IS the verdict's, the 502 transient recorded and retried).
+- smoke218-aikeyframe.ts ALL PASS (the six real cells: artifact law all six, shadow-dye S002+S003 ONLY, close-face v2 S003 only, 216/217 arms unremoved).
+- THE THIRD NIGHT (night218-aikeyframe.ts, cohort kf-v2, takes 2, foreground chunked - the reaper's law): 6/6 appended WITH THE SOURCE AND COHORT NAMED - S001 90 / S002 92 / S003 85 / S004 85 / S005 85 / S006 85, MEAN 87, P10 85, VERDICT RELEASE, nights 1, PROVISIONAL, ZERO BLOCKING CELLS.
+- The eye's night receipts: the take law's FIRST SAVE on S003 (the rejected take carried the indigo dye swap + a pedestal-sword echo; the shipped take: face 90 / weapon 100 / style 60, "match the canonical design closely"); S006's shipped draw carries the MULTI-FIGURE ECHO (Lin duplicated - two green figures + Wei purple TRUE at 88; the dyes did not mix, the framing pulled to three figures where the shot stages two).
+- README item 132 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The v2 law's first night READS RELEASE (PROVISIONAL) with zero blocking cells: the shadow-dye law owns the swap seam, the one-medium rewrite owns the style seam (style 10 -> 90 measured), the take law made its first save, and the source's own cohort law keeps the old nights honest on the ledger without pricing the new law's verdict. The 219 frontier: the SECOND kf-v2 night (the PROVISIONAL clock's own answer) and the multi-figure echo on the two-member cell.
