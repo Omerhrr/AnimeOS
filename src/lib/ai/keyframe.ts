@@ -80,7 +80,13 @@ export const AI_KEYFRAME_SOURCE = "AI_KEYFRAME" as const;
  * 218 fixes). v2 = the 218 law: the shadow-dye clause, the artifact
  * clause, the close-face clause's ONE-medium rewrite (the sheet's own
  * simple stylized toon - the M2 evidence: style 10 -> 90), and the
- * TAKE LAW (best-of-N shipped pixels). The cohort law applied to the
+ * TAKE LAW (best-of-N shipped pixels). v3 = the 219 law: the TAKE
+ * LAW's selection carries the FIGURE-COUNT GUARD (the probe219-
+ * countpass instrument - 6/6 agreement with the eye's labeled
+ * receipts - riding the shipment: a take whose counted figures miss
+ * the cast's expected count is an echo draw, demoted whatever its
+ * identity score; the 219A gallery receipt scored 92 carrying three
+ * figures where two are staged). The cohort law applied to the
  * source's own truth: the pixels' law is THIS module's law, so the
  * AI_KEYFRAME arc rows ride THIS version - a law bump opens a new
  * cohort and the old law's readings never pollute the new law's
@@ -88,7 +94,7 @@ export const AI_KEYFRAME_SOURCE = "AI_KEYFRAME" as const;
  * The v1 nights stay on the committed receipt under their bridge
  * cohort - the ledger answers for every law.
  */
-export const AI_KEYFRAME_LAW_VERSION = 2;
+export const AI_KEYFRAME_LAW_VERSION = 3;
 
 /** The cohort tag the AI_KEYFRAME arc rows ride (the gate scopes the
  *  newest cohort - the 141 band cannot cross a law boundary). */
@@ -409,26 +415,51 @@ export async function generateKeyframeForShot(shotId: string): Promise<Generated
 
   const zai = await ZAI.create();
   const size = sizeFor(shot.shotType) as never;
+  // THE 164 LADDER ON THE PIXELS CALL (the 219 receipt's own seam):
+  // the identity calls carry the bounded 429 backoff and the pixels
+  // call never did - the 216 night's "pixels-transient seam" was
+  // healed by whole-chunk re-rides, and the 219 night paid three
+  // 429s in a row on THIS call. Same discipline, same ladder: two
+  // bounded retries (20s, then 45s) on the rate limit, the same
+  // call each time, no other change; the final failure returns
+  // honestly (the re-ride discipline stays the deep window's answer).
   let base64: string | null = null;
-  if (images.length > 0) {
-    // THE ANCHOR CHANNEL: the runtime accepts the images ARRAY (the 215
-    // anchor pass rode it - S006's two-sheet anchor read both members);
-    // the published dts narrows the body to one image. The array is the
-    // receipt's own shape - the call keeps it, the cast is documented.
-    const res = (await zai.images.generations.edit({
-      prompt: build.prompt,
-      images,
-      size,
-    } as never)) as { data?: Array<{ base64?: string }> };
-    base64 = res.data?.[0]?.base64 ?? null;
-  } else {
-    const res = (await zai.images.generations.create({
-      prompt: build.prompt,
-      size,
-    })) as { data?: Array<{ base64?: string }> };
-    base64 = res.data?.[0]?.base64 ?? null;
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3 && base64 === null; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, attempt === 1 ? 20_000 : 45_000));
+    }
+    try {
+      if (images.length > 0) {
+        // THE ANCHOR CHANNEL: the runtime accepts the images ARRAY (the 215
+        // anchor pass rode it - S006's two-sheet anchor read both members);
+        // the published dts narrows the body to one image. The array is the
+        // receipt's own shape - the call keeps it, the cast is documented.
+        const res = (await zai.images.generations.edit({
+          prompt: build.prompt,
+          images,
+          size,
+        } as never)) as { data?: Array<{ base64?: string }> };
+        base64 = res.data?.[0]?.base64 ?? null;
+      } else {
+        const res = (await zai.images.generations.create({
+          prompt: build.prompt,
+          size,
+        })) as { data?: Array<{ base64?: string }> };
+        base64 = res.data?.[0]?.base64 ?? null;
+      }
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+      const transient = lastErr.includes("429") || lastErr.toLowerCase().includes("too many requests") || lastErr.includes("502") || lastErr.includes("503");
+      if (!transient || attempt === 2) {
+        return { ok: false, error: `${ref}: the image channel failed - ${lastErr}` };
+      }
+    }
   }
-  if (!base64) return { ok: false, error: `${ref}: the image channel returned no pixels` };
+  if (!base64) {
+    if (lastErr) return { ok: false, error: `${ref}: the image channel failed - ${lastErr}` };
+    return { ok: false, error: `${ref}: the image channel returned no pixels` };
+  }
   return {
     ok: true,
     dataUrl: `data:image/png;base64,${base64}`,
@@ -551,14 +582,112 @@ export async function scoreAiKeyframeForShot(
 
 /** One take's receipt line - the take law's own ledger entry: EVERY
  *  take named, the shipped one flagged. Nothing hidden: the receipt
- *  answers "what did the other takes score?" */
+ *  answers "what did the other takes score?" The 219 law adds the
+ *  guard's own reading: the take's counted figures (null = the
+ *  guard abstained - no png receipt, or the count call missed). */
 export interface KeyframeTakeReceipt {
   take: number;
   ok: boolean;
   error?: string;
   worst?: number; // the take's own damped median worst
   pngPath?: string;
+  countedFigures?: number | null; // the 219 figure-count guard's reading
   shipped: boolean;
+}
+
+// ── THE FIGURE-COUNT GUARD (the 219 law) ──
+
+/**
+ * THE COUNT PROMPT (the probe219-countpass byte-carrier): one cheap
+ * vision call - the drawn frame ALONE, no sheets - answering one
+ * integer. The 219 evidence: 6/6 agreement with the eye's own
+ * labeled receipts (both echo draws caught at 3, three two-figure
+ * draws read 2, the solo read 1), zero call variance across the
+ * pairs. The seam it owns: the take law's selection was
+ * GRAMMAR-BLIND - the 219A gallery draw scored 92 (identity superb)
+ * carrying THREE figures where the shot stages TWO, and the
+ * best-of-worst selection would have SHIPPED it over the 85 true
+ * frame. The count is the grammar signal the identity number
+ * cannot see.
+ */
+const KEYFRAME_COUNT_PROMPT =
+  "You are a composition checker for an animation production. Count the DISTINCT human figures (people - whole body, partial body, reflection, or silhouette) that appear IN THIS FRAME. " +
+  "Do not count statues, paintings, clothing, or weapons on the ground. " +
+  "If the same character appears more than once, EACH copy counts as a separate figure. " +
+  "Answer with ONLY a single integer digit and nothing else.";
+
+export function parseFigureCount(raw: string): number | null {
+  const m = raw.match(/\d/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
+/** The count call (the 164 backoff's own discipline: two bounded
+ *  retries on the rate limit, the same call each time). */
+export async function countFiguresInFrame(
+  dataUrl: string,
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const zai = await ZAI.create();
+      const res = (await zai.chat.completions.createVision({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: KEYFRAME_COUNT_PROMPT },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      } as never)) as { choices?: Array<{ message?: { content?: string } }> };
+      const raw = res.choices?.[0]?.message?.content ?? "";
+      const count = parseFigureCount(raw);
+      if (count === null) return { ok: false, error: `unparsable count: ${raw.slice(0, 60)}` };
+      return { ok: true, count };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (attempt < 2 && (msg.includes("429") || msg.toLowerCase().includes("too many requests"))) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 20_000 : 45_000));
+        continue;
+      }
+      return { ok: false, error: msg };
+    }
+  }
+  return { ok: false, error: "unreachable" };
+}
+
+/**
+ * THE SHIPMENT LAW (pure - the e2e's teeth): among the ok takes, a
+ * take whose counted figures MATCH the cast's expected count
+ * outranks a mismatched draw WHATEVER its identity score (the echo
+ * is a composition failure the identity number cannot see); the
+ * damped worst breaks the tie among honest takes. A null count (the
+ * guard abstained) matches nothing - the 218 behavior stands when
+ * the guard cannot read. Returns the best take's index in the
+ * passed array (-1 only when every take failed).
+ */
+export function selectShippedTake(
+  takes: Array<{ ok: boolean; worst?: number; countedFigures?: number | null }>,
+  expectedFigures: number | null,
+): number {
+  let bestIdx = -1;
+  for (let i = 0; i < takes.length; i++) {
+    const t = takes[i];
+    if (!t.ok) continue;
+    if (bestIdx === -1) {
+      bestIdx = i;
+      continue;
+    }
+    const b = takes[bestIdx];
+    const tMatch = expectedFigures !== null && t.countedFigures != null && t.countedFigures === expectedFigures;
+    const bMatch = expectedFigures !== null && b.countedFigures != null && b.countedFigures === expectedFigures;
+    if (tMatch !== bMatch) {
+      if (tMatch) bestIdx = i;
+      continue;
+    }
+    if ((t.worst ?? 0) > (b.worst ?? 0)) bestIdx = i;
+  }
+  return bestIdx;
 }
 
 export type AiKeyframeTakesScore =
@@ -594,8 +723,14 @@ export async function scoreAiKeyframeWithTakes(
 ): Promise<AiKeyframeTakesScore> {
   const k = Math.max(1, Math.min(4, Math.round(opts?.takes ?? 1)));
   const samples = opts?.samples ?? 3;
+  // THE GUARD'S OWN ANSWER: the expected figure count is the sheeted
+  // cast's count (the anchors' own number - the same list the prompt
+  // law rides). The build is cheap (reads, no model); when it fails
+  // the guard abstains (expected null - the worst decides).
+  const built = await buildKeyframePrompt(shotId);
+  const expectedFigures: number | null = built.ok ? built.build.members.length : null;
   const takes: KeyframeTakeReceipt[] = [];
-  let best: AiKeyframeScore | null = null;
+  const okByTake = new Map<number, Extract<AiKeyframeScore, { ok: true }>>();
   for (let t = 1; t <= k; t++) {
     if (t > 1) await new Promise((r) => setTimeout(r, 10_000)); // the draw pacing (the night's own breath)
     const scored = await scoreOneKeyframeTake(shotId, samples, opts?.outDir ? { outDir: opts.outDir, takeIndex: t } : undefined);
@@ -603,23 +738,36 @@ export async function scoreAiKeyframeWithTakes(
       takes.push({ take: t, ok: false, error: scored.error, shipped: false });
       continue;
     }
-    takes.push({ take: t, ok: true, worst: scored.verdict.worst, pngPath: scored.recipe.pngPath, shipped: false });
-    if (!best || scored.verdict.worst > best.verdict.worst) best = scored;
+    const okScored = scored as Extract<AiKeyframeScore, { ok: true }>;
+    // THE FIGURE-COUNT GUARD (the 219 law, k>1 - the single-take
+    // pass stays byte-exact): one cheap vision call reads the take's
+    // shipped pixels; a take whose counted figures miss the cast's
+    // expected count is an ECHO DRAW (the gallery receipt: a 92
+    // reading three figures where two are staged). No png receipt or
+    // a missed call: the guard abstains honestly (null).
+    let countedFigures: number | null = null;
+    if (k > 1 && okScored.recipe.pngPath) {
+      try {
+        const b64 = fs.readFileSync(okScored.recipe.pngPath).toString("base64");
+        const counted = await countFiguresInFrame(`data:image/png;base64,${b64}`);
+        if (counted.ok) countedFigures = counted.count;
+      } catch {
+        countedFigures = null;
+      }
+    }
+    takes.push({ take: t, ok: true, worst: okScored.verdict.worst, pngPath: okScored.recipe.pngPath, countedFigures, shipped: false });
+    okByTake.set(t - 1, okScored);
   }
-  if (!best || !best.ok) {
+  if (okByTake.size === 0) {
     const err = takes.find((t) => t.error)?.error ?? "no take returned a verdict";
     return { ok: false, error: err };
   }
-  // flag the shipped take by png receipt identity (the pngPath names
-  // the pixels the score rode)
-  const shippedPath = (best as Extract<AiKeyframeScore, { ok: true }>).recipe.pngPath;
-  for (const t of takes) t.shipped = !!shippedPath && t.pngPath === shippedPath && t.ok;
-  if (!takes.some((t) => t.shipped)) {
-    // an outDir-less ride has no png receipts - the shipped take is
-    // the best take by index (the receipt still names it)
-    const bestTake = takes.filter((t) => t.ok).reduce((a, b) => ((b.worst ?? 0) > (a.worst ?? 0) ? b : a));
-    for (const t of takes) t.shipped = t.take === bestTake.take;
-  }
+  // THE SHIPMENT: the selection law (pure, the e2e's teeth) - the
+  // count guard first, the damped worst breaking the tie.
+  const bestIdx = selectShippedTake(takes, expectedFigures);
+  const best = okByTake.get(bestIdx);
+  if (!best) return { ok: false, error: "the selection could not resolve an ok take" };
+  for (let i = 0; i < takes.length; i++) takes[i].shipped = i === bestIdx;
   return {
     ok: true,
     ref: best.ref,
