@@ -4010,3 +4010,20 @@ Work Log:
 
 Stage Summary:
 - The rebuild is no longer a silent half-restore: the dye law rides the committed seed, the window-bound remainder is named on a durable receipt, and every gate knows the third honest state. The sword prior is the named lever (the object-state sheath + the weaponless arms), validated by the eye, awaiting only the window. The 223 frontier: the sheets land, the second kf-v4 night rides for real, the arms ride their probe, the smokes fall through their guards.
+
+---
+Task ID: iter-223
+Agent: main (Super Z)
+Task: Iteration 223 - the window watch: the frontier rides itself (the pixels-free graduation the standing wall named; the patience no longer session-bound).
+
+Work Log:
+- Drift law first (the twenty-second correction): the inherited context named the 220 frontier; git ls-remote read 538bde2 = Iteration 222 already complete (the 221 window's answer landed 3/3 + the second kf-v3 night PROVISIONAL-exited + kf-v4's scene-presence guard + the 222 rebuild: the DNA seed, the sword prior named, the arms readied). Local matches remote; the proceed = the 223 green light.
+- The window probed at iteration open: all four channels 429 fast-reject (edit 70ms / create 35ms / vision 6ms / text 10ms) - the account-total shape byte-identical to 220/222. Every named 223 leg is window-bound.
+- THE GRADUATION (scripts/window-watch223.ts + window-watch223.mjs): the detached watch - a bounded create-channel probe ladder (10-min pace, 8h deadline), and on the window's proof (real pixels land, inspect/aiart223/probe-open.png) it rides the frontier IN ORDER: night122-restore -> night222-v4aikeyframe -> probe222-swordprior, all the committed idempotent scripts, one durable watch report (receipts/watch223-report.json, the 220 law's shape), the double-ride lock (pid liveness, exit 2), the deadline expiring named HONEST (wallVerbatim + windowBound, exit 0, never a crash).
+- The pure law exported and tested: buildWatchPlan (the leg order + the skip rules from the receipts alone), probeWindow (the both-ways live probe), writeWatchReport (durable, the failed write names itself).
+- Gates: src tsc 0 (no src change); smoke223 ALL PASS (24 asserts); e2e-iter223 ALL PASS (20 asserts, five legs - the plan law against the real receipts, the live both-ways probe (the wall stood, the 429 verbatim), the lab report law (zero production writes), the scope teeth (the arc counted as the union it is: db 0 + committed ledger 36, unchanged), the gate's continuity (nights 1, PROVISIONAL, HOLD)); e2e-iter218-222 ALL PASS re-run; smoke222 ALL PASS; smoke216-221 PENDING-WINDOW (named).
+- THE WATCH LAUNCHED DETACHED (the 129 double-fork law): watch223.log / watch223.pid; the box's death is the watch's only master - the receipts carry whatever landed.
+- README item 137 + this worklog + the shared worklog; commit + push + remote verification.
+
+Stage Summary:
+- The patience is no longer session-bound: the watch rides the frontier when the window opens, the receipts are the truth, and every gate knows the watch's law. The 224 frontier: the watch's own answer - the sheets land, the second kf-v4 night exits PROVISIONAL (the clock's verdict), the arms ride their probe (the graduation), the smokes fall through.
