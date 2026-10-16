@@ -3866,3 +3866,20 @@ Work Log:
 
 Stage Summary:
 - THE AI-ART BOARD: 90 / 85 / 85 across S002/S004/S005 vs Blender medians 55/45/55 - EVERY probed cell above the 70 publish floor. The 215 frontier: S001/S003/S006 complete the six-cell AI board, then the AI-KEYFRAME render source class wires through the SAME gate.
+---
+Task ID: iter-215
+Agent: main (Super Z)
+Task: Iteration 215 - the remaining three cells (S001/S003/S006) complete the six-cell AI board.
+
+Work Log:
+- THREE honest passes, all READ-ONLY (probe215-recon.ts / probe215-cells.ts / probe215-arms.ts / probe215-anchor.ts): no artworkUrl writes, no IdentityScore rows, no arc appends.
+- FIRST PASS (the 214 arms unchanged onto the new cells) HONESTLY MISSED: S001 Lin 60 / S003 Lin 40 / S006 worst 65 - three seams named by the judge's own notes (establishing-scale wardrobe simplification + weapon glow; the closeup's sheet-grammar mismatch face 20 / style 10; the two-shot's second-figure dye loss, pale cyan vs deep green).
+- ARM PASS (each cell changed ONLY by its named fix): S001 WEAPON-FIDELITY clause (sheathed, no glow; weapon 40->60); S003 THE SHEET-ANCHOR ARM (the 213 frontier's named arm, first ride - the committed sheet PNG as the edit channel's base image; 40 -> 75, ABOVE FLOOR, 'wardrobe and palette are highly accurate to the model sheet'); S006 CONTRAST-DYE clause (Lin palette 50->90, 'color blocking is accurate'). New seams named: S001 palette drift at scale, S006 face softening in the busy frame.
+- ANCHOR PASS (the arm that landed, generalized): S001 anchored on Lin's sheet (65 -> 85: face 90 / wardrobe 90 / palette 95); S006 anchored on Lin's AND Wei's sheets as the images ARRAY (60 -> 85 BOTH MEMBERS - the dyes did not mix).
+- THE SIX-CELL AI BOARD: S001 85 / S002 90 / S003 75 / S004 85 / S005 85 / S006 85 - min 75, median 85, EVERY CELL above the 70 publish floor, same instrument, same sheets, same gate.
+- The eye's receipts (inspect/aiart215/, untracked): S003 donghua-grade art with honest drifts (framing pulled full-body by the anchor; glowing sword artifact); S001 summit composition, sheathed clause lost to the glow, twin-moons + sparkles named; S006 real combat staging, dyes on-design both members.
+- The shot-grammar seam named for 216: the anchor pulls framing toward the sheet's full-body presentation.
+- src tsc 0 errors (no src change); README item 129 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- THE SIX-CELL AI BOARD COMPLETE: 85/90/75/85/85/85, every cell above the 70 floor - the sheet-anchor arm is the lever's strongest tool (words lose what the image carries). The 216 frontier: the AI-KEYFRAME render source class through the night flow, the framing clause after.
