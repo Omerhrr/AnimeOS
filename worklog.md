@@ -3833,3 +3833,21 @@ Work Log:
 
 Stage Summary:
 - The lever's door opened with the code truth in hand. The 213 frontier: the embroidery class arm (the r4 content).
+
+---
+Task ID: iter-213
+Agent: main (Super Z)
+Task: Iteration 213 - the AI-art lever (the director's steer), probe end-to-end.
+
+Work Log:
+- THE DIRECTOR'S STEER: the eye receipts named the ceiling aloud ('poor sketch'); the lever decision went to AI-art keyframes judged by the SAME instrument - the render source may change, the QC does not. The 212 embroidery arm stays the build-side content.
+- The drift law paid TWICE: the box died (sixteenth death) AND the carried context claimed iteration 146 as HEAD while the remote stood at 212 (66 iterations of compaction lag) - remote verified BEFORE anything: ef36bdc = origin/main.
+- Rebuild law in full: npm + prisma BEFORE the dev server, db push at the standing path, Blender 5.2.2 detached (double-fork), OWNER through the register door, auto-seed through the signed GET, night122-restore (4 sheets through the image channel, Lin 514 / Wei 517 byte-exact, DNA re-read).
+- probe213b-aiart.ts (READ-ONLY): three cells, prompts from the panel channel's own exported helpers, generation through the SDK, scoring through the REAL judge (prepareIdentityContext's imageData override -> rawIdentityCall), zero production writes.
+- THE ANSWER: S002 Lin 90 vs committed median 55 (the judge: 'Face and hair match the sheet perfectly'); S005 Lin 85 vs 55; S004 Wei 30 vs 45 - the wide LOST on wardrobe dyes (tattered black coat vs dark plum + gold) - the 129 dye-law seam, now named for keyframes.
+- The clone ghost rode the raw seed (0 for not-detected, the honest zero); the 140 deletion stays the night flow's precondition.
+- The eye's receipts (inspect/aiart213/): S002 true donghua grade (twin moons + blue blade named), S005 strong but semi-realistic grammar drift vs S002's cel (the style-consistency seam), S004 dramatic but dyes lost.
+- src tsc 0 errors (no src change); probe213a/probe213b committed; README item 127 + both worklogs; commit + push + remote verification.
+
+Stage Summary:
+- The AI-art lever VALIDATES at the plateau cells (90/85 where Blender landed 35-65), requires two arms before a night rides it: the dye-law arm (129's explicit color clause) and the style-consistency arm (the sheet as image anchor). The 214 frontier: the arms, then the AI-KEYFRAME render source class through the SAME gate.
