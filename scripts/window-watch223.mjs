@@ -25,7 +25,11 @@ if (process.argv[5] === "--child") {
     env: { ...process.env, DATABASE_URL: "file:/home/z/my-project/AnimeOS/db/custom.db" },
   });
   child.unref();
-  fs.writeFileSync(`${CWD}/watch223.pid`, String(child.pid));
+  // THE 226 LAW: the pid file carries its generation (the arrival
+  // eye reads it - no more inferring the riding generation). Plain
+  // pid files (the pre-226 shape) stay readable: session-open.ts's
+  // parsePidFile takes both.
+  fs.writeFileSync(`${CWD}/watch223.pid`, JSON.stringify({ pid: child.pid, generation: Number(generation) || 1, startedAt: new Date().toISOString() }));
   console.log(`watch generation ${generation} detached: pid ${child.pid}, log ${OUT}`);
   process.exit(0);
 }

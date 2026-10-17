@@ -91,8 +91,11 @@ npx tsx scripts/probe222-window.ts 2>&1 | grep -E "CHANNEL|WINDOW SHAPE" || echo
 echo "== THE CHAIN RELAUNCHED (the standing watch, generation 1) =="
 node scripts/window-watch223.mjs "$HOURS" 600000 1
 sleep 8
-if [ -f watch223.pid ] && ps -p "$(cat watch223.pid)" > /dev/null 2>&1; then
-  echo "chain generation 1 riding: pid $(cat watch223.pid), ${HOURS}h, the log watch223.log"
+# the pid file is JSON since 226 ({"pid":N,...}) or plain N before it -
+# the first number in the file is the pid either way
+WPID=$(grep -oE '[0-9]+' watch223.pid 2>/dev/null | head -1)
+if [ -f watch223.pid ] && [ -n "$WPID" ] && ps -p "$WPID" > /dev/null 2>&1; then
+  echo "chain generation 1 riding: pid $WPID, ${HOURS}h, the log watch223.log"
 else
   echo "WARNING: the chain's pid did not answer - read watch223.log before trusting the watch"
 fi

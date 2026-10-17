@@ -4060,3 +4060,24 @@ Work Log:
 
 Stage Summary:
 - The rebuild law now lives in the repo: the third box death rides one command, verified against the remote's own answer at every step. The chain watches again. The 226 frontier: the chain's own answer.
+
+## Iteration 226 - THE TWO SILENCES (crash honesty + the session-open law made durable)
+
+Task ID: iter-226
+Agent: main (Z.ai session, trace 1a148e73084ee931)
+Task: proceed = Iteration 226 green light
+
+Work Log:
+- Drift law first: remote answered 8f18fe5 = Iteration 225 ALREADY complete (the inherited context was stale; the previous session rode 225 after its summary point). New proceed = 226.
+- Chain found alive + honest: generation 1 (pid 2418, 1h41m), cycles 8-11 all 429 fast-rejects (~30ms), ledger honest by its very emptiness (report/ledger write at generation EXIT).
+- THE SILENT CRASH named and closed: window-watch223.ts registers uncaughtException + unhandledRejection inside main; buildCrashHandoff (pure) gives a software death the same accounting as an expiry - the honest line (outcome "crashed" joins the ledger union, reason verbatim), the chain law's own decision, the bounded handoff, the lock released before the child spawns, second crash = honest death (no recursion).
+- THE BLIND ARRIVAL named and closed: scripts/session-open.ts - the drift check first, the chain's state read from the durable truth alone, the pure four-branch decision (alive -> stand-down; dead+promised -> relaunch detached through the mjs, pid verified; dead-by-own-law -> stand-down; never-launched -> refuse exit 2 naming box-rebuild.sh), every arrival appended to receipts/session-opens.jsonl (failed append self-names).
+- The mjs pid file upgraded to JSON {pid, generation, startedAt}; parsePidFile takes BOTH shapes (the running gen-1's plain pid readable); box-rebuild.sh's pid check taught the both-shapes parse.
+- FIRST REAL RIDE: session-open.ts run for real - drift clean at 8f18fe5, chain alive, stand-down, exit 0; the first line in receipts/session-opens.jsonl.
+- Gates: src tsc 0 errors; smoke226 34/34; e2e-iter226 15/15; smoke222/223/224/225 ALL PASS; e2e-iter218..225 ALL PASS.
+- README item 140. Committed and pushed; remote HEAD verified.
+
+Stage Summary:
+- The chain can no longer die unnamed: a crash writes its line and hands off; an arrival reads the truth and acts by the four-branch law; a corpse rides box-rebuild.sh.
+- The 226 frontier artifacts: window-watch223.ts (crash law), window-watch223.mjs (JSON pid), session-open.ts (the arrival eye), smoke226-twosilences.ts (34), e2e-iter226.ts (15), receipts/session-opens.jsonl (first line).
+- The 227 frontier: the chain's own answer (unchanged) - the window opens, the legs ride, the chain stops on the receipts.

@@ -173,13 +173,71 @@ export function shouldChainContinue(report: Pick<WatchReport, "complete" | "gene
   return { continueChain: true, reason: `the deadline expired standing - generation ${report.generation + 1} rides` };
 }
 
+// ── the crash law (the 226 graduation: no death without a name) ──
+
+export interface CrashHandoff {
+  outcome: "crashed";
+  reason: string; // the error's own words, verbatim
+  decision: ChainDecision; // the chain law decides even here
+  nextGeneration: number | null;
+  line: {
+    watch: string; generation: number; startedAt: string; endedAt: string;
+    outcome: "crashed"; probes: number; windowOpenedAt: string | null;
+    legs: string[]; nextGeneration: number | null; reason: string;
+  };
+}
+
+/** A generation's software death (uncaughtException / unhandledRejection)
+ *  gets the SAME accounting as an expiry: the honest line (outcome
+ *  "crashed", the reason verbatim), the chain law's own decision
+ *  (complete:false - the legs did not ride), the bounded handoff.
+ *  Pure so the gates can hold it without a crash. */
+export function buildCrashHandoff(input: {
+  generation: number;
+  reason: string;
+  probeCycles: number;
+  startedAt: string;
+  endedAt: string;
+  legs?: string[];
+  windowOpenedAt?: string | null;
+  maxGenerations?: number;
+}): CrashHandoff {
+  const decision = shouldChainContinue(
+    { complete: false, generation: input.generation },
+    input.maxGenerations ?? MAX_GENERATIONS,
+  );
+  const nextGeneration = decision.continueChain ? input.generation + 1 : null;
+  return {
+    outcome: "crashed",
+    reason: input.reason,
+    decision,
+    nextGeneration,
+    line: {
+      watch: WATCH_NAME,
+      generation: input.generation,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      outcome: "crashed",
+      probes: input.probeCycles,
+      windowOpenedAt: input.windowOpenedAt ?? null,
+      legs: input.legs ?? [],
+      nextGeneration,
+      reason: input.reason,
+    },
+  };
+}
+
 /** One generation's line in the ledger (the arc's own pattern:
  *  append-only, the chain's durable history). Never breaks the
- *  watch - a failed append names itself and stands down. */
+ *  watch - a failed append names itself and stands down. The 226
+ *  graduation: "crashed" joins the outcomes - a generation that
+ *  dies by software death writes its own honest line (the corpse
+ *  the thirteenth drift actually found: mid-generation-1, its
+ *  ledger never written) and hands off instead of dying silently. */
 export function appendGenerationLine(line: {
   watch: string; generation: number; startedAt: string; endedAt: string;
-  outcome: "rode" | "expired"; probes: number; windowOpenedAt: string | null;
-  legs: string[]; nextGeneration: number | null;
+  outcome: "rode" | "expired" | "crashed"; probes: number; windowOpenedAt: string | null;
+  legs: string[]; nextGeneration: number | null; reason?: string;
 }, ledgerPath: string = GENERATIONS_LEDGER_PATH): { written: boolean; error?: string } {
   try {
     fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
@@ -277,6 +335,50 @@ async function main() {
   let probeCycles = 0;
   let windowOpenedAt: string | null = null;
   let wallVerbatim: string | null = null;
+
+  // THE CRASH LAW (the 226 graduation): a software death gets the
+  // same accounting as an expiry - the honest line (outcome
+  // "crashed", the reason verbatim), the chain law's own decision,
+  // the detached handoff, the lock released for the child. The
+  // corpse the thirteenth drift found (a chain dead mid-generation,
+  // its ledger never written) never happens silently again. A
+  // SECOND crash is honest death: exit 1, no recursion.
+  let crashHandled = false;
+  const crashHandoff = (reason: string): void => {
+    if (crashHandled) { process.exit(1); }
+    crashHandled = true;
+    try {
+      const handoff = buildCrashHandoff({
+        generation,
+        reason,
+        probeCycles,
+        startedAt,
+        endedAt: new Date().toISOString(),
+        legs: legs.map((l) => `${l.name}:${l.exitCode}${l.timedOut ? "!" : ""}`),
+        windowOpenedAt,
+      });
+      const written = appendGenerationLine(handoff.line);
+      console.error(`CRASH HONESTY: generation ${generation} crashed - ${reason.slice(0, 200)}`);
+      console.error(`CRASH HONESTY: the line ${written.written ? "written" : `FAILED (${written.error}) - the append stands down`}, ${handoff.decision.reason}`);
+      releaseLock();
+      if (handoff.decision.continueChain && handoff.nextGeneration) {
+        const mjs = path.join(process.cwd(), "scripts", "window-watch223.mjs");
+        const child = spawn(process.execPath, [mjs, String(watchHours), String(waitMs), String(handoff.nextGeneration)], {
+          cwd: process.cwd(),
+          detached: true,
+          stdio: "ignore",
+        });
+        child.unref();
+        console.error(`CRASH HONESTY: generation ${handoff.nextGeneration} spawned detached (pid ${child.pid})`);
+      }
+    } catch (e) {
+      console.error(`CRASH HONESTY FAILED (the handoff itself died): ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      process.exit(1);
+    }
+  };
+  process.on("uncaughtException", (e: Error) => crashHandoff(e instanceof Error ? e.message : String(e)));
+  process.on("unhandledRejection", (e: unknown) => crashHandoff(e instanceof Error ? e.message : String(e)));
 
   while (Date.now() < deadline) {
     probeCycles += 1;
