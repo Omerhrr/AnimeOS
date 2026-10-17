@@ -1,30 +1,30 @@
 {
   "probe": "probe222-window",
-  "readAt": "2026-10-17T06:23:42.866Z",
+  "readAt": "2026-10-17T09:23:12.101Z",
   "shape": "account-total",
   "channels": [
     {
       "channel": "edit",
       "state": "BLOCKED",
-      "ms": 74,
+      "ms": 73,
       "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
     },
     {
       "channel": "create",
       "state": "BLOCKED",
-      "ms": 33,
+      "ms": 31,
       "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
     },
     {
       "channel": "vision",
       "state": "BLOCKED",
-      "ms": 11,
+      "ms": 12,
       "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
     },
     {
       "channel": "text",
       "state": "BLOCKED",
-      "ms": 11,
+      "ms": 7,
       "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
     }
   ],

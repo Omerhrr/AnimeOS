@@ -4100,3 +4100,29 @@ Work Log:
 Stage Summary:
 - All silences now named: the crash writes its line (226), the arrival reads the why (227), the bound hands off a fresh chain, the corpse rides box-rebuild.sh.
 - The 228 frontier: the chain's own answer (unchanged) - the window opens, the legs ride, the report reads complete:true, and the next arrival knows the answer is in.
+
+---
+Task ID: 1
+Agent: Z.ai (main session, zai-web, trace 1a149221dbb4f719)
+Task: Iteration 228 - proceed green light (inherited summary said frontier=227; drift check corrected: 227 already pushed, and the box had been wiped)
+
+Work Log:
+- THE DRIFT CHECK FIRST: git ls-remote answered 62d35c7 = Iteration 227 DONE (the inherited summary's frontier was stale - the fifteenth correction); the local box was a CORPSE (AnimeOS/ absent - the fourth death: repo + .env + node_modules + DB + the riding chain all wiped).
+- Fresh clone; runtime truth read honestly: no pid file, no log, no generations ledger (gen 1 never exited - no line owed), no report, no DB; the committed session-opens.jsonl carried 3 arrival lines.
+- npm install + prisma generate (the eye needs its body).
+- THE ARRIVAL EYE RODE THE CORPSE FOR REAL (the never-launched branch's first live ride): drift clean, refuse exit 2, ledger line 4 written (chain never-launched, action rebuild).
+- THE GRADUATION (the 225 rebuild law's three exposed gaps): (a) the session-opens ledger CARRIED ACROSS the clone (aside before rm -rf, append-only merge back deduped by openedAt); (b) THE SEED after the schema (seed140.ts idempotent - the fourth death took the DB, the old law's "the db file survived both deaths" was FALSE); (c) THE SPLIT-BRAIN CLOSED (window-watch223.mjs hardcoded the APP db path vs the .env PARENT path - two databases; one path now).
+- THE REBUILD RODE AS ONE COMMAND: 4 lines carried, 1 merged back (the refusal line survived), the seed born back (project + 5 characters + E7 Sc12/6 shots), the wall 4/4 account-total verbatim, the chain gen 1 relaunched.
+- The eye re-read the reborn box: alive -> stand-down exit 0 (line 5).
+- THE PID TRUTH LAW: killing the old chain exposed that the pid file records the npx wrapper pid (dead while the watch rode on; the relaunch hit the lock's refusal - the second guard held); the watch now writes its OWN pid at lock time; proven live (lock == pidfile == /proc 2643).
+- The riding chain restarted through the arrival's relaunch branch (first live ride of dead+promised): gen 1 verified, /proc/2643/environ carries the unified PARENT path verbatim.
+- THE COMMIT LAW learned the hard way: the rebuild's first ride ate the uncommitted graduation (the smoke caught the revert); re-applied; the lesson written into the law's header.
+- THE RESTORE LEG RODE FOR REAL on the fresh-seeded DB: Lin/Wei DNA seeded (7 fields, dormant), designs wired byte-exact (514/517), sheets 429 verbatim, receipt honestly incomplete, idempotent.
+- smoke228 new (22 asserts); smoke225 taught the grown footer; e2e-iter227 taught the lawful-action growth; e2e-iter228 new (24 asserts, seven legs).
+- Gates: src tsc 0 errors; smoke222-228 ALL PASS; e2e-iter218..228 ALL PASS.
+- README item 142 appended. Committed and pushed; remote HEAD verified.
+
+Stage Summary:
+- The four silences are now ALL ridden live: the crash writes its line (226), the arrival reads the why (227), the bound hands off (227), and the corpse now rides one command WITH its memory (228).
+- The chain rides again: generation 1, pid 2643, 12h, the unified db path in its own env; the ledger's arc: refusal (line 4) -> relaunch (line 6) -> the story deathless.
+- The 229 frontier: the chain's own answer (unchanged) - the window opens, the legs ride, the chain stops on the receipts; the box can die and nothing is lost anymore.

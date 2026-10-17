@@ -32,7 +32,7 @@ ok(idxOf("npm install") < idxOf("prisma db push"), "the install precedes the sch
 ok(s.includes("scripts/probe222-window.ts"), "the window's shape is measured, never guessed");
 ok(s.includes("scripts/night122-restore") || s.includes("window-watch223.mjs"), "the chain relaunch rides (the standing watch)");
 ok(s.includes("watch223.pid") && s.includes("ps -p"), "the chain's pid is verified alive, not assumed");
-ok(s.includes("e2e-iter218..224"), "the script names the standing gates as the next law");
+ok(s.includes("session-open.ts") && s.includes("standing gates re-run before any commit"), "the script names the next law (the 228 growth: the arrival eye re-reads the reborn box, then the standing gates)");
 
 // ── the token law ──
 ok(s.includes("ANIMEOS_TOKEN") && s.includes('exit 2'), "the token arrives by env/arg and the refusal is the law (exit 2)");

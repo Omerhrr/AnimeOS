@@ -22,7 +22,14 @@ if (process.argv[5] === "--child") {
     cwd: CWD,
     detached: true,
     stdio: ["ignore", out, out],
-    env: { ...process.env, DATABASE_URL: "file:/home/z/my-project/AnimeOS/db/custom.db" },
+    // THE 228 UNIFICATION: ONE database path is the law. The rebuild's
+    // .env names the PARENT path (/home/z/my-project/db/custom.db - the
+    // path that survives the rebuild's rm -rf, the 225 law's own
+    // reason); the wrapper's old APP path made the watch's children
+    // ride a DIFFERENT database than every direct tsx run - the
+    // split-brain never manifested only because the wall kept the
+    // legs un-ridden. One path, every rider.
+    env: { ...process.env, DATABASE_URL: "file:/home/z/my-project/db/custom.db" },
   });
   child.unref();
   // THE 226 LAW: the pid file carries its generation (the arrival

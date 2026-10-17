@@ -57,7 +57,11 @@ async function main() {
     .map((l) => JSON.parse(l) as { watch?: string; drift?: string; action?: string; generation?: number | null; openedAt?: string });
   ok(opens.length >= 2 && opens.every((o) => o.watch === "session-open"), `${opens.length} arrivals on the ledger, every one the arrival's own line`);
   const lastOpen = opens[opens.length - 1];
-  ok(lastOpen.drift === "match" && lastOpen.action === "stand-down" && typeof lastOpen.openedAt === "string", `the last arrival reads true: drift match, stand-down (${lastOpen.openedAt?.slice(0, 19)})`);
+  // the 228 growth: a live session's last arrival is a stand-down OR
+  // a relaunch (the eye's own two affirmative actions - the fourth
+  // death rode the relaunch branch for real); the refusal (rebuild)
+  // only ends a corpse-box arrival
+  ok(lastOpen.drift === "match" && (lastOpen.action === "stand-down" || lastOpen.action === "relaunch") && typeof lastOpen.openedAt === "string", `the last arrival reads true: drift match, lawful action ${lastOpen.action} (${lastOpen.openedAt?.slice(0, 19)})`);
 
   // ── leg 6: the live probe (both-ways) ──
   console.log("leg 6: the live probe (the both-ways law)");

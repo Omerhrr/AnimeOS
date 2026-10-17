@@ -35,6 +35,7 @@ import ZAI from "z-ai-web-dev-sdk";
 export const WATCH_NAME = "window-watch223";
 export const REPORT_PATH = path.join(process.cwd(), "receipts", "watch223-report.json");
 export const LOCK_PATH = path.join(process.cwd(), "receipts", "watch223.lock");
+export const PID_FILE_PATH = path.join(process.cwd(), "watch223.pid");
 export const PROOF_PATH = path.join(process.cwd(), "inspect", "aiart223", "probe-open.png");
 export const DEFAULT_WATCH_HOURS = 8;
 export const DEFAULT_WAIT_MS = 600_000; // the 10-minute pace - honest, never a tight loop
@@ -327,6 +328,14 @@ async function main() {
   const deadline = Date.now() + watchHours * 60 * 60 * 1000;
 
   acquireLock();
+  // THE 228 PID TRUTH LAW: the wrapper's pid file records the npx
+  // pid (the wrapper's own spawn) - a pid that can die while the
+  // watch rides on (the fourth death's ride caught the shape: the
+  // eye read a dead wrapper pid, relaunched into the lock's
+  // refusal - the second guard held). The watch overwrites the pid
+  // file with its OWN process.pid - the deepest truth wins, the
+  // eye reads the rider, not the vehicle.
+  fs.writeFileSync(PID_FILE_PATH, JSON.stringify({ pid: process.pid, generation, startedAt: new Date().toISOString() }));
   console.log(`${WATCH_NAME} riding: probe every ${Math.round(waitMs / 1000)}s, deadline ${new Date(deadline).toISOString()} (${watchHours}h)`);
   console.log(`plan: ${buildWatchPlan(readWatchState()).map((l) => `${l.name}:${l.action}`).join(" -> ")}`);
 

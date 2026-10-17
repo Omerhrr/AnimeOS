@@ -6,14 +6,14 @@
   "results": [
     {
       "ref": "E? Sc12 S004",
-      "shotId": "cmvberd2y001jrmhxbsirpf8j",
+      "shotId": "cmvc6v7v1001jofe09gvnpzg0",
       "ok": false,
       "error": "No featured character with a model sheet - the anchor is what identity is scored against"
     }
   ],
   "appended": 0,
   "gate": {
-    "episodeId": "cmvberd270004rmhxklrco2x4",
+    "episodeId": "cmvc6v7ub0004ofe0d7k095h9",
     "source": "AI_KEYFRAME",
     "floor": 0.7,
     "readings": 1,
@@ -36,6 +36,6 @@
     "nights": 1,
     "provisional": true
   },
-  "writtenAt": "2026-10-17T08:35:56.342Z",
+  "writtenAt": "2026-10-17T09:43:39.123Z",
   "reportPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/night-report-e2e-night-220-report.json"
 }
