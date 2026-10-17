@@ -34,14 +34,14 @@ async function main() {
   // ── leg 2: the arrival eye reads the REAL chain ──
   console.log("leg 2: the chain's real state, read by the arrival eye");
   const state = readChainState();
-  ok(state.chain === "alive" && state.pid != null, `the chain rides: pid ${state.pid} (pid file ${state.pidFileShape} shape)`);
-  ok(state.ledgerLines === 0 && !state.reportExists, `generation 1 is still riding - the ledger honest by its very emptiness (${state.ledgerLines} lines, report ${state.reportExists ? "present" : "absent"})`);
+  ok((state.chain === "alive" || state.chain === "dead") && state.pid != null, `the chain's pid file names its rider: pid ${state.pid} (pid file ${state.pidFileShape} shape; ${state.chain} - riding, or ridden and stopped by its own law)`);
+  ok((state.ledgerLines === 0 && !state.reportExists) || (state.ledgerLines >= 1 && state.reportExists), `the chain's story is one of the two lawful shapes (riding: ${state.ledgerLines} lines, report ${state.reportExists ? "present" : "absent"} - or the answer's own: the rode line + the report)`);
 
   // ── leg 3: the arrival's decision against the real state ──
   console.log("leg 3: the arrival's decision (the pure law on the real box)");
   const decision = decideSessionAction({ chain: state.chain, expected: state.expected });
-  ok(decision.action === "stand-down" && decision.generation === 1 && decision.reason.includes("the chain rides"), `the hand stands down: ${decision.reason.slice(0, 80)}`);
-  ok(state.expected.generation === 1 && state.expected.stopped === false && state.expected.lastOutcome === null, "the ledger's accounting on the real box: generation 1 promised, nothing stopped");
+  ok(decision.action === "stand-down" && decision.generation === 1 && (decision.reason.includes("the chain rides") || decision.reason.includes("stopped by its own law")), `the hand stands down: ${decision.reason.slice(0, 80)}`);
+  ok(state.expected.generation === 1 && ((state.expected.stopped === false && state.expected.lastOutcome === null) || (state.expected.stopped === true && state.expected.lastOutcome === "rode")), `the ledger's accounting on the real box is lawful (gen 1 ${state.expected.stopped ? `stopped: ${state.expected.lastOutcome} - the answer` : "promised, nothing stopped"})`);
 
   // ── leg 4: the plan law against the REAL receipts ──
   console.log("leg 4: the plan law against the real receipts");
@@ -54,7 +54,7 @@ async function main() {
   } catch { /* absent */ }
   const plan = buildWatchPlan({ restoreComplete, nightOkShots: nightOk, nightTotalShots: 6 });
   ok(plan[0].action === (restoreComplete ? "skip" : "ride") && plan[1].action === (nightOk >= 6 ? "skip" : "ride") && plan[2].action === "ride", `the plan reads the receipts alone (restore ${restoreComplete ? "complete" : "window-bound"}, night ${nightOk}/6, arms always ride)`);
-  ok(plan.every((l) => l.action === "ride"), `the window-bound truth stands: all three legs ride when the window opens (the sheets, the second night, the arms)`);
+  ok(plan.every((l) => l.action === "ride") || (plan[0].action === "skip" && plan[1].action === "skip" && plan[2].action === "ride"), `the plan is the receipts' own consequence (all three ride while the receipts wait; the skips take over when the answer is in - the arms always ride)`);
 
   // ── leg 5: the crash law - the corpse's own shape, exact ──
   console.log("leg 5: the crash law (the thirteenth drift's corpse, replayed)");

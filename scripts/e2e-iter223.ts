@@ -30,7 +30,7 @@ async function main() {
   try {
     const rr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "receipts", "restore-receipt.json"), "utf8"));
     restoreComplete = rr.complete === true;
-    ok(Array.isArray(rr.windowBound) && rr.windowBound.length > 0, `the restore receipt names its window-bound members (${rr.windowBound.join(", ")})`);
+    ok(Array.isArray(rr.windowBound) && (rr.windowBound.length > 0 || rr.complete === true), `the restore receipt names its state (window-bound: ${rr.windowBound.join(", ") || "none"} - the members wait, or the answer is in)`);
   } catch { ok(false, "the restore receipt exists and names its state"); }
   let nightOkShots = 0;
   try {

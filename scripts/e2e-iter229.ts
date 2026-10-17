@@ -39,31 +39,30 @@ async function main() {
   // ── leg 2: the real chain, read by the grown eye ──
   console.log("leg 2: the real chain read (the arrival's own reader)");
   const state = readChainState();
-  ok(state.chain === "alive", `the chain rides (chain: ${state.chain}, pid ${state.pid ?? "-"}, pid file ${state.pidFileShape})`);
-  ok(state.ledgerLines === 0, "the generations ledger is honestly empty (generation 1 has not exited - the absence is the truth)");
-  ok(state.reportExists === false && state.reportComplete === null, "no report reads null (the absence named, never guessed)");
+  const riding = state.chain === "alive" && state.ledgerLines === 0 && state.reportExists === false && state.reportComplete === null;
+  const answered = state.chain === "dead" && state.ledgerLines >= 1 && state.reportExists === true && typeof state.reportComplete === "boolean";
+  ok(riding || answered, `the chain's story is one of the two lawful shapes (chain: ${state.chain}, pid ${state.pid ?? "-"}, pid file ${state.pidFileShape}, ledger ${state.ledgerLines} line(s), report ${state.reportExists ? `present, claim verified: ${state.reportComplete}` : "absent"})`);
   ok(state.pidFileShape === "json", `the pid file carries its generation (the 228 shape: ${state.pidFileShape})`);
 
   // ── leg 3: the real stand-down decision ──
   console.log("leg 3: the arrival's decision on the real chain");
   const decision = decideSessionAction({ chain: state.chain, expected: state.expected });
-  ok(decision.action === "stand-down", `the eye has seen, the hand stands down (${decision.action})`);
-  ok(decision.action === "stand-down" && decision.generation === (state.pidFileGeneration ?? state.expected.generation), `the stand-down names the riding generation (${decision.action === "stand-down" ? decision.generation : "-"})`);
+  ok(decision.action === "stand-down" && (decision.reason.includes("the chain rides") || decision.reason.includes("stopped by its own law")), `the hand stands down - lawful in BOTH states (${decision.action}: ${decision.reason.slice(0, 70)})`);
+  ok(decision.action === "stand-down" && decision.generation === (state.pidFileGeneration ?? state.expected.generation), `the stand-down names the generation (${decision.action === "stand-down" ? decision.generation : "-"})`);
 
   // ── leg 4: the plan law against the real receipts ──
   console.log("leg 4: the plan law vs the real receipts");
   const real = readWatchState();
-  ok(real.restoreComplete === false, "the real restore receipt reads incomplete (the sheets wait for the window)");
-  ok(real.nightOkShots === 0 && real.nightTotalShots === 6, `the real night report reads ${real.nightOkShots}/${real.nightTotalShots} shots ok (no model sheets yet - the restore must land first)`);
+  ok(typeof real.restoreComplete === "boolean" && real.nightTotalShots === 6 && real.nightOkShots >= 0 && real.nightOkShots <= 6, `the reader reads the real receipts (restore ${real.restoreComplete ? "complete" : "window-bound"}, night ${real.nightOkShots}/${real.nightTotalShots} - the truth, either state)`);
   const plan = buildWatchPlan(real);
-  ok(plan.every((l) => l.action === "ride") && plan.map((l) => l.name).join(",") === "restore,night,arms", `the plan rides all three, in order (${plan.map((l) => `${l.name}:${l.action}`).join(" -> ")})`);
+  ok(plan.map((l) => l.name).join(",") === "restore,night,arms" && plan[0].action === (real.restoreComplete ? "skip" : "ride") && plan[1].action === (real.nightOkShots >= 6 ? "skip" : "ride") && plan[2].action === "ride", `the plan is the receipts' own consequence, in order (${plan.map((l) => `${l.name}:${l.action}`).join(" -> ")})`);
 
   // ── leg 5: the verdict law on the real receipts ──
   console.log("leg 5: the verdict on the real remainder");
   const flickerVerdict = buildRideVerdict(real, true);
-  ok(flickerVerdict.complete === false, "a window over TODAY's receipts is NOT the answer (complete:false - the box would not stop on a flicker)");
-  ok(JSON.stringify(flickerVerdict.windowBound) === JSON.stringify(["restore", "night"]), `the honest remainder named (${flickerVerdict.windowBound.join(" + ")})`);
-  ok(flickerVerdict.reason.includes("not complete") && flickerVerdict.reason.includes("restore") && flickerVerdict.reason.includes("night"), "the verdict's reason names the WHY (the 223 lie is dead)");
+  const receiptsComplete = real.restoreComplete && real.nightOkShots >= 6;
+  ok(flickerVerdict.complete === receiptsComplete, `the verdict IS the receipts' truth (complete: ${flickerVerdict.complete} - ${receiptsComplete ? "the answer is in" : "a window alone is not the answer"})`);
+  ok(receiptsComplete === true ? (flickerVerdict.windowBound.length === 0 && flickerVerdict.reason.includes("the receipts carry the answer")) : (JSON.stringify(flickerVerdict.windowBound) === JSON.stringify(["restore", "night"]) && flickerVerdict.reason.includes("not complete")), `the verdict's words match its own verdict (${flickerVerdict.windowBound.join(" + ") || "nothing remains"})`);
   const expiryVerdict = buildRideVerdict(real, false);
   ok(expiryVerdict.complete === false && expiryVerdict.windowBound.length === 3, `the expiry shape stands (all three wait: ${expiryVerdict.windowBound.join(", ")})`);
 
@@ -79,11 +78,12 @@ async function main() {
 
   // ── leg 7: the union arc (the identity law's own shape) ──
   console.log("leg 7: the union arc");
-  ok(await db.identityArcReading.count({ where: { source: "AI_KEYFRAME" } }) === 0, "the union arc's db half: 0 rows (the union law unchanged)");
+  const dbArcRows = await db.identityArcReading.count({ where: { source: "AI_KEYFRAME" } });
+  ok(dbArcRows === 0 || dbArcRows === 6, `the union arc's db half is lawful (${dbArcRows} rows - empty until a night rides, the night's own append when it does)`);
   const committedArc = fs.readFileSync(path.join(process.cwd(), "receipts", "identity-arc.jsonl"), "utf8").split("\n").filter((l) => l.trim())
     .map((l) => JSON.parse(l) as { source?: string })
     .filter((r) => r.source === "AI_KEYFRAME");
-  ok(committedArc.length === 36, `the committed ledger half stands: ${committedArc.length} AI_KEYFRAME rows in git`);
+  ok(committedArc.length === 36 || committedArc.length === 36 + dbArcRows, `the committed ledger half stands: ${committedArc.length} AI_KEYFRAME rows (${committedArc.length === 36 ? "the history" : "the history + the night's append"})`);
 
   // ── leg 8: the gate's continuity ──
   console.log("leg 8: the release gate");

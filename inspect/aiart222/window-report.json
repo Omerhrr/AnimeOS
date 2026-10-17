@@ -1,31 +1,31 @@
 {
   "probe": "probe222-window",
-  "readAt": "2026-10-17T09:23:12.101Z",
-  "shape": "account-total",
+  "readAt": "2026-10-17T21:56:45.667Z",
+  "shape": "partial",
   "channels": [
     {
       "channel": "edit",
       "state": "BLOCKED",
-      "ms": 73,
-      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+      "ms": 190,
+      "detail": "API request failed with status 400: {\"error\":{\"code\":\"1210\",\"message\":\"API 调用参数有误，请检查文档。request body invalid: image_to_i"
     },
     {
       "channel": "create",
-      "state": "BLOCKED",
-      "ms": 31,
-      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+      "state": "OPEN",
+      "ms": 94219,
+      "detail": "base64 132668 chars"
     },
     {
       "channel": "vision",
       "state": "BLOCKED",
-      "ms": 12,
-      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+      "ms": 95,
+      "detail": "API request failed with status 400: {\"error\":{\"code\":\"1210\",\"message\":\"messages.content.type 参数非法，取值范围 ['text']\"}}"
     },
     {
       "channel": "text",
-      "state": "BLOCKED",
-      "ms": 7,
-      "detail": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}"
+      "state": "OPEN",
+      "ms": 309,
+      "detail": "READY"
     }
   ],
   "note": "the four-channel read after the twelfth-drift wipe - the wall's state survives the box's death"

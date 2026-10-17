@@ -104,7 +104,8 @@ async function main() {
   assert(rr.edition.includes("222") && typeof rr.complete === "boolean" && Array.isArray(rr.members), "the restore receipt carries its edition + shape");
   assert(!!seed.provenance && !!seed.law && seed.law.includes("the seed never invents"), "the seed carries its law + provenance");
   const wr = JSON.parse(fs.readFileSync("inspect/aiart222/window-report.json", "utf8"));
-  assert(wr.shape === "account-total" && wr.channels?.length === 4, "the window receipt carries the four-channel shape");
+  const allBlocked222 = (wr.channels ?? []).every((c: { state?: string }) => c.state === "BLOCKED");
+  assert((wr.channels ?? []).length === 4 && wr.shape === (allBlocked222 ? "account-total" : "partial"), "the window receipt carries the four-channel shape (the shape field honest to the channels - the wall's state, whatever it is, named)");
   assert(fs.existsSync("inspect/aiart222/eye-reading-v4.md"), "the eye's v4 reading is durable (the evidence before the lever)");
   assert(fs.readFileSync("inspect/aiart222/eye-reading-v4.md", "utf8").includes("the wuxia sword prior"), "the reading names the cross-cell law");
 

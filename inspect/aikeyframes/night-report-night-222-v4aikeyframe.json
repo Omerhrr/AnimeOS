@@ -5,45 +5,307 @@
   "source": "AI_KEYFRAME",
   "results": [
     {
-      "ref": "E? Sc12 S001",
-      "shotId": "cmvberd2w001drmhxpxgebna5",
-      "ok": false,
-      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+      "ref": "E7 Sc12 S001",
+      "shotId": "cmvcxq9vr001dqo05i9v46wxo",
+      "ok": true,
+      "worst": 0.85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.9,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.4,
+            "palette": 0.9,
+            "style": 0.8
+          },
+          "note": "Face structure, hair mass, and wardrobe cut/color blocking are highly consistent with the model sheet; the weapon is a glowing energy blade instead of a physical sword, and the render style is more atmospheric/painterly than the clean studio look of the reference."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Lin Yue"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S001-take2-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.4,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S001-keyframe.png",
+          "countedFigures": 3,
+          "countedAnchors": 0,
+          "shipped": false
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S001-take2-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": true
+        }
+      ]
     },
     {
-      "ref": "E? Sc12 S002",
-      "shotId": "cmvberd2x001frmhx3pi362qh",
-      "ok": false,
-      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+      "ref": "E7 Sc12 S002",
+      "shotId": "cmvcxq9vr001fqo05rgeen50c",
+      "ok": true,
+      "worst": 0.5,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.5,
+          "aspects": {
+            "face": 0.4,
+            "hair": 0.6,
+            "wardrobe": 0.4,
+            "weapon": 0,
+            "palette": 0.8,
+            "style": 0.3
+          },
+          "note": "The face is a simple stylized representation; hair matches the updo and length but lacks texture; wardrobe captures the teal color and wide sleeves but omits embroidery, layering, and belt details; weapon is off-frame; style shifts from detailed 2D illustration to low-poly 3D."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Lin Yue"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S002-take2-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.4,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S002-keyframe.png",
+          "countedFigures": 3,
+          "countedAnchors": 2,
+          "shipped": false
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.5,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S002-take2-keyframe.png",
+          "countedFigures": 3,
+          "countedAnchors": 2,
+          "shipped": true
+        }
+      ]
     },
     {
-      "ref": "E? Sc12 S003",
-      "shotId": "cmvberd2x001hrmhxnf60rl0r",
-      "ok": false,
-      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+      "ref": "E7 Sc12 S003",
+      "shotId": "cmvcxq9vs001hqo05pyo8b6oq",
+      "ok": true,
+      "worst": 0.75,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.75,
+          "aspects": {
+            "face": 0.5,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.9,
+            "palette": 0.8,
+            "style": 0.6
+          },
+          "note": "Hair, wardrobe (robe pattern, belt, tassel), and weapons (dual swords) are highly consistent; face shape and features differ from the 3D model reference; style shifts from clean 3D to a painted, atmospheric look."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Lin Yue"
+      ],
+      "anchorViews": [
+        "Lin Yue:close"
+      ],
+      "sampleCount": 1,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S003-take2-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.4,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S003-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 0,
+          "shipped": false
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.75,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S003-take2-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": true
+        }
+      ]
     },
     {
-      "ref": "E? Sc12 S004",
-      "shotId": "cmvberd2y001jrmhxbsirpf8j",
-      "ok": false,
-      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+      "ref": "E7 Sc12 S004",
+      "shotId": "cmvcxq9vt001jqo05drwijelo",
+      "ok": true,
+      "worst": 0.85,
+      "entries": [
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.9,
+            "hair": 0.85,
+            "wardrobe": 0.85,
+            "weapon": 1,
+            "palette": 0.8,
+            "style": 0.85
+          },
+          "note": "Face structure and wardrobe cut match the canonical sheet closely; palette is shifted by the storm's blue ambient light; style is rendered as detailed digital art rather than the simplified scale reference."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Demon Lord Wei"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S004-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S004-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": true
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S004-take2-keyframe.png",
+          "countedFigures": 2,
+          "countedAnchors": 3,
+          "shipped": false
+        }
+      ]
     },
     {
-      "ref": "E? Sc12 S005",
-      "shotId": "cmvberd2z001lrmhx35zujqie",
-      "ok": false,
-      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+      "ref": "E7 Sc12 S005",
+      "shotId": "cmvcxq9vu001lqo05upw3hnu0",
+      "ok": true,
+      "worst": 0.85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.9,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.7,
+            "palette": 0.9,
+            "style": 0.8
+          },
+          "note": "Face structure and hair silhouette are highly accurate; wardrobe cut and color blocking match the sheet well at this scale; the glowing energy blade is a stylistic departure from the physical sword on the sheet but maintains the weapon's presence."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Lin Yue"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S005-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S005-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": true
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S005-take2-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": false
+        }
+      ]
     },
     {
-      "ref": "E? Sc12 S006",
-      "shotId": "cmvberd30001nrmhxim2zdgxu",
-      "ok": false,
-      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+      "ref": "E7 Sc12 S006",
+      "shotId": "cmvcxq9vu001nqo05irdi05ls",
+      "ok": true,
+      "worst": 0.85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.8,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 0.8,
+            "palette": 0.85,
+            "style": 0.9
+          },
+          "note": "Face structure and teal wardrobe with gold trim match the sheet; the sword is correctly included, though the render is more painterly than the cel-style reference."
+        },
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.8,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "palette": 0.9,
+            "style": 0.9
+          },
+          "note": "Crimson robe with gold embroidery and high topknot are consistent with the model sheet; the aggressive pose fits the character's identity."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Lin Yue",
+        "Demon Lord Wei"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S006-take2-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.5,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S006-keyframe.png",
+          "countedFigures": 3,
+          "countedAnchors": 0,
+          "shipped": false
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/E7Sc12S006-take2-keyframe.png",
+          "countedFigures": null,
+          "countedAnchors": null,
+          "shipped": true
+        }
+      ]
     }
   ],
-  "appended": 0,
+  "appended": 6,
   "gate": {
-    "episodeId": "cmvberd270004rmhxklrco2x4",
+    "episodeId": "cmvcxq9v40004qo05ci8ej2pc",
     "source": "AI_KEYFRAME",
     "floor": 0.7,
     "readings": 7,
@@ -51,11 +313,11 @@
     "overall": {
       "key": "overall",
       "n": 7,
-      "mean": 0.812142857142857,
-      "median": 0.865,
-      "p10": 0.4,
-      "worst": 0.4,
-      "best": 0.92,
+      "mean": 0.7989285714285713,
+      "median": 0.85,
+      "p10": 0.575,
+      "worst": 0.575,
+      "best": 0.875,
       "belowFloor": 1,
       "belowFraction": 0.14285714285714285,
       "verdict": "HOLD",
@@ -65,11 +327,11 @@
       {
         "key": "calm",
         "n": 7,
-        "mean": 0.812142857142857,
-        "median": 0.865,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.92,
+        "mean": 0.7989285714285713,
+        "median": 0.85,
+        "p10": 0.575,
+        "worst": 0.575,
+        "best": 0.875,
         "belowFloor": 1,
         "belowFraction": 0.14285714285714285,
         "verdict": "HOLD",
@@ -78,11 +340,11 @@
       {
         "key": "close",
         "n": 1,
-        "mean": 0.4,
-        "median": 0.4,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.4,
+        "mean": 0.575,
+        "median": 0.575,
+        "p10": 0.575,
+        "worst": 0.575,
+        "best": 0.575,
         "belowFloor": 1,
         "belowFraction": 1,
         "verdict": "BELOW",
@@ -91,11 +353,11 @@
       {
         "key": "locked",
         "n": 3,
-        "mean": 0.7216666666666667,
-        "median": 0.865,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.9,
+        "mean": 0.7691666666666667,
+        "median": 0.8574999999999999,
+        "p10": 0.575,
+        "worst": 0.575,
+        "best": 0.875,
         "belowFloor": 1,
         "belowFraction": 0.3333333333333333,
         "verdict": "HOLD",
@@ -104,11 +366,11 @@
       {
         "key": "shadow",
         "n": 2,
-        "mean": 0.66,
-        "median": 0.66,
-        "p10": 0.4,
-        "worst": 0.4,
-        "best": 0.92,
+        "mean": 0.6425,
+        "median": 0.6425,
+        "p10": 0.575,
+        "worst": 0.575,
+        "best": 0.71,
         "belowFloor": 1,
         "belowFraction": 0.5,
         "verdict": "BELOW",
@@ -116,9 +378,9 @@
       }
     ],
     "arc": true,
-    "nights": 1,
-    "provisional": true
+    "nights": 2,
+    "provisional": false
   },
-  "writtenAt": "2026-10-16T20:32:00.912Z",
+  "writtenAt": "2026-10-17T22:18:30.495Z",
   "reportPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes/night-report-night-222-v4aikeyframe.json"
 }

@@ -1,0 +1,78 @@
+{
+  "probe": "swordprior-222",
+  "rodeAt": "2026-10-17T22:22:11.637Z",
+  "rides": [
+    {
+      "cell": "S001-control",
+      "arm": "control",
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S001-control-keyframe.png",
+      "error": "judge failed"
+    },
+    {
+      "cell": "S001-arm-sheath-object-state",
+      "arm": "sheath-object-state",
+      "promptPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S001-arm-sheath-object-state-prompt.txt",
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S001-arm-sheath-object-state-keyframe.png",
+      "featuredWorst": 85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 85,
+          "aspects": {
+            "face": 90,
+            "hair": 90,
+            "wardrobe": 85,
+            "weapon": 70,
+            "palette": 90,
+            "style": 85
+          },
+          "note": "The face structure and hair arrangement (topknot with long trailing hair) are highly consistent with the model sheet; the wardrobe correctly features the teal/green gradient, wide sleeves, and decorative belt, though the sword is depicted as glowing energy rather than a physical blade."
+        }
+      ]
+    },
+    {
+      "cell": "S004-control",
+      "arm": "control",
+      "promptPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S004-control-prompt.txt",
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S004-control-keyframe.png",
+      "featuredWorst": 75,
+      "entries": [
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 75,
+          "aspects": {
+            "face": 80,
+            "hair": 85,
+            "wardrobe": 75,
+            "weapon": 100,
+            "palette": 70,
+            "style": 50
+          },
+          "note": "The silhouette and core wardrobe colors match well at this scale; face structure is consistent but rendered in a photorealistic style rather than the sheet's 2D painted grammar, and the ambient blue light shifts the palette from the studio reference."
+        }
+      ]
+    },
+    {
+      "cell": "S004-arm-weaponless",
+      "arm": "weaponless",
+      "promptPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S004-arm-weaponless-prompt.txt",
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S004-arm-weaponless-keyframe.png",
+      "featuredWorst": 90,
+      "entries": [
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 90,
+          "aspects": {
+            "face": 95,
+            "hair": 85,
+            "wardrobe": 92,
+            "weapon": 100,
+            "palette": 88,
+            "style": 80
+          },
+          "note": "Face structure is highly accurate; hair silhouette matches but lacks the high bun's volume seen in the sheet; wardrobe cut and gold embroidery placement are correct; palette shifts to deep crimson under scene lighting; style transitions from the sheet's clean lines to a cinematic render."
+        }
+      ]
+    }
+  ]
+}

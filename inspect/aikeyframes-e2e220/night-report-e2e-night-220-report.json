@@ -5,37 +5,131 @@
   "source": "AI_KEYFRAME",
   "results": [
     {
-      "ref": "E? Sc12 S004",
-      "shotId": "cmvc6v7v1001jofe09gvnpzg0",
-      "ok": false,
-      "error": "No featured character with a model sheet - the anchor is what identity is scored against"
+      "ref": "E7 Sc12 S004",
+      "shotId": "cmvcxq9vt001jqo05drwijelo",
+      "ok": true,
+      "worst": 0.85,
+      "entries": [
+        {
+          "characterName": "Demon Lord Wei",
+          "similarity": 0.85,
+          "aspects": {
+            "face": 0.9,
+            "hair": 0.9,
+            "wardrobe": 0.85,
+            "weapon": 1,
+            "palette": 0.8,
+            "style": 0.75
+          },
+          "note": "Face structure, hair mass/color, and the specific red/gold wardrobe cut with embroidery placement are highly accurate to the sheet; the palette is slightly darker due to the storm's ambient lighting, and the style shifts from a clean 2D model sheet grammar to a textured 3D render."
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Demon Lord Wei"
+      ],
+      "sampleCount": 3,
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/E7Sc12S004-take2-keyframe.png",
+      "takes": [
+        {
+          "take": 1,
+          "ok": true,
+          "worst": 0.4,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/E7Sc12S004-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": 3,
+          "shipped": false
+        },
+        {
+          "take": 2,
+          "ok": true,
+          "worst": 0.85,
+          "pngPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/E7Sc12S004-take2-keyframe.png",
+          "countedFigures": 1,
+          "countedAnchors": null,
+          "shipped": true
+        }
+      ]
     }
   ],
-  "appended": 0,
+  "appended": 1,
   "gate": {
-    "episodeId": "cmvc6v7ub0004ofe0d7k095h9",
+    "episodeId": "cmvcxq9v40004qo05ci8ej2pc",
     "source": "AI_KEYFRAME",
     "floor": 0.7,
-    "readings": 1,
-    "verdict": "RELEASE",
+    "readings": 7,
+    "verdict": "HOLD",
     "overall": {
       "key": "overall",
-      "n": 1,
-      "mean": 0.85,
+      "n": 7,
+      "mean": 0.7857142857142857,
       "median": 0.85,
-      "p10": 0.85,
-      "worst": 0.85,
+      "p10": 0.5,
+      "worst": 0.5,
       "best": 0.85,
-      "belowFloor": 0,
-      "belowFraction": 0,
-      "verdict": "RELEASE",
-      "worstRef": "E7 Sc12 S004"
+      "belowFloor": 1,
+      "belowFraction": 0.14285714285714285,
+      "verdict": "HOLD",
+      "worstRef": "E7 Sc12 S002"
     },
-    "blocking": [],
+    "blocking": [
+      {
+        "key": "calm",
+        "n": 7,
+        "mean": 0.7857142857142857,
+        "median": 0.85,
+        "p10": 0.5,
+        "worst": 0.5,
+        "best": 0.85,
+        "belowFloor": 1,
+        "belowFraction": 0.14285714285714285,
+        "verdict": "HOLD",
+        "worstRef": "E7 Sc12 S002"
+      },
+      {
+        "key": "med",
+        "n": 2,
+        "mean": 0.675,
+        "median": 0.675,
+        "p10": 0.5,
+        "worst": 0.5,
+        "best": 0.85,
+        "belowFloor": 1,
+        "belowFraction": 0.5,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S002"
+      },
+      {
+        "key": "shadow",
+        "n": 2,
+        "mean": 0.625,
+        "median": 0.625,
+        "p10": 0.5,
+        "worst": 0.5,
+        "best": 0.75,
+        "belowFloor": 1,
+        "belowFraction": 0.5,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S002"
+      },
+      {
+        "key": "traveling",
+        "n": 2,
+        "mean": 0.675,
+        "median": 0.675,
+        "p10": 0.5,
+        "worst": 0.5,
+        "best": 0.85,
+        "belowFloor": 1,
+        "belowFraction": 0.5,
+        "verdict": "BELOW",
+        "worstRef": "E7 Sc12 S002"
+      }
+    ],
     "arc": true,
-    "nights": 1,
-    "provisional": true
+    "nights": 2,
+    "provisional": false
   },
-  "writtenAt": "2026-10-17T10:24:08.553Z",
+  "writtenAt": "2026-10-17T22:50:07.870Z",
   "reportPath": "/home/z/my-project/AnimeOS/inspect/aikeyframes-e2e220/night-report-e2e-night-220-report.json"
 }

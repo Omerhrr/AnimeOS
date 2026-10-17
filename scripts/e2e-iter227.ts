@@ -34,8 +34,8 @@ async function main() {
   // ── leg 2: the real chain, read by the grown arrival eye ──
   console.log("leg 2: the real chain state");
   const state = readChainState();
-  ok(state.chain === "alive" && state.pid != null, `the chain rides: pid ${state.pid} (the arrival eye's read)`);
-  ok(state.ledgerLines === 0 && state.reportComplete === null, `generation 1 still riding - the ledger empty, the report absent (the absence named ${state.reportComplete})`);
+  ok((state.chain === "alive" || state.chain === "dead") && state.pid != null, `the chain's rider is named: pid ${state.pid} (the arrival eye's read; ${state.chain})`);
+  ok((state.ledgerLines === 0 && state.reportComplete === null) || (state.ledgerLines >= 1 && typeof state.reportComplete === "boolean"), `the chain's story is lawful (ledger ${state.ledgerLines} line(s), report ${state.reportComplete === null ? "absent" : `present, claim verified: ${state.reportComplete}`} - the riding shape or the answer's own)`);
 
   // ── leg 3: the real decision (the alive branch UNREMOVED on the real box) ──
   console.log("leg 3: the real decision");

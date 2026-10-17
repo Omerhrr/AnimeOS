@@ -1,32 +1,28 @@
 {
   "restore": "night122-restore",
   "edition": "the 222 degraded-mode law: the committed DNA seed + the honest window-bound remainder",
-  "ranAt": "2026-10-17T09:41:22.490Z",
-  "project": "cmvc6v7u90000ofe084ee8aod",
+  "ranAt": "2026-10-17T22:01:57.655Z",
+  "project": "cmvcxq9v20000qo05ypjmlj9z",
   "members": [
     {
       "name": "Lin Yue",
-      "sheet": "window-bound",
-      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
-      "dnaSource": "committed-seed"
+      "sheet": "landed",
+      "dnaSource": "vision-read"
     },
     {
       "name": "Chen Hao",
-      "sheet": "window-bound",
-      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
-      "dnaSource": "absent"
+      "sheet": "landed",
+      "dnaSource": "vision-read"
     },
     {
       "name": "Elder Han",
-      "sheet": "window-bound",
-      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
-      "dnaSource": "absent"
+      "sheet": "landed",
+      "dnaSource": "vision-read"
     },
     {
       "name": "Demon Lord Wei",
-      "sheet": "window-bound",
-      "sheetError": "API request failed with status 429: {\"error\":\"Too many requests, please try again later\"}",
-      "dnaSource": "committed-seed"
+      "sheet": "landed",
+      "dnaSource": "vision-read"
     }
   ],
   "designs": [
@@ -39,12 +35,7 @@
       "designSheet": "/designs/cmuqieinq000cpxz7lp5ohq41/r2/turn_sheet.png"
     }
   ],
-  "windowBound": [
-    "Lin Yue",
-    "Chen Hao",
-    "Elder Han",
-    "Demon Lord Wei"
-  ],
-  "complete": false,
-  "note": "the sheets are the image channel's own work - Lin Yue, Chen Hao, Elder Han, Demon Lord Wei wait for the window; the dye law rides the committed seed until then"
+  "windowBound": [],
+  "complete": true,
+  "note": "the restore is complete (every sheet anchored, every DNA vision-read)"
 }
