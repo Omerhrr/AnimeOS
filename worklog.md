@@ -4043,3 +4043,20 @@ Work Log:
 
 Stage Summary:
 - The patience is now standing: a bounded generation chain covers the box's lifetime, the legs' ride stops the chain on the receipts, and every gate knows the chain's law. The 225 frontier: the chain's own answer.
+
+---
+Task ID: iter-225
+Agent: main (Super Z)
+Task: Iteration 225 - the thirteenth drift: the box died again, the rebuild law ridden, and the rebuild made durable (box-rebuild.sh - the third death rides one command).
+
+Work Log:
+- Drift check: the workspace a scaffold corpse (fresh Initial commit, no remotes, no watch artifacts - the chain died with the box mid-generation-1, its ledger never written). Remote answered 10fa74f = Iteration 224 - the inherited context CORRECT this time (the drift is the box alone).
+- The rebuild ridden: fresh clone verified byte-exact against the remote's ls-remote answer, npm install, .env rewritten, prisma db push - the DB FILE SURVIVED (Immortal Path, the cast, E7 Sc12's six shots, byte-identical ids; the arc union unchanged: db 0 + ledger 36).
+- The wall measured across the rebuild: 4/4 channels 429 fast-reject, the account-total shape byte-identical across three iterations and two box deaths.
+- THE GRADUATION (scripts/box-rebuild.sh, +x): the rebuild law made durable - drift check first, the clone verified against the remote's own answer, the env, the install, the schema, the probes (never guessed), the chain relaunched (the pid verified alive), THE TOKEN LAW (env/arg, the refusal exit 2, no token literal committed - the smoke runs the grep).
+- Gates: src tsc 0; smoke225 13/13; e2e-iter225 9/9 (the clone verified, the DB's survivor state, the union arc, the gate continuity, the live both-ways probe); e2e-iter218-224 ALL PASS re-run on the rebuilt box (the self-updating clocks reading the jsonl - the designed shape); smoke222/223/224 ALL PASS; smoke216-221 PENDING-WINDOW (named).
+- The chain relaunched: generation 1 (pid 2418, 12h, cycle 1 honest 429).
+- README item 139 + this worklog + the shared worklog; commit + push + remote verification.
+
+Stage Summary:
+- The rebuild law now lives in the repo: the third box death rides one command, verified against the remote's own answer at every step. The chain watches again. The 226 frontier: the chain's own answer.
