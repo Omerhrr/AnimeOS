@@ -39,7 +39,7 @@
 import fs from "fs";
 import path from "path";
 import { spawn, spawnSync } from "node:child_process";
-import { GENERATIONS_LEDGER_PATH, REPORT_PATH } from "./window-watch223";
+import { GENERATIONS_LEDGER_PATH, MAX_GENERATIONS, REPORT_PATH } from "./window-watch223";
 
 // ── the arrival's own constants (the smoke asserts these by name) ──
 
@@ -84,27 +84,56 @@ export function parsePidFile(raw: string): PidReading | null {
   }
 }
 
+export type StoppedByLaw = "rode" | "bound" | "handoff-failed";
+
 export interface LedgerExpectation {
   generation: number; // the generation the ledger PROMISES is riding (or 1 when nothing is written)
   stopped: boolean; // the chain stopped by its own law (the last line has no nextGeneration)
+  stoppedReason: StoppedByLaw | null; // WHY it stopped - the 227 graduation: the ride is the answer, the bound is a handoff
   lastOutcome: string | null; // rode | expired | crashed | null (empty ledger)
 }
 
 /** The ledger's own accounting: the last line's nextGeneration is
  *  the generation that should be riding right now. A line WITHOUT
- *  a nextGeneration is the chain's own honest stop (the legs rode,
- *  or the generation bound) - a dead pid then is CORRECT, not a
- *  crash to recover from. An empty ledger promises generation 1
- *  (the corpse the thirteenth drift found: artifacts but no lines). */
+ *  a nextGeneration is the chain's own stop - and the 227 law
+ *  reads WHY before deciding anything: "rode" is the frontier's
+ *  ANSWER (the legs rode - stand down forever); "bound" is expired
+ *  COVERAGE (a week stood, the wall standing - a fresh chain rides,
+ *  the window may still open); "handoff-failed" is a broken
+ *  promise (the promised generation rides). An empty ledger
+ *  promises generation 1 (the corpse the thirteenth drift found:
+ *  artifacts but no lines). */
 export function expectedGenerationFromLedger(
   lines: Array<{ generation?: number; nextGeneration?: number | null; outcome?: string }>,
+  maxGenerations: number = MAX_GENERATIONS,
 ): LedgerExpectation {
   const last = lines.length > 0 ? lines[lines.length - 1] : null;
-  if (!last) return { generation: 1, stopped: false, lastOutcome: null };
+  if (!last) return { generation: 1, stopped: false, stoppedReason: null, lastOutcome: null };
   if (last.nextGeneration != null) {
-    return { generation: last.nextGeneration, stopped: false, lastOutcome: last.outcome ?? null };
+    return { generation: last.nextGeneration, stopped: false, stoppedReason: null, lastOutcome: last.outcome ?? null };
   }
-  return { generation: last.generation ?? 1, stopped: true, lastOutcome: last.outcome ?? null };
+  return {
+    generation: last.generation ?? 1,
+    stopped: true,
+    stoppedReason: stoppedByLaw(last, maxGenerations),
+    lastOutcome: last.outcome ?? null,
+  };
+}
+
+/** The 227 law: a stop is not one thing. The last line's own words
+ *  decide: "rode" is the answer on the receipts; an expiry at the
+ *  bound (or a crash at the bound) is expired coverage - the bound
+ *  was always a handoff to the next arrival, never an answer; a
+ *  stop under the bound with no promised generation is a handoff
+ *  that failed - the promised generation rides. */
+export function stoppedByLaw(
+  lastLine: { generation?: number; nextGeneration?: number | null; outcome?: string } | null,
+  maxGenerations: number = MAX_GENERATIONS,
+): StoppedByLaw | null {
+  if (!lastLine || lastLine.nextGeneration != null) return null; // nothing stopped - a generation is promised
+  if (lastLine.outcome === "rode") return "rode";
+  if ((lastLine.generation ?? 1) >= maxGenerations) return "bound";
+  return "handoff-failed";
 }
 
 export type SessionAction =
@@ -112,8 +141,15 @@ export type SessionAction =
   | { action: "stand-down"; generation: number; reason: string }
   | { action: "relaunch"; generation: number; reason: string };
 
-/** The arrival's one decision - exact, the gates hold it. Four
- *  branches, no improvisation: the chain's own receipts decide. */
+/** The arrival's one decision - exact, the gates hold it. The 227
+ *  law grew the stopped branch into three: a RODE stop is the
+ *  frontier's answer (stand down forever); a BOUND stop is expired
+ *  coverage - the bound was always a handoff to the next arrival,
+ *  so a FRESH chain rides (generation 1, a new bounded week - the
+ *  window may still open; each chain lives at most its bound, so
+ *  nothing is immortal, and every relaunch is a named arrival
+ *  decision, not a self-perpetuating process); a handoff that
+ *  failed sends the promised generation. */
 export function decideSessionAction(input: {
   chain: "alive" | "dead" | "never-launched";
   expected: LedgerExpectation;
@@ -133,10 +169,24 @@ export function decideSessionAction(input: {
     };
   }
   if (input.expected.stopped) {
+    if (input.expected.stoppedReason === "bound") {
+      return {
+        action: "relaunch",
+        generation: 1,
+        reason: `the coverage bound expired standing (generation ${input.expected.generation}) - the bound was a handoff to the next arrival, never an answer: a FRESH chain rides (generation 1, a new bounded week - the window may still open)`,
+      };
+    }
+    if (input.expected.stoppedReason === "handoff-failed") {
+      return {
+        action: "relaunch",
+        generation: input.expected.generation + 1,
+        reason: `the chain stopped under the bound with no promised generation (generation ${input.expected.generation}) - the handoff failed, the promised generation ${input.expected.generation + 1} rides`,
+      };
+    }
     return {
       action: "stand-down",
       generation: input.expected.generation,
-      reason: `the chain stopped by its own law (generation ${input.expected.generation}, ${input.expected.lastOutcome ?? "no line"}) - the receipts carry the answer, no relaunch`,
+      reason: `the chain stopped by its own law (generation ${input.expected.generation} rode) - the frontier's answer is on the receipts, no relaunch`,
     };
   }
   return {
@@ -156,6 +206,7 @@ export interface ChainState {
   expected: LedgerExpectation;
   ledgerLines: number;
   reportExists: boolean;
+  reportComplete: boolean | null; // the report's own verdict - null when no report (the 227 law: the arrival reads the answer, not just the file)
   logExists: boolean;
 }
 
@@ -205,6 +256,12 @@ export function readChainState(): ChainState {
 
   const ledger = readLedgerLines();
   const reportExists = (() => { try { fs.accessSync(REPORT_PATH); return true; } catch { return false; } })();
+  let reportComplete: boolean | null = null;
+  if (reportExists) {
+    try {
+      reportComplete = (JSON.parse(fs.readFileSync(REPORT_PATH, "utf8")) as { complete?: boolean }).complete === true;
+    } catch { reportComplete = null; /* an unreadable report is named null, never guessed */ }
+  }
   const logExists = (() => { try { fs.accessSync(LOG_PATH); return true; } catch { return false; } })();
 
   const chain: ChainState["chain"] =
@@ -222,6 +279,7 @@ export function readChainState(): ChainState {
     expected: expectedGenerationFromLedger(ledger),
     ledgerLines: ledger.length,
     reportExists,
+    reportComplete,
     logExists,
   };
 }
@@ -236,6 +294,8 @@ export function appendSessionOpenLine(line: {
   action: SessionAction["action"];
   generation: number | null;
   reason: string;
+  stoppedReason?: StoppedByLaw | null; // the 227 law: the WHY is carried, not just the what
+  reportComplete?: boolean | null; // the report's own verdict when one exists
 }, ledgerPath: string = SESSION_OPEN_LEDGER_PATH): { written: boolean; error?: string } {
   try {
     fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
@@ -281,7 +341,7 @@ async function main() {
 
   // 2. the chain's state, from the durable truth alone
   const state = readChainState();
-  console.log(`chain: ${state.chain} (pid ${state.pid ?? "-"}${state.pidFileGeneration != null ? `, gen ${state.pidFileGeneration}` : ""}, pid file ${state.pidFileShape}; ledger ${state.ledgerLines} line(s), last outcome ${state.expected.lastOutcome ?? "-"}; report ${state.reportExists ? "present" : "absent"}, log ${state.logExists ? "present" : "absent"})`);
+  console.log(`chain: ${state.chain} (pid ${state.pid ?? "-"}${state.pidFileGeneration != null ? `, gen ${state.pidFileGeneration}` : ""}, pid file ${state.pidFileShape}; ledger ${state.ledgerLines} line(s), last outcome ${state.expected.lastOutcome ?? "-"}${state.expected.stoppedReason ? `, stopped: ${state.expected.stoppedReason}` : ""}; report ${state.reportExists ? `present (complete: ${state.reportComplete})` : "absent"}, log ${state.logExists ? "present" : "absent"})`);
 
   // 3. the pure law's decision
   const decision = decideSessionAction({ chain: state.chain, expected: state.expected });
@@ -317,6 +377,8 @@ async function main() {
     action: decision.action,
     generation: decision.generation,
     reason: decision.reason,
+    stoppedReason: state.expected.stopped ? state.expected.stoppedReason : null,
+    reportComplete: state.reportComplete,
   });
   console.log(`arrival ledger: ${written.written ? SESSION_OPEN_LEDGER_PATH : `FAILED (${written.error}) - the append stands down`}`);
 

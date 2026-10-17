@@ -111,16 +111,16 @@ ok(eq(parsePidFile("2418"), { pid: 2418, generation: null }), "parsePidFile: the
 ok(eq(parsePidFile('{"pid":3100,"generation":3,"startedAt":"2026-01-01T00:00:00.000Z"}'), { pid: 3100, generation: 3 }), "parsePidFile: the 226 JSON shape carries its generation");
 ok(parsePidFile("not a pid at all") === null && parsePidFile("") === null, "parsePidFile: garbage parses to null (named, never guessed)");
 
-ok(eq(expectedGenerationFromLedger([]), { generation: 1, stopped: false, lastOutcome: null }), "the ledger's accounting: empty history promises generation 1 (the corpse's shape)");
-ok(eq(expectedGenerationFromLedger([{ generation: 7, nextGeneration: 8, outcome: "expired" }]), { generation: 8, stopped: false, lastOutcome: "expired" }), "the ledger's accounting: the last line's promise is the riding generation");
-ok(eq(expectedGenerationFromLedger([{ generation: 9, nextGeneration: null, outcome: "rode" }]), { generation: 9, stopped: true, lastOutcome: "rode" }), "the ledger's accounting: no nextGeneration means the chain stopped BY ITS OWN LAW");
+ok(eq(expectedGenerationFromLedger([]), { generation: 1, stopped: false, stoppedReason: null, lastOutcome: null }), "the ledger's accounting: empty history promises generation 1 (the corpse's shape)");
+ok(eq(expectedGenerationFromLedger([{ generation: 7, nextGeneration: 8, outcome: "expired" }]), { generation: 8, stopped: false, stoppedReason: null, lastOutcome: "expired" }), "the ledger's accounting: the last line's promise is the riding generation");
+ok(eq(expectedGenerationFromLedger([{ generation: 9, nextGeneration: null, outcome: "rode" }]), { generation: 9, stopped: true, stoppedReason: "rode", lastOutcome: "rode" }), "the ledger's accounting: no nextGeneration means the chain stopped BY ITS OWN LAW");
 
-ok(eq(decideSessionAction({ chain: "never-launched", expected: { generation: 1, stopped: false, lastOutcome: null } }).action, "rebuild"), "the decision: a corpse box is the rebuild law's territory, not the arrival's");
-const aliveDecision = decideSessionAction({ chain: "alive", expected: { generation: 2, stopped: false, lastOutcome: "expired" } });
+ok(eq(decideSessionAction({ chain: "never-launched", expected: { generation: 1, stopped: false, stoppedReason: null, lastOutcome: null } }).action, "rebuild"), "the decision: a corpse box is the rebuild law's territory, not the arrival's");
+const aliveDecision = decideSessionAction({ chain: "alive", expected: { generation: 2, stopped: false, stoppedReason: null, lastOutcome: "expired" } });
 ok(aliveDecision.action === "stand-down" && aliveDecision.generation === 2 && aliveDecision.reason.includes("the chain rides"), "the decision: an alive chain stands the hand down (never a double-ride)");
-const stoppedDecision = decideSessionAction({ chain: "dead", expected: { generation: 9, stopped: true, lastOutcome: "rode" } });
+const stoppedDecision = decideSessionAction({ chain: "dead", expected: { generation: 9, stopped: true, stoppedReason: "rode", lastOutcome: "rode" } });
 ok(stoppedDecision.action === "stand-down" && stoppedDecision.reason.includes("by its own law") && stoppedDecision.reason.includes("rode"), "the decision: a chain that stopped by its own law is NOT relaunched");
-const relaunchDecision = decideSessionAction({ chain: "dead", expected: { generation: 8, stopped: false, lastOutcome: "expired" } });
+const relaunchDecision = decideSessionAction({ chain: "dead", expected: { generation: 8, stopped: false, stoppedReason: null, lastOutcome: "expired" } });
 ok(relaunchDecision.action === "relaunch" && relaunchDecision.generation === 8 && relaunchDecision.reason.includes("promised"), "the decision: a promised generation that never finished rides again");
 
 // ── part 3: the arrival's own ledger + source law ──

@@ -4081,3 +4081,22 @@ Stage Summary:
 - The chain can no longer die unnamed: a crash writes its line and hands off; an arrival reads the truth and acts by the four-branch law; a corpse rides box-rebuild.sh.
 - The 226 frontier artifacts: window-watch223.ts (crash law), window-watch223.mjs (JSON pid), session-open.ts (the arrival eye), smoke226-twosilences.ts (34), e2e-iter226.ts (15), receipts/session-opens.jsonl (first line).
 - The 227 frontier: the chain's own answer (unchanged) - the window opens, the legs ride, the chain stops on the receipts.
+
+## Iteration 227 - THE THIRD SILENCE (the bound was always a handoff, never an answer)
+
+Task ID: iter-227
+Agent: main (Z.ai session, trace 1a148faf0fa7bc15)
+Task: proceed = Iteration 227 green light
+
+Work Log:
+- Drift law: remote c07248b = 226 clean. The 226 law's own first move rode for real: the arrival eye read the chain alive (gen 1, pid 2418) and stood the hand down - AND riding it exposed the gap.
+- THE THIRD SILENCE named: the 226 arrival stood down on ANY stop; a bound stop (gen 14 expired standing) would orphan the watch forever while sessions keep arriving - the bound's reason string always said "the next session's drift law takes over", the arrival just never took over.
+- session-open.ts grown: stoppedByLaw pure (rode = the answer / bound = expired coverage / handoff-failed = broken promise / null; the bound is a parameter); LedgerExpectation carries stoppedReason; the stopped branch splits three ways (rode -> eternal stand-down; bound -> RELAUNCH a FRESH chain at generation 1, a new bounded week, nothing immortal, every relaunch a named arrival; handoff-failed -> the promised generation rides); readChainState reads the report's complete verdict; the arrival line carries stoppedReason + reportComplete.
+- smoke226's exact-match literals taught the grown shape (the 224 precedent).
+- The grown law rode for real: drift clean at c07248b, stand-down, the third arrival line carrying the WHY fields.
+- Gates: src tsc 0; smoke227 27/27; e2e-iter227 14/14; smoke226 34/34 + e2e-iter226 15/15 grown re-run; smoke222-225 ALL PASS; e2e-iter218..225 ALL PASS.
+- README item 141. Committed and pushed; remote HEAD verified.
+
+Stage Summary:
+- All silences now named: the crash writes its line (226), the arrival reads the why (227), the bound hands off a fresh chain, the corpse rides box-rebuild.sh.
+- The 228 frontier: the chain's own answer (unchanged) - the window opens, the legs ride, the report reads complete:true, and the next arrival knows the answer is in.
