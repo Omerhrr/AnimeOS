@@ -35,11 +35,19 @@
 // law - plain children are harvested with the tool session); the
 // child's pid is verified alive before the arrival claims it.
 //
+// The 229 graduation - THE RECEIPT VERDICT AT THE ARRIVAL END: the
+// watch's report carries a complete CLAIM, and a claim is not the
+// truth - the arrival computes the verdict itself from the RECEIPTS
+// (the same pure law the watch rides, buildRideVerdict) and the
+// report's claim is checked, never trusted. The chain's answer is
+// the receipts' own truth at BOTH ends: the watch writes it, the
+// arrival verifies it. The eye reads the receipts, not the report.
+//
 // Run: npx tsx scripts/session-open.ts [watchHours] [waitMs]
 import fs from "fs";
 import path from "path";
 import { spawn, spawnSync } from "node:child_process";
-import { GENERATIONS_LEDGER_PATH, MAX_GENERATIONS, REPORT_PATH } from "./window-watch223";
+import { GENERATIONS_LEDGER_PATH, MAX_GENERATIONS, REPORT_PATH, buildRideVerdict, readWatchState } from "./window-watch223";
 
 // ── the arrival's own constants (the smoke asserts these by name) ──
 
@@ -206,7 +214,7 @@ export interface ChainState {
   expected: LedgerExpectation;
   ledgerLines: number;
   reportExists: boolean;
-  reportComplete: boolean | null; // the report's own verdict - null when no report (the 227 law: the arrival reads the answer, not just the file)
+  reportComplete: boolean | null; // the RECEIPTS' verdict with the report's claim verified (the 229 law) - null when no report (the 227 law: the arrival reads the answer, not just the file)
   logExists: boolean;
 }
 
@@ -259,7 +267,15 @@ export function readChainState(): ChainState {
   let reportComplete: boolean | null = null;
   if (reportExists) {
     try {
-      reportComplete = (JSON.parse(fs.readFileSync(REPORT_PATH, "utf8")) as { complete?: boolean }).complete === true;
+      const report = JSON.parse(fs.readFileSync(REPORT_PATH, "utf8")) as { complete?: boolean; windowOpenedAt?: string | null };
+      // THE 229 RECEIPT VERDICT LAW: the report's complete CLAIM is
+      // verified against the receipts themselves - the arrival
+      // computes the verdict from the same pure law the watch rides
+      // (buildRideVerdict on the receipts' own state). A claim is
+      // not the truth: a report that says complete:true while the
+      // receipts are incomplete reads false here - the eye reads
+      // the receipts, not the report's claim.
+      reportComplete = buildRideVerdict(readWatchState(), report.windowOpenedAt != null).complete;
     } catch { reportComplete = null; /* an unreadable report is named null, never guessed */ }
   }
   const logExists = (() => { try { fs.accessSync(LOG_PATH); return true; } catch { return false; } })();

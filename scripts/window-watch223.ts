@@ -23,6 +23,24 @@
 // account's window; the legs carry their own per-call ladders and
 // will name any per-channel shape honestly on the ride).
 //
+// THE RECEIPT VERDICT LAW (the 229 graduation - the chain's own
+// answer): the window's opening only STARTS the ride; the RECEIPTS
+// end it. The 223 law wrote complete:Boolean(windowOpenedAt) - the
+// chain stopped because a window OPENED, and a window that flickers
+// shut mid-ride (the legs 429 again) would still write complete:true:
+// the chain stops, the next arrival reads the false answer, the
+// frontier orphaned by its own report. The grown law: after the legs
+// ride, the receipts are RE-READ (the same readWatchState) and the
+// verdict is the receipts' own truth - complete means restore
+// complete:true AND the night's shots all ok; the honest remainder
+// (windowBound) names what still waits; a generation that saw the
+// window open but did not complete the receipts writes outcome
+// "flickered" and the chain CONTINUES (the plan law's skip rules
+// make the next ride resumable - only the missing shots ride).
+// And the arrival end grew the same eye (session-open.ts): the
+// report's complete CLAIM is verified against the receipts, not
+// trusted - the eye reads the receipts, not the report's claim.
+//
 // Run (detached, the 129 double-fork law): node scripts/window-watch223.mjs
 // Run (foreground): npx tsx scripts/window-watch223.ts [watchHours] [waitMs]
 import fs from "fs";
@@ -149,8 +167,9 @@ export interface WatchReport {
     timedOut: boolean;
     summary: string;
   }>;
-  complete: boolean; // the watch's own purpose: the legs rode
-  windowBound: string[]; // the honest remainder when the deadline expired
+  complete: boolean; // the RECEIPTS' verdict (the 229 law): restore complete AND all shots ok - never the window's opening alone
+  windowBound: string[]; // the honest remainder (what still waits for a window), receipts-read
+  verdictReason?: string; // the verdict's own words - the WHY beside the what
   nextGeneration?: number; // set when the chain hands off (the standing watch)
   writtenAt: string;
   reportPath: string;
@@ -234,10 +253,14 @@ export function buildCrashHandoff(input: {
  *  graduation: "crashed" joins the outcomes - a generation that
  *  dies by software death writes its own honest line (the corpse
  *  the thirteenth drift actually found: mid-generation-1, its
- *  ledger never written) and hands off instead of dying silently. */
+ *  ledger never written) and hands off instead of dying silently.
+ *  The 229 graduation: "flickered" joins - a generation that saw
+ *  the window open, rode the legs, and the receipts did not
+ *  complete (the wall returned mid-ride); the handoff carries the
+ *  promised generation, the next ride resumes from the receipts. */
 export function appendGenerationLine(line: {
   watch: string; generation: number; startedAt: string; endedAt: string;
-  outcome: "rode" | "expired" | "crashed"; probes: number; windowOpenedAt: string | null;
+  outcome: "rode" | "expired" | "crashed" | "flickered"; probes: number; windowOpenedAt: string | null;
   legs: string[]; nextGeneration: number | null; reason?: string;
 }, ledgerPath: string = GENERATIONS_LEDGER_PATH): { written: boolean; error?: string } {
   try {
@@ -260,9 +283,50 @@ export function writeWatchReport(report: WatchReport, reportPath = REPORT_PATH):
   return body;
 }
 
-// ── the receipts read (the plan's inputs, read at watch start) ──
+// ── the verdict law (PURE - the 229 graduation, the e2e asserts exact outputs) ──
 
-function readWatchState(): WatchState {
+export interface RideVerdict {
+  complete: boolean; // the receipts' own answer: restore complete AND the night's shots all ok
+  windowBound: string[]; // the honest remainder - what still waits for a window
+  reason: string; // the verdict's own words
+}
+
+/** THE CHAIN'S OWN ANSWER: the receipts decide, nothing else. The
+ *  window opening starts the ride; the receipts end it. The expiry
+ *  shape is unchanged (the 223 law's own words - nothing rode, all
+ *  three legs wait). A window that opened but left the receipts
+ *  incomplete is a FLICKER: complete:false, the remainder named,
+ *  the chain continues (the next generation probes again - the
+ *  plan law's skip rules make the ride resumable). Pure so the
+ *  gates and the arrival can hold it without pixels. */
+export function buildRideVerdict(stateAfter: WatchState, windowOpened: boolean): RideVerdict {
+  if (!windowOpened) {
+    return {
+      complete: false,
+      windowBound: ["restore", "night", "arms"],
+      reason: "the deadline expired with the wall standing - the legs never started, all three wait",
+    };
+  }
+  const remaining: string[] = [];
+  if (!stateAfter.restoreComplete) remaining.push("restore");
+  if (stateAfter.nightOkShots < stateAfter.nightTotalShots) remaining.push("night");
+  if (remaining.length === 0) {
+    return {
+      complete: true,
+      windowBound: [],
+      reason: `the receipts carry the answer - restore complete:true, all ${stateAfter.nightTotalShots} shots ok, the chain stops on its own answer`,
+    };
+  }
+  return {
+    complete: false,
+    windowBound: remaining,
+    reason: `the window opened but the receipts are not complete - ${remaining.join(" + ")} still window-bound, the chain does not stop on an opened window alone`,
+  };
+}
+
+// ── the receipts read (the plan's inputs, read at watch start; the verdict re-reads them after the ride) ──
+
+export function readWatchState(): WatchState {
   let restoreComplete = false;
   try {
     const rr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "receipts", "restore-receipt.json"), "utf8"));
@@ -435,6 +499,15 @@ async function main() {
   }
 
   releaseLock();
+  // THE RECEIPT VERDICT LAW (the 229 graduation): the receipts are
+  // RE-READ after the legs ride - the verdict is the receipts' own
+  // truth, never the window's opening. A window that opened and
+  // stayed open through the ride reads complete:true (the answer is
+  // in); a window that flickered shut mid-ride (the legs 429'd)
+  // reads complete:false with the remainder named - the chain
+  // continues, the next generation probes again.
+  const stateAfter = readWatchState();
+  const verdict = buildRideVerdict(stateAfter, Boolean(windowOpenedAt));
   const report = writeWatchReport({
     watch: WATCH_NAME,
     generation,
@@ -446,9 +519,11 @@ async function main() {
     windowOpenedAt,
     wallVerbatim: windowOpenedAt ? null : wallVerbatim,
     legs,
-    complete: Boolean(windowOpenedAt),
-    windowBound: windowOpenedAt ? [] : ["restore", "night", "arms"],
+    complete: verdict.complete,
+    windowBound: verdict.windowBound,
+    verdictReason: verdict.reason,
   });
+  console.log(`VERDICT: ${verdict.reason}`);
   console.log(`\nWATCH REPORT: ${report.reportPath} (complete: ${report.complete})${report.reportError ? ` (report write FAILED: ${report.reportError})` : ""}`);
 
   // THE STANDING WATCH (the 224 law): the chain's one decision, the
@@ -463,7 +538,7 @@ async function main() {
     generation,
     startedAt: report.startedAt,
     endedAt: report.endedAt,
-    outcome: report.complete ? "rode" : "expired",
+    outcome: report.complete ? "rode" : windowOpenedAt ? "flickered" : "expired", // the 229 law: a window that opened but left the receipts incomplete is a flicker, not a ride and not an expiry
     probes: probeCycles,
     windowOpenedAt,
     legs: legs.map((l) => `${l.name}:${l.exitCode}${l.timedOut ? "!" : ""}`),

@@ -4126,3 +4126,21 @@ Stage Summary:
 - The four silences are now ALL ridden live: the crash writes its line (226), the arrival reads the why (227), the bound hands off (227), and the corpse now rides one command WITH its memory (228).
 - The chain rides again: generation 1, pid 2643, 12h, the unified db path in its own env; the ledger's arc: refusal (line 4) -> relaunch (line 6) -> the story deathless.
 - The 229 frontier: the chain's own answer (unchanged) - the window opens, the legs ride, the chain stops on the receipts; the box can die and nothing is lost anymore.
+---
+Task ID: 1
+Agent: Z.ai (main session, zai-web, trace 1a149596ad51df4d)
+Task: Iteration 229 - THE RECEIPT VERDICT (the chain's own answer: the chain stops on the receipts, not on the window's opening)
+
+Work Log:
+- Drift check first: remote 6e5e73e = Iteration 228 DONE (the inherited summary claimed 227 was the frontier - the sixteenth correction); the chain found alive (gen 1, pid 2643, JSON pid file, the ledger honest by its emptiness, the wall 429 verbatim).
+- THE GAP EXPOSED BY THE FRONTIER'S OWN SENTENCE: complete:Boolean(windowOpenedAt) - a window that flickers shut mid-ride would write complete:true, the chain would stop on a lie, the arrival would read the false answer.
+- THE WATCH END graduated: pure buildRideVerdict (the receipts re-read AFTER the legs ride; complete = restore complete:true AND all shots ok; the remainder named; the arms never wait; the expiry shape unchanged and never claims the answer); verdictReason in the report; outcome "flickered" joins the ledger union (the handoff promised, the next ride resumable).
+- THE ARRIVAL END graduated: reportComplete is COMPUTED from the receipts via the same pure law (the report's claim checked, never trusted); no report reads null (the 227 shape kept).
+- The chain law needed no change - complete is now the receipts' truth; the riding gen-1 keeps its born law, the next generation inherits the verdict law (the inheritance is the handoff).
+- Gates: src tsc 0; smoke229 38/38 (new); e2e-iter229 27/27 ten legs (new); smoke222-228 ALL PASS; e2e-iter218..228 ALL PASS.
+- README item 143 + both worklogs. Committed and pushed; remote HEAD verified.
+
+Stage Summary:
+- The 223 lie is dead: the chain can no longer stop on an opened window alone - the verdict is the receipts' own truth at BOTH ends (the watch writes it, the arrival verifies it).
+- Chain riding: generation 1, pid 2643, 12h, under the born law; the verdict law waits in git for the handoff.
+- The 230 frontier: the answer's own proof - the window opens, the legs ride, the receipts complete, the verdict reads complete:true, the chain stops on its own answer, and the arrival believes the receipts.
