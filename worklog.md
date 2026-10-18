@@ -4163,3 +4163,19 @@ Stage Summary:
 - THE FRONTIER'S SENTENCE EXECUTED LIVE: the window opened, the legs rode, the receipts completed, the verdict read complete:true FROM THE RECEIPTS, the chain stopped on its own answer, and the arrival verified the claim before believing the report.
 - The arc carries two nights (nights 2, PROVISIONAL exited, verdict HOLD); the sheets landed; the DNA is vision-read; the box's story is now: five deaths, five rebirths, and the answer that finally came.
 - The 231 frontier: the answer's first fruit - the release review reads the arc's HOLD and names what stands between E7 and its first RELEASE verdict.
+
+---
+Task ID: 232
+Agent: Super Z (main agent)
+Task: Iteration 232 - THE RELEASE REVIEW (the answer's first fruit): read the arc's HOLD and name what stands between E7 and its first RELEASE verdict; grow the standing gates to the law where the rides moved the states they pinned.
+
+Work Log:
+- The studio's own wall first: the OWNER's login read 200 then every /api call read 401 (the shell's eternal "Initializing production environment..."). The curl chain proved the server healthy - the wall was the CONTEXT: the preview's cross-site iframe refused the SameSite=Lax session cookie. THE COOKIE CONTEXT LAW (5d354e7): the mint's attributes follow the request (HTTPS edge -> SameSite=None; Secure; Partitioned; localhost -> Lax), verified live both ways, read side untouched.
+- THE GRADUATION (500b93a): src/lib/release-review.ts, the pure law - the gate's OWN reads turned into the durable map (per-source verdict, distribution shape, blockers worst-p10-first, the arc span in the gate's dialect, THE PATH: the named steps to RELEASE, each answered by existing machinery). Standing ladder: BELOW > HOLD > UNSCORED > RELEASE; RELEASE only when every scored source releases. Purity law: no db/no fs; the repair budget INJECTED (the caller passes identity-repair's own constants - never re-derived).
+- THE RIDE: scripts/release-review232.ts rode the living identity and wrote receipts/release-review.json. THE REAL MAP: E7 "The Storm Over Azure Mountain" SITS BELOW - AI_KEYFRAME HOLDS (arc 2 nights, floor 70%, the tail dips: worst 57% at E7 Sc12 S003; blockers calm/close/locked/shadow), RENDER SITS BELOW (arc 2 nights, the body under: mean 66% vs floor 70%, blockers calm/med/shadow/traveling at p10 40%). Path: 3 steps (lift the AI tail at S003, lift the RENDER body 12 shots/pass, the closing law).
+- Gates: smoke232 31/31 (new); e2e-iter232 31/31, eleven legs (new: the receipt reproducing a fresh build byte-exact, the read-only law on the re-ride, the union law live - the db half lawfully empty after the sixth death and the gate read FROM the committed half alone, 213 folded lines); e2e-iter230's two state pins grown to the law (the generations ledger append-only across rides; the db half 0-or-append) -> 21/21; smoke222-229 ALL PASS; src tsc 0.
+- README item 145 + this worklog. Graduation committed BEFORE the ride (500b93a); the ride's receipt + the gate growth ride in the evidence commit.
+
+Stage Summary:
+- E7 has its map: the release review names the work per source, the repair's own numbers answer each step, and the receipt carries it for every arrival to read. The studio's auth survives the preview's iframe (Chrome/Edge/Firefox; Safari's door is the top-level tab).
+- The 233 frontier: the repair pass rides the review (the named cells' worst shots enter the repair budget, re-scores append night-tagged, the gate re-reads the medians); the Releases panel learns to read the review so the OWNER sees the map, not just the door.

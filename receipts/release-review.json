@@ -1,0 +1,142 @@
+{
+  "projectId": "cmvdlb9jm0000muzgze9vwv5f",
+  "episodeId": "cmvdlb9jo0004muzg5x5gsb3w",
+  "episodeTag": "E7",
+  "episodeTitle": "The Storm Over Azure Mountain",
+  "reviewedAt": "2026-10-18T10:48:49.369Z",
+  "law": {
+    "name": "release-review",
+    "version": 232
+  },
+  "sources": [
+    {
+      "source": "AI_KEYFRAME",
+      "verdict": "HOLD",
+      "floor": 0.7,
+      "readings": 7,
+      "arc": true,
+      "nights": 2,
+      "provisional": false,
+      "overall": {
+        "n": 7,
+        "mean": 0.7989285714285713,
+        "median": 0.85,
+        "p10": 0.575,
+        "worst": 0.575,
+        "best": 0.875,
+        "belowFloor": 1
+      },
+      "blocking": [
+        {
+          "key": "calm",
+          "verdict": "HOLD",
+          "p10": 0.575,
+          "n": 7,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S003"
+        },
+        {
+          "key": "close",
+          "verdict": "BELOW",
+          "p10": 0.575,
+          "n": 1,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S003"
+        },
+        {
+          "key": "locked",
+          "verdict": "HOLD",
+          "p10": 0.575,
+          "n": 3,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S003"
+        },
+        {
+          "key": "shadow",
+          "verdict": "BELOW",
+          "p10": 0.575,
+          "n": 2,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S003"
+        }
+      ],
+      "repairBudget": {
+        "members": 4,
+        "shotsPerMember": 3,
+        "shotsPerPass": 12
+      },
+      "spanLine": "7 arc reading(s) across 2 night(s)",
+      "gapLine": "AI_KEYFRAME HOLDS - the body clears, the tail dips (1 reading(s) under the floor; worst 57% at E7 Sc12 S003): the tail is the work."
+    },
+    {
+      "source": "RENDER",
+      "verdict": "BELOW",
+      "floor": 0.7,
+      "readings": 7,
+      "arc": true,
+      "nights": 2,
+      "provisional": false,
+      "overall": {
+        "n": 7,
+        "mean": 0.6571428571428571,
+        "median": 0.75,
+        "p10": 0.4,
+        "worst": 0.4,
+        "best": 0.75,
+        "belowFloor": 2
+      },
+      "blocking": [
+        {
+          "key": "calm",
+          "verdict": "BELOW",
+          "p10": 0.4,
+          "n": 7,
+          "belowFloor": 2,
+          "worstRef": "E7 Sc12 S002"
+        },
+        {
+          "key": "med",
+          "verdict": "BELOW",
+          "p10": 0.4,
+          "n": 2,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S002"
+        },
+        {
+          "key": "shadow",
+          "verdict": "BELOW",
+          "p10": 0.4,
+          "n": 2,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S002"
+        },
+        {
+          "key": "traveling",
+          "verdict": "BELOW",
+          "p10": 0.4,
+          "n": 2,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S002"
+        }
+      ],
+      "repairBudget": {
+        "members": 4,
+        "shotsPerMember": 3,
+        "shotsPerPass": 12
+      },
+      "spanLine": "7 arc reading(s) across 2 night(s)",
+      "gapLine": "RENDER sits BELOW - the body itself is under the floor (mean 66%, median 75% vs floor 70%): lift the body before the tail matters."
+    }
+  ],
+  "standing": {
+    "verdict": "BELOW",
+    "arcNights": 2,
+    "provisionalExited": true
+  },
+  "path": [
+    "AI_KEYFRAME: lift the tail - repair the named cells' worst shots (E7 Sc12 S003, E7 Sc12 S003, E7 Sc12 S003): up to 4 members x 3 shots per pass, re-scores append to the arc, and the medians move only as the nights do.",
+    "RENDER: lift the body - the repair pass answers (up to 4 members x 3 shots = 12 shots per pass, the worst refs first), its re-scores append to the arc night-tagged, and the gate re-reads the medians.",
+    "when every scored source reads p10 >= floor AND mean >= floor, the verdict turns RELEASE and the episode stages for publish - the gate keeps its teeth."
+  ],
+  "headline": "E7 SITS BELOW - AI_KEYFRAME HOLDS (arc, 2 night(s)); RENDER SITS BELOW (arc, 2 night(s)); the path names 3 step(s)"
+}
