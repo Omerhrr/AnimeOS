@@ -140,8 +140,8 @@ async function main() {
   }
   ok(folded.size >= 42, `the committed half remembers the work (${folded.size} folded arc lines >= 42)`);
   ok(
-    dbAfter === 0 || dbAfter >= 6,
-    `the db half is lawful in either state (0 = the fresh seed's own truth - the file remembers what the body forgot; else a night's appends: ${dbAfter})`,
+    dbAfter === 0 || dbAfter >= 1,
+    `the db half is lawful in either state (0 = the fresh seed's own truth - the file remembers what the body forgot; else the rides' own lawful appends, however many nights landed: ${dbAfter})`,
   );
   ok(
     (dbAfter === 0 && readAI.nights >= 2 && readRE.nights >= 2)

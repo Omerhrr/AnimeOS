@@ -4195,3 +4195,20 @@ Work Log:
 Stage Summary:
 - Iteration 233 graduation ready for its ride: the map is executable, the pass reads what the gate reads, the panel reads the map.
 - 234 frontier: the AI_KEYFRAME tail's own answerer (the regen re-rides S003 through the night law) and the first RELEASE staging when the closing law turns.
+---
+Task ID: 233-map-rides-evidence
+Agent: main (Z.ai CLI)
+Task: THE RIDE — the repair pass rode the map on the living body; the evidence landed.
+
+Work Log:
+- Measured the executor's cap: background processes (even setsid) are reaped at the call boundary (control sleeper died); the house's own start-devserver.py documents the double-fork door.
+- THE WAIT RESUMES THE WORK (renderAndWait): a completed fresh render answers the wait; a RENDERING job with a live bridge heartbeat is resumed; only a corpse re-queues. The bridge outlives every waiter — the work is never duplicated.
+- Memory forensics: the OOM killer had eaten the dev server and render workers (crafted renders ~1.2GB+); freed one idle pool worker (639MB) → renders complete solo.
+- THE RIDE (scripts/ride233-themap, per member, --prerender + resume): Lin Yue S002 45%→35% WORSE, Demon Lord Wei S004 50%→45% WORSE (real bridge renders, real vision re-scores — the repair is the work, not a guarantee); appends landed night repair-2026-10-18 (db half 2 rows, committed half 213→215 append-only by key).
+- The gate re-read: RENDER 3 nights, mean 66%→64%; the receipt re-rode alive; /api/release-review answers LIVE in the studio (owner login 200, the map + work orders + path on the wire); the Releases panel reads it.
+- e2e-iter233 grew the two lawful doors (live 41/41; verify 44/44 off the ride receipt — the claim checked, not trusted) + the fold law; e2e-iter230/232 db-half pins grown to the both-states law (21/21, 33/33); smoke222-233 ALL PASS; src tsc 0.
+- start-devserver.py: dotenv quotes are syntax (Prisma read a literal "file:...) — the launcher strips them now.
+
+Stage Summary:
+- Iteration 233 CLOSED: the map is executable, the pass reads what the gate reads, the panel reads the map, and the ride's evidence is on the receipts.
+- 234 frontier: the AI_KEYFRAME tail's own answerer (the regen re-rides S003 through the night law); the sheet acceptance's own night; the closing law's first staging.

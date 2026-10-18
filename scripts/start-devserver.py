@@ -43,7 +43,9 @@ def fork_daemon():
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
+                # dotenv quotes are syntax, not value: strip the
+                # wrapping quotes or Prisma reads a literal "file:...
+                env[k.strip()] = v.strip().strip('"').strip("'")
     except FileNotFoundError:
         pass
     env.setdefault("AUTH_TRUST_HOST", "true")

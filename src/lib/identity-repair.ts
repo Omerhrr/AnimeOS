@@ -25,6 +25,8 @@
  * remains is named, never averaged away.
  */
 
+import fs from "fs";
+import path from "path";
 import { db } from "@/lib/db";
 import { recordCharacterAssetReadings } from "@/lib/character-assets";
 import {
@@ -353,9 +355,68 @@ function frameOf(stage: string | null | undefined): number | null {
   return m ? Number(m[1]) : null;
 }
 
+// THE WAIT RESUMES THE WORK (iteration 233): a waiter's death must
+// not orphan the render. The bridge keeps rendering after the
+// process that queued the job dies (measured live: a repair render
+// advanced to 90% while its waiter was reaped), so the wait answers
+// the work that already rode instead of queuing a duplicate:
+//
+//   - the shot's latest PREVIEW job COMPLETED (REVIEW/APPROVED with
+//     a clip) within RENDER_RESUME_FRESH_MS -> the wait answers ok
+//     (those pixels ARE the repair's own fresh render - the
+//     re-score judges them the same), never stale ones;
+//   - the latest job is RENDERING and ALIVE (the bridge's job-file
+//     heartbeat beat RENDER_RESUME_HEARTBEAT_MS ago) -> the wait
+//     RESUMES it (the same tick loop, the same stall/ceiling law);
+//   - a corpse (RENDERING, heartbeat silent) rides the fresh queue -
+//     the stale job keeps its own honest failure path.
+//
+// Resume is bounded to the pass's own render shape (mode PREVIEW,
+// this shot) and never resurrects a FAILED row.
+export const RENDER_RESUME_FRESH_MS = 30 * 60_000;
+export const RENDER_RESUME_HEARTBEAT_MS = 15_000;
+
+function renderJobHeartbeatAlive(jobId: string): boolean {
+  try {
+    const file = path.join(process.cwd(), "public", "renders", `.job-${jobId}.json`);
+    return Date.now() - fs.statSync(file).mtimeMs < RENDER_RESUME_HEARTBEAT_MS;
+  } catch {
+    return false;
+  }
+}
+export { renderJobHeartbeatAlive };
+
 export async function renderAndWait(projectId: string, shotId: string): Promise<{ ok: boolean; status: string }> {
-  const job = await createRenderJob(projectId, shotId, "PREVIEW");
-  if (!job) return { ok: false, status: "no-job" };
+  // the resume door (see THE WAIT RESUMES THE WORK above)
+  const latest = await db.renderJob.findFirst({
+    where: { projectId, shotId, mode: "PREVIEW", status: { in: ["RENDERING", "REVIEW", "APPROVED"] } },
+    orderBy: { startedAt: "desc" },
+  });
+  if (
+    latest &&
+    (latest.status === "REVIEW" || latest.status === "APPROVED") &&
+    latest.outputUrl &&
+    latest.finishedAt &&
+    Date.now() - latest.finishedAt.getTime() < RENDER_RESUME_FRESH_MS
+  ) {
+    return { ok: true, status: `resumed ${latest.status} - the work already rode (${latest.stage ?? "clip ready"})` };
+  }
+  let job: { id: string; status: string; stage: string | null; progress: number } | null = null;
+  if (latest && latest.status === "RENDERING") {
+    const ticked = await tickRenderJob(latest.id);
+    const advanced =
+      !!ticked &&
+      (ticked.progress > latest.progress || (ticked.stage ?? "") !== (latest.stage ?? "") || renderJobHeartbeatAlive(latest.id));
+    if (advanced && ticked) {
+      job = ticked; // the wait resumes a render that is still alive
+      console.log(`[repair] ${shotId}: resuming the live render ${latest.id.slice(-6)} at ${ticked.progress}% (the work survived its waiter)`);
+    }
+  }
+  if (!job) {
+    const created = await createRenderJob(projectId, shotId, "PREVIEW");
+    if (!created) return { ok: false, status: "no-job" };
+    job = created;
+  }
   // THE WAIT SCALES WITH THE WORK (iteration 147): progress-aware -
   // an advancing render is alive; only the stall or the ceiling ends
   // the wait, and the failure names which.
