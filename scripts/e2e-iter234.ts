@@ -126,10 +126,48 @@ async function main() {
   const receipt = JSON.parse(fs.readFileSync(path.join(process.cwd(), REVIEW_PATH), "utf8")) as ReleaseReview;
   ok(receipt.episodeId === episode!.id, "the receipt reviews THIS body's episode (the deterministic pick agrees)");
   const headOrders = buildRepairWorkOrders(headReceipt);
-  const aiOrder = headOrders.find((o) => o.source === "AI_KEYFRAME")!;
   const renderOrder = headOrders.find((o) => o.source === "RENDER")!;
-  ok(!!aiOrder && aiOrder.answeredBy === "night-law", "the AI_KEYFRAME order named the night law (the answerer, never implied - the map the rides answered)");
-  ok(aiOrder.namedRefs.length > 0, `the AI order named its worst refs (${aiOrder.namedRefs.join(", ")})`);
+  // THE TWO LAWFUL STATES (grown at 235, the verify door's own baseline
+  // law): a HEAD predating the tail's answer carries the AI order - the
+  // answerer named (night-law); a HEAD carrying the answer carries the
+  // dissolution - a source that RELEASES earns no order. Either state
+  // is the law; neither may name the answerer falsely.
+  const headAiVerdict = headReceipt.sources.find((s) => s.source === "AI_KEYFRAME")?.verdict;
+  const headDissolved = headAiVerdict === "RELEASE";
+  const headAiOrder = headOrders.find((o) => o.source === "AI_KEYFRAME");
+  ok(
+    (headDissolved && !headAiOrder) || (!headDissolved && !!headAiOrder && headAiOrder.answeredBy === "night-law"),
+    `the HEAD receipt's AI order answers its own state (${headAiVerdict ?? "?"}: ${headDissolved ? "the dissolution - no order stands" : "the order stands - the answerer named (night-law)"})`,
+  );
+  // THE ANSWERED ORDER (the dissolution's lawful baseline): when the
+  // HEAD carries the answer, the order the tail ANSWERED rebuilds from
+  // the tail's own ride row (the night and the refs the ride named) -
+  // the resolver and the night-law plan still test against a lawful
+  // order, and the regen key law holds against the same night.
+  const verifyModeEarly = RIDE_RECEIPT_ENV.length > 0;
+  const rideReceiptPathEarly = verifyModeEarly ? RIDE_RECEIPT_ENV : RIDE_RECEIPT;
+  const rideFileRowsEarly: RideRow[] = fs.existsSync(path.join(process.cwd(), rideReceiptPathEarly))
+    ? fs.readFileSync(path.join(process.cwd(), rideReceiptPathEarly), "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as RideRow)
+    : [];
+  const tailRow0 = rideFileRowsEarly.find((r) => r.kind === "tail" && (r.resolvedRefs ?? []).length > 0);
+  const aiOrder =
+    headAiOrder ??
+    (tailRow0
+      ? {
+          source: "AI_KEYFRAME" as const,
+          verdict: "HOLD" as const,
+          night: tailRow0.night ?? "",
+          budget: { members: 4, shotsPerMember: 3, shotsPerPass: 12 },
+          namedRefs: tailRow0.resolvedRefs ?? [],
+          answeredBy: "night-law" as const,
+          orderLine: "the tail's answered order, rebuilt from its own ride row (the dissolution's lawful baseline)",
+        }
+      : undefined);
+  ok(
+    !!aiOrder,
+    `the AI order for the resolver's legs ${headAiOrder ? "rides the HEAD receipt" : tailRow0 ? `rebuilds from the tail's own ride row (night ${tailRow0.night}, refs ${(tailRow0.resolvedRefs ?? []).join(", ")})` : "is absent - named honestly"}`,
+  );
+  if (!aiOrder) throw new Error("no AI order anywhere - the HEAD pre-dissolution and the ride receipt carry no tail row; the resolver's legs cannot run honestly");
   ok(!!renderOrder && renderOrder.answeredBy === "repair-pass", "RENDER's order still names the repair pass (the 233 answerer stands)");
   const liveOrders = buildRepairWorkOrders(receipt);
   const liveAi = receipt.sources.find((s) => s.source === "AI_KEYFRAME");

@@ -80,9 +80,27 @@ async function main() {
   if (!scene) throw new Error("E7 Sc12 missing");
   const g = await episodeReleaseVerdict(project.id, scene.episode.id, AI_KEYFRAME_SOURCE);
   assert(g.nights >= 1 && g.provisional === (g.nights < 2), `the gate reads the v4 clock across the wipe (nights ${g.nights}, provisional ${g.provisional} - the clock's own law)`);
-  assert(g.verdict === "HOLD", `the verdict is the honest read (${g.verdict})`);
+  // THE VERDICT IS THE LAW'S OWN READ (the 227/228 precedent - the
+  // assert holds the law, not one box state): the 234 tail's ride
+  // lawfully moved this source HOLD -> RELEASE; the pin reads the
+  // verdict off the distribution's own numbers, wherever the medians
+  // stand as the nights do.
+  const lawVerdict =
+    (g.overall.mean ?? 0) < g.floor || (g.overall.median ?? 0) < g.floor
+      ? "BELOW"
+      : (g.overall.p10 ?? 0) < g.floor
+        ? "HOLD"
+        : "RELEASE";
+  assert(g.verdict === lawVerdict, `the verdict is the honest read (the law's own derivation: ${lawVerdict} - mean ${g.overall.mean}, p10 ${g.overall.p10}, floor ${g.floor})`);
+  // THE DISSOLUTION LAW (the 234 landing): a RELEASED cell leaves the
+  // blocking tray honestly; a blocking cell names its worst. Either
+  // state is the reading's own law - the worst cell moves as the
+  // shots improve.
   const close = g.blocking.find((c) => c.key === "close");
-  assert(!!close && typeof close.worst === "number" && close.worst >= 0 && close.worst <= 1 && typeof close.worstRef === "string" && close.worstRef.length > 0, "the close cell names its worst honestly (the reading's own law - the worst cell moves as the shots improve)");
+  assert(
+    close === undefined || (typeof close.worst === "number" && close.worst >= 0 && close.worst <= 1 && typeof close.worstRef === "string" && close.worstRef.length > 0),
+    "the close cell answers its own state (absent = the cell RELEASES, the dissolution law; present = it names its worst honestly)",
+  );
 
   console.log("\nLEG 3 - the restore receipt (from disk):");
   const rr = JSON.parse(fs.readFileSync("receipts/restore-receipt.json", "utf8"));

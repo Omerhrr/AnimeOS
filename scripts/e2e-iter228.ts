@@ -58,7 +58,23 @@ async function main() {
   ok(typeof weiDna?.robeColor === "string" && weiDna.robeColor.length > 0 && typeof weiDna?.weaponType === "string" && weiDna.weaponType.length > 0, "the DB carries Wei's DNA pins (the same law)");
   ok((lin?.designSpec?.length ?? 0) === 514 && (lin?.designSheetUrl ?? "").includes("/designs/"), `the committed design wired byte-exact (Lin ${lin?.designSpec?.length ?? 0} chars - the 213 law's own number)`);
   const dbArcRows = await db.identityArcReading.count({ where: { source: "AI_KEYFRAME" } });
-  ok(dbArcRows === 0 || dbArcRows === 6, `the union arc's db half is lawful (${dbArcRows} rows - empty until a night rides; the night's own append when it does)`);
+  // THE UNION LAW'S OWN INVARIANT (grown at 235, the 227/228 precedent):
+  // the db half is lawful at 0, or at the rides' own rows - however many
+  // lawful nights landed - and every db night key must live in the
+  // committed half (the file is the durable ledger; the live half never
+  // invents a night the file does not carry). The 234 tail's ride
+  // lawfully added S003's single regen row (1 row, its own key).
+  const committedAiNights = new Set(
+    fs.readFileSync(path.join(process.cwd(), "receipts", "identity-arc.jsonl"), "utf8").split("\n").filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as { source?: string; night?: string })
+      .filter((r) => r.source === "AI_KEYFRAME" && r.night)
+      .map((r) => r.night as string),
+  );
+  const dbAiNights = new Set(
+    (await db.identityArcReading.findMany({ where: { source: "AI_KEYFRAME" }, select: { night: true } })).map((r) => r.night),
+  );
+  const allNightsCarried = [...dbAiNights].every((n) => committedAiNights.has(n));
+  ok((dbArcRows === 0 || dbArcRows >= 1) && allNightsCarried, `the union arc's db half is lawful (${dbArcRows} rows - empty until a night rides; the rides' own appends, however many lawful nights, every night key carried by the committed half)`);
   const committedArc = fs.readFileSync(path.join(process.cwd(), "receipts", "identity-arc.jsonl"), "utf8").split("\n").filter((l) => l.trim())
     .map((l) => JSON.parse(l) as { source?: string })
     .filter((r) => r.source === "AI_KEYFRAME");

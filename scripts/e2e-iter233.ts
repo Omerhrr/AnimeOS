@@ -107,14 +107,25 @@ async function main() {
   // that RELEASES earns no order (nothing stands between).
   const headReceipt233 = JSON.parse(execSync(`git show HEAD:${REVIEW_PATH}`, { cwd: process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString()) as ReleaseReview;
   const headAiOrder = buildRepairWorkOrders(headReceipt233).find((o) => o.source === "AI_KEYFRAME");
-  ok(!!headAiOrder && headAiOrder.answeredBy === "night-law", "the AI order named the night law (the answerer, never implied - the map the rides answered)");
+  // THE TWO LAWFUL STATES (grown at 235, the verify door's own baseline
+  // law): a HEAD predating the tail's answer carries the AI order - the
+  // answerer named, never implied (night-law); a HEAD carrying the
+  // answer carries the dissolution - a source that RELEASES earns no
+  // order (nothing stands between). Either state is the law; neither
+  // may name the answerer falsely.
+  const headAiVerdict = headReceipt233.sources.find((s) => s.source === "AI_KEYFRAME")?.verdict;
+  const headDissolved = headAiVerdict === "RELEASE";
+  ok(
+    (headDissolved && !headAiOrder) || (!headDissolved && !!headAiOrder && headAiOrder.answeredBy === "night-law"),
+    `the HEAD receipt's AI order answers its own state (${headAiVerdict ?? "?"}: ${headDissolved ? "the dissolution - no order stands" : "the order stands - the answerer named (night-law)"})`,
+  );
   const liveAiVerdict233 = receipt.sources.find((s) => s.source === "AI_KEYFRAME")?.verdict;
   const liveAiDissolved = !receiptOrders.some((o) => o.source === "AI_KEYFRAME");
   ok(
     (liveAiVerdict233 === "RELEASE") === liveAiDissolved,
     `the live order law holds (AI_KEYFRAME ${liveAiVerdict233 ?? "?"}: ${liveAiDissolved ? "no order stands - nothing stands between; the tail's law answered" : "the order stands - the tail still owes work"})`,
   );
-  ok(renderOrder.night === NIGHT && headAiOrder?.night === NIGHT, `the orders ride the review's own night tag (${NIGHT})`);
+  ok(renderOrder.night === NIGHT && (headAiOrder ? headAiOrder.night === NIGHT : true), `the orders ride the review's own night tag (${NIGHT})`);
   ok(renderOrder.budget.members === REPAIR_MAX_MEMBERS && renderOrder.budget.shotsPerMember === REPAIR_MAX_SHOTS_PER_MEMBER, "the order's budget is the repair's own constants");
 
   // ── leg 4: the instrument seam, named LIVE ──

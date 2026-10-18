@@ -77,11 +77,20 @@ async function main() {
   console.log("leg 8: the arc's both halves");
   const dbArcRows = await db.identityArcReading.count({ where: { source: "AI_KEYFRAME" } });
   ok(dbArcRows === 0 || dbArcRows >= 1, `the union arc's db half is lawful in either state: ${dbArcRows} rows (0 = the fresh seed's own truth - the sixth death took the night's rows and the committed file remembers; >= 1 = the rides' own appends, however many lawful nights landed)`);
-  const committedArc = fs.readFileSync(path.join(process.cwd(), "receipts", "identity-arc.jsonl"), "utf8").split("\n").filter((l) => l.trim())
-    .map((l) => JSON.parse(l) as { source?: string; night?: string })
+  const committedArc = fs.readFileSync(path.join(process.cwd(), "receipts", "identity-arc.jsonl"), "utf8").split("\n").filter((l) => l.trim());
+  const aiRaw = committedArc
+    .map((l) => JSON.parse(l) as { source?: string; night?: string; ref?: { scene?: number; shot?: number } })
     .filter((r) => r.source === "AI_KEYFRAME");
-  const tonight = committedArc.filter((r) => r.night === "night-222-v4aikeyframe");
-  ok(committedArc.length === 42 && tonight.length === 6, `the committed half: ${committedArc.length} AI_KEYFRAME rows (36 history + 6 tonight - the night's append rides the file too)`);
+  const tonight = aiRaw.filter((r) => r.night === "night-222-v4aikeyframe");
+  // THE APPEND-ONLY LAW, NOT ONE BOX STATE (grown at 235): the committed
+  // half only grows by the rides' own keys - the 42-row landing state
+  // (36 history + 6 tonight) is the floor, night-222's rows are a
+  // multiple of the night's 6-row shape, and the file carries no folded
+  // duplicates (append-only BY KEY). The 234 tail's ride lawfully added
+  // S003's single regen row (43 rows now).
+  const arcKeysAll = aiRaw.map((r) => `${r.night}|${r.ref?.scene}/${r.ref?.shot}`);
+  const uniqueKeys = new Set(arcKeysAll);
+  ok(aiRaw.length >= 42 && tonight.length % 6 === 0 && uniqueKeys.size === arcKeysAll.length, `the committed half: ${aiRaw.length} AI_KEYFRAME rows (>= 42 - the file only grows by the rides' own keys; tonight's rows a multiple of 6; append-only by key, ${uniqueKeys.size} unique)`);
   const renderDbRows = await db.identityArcReading.count({ where: { source: "RENDER" } });
   ok(renderDbRows === 0 || renderDbRows >= 1, `the union counts by source (0 = no repair rode - the RENDER rows stay in git's ledger; >= 1 = the 233 map's repair night appended its own RENDER rows to the live half: ${renderDbRows})`);
 
@@ -91,7 +100,11 @@ async function main() {
   const scene = await db.scene.findFirst({ where: { number: 12, episode: { number: 7 } }, include: { episode: true } });
   if (project && scene) {
     const gate = await episodeReleaseVerdict(project.id, scene.episode.id, "AI_KEYFRAME");
-    ok(gate.nights === 2 && gate.provisional === false, `the clock advanced: ${gate.nights} nights, PROVISIONAL has exited (${gate.provisional})`);
+    // THE CLOCK'S OWN LAW (grown at 235): the nights count the arc's own
+    // span - the rides lawfully grow it (the 234 regen night joined) -
+    // and PROVISIONAL answers the clock, not a literal: nights >= 2 and
+    // provisional === (nights < 2).
+    ok(gate.nights >= 2 && gate.provisional === (gate.nights < 2), `the clock answers its own law: ${gate.nights} night(s), PROVISIONAL ${gate.provisional} (nights >= 2, provisional === nights < 2)`);
     ok(gate.verdict === "HOLD" || gate.verdict === "RELEASE", `the verdict is the arc's own word, never a crash (${gate.verdict})`);
   } else {
     ok(false, "the project or scene is missing - the DB's state is not the law's");

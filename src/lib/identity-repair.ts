@@ -50,6 +50,7 @@ import {
   type EpisodeReleaseRead,
 } from "@/lib/identity-matrix";
 import { targetsNamedFirst } from "@/lib/repair-work-order";
+import { carriedAcceptanceVerdicts, type CarryEntry } from "@/lib/acceptance-carry";
 import type { IdentityScoreEntry } from "@/lib/identity";
 import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
 import { parseGroomProfile, groomProfileLine } from "@/lib/blender/groom";
@@ -118,6 +119,11 @@ export interface RepairMemberRow {
   before: { standing: string; average: number | null; worst: number | null; worstRef: string | null };
   dna: { source: "cached" | "read" | "failed" | "skipped"; line: string };
   shots: RepairShotRow[];
+  /** THE ACCEPTANCE'S VERDICT, CARRIED (iteration 235): the newest
+   *  acceptance night's own answer for this member, named in the
+   *  ledger - the next night rides WITH the verdict in hand (the
+   *  carry names continuity, it never skips the beat's own gate). */
+  carriedAcceptance?: string;
   reanchored: boolean;
   reanchorError?: string;
   /** THE SHEET ACCEPTANCE (iteration 149): how the beat answered.
@@ -487,7 +493,7 @@ function memberSnapshot(m: CastIdentityMeasurement, characterId: string) {
  */
 export async function runIdentityRepairPass(
   projectId: string,
-  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string; night?: string; receiptPath?: string | null; episodeId?: string; namedRefs?: string[] },
+  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string; night?: string; receiptPath?: string | null; episodeId?: string; namedRefs?: string[]; carryEntries?: CarryEntry[] },
 ): Promise<RepairPassResult> {
   const memberLimit = Math.max(1, Math.min(REPAIR_MAX_MEMBERS, Math.round(Number(opts?.members ?? 2) || 2)));
   const shotLimit = Math.max(1, Math.min(REPAIR_MAX_SHOTS_PER_MEMBER, Math.round(Number(opts?.shotsPerMember ?? 1) || 1)));
@@ -522,6 +528,13 @@ export async function runIdentityRepairPass(
     .filter((m) => m.standing === "BELOW")
     .filter((m) => !nameFilter || m.name.toLowerCase().includes(nameFilter))
     .slice(0, memberLimit);
+  // THE ACCEPTANCE'S VERDICT, CARRIED (iteration 235): the caller's
+  // entries (the receipts' acceptance rows) turn into the per-member
+  // carried line once, before the work - every row names what the
+  // next night knew (or the honest NONE, never an implied answer).
+  const carryByName = new Map(
+    carriedAcceptanceVerdicts(opts?.carryEntries ?? [], belowMembers.map((m) => m.name)).map((c) => [c.characterName, c.line] as const),
+  );
 
   const rows: RepairMemberRow[] = [];
   for (const member of belowMembers) {
@@ -650,6 +663,7 @@ export async function runIdentityRepairPass(
       before: { standing: member.standing, average: member.average, worst: member.worst, worstRef: member.worstRef },
       dna,
       shots: shotRows,
+      ...(carryByName.has(member.name) ? { carriedAcceptance: carryByName.get(member.name) } : {}),
       reanchored,
       ...(reanchorError ? { reanchorError } : {}),
       ...(reanchorAttempts !== undefined ? { reanchorAttempts } : {}),
@@ -734,6 +748,7 @@ export async function runIdentityRepairPass(
           members: rows.map((r) => ({
             name: r.name,
             dna: r.dna,
+            ...(r.carriedAcceptance ? { carriedAcceptance: r.carriedAcceptance } : {}),
             reanchored: r.reanchored,
             ...(r.reanchorAttempts !== undefined ? { reanchorAttempts: r.reanchorAttempts } : {}),
             ...(r.reanchorNote !== undefined ? { reanchorNote: r.reanchorNote } : {}),
