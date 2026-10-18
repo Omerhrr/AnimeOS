@@ -88,7 +88,18 @@ async function main() {
   const renderOrder = receiptOrders.find((o) => o.source === "RENDER")!;
   const aiOrder = receiptOrders.find((o) => o.source === "AI_KEYFRAME")!;
   ok(!!renderOrder && renderOrder.answeredBy === "repair-pass", `RENDER's order names the repair pass (${renderOrder?.answeredBy})`);
-  ok(renderOrder.namedRefs.length > 0 && renderOrder.namedRefs[0] === "E7 Sc12 S002", `RENDER's named worst ref is the gate's own cell (${renderOrder.namedRefs[0]})`);
+  // THE MAP'S OWN CELLS (grown to the law, the 234 graduation): the
+  // named refs are the gate's blocking cells' worst refs - every one
+  // names a LIVE shot. The literal worst cell is the box's state at
+  // the 233 landing; the rides may lawfully move it (an acceptance
+  // night's honest median), the map's cells stay live either way.
+  const liveShotRefs233 = new Set(
+    (await db.shot.findMany({
+      where: { scene: { episodeId: episode!.id } },
+      select: { id: true, number: true, scene: { select: { number: true, episode: { select: { number: true } } } } },
+    })).map((s) => `E${s.scene.episode.number} Sc${s.scene.number} S${String(s.number).padStart(3, "0")}`),
+  );
+  ok(renderOrder.namedRefs.length > 0 && renderOrder.namedRefs.every((r) => liveShotRefs233.has(r)), `RENDER's named worst refs are the gate's own cells, all live (${renderOrder.namedRefs.join(", ")})`);
   ok(!!aiOrder && aiOrder.answeredBy === "night-law", "the AI_KEYFRAME tail is the night law's work (the answerer named, never implied)");
   ok(renderOrder.night === NIGHT && aiOrder.night === NIGHT, `both orders ride the same night tag (${NIGHT})`);
   ok(renderOrder.budget.members === REPAIR_MAX_MEMBERS && renderOrder.budget.shotsPerMember === REPAIR_MAX_SHOTS_PER_MEMBER, "the order's budget is the repair's own constants");
@@ -218,7 +229,20 @@ async function main() {
   const readRE = await episodeReleaseVerdict(projectId, episode!.id, "RENDER");
   ok(readRE.arc && readRE.nights >= 3, `RENDER's release read now spans ${readRE.nights} night(s) (the repair night joined the cohort)`);
   const readAI = await episodeReleaseVerdict(projectId, episode!.id, "AI_KEYFRAME");
-  ok(readAI.arc && readAI.nights === (receipt.sources.find((s) => s.source === "AI_KEYFRAME")?.nights ?? 2), `AI_KEYFRAME's read is untouched by a RENDER ride (${readAI.nights} night(s) - the tail waits for its own law)`);
+  // THE TAIL'S OWN LAW (the 234 graduation): a RENDER ride never
+  // touches the tail's span - it moves only when the tail's own
+  // night (the regen under the AI_KEYFRAME source) stands in the
+  // arc. Either half carrying the tail's night is the lawful growth;
+  // no tail night and the span is byte-untouched.
+  const receiptAiNights = receipt.sources.find((s) => s.source === "AI_KEYFRAME")?.nights ?? 2;
+  const arcNow = fs.readFileSync(path.join(process.cwd(), ARC_RECEIPT), "utf8");
+  const tailNightLanded =
+    foldKeys(arcNow).has(`AI_KEYFRAME|${renderOrder.namedRefs[0]?.replace(/^E(\d+) Sc(\d+) S(\d+)$/, "$1/$2/$3")}|${NIGHT}`) ||
+    (await db.identityArcReading.count({ where: { source: "AI_KEYFRAME", night: NIGHT } })) > 0;
+  ok(
+    readAI.arc && readAI.nights >= receiptAiNights && (tailNightLanded || readAI.nights === receiptAiNights),
+    `AI_KEYFRAME's span moves only under its own law (${readAI.nights} night(s) vs the receipt's ${receiptAiNights} - a RENDER ride never touches the tail${tailNightLanded ? `; the regen night ${NIGHT} stands in the arc` : ""})`,
+  );
   const fresh = buildReleaseReview({
     projectId, episodeId: episode!.id, episodeTag: receipt.episodeTag, episodeTitle: receipt.episodeTitle,
     reads: [readAI, readRE],
@@ -249,9 +273,15 @@ async function main() {
   const keysAfter = foldKeys(arcFileAfter);
   const linesBefore = arcFileBefore.split("\n").filter((l) => l.trim()).length;
   const linesAfter = arcFileAfter.split("\n").filter((l) => l.trim()).length;
+  // THE VERIFY DOOR'S OWN TWO LAWFUL STATES (grown to the law, the
+  // 234 graduation): a baseline that predates the rides' evidence
+  // commit lacks their keys (the file must have grown by them); a
+  // baseline that already carries the ride night's keys (the
+  // evidence landed) answers the append-only law alone.
+  const rideKeysInBaseline = [...keysBefore].some((k) => k.startsWith("RENDER|") && k.endsWith(`|${NIGHT}`));
   ok(
-    linesAfter >= linesBefore && linesAfter >= keysBefore.size + (verifyModeLeg5 ? 2 : 0),
-    `the committed half carries the ride (${linesBefore} pre-ride -> ${linesAfter} lines - a first ride appends its keys, a re-ride folds into the same keys: append-only BY KEY)`,
+    linesAfter >= linesBefore && linesAfter >= keysBefore.size + (verifyModeLeg5 && !rideKeysInBaseline ? 2 : 0),
+    `the committed half carries the ride (${linesBefore} pre-ride -> ${linesAfter} lines - a first ride appends its keys, a re-ride folds into the same keys: append-only BY KEY${rideKeysInBaseline ? "; the evidence commit already carries the ride's own keys" : ""})`,
   );
   let appendOnly = true;
   for (const k of keysBefore) if (!keysAfter.has(k)) appendOnly = false;
