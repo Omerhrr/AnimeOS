@@ -37,6 +37,34 @@ import { authSecret, type StudioRole } from "@/lib/auth";
 const SESSION_COOKIE = "authjs.session-token";
 const SEVEN_DAYS_SECONDS = 7 * 24 * 3600;
 
+// ─────────────────────────────────────────────────────────────
+// THE COOKIE CONTEXT LAW
+//
+// Behind the preview edge the studio renders inside a CROSS-SITE
+// iframe, and a SameSite=Lax session cookie is third-party there:
+// the browser stores nothing on the mint, sends nothing on the
+// ride, every /api call reads 401, and the shell spins on
+// "Initializing production environment…" forever (the live smoke
+// this law answers - the login itself rode 200, the chain after
+// it starved).
+//
+// So the attributes follow the request's context: behind an HTTPS
+// edge (x-forwarded-proto) the session rides
+// SameSite=None; Secure; Partitioned - the CHIPS jar a cross-site
+// frame may keep (Chrome/Edge/Firefox). On plain localhost dev
+// (http, no forwarded proto) it stays Lax, because SameSite=None
+// without Secure is rejected outright.
+// The read side is untouched: proxy.ts getToken() reads whatever
+// cookie the context delivers; only the jar's label changed.
+// ─────────────────────────────────────────────────────────────
+function sessionCookieAttrs(req: Request, maxAge: number) {
+  const proto = (req.headers.get("x-forwarded-proto") ?? "").split(",")[0].trim().toLowerCase();
+  if (proto === "https") {
+    return { httpOnly: true, sameSite: "none" as const, secure: true, partitioned: true, path: "/", maxAge };
+  }
+  return { httpOnly: true, sameSite: "lax" as const, path: "/", maxAge };
+}
+
 export async function POST(req: Request) {
   let body: { email?: unknown; password?: unknown };
   try {
@@ -74,23 +102,19 @@ export async function POST(req: Request) {
     ok: true,
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
   });
-  res.cookies.set(SESSION_COOKIE, jwt, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SEVEN_DAYS_SECONDS,
-  });
+  res.cookies.set(SESSION_COOKIE, jwt, sessionCookieAttrs(req, SEVEN_DAYS_SECONDS));
   // The stale callback-url cookie (Auth.js kept writing the derived
-  // localhost origin into it) is dead weight - clear it on the way in.
-  res.cookies.set("authjs.callback-url", "", { httpOnly: true, path: "/", maxAge: 0 });
+  // localhost origin into it) is dead weight - clear it on the way in,
+  // under the same context law so the clear actually lands.
+  res.cookies.set("authjs.callback-url", "", sessionCookieAttrs(req, 0));
   return res;
 }
 
 // Sign-out without the Auth.js signout redirect (same preview-proof
 // reasoning): expire the session cookie, the client navigates itself.
-export async function DELETE() {
+export async function DELETE(req: Request) {
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 0 });
-  res.cookies.set("authjs.callback-url", "", { httpOnly: true, path: "/", maxAge: 0 });
+  res.cookies.set(SESSION_COOKIE, "", sessionCookieAttrs(req, 0));
+  res.cookies.set("authjs.callback-url", "", sessionCookieAttrs(req, 0));
   return res;
 }
