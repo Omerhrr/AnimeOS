@@ -330,7 +330,21 @@ export function readWatchState(): WatchState {
   let restoreComplete = false;
   try {
     const rr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "receipts", "restore-receipt.json"), "utf8"));
-    restoreComplete = rr.complete === true;
+    // THE 231 CUSTODY LAW: a restore receipt certifies the DB it was
+    // born on - `complete:true` earned on a DEAD body does not certify
+    // the reborn one. The seed writes the box's living identity
+    // (receipts/box-identity.json) on every rebirth; the receipt's
+    // project id must name THAT body. No identity file (the pre-231
+    // shape), a mismatched id, or no project field - the claim is
+    // UNCERTIFIED and the restore rides again (the sheets re-anchor,
+    // the DNA re-lands - the claim checked against the living cast,
+    // not trusted).
+    if (rr.complete === true && typeof rr.project === "string" && rr.project) {
+      try {
+        const bi = JSON.parse(fs.readFileSync(path.join(process.cwd(), "receipts", "box-identity.json"), "utf8"));
+        restoreComplete = bi.projectId === rr.project;
+      } catch { /* no living identity on file - the claim is uncertified */ }
+    }
   } catch { /* absent - the restore rides */ }
 
   let nightOkShots = 0;

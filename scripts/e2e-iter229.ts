@@ -83,7 +83,11 @@ async function main() {
   const committedArc = fs.readFileSync(path.join(process.cwd(), "receipts", "identity-arc.jsonl"), "utf8").split("\n").filter((l) => l.trim())
     .map((l) => JSON.parse(l) as { source?: string })
     .filter((r) => r.source === "AI_KEYFRAME");
-  ok(committedArc.length === 36 || committedArc.length === 36 + dbArcRows, `the committed ledger half stands: ${committedArc.length} AI_KEYFRAME rows (${committedArc.length === 36 ? "the history" : "the history + the night's append"})`);
+  // THE 231 UNION LAW: the ledger file is append-only across boxes; the
+  // db half is THIS body's own (a rebirth empties it, the file remembers).
+  // The invariant every lawful state holds: file >= the 36-row history,
+  // and file minus this body's appends still carries the history.
+  ok(committedArc.length >= 36 && committedArc.length - dbArcRows >= 36, `the committed ledger half stands: ${committedArc.length} AI_KEYFRAME rows, db half ${dbArcRows} (the append-only union law - the file carries the 36-row history plus every night's append; rebirth empties the db half, the file remembers)`);
 
   // ── leg 8: the gate's continuity ──
   console.log("leg 8: the release gate");

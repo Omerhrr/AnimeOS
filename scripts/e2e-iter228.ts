@@ -62,7 +62,11 @@ async function main() {
   const committedArc = fs.readFileSync(path.join(process.cwd(), "receipts", "identity-arc.jsonl"), "utf8").split("\n").filter((l) => l.trim())
     .map((l) => JSON.parse(l) as { source?: string })
     .filter((r) => r.source === "AI_KEYFRAME");
-  ok(committedArc.length === 36 || committedArc.length === 36 + dbArcRows, `the committed ledger half stands: ${committedArc.length} AI_KEYFRAME rows (${committedArc.length === 36 ? "the history" : "the history + the night's own append"} - the union law counts by source)`);
+  // THE 231 UNION LAW: the ledger file is append-only across boxes; the
+  // db half is THIS body's own (a rebirth empties it, the file remembers).
+  // The invariant every lawful state holds: file >= the 36-row history,
+  // and file minus this body's appends still carries the history.
+  ok(committedArc.length >= 36 && committedArc.length - dbArcRows >= 36, `the committed ledger half stands: ${committedArc.length} AI_KEYFRAME rows, db half ${dbArcRows} (the append-only union law - the file carries the 36-row history plus every night's append across boxes; rebirth empties the db half, the file remembers)`);
 
   // ── leg 4: the riding chain's pid truth (the rider, not the vehicle) ──
   console.log("leg 4: the pid truth law, proven on the real chain");
@@ -81,8 +85,10 @@ async function main() {
   console.log("leg 5: the window's shape (durable)");
   const wr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "inspect", "aiart222", "window-report.json"), "utf8")) as { shape?: string; channels?: Array<{ channel: string; state: string; detail: string }> };
   const blocked = (wr.channels ?? []).filter((c) => c.state === "BLOCKED");
-  const allBlocked = (wr.channels ?? []).every((c) => c.state === "BLOCKED");
-  ok((wr.channels ?? []).length === 4 && wr.shape === (allBlocked ? "account-total" : "partial"), `the shape is named: ${wr.shape} (${blocked.length}/4 channels blocked - the shape honest to the channels, whatever the wall does)`);
+  const allBlocked = blocked.length === (wr.channels ?? []).length;
+  // THE 231 LAW: three shapes, honest to the channels (open = none walled).
+  const expectedShape = allBlocked ? "account-total" : blocked.length === 0 ? "open" : "partial";
+  ok((wr.channels ?? []).length === 4 && wr.shape === expectedShape, `the shape is named: ${wr.shape} (${blocked.length}/4 channels blocked - the shape honest to the channels, whatever the wall does)`);
   ok(blocked.every((c) => (c.detail ?? "").includes("status")), "every blocked channel's detail is the wall's own words verbatim (429 or 400 - nothing paraphrased)");
 
   // ── leg 6: the restore receipt (the leg's real ride on the fresh DB) ──

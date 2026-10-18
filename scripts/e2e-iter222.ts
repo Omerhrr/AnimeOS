@@ -119,8 +119,12 @@ async function main() {
 
   console.log("\nLEG 5 - the window's shape (durable):");
   const wr = JSON.parse(fs.readFileSync("inspect/aiart222/window-report.json", "utf8"));
-  const allBlocked = wr.channels.every((c: { state: string }) => c.state === "BLOCKED");
-  assert(wr.channels.length === 4 && wr.shape === (allBlocked ? "account-total" : "partial"), `the four-channel read's own law (shape ${wr.shape} honest to the channels - the wall's state, whatever it is, named)`);
+  const blockedCount = wr.channels.filter((c: { state: string }) => c.state === "BLOCKED").length;
+  const allBlocked = blockedCount === wr.channels.length;
+  // THE 231 LAW: three shapes, honest to the channels - account-total (all
+  // walled), open (none walled - the probe's-shadow graduation), partial.
+  const expectedShape = allBlocked ? "account-total" : blockedCount === 0 ? "open" : "partial";
+  assert(wr.channels.length === 4 && wr.shape === expectedShape, `the four-channel read's own law (shape ${wr.shape} honest to the channels - the wall's state, whatever it is, named)`);
   assert(wr.channels.every((c: { state: string; detail?: string }) => c.state !== "BLOCKED" || (c.detail ?? "").includes("status")), "every blocked channel's detail is the wall's own words verbatim (429 or 400 - nothing paraphrased)");
 
   console.log(`\n${failures === 0 ? "E2E 222 ALL PASS" : `E2E 222 FAILURES: ${failures}`}`);

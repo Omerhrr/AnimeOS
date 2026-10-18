@@ -1,32 +1,33 @@
 {
   "probe": "probe222-window",
-  "readAt": "2026-10-17T21:56:45.667Z",
-  "shape": "partial",
+  "edition": "231",
+  "readAt": "2026-10-18T09:04:42.279Z",
+  "shape": "open",
   "channels": [
     {
       "channel": "edit",
-      "state": "BLOCKED",
-      "ms": 190,
-      "detail": "API request failed with status 400: {\"error\":{\"code\":\"1210\",\"message\":\"API 调用参数有误，请检查文档。request body invalid: image_to_i"
+      "state": "OPEN",
+      "ms": 13905,
+      "detail": "base64 74504 chars"
     },
     {
       "channel": "create",
       "state": "OPEN",
-      "ms": 94219,
-      "detail": "base64 132668 chars"
+      "ms": 47864,
+      "detail": "base64 118800 chars"
     },
     {
       "channel": "vision",
-      "state": "BLOCKED",
-      "ms": 95,
-      "detail": "API request failed with status 400: {\"error\":{\"code\":\"1210\",\"message\":\"messages.content.type 参数非法，取值范围 ['text']\"}}"
+      "state": "OPEN",
+      "ms": 429,
+      "detail": "READY"
     },
     {
       "channel": "text",
       "state": "OPEN",
-      "ms": 309,
+      "ms": 373,
       "detail": "READY"
     }
   ],
-  "note": "the four-channel read after the twelfth-drift wipe - the wall's state survives the box's death"
+  "note": "the four-channel read through the production doors (the 231 probe's-shadow graduation) - the wall's state survives the box's death"
 }

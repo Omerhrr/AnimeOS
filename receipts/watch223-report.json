@@ -1,45 +1,45 @@
 {
   "watch": "window-watch223",
   "generation": 1,
-  "startedAt": "2026-10-17T21:56:46.203Z",
-  "endedAt": "2026-10-17T22:22:11.665Z",
+  "startedAt": "2026-10-18T08:56:28.931Z",
+  "endedAt": "2026-10-18T09:07:26.038Z",
   "deadlineHours": 12,
   "waitMs": 600000,
-  "probeCycles": 1,
-  "windowOpenedAt": "2026-10-17T21:57:27.469Z",
+  "probeCycles": 2,
+  "windowOpenedAt": "2026-10-18T09:06:54.793Z",
   "wallVerbatim": null,
   "legs": [
     {
       "name": "restore",
       "target": "scripts/night122-restore.ts",
-      "startedAt": "2026-10-17T21:57:52.332Z",
-      "endedAt": "2026-10-17T22:01:57.677Z",
+      "startedAt": "-",
+      "endedAt": "-",
       "exitCode": 0,
       "timedOut": false,
-      "summary": "exit 0 - Demon Lord Wei: sheet DNA READ (vision) | Lin Yue - Clone 001: no sheet - DNA absent | RESTORE RECEIPT: receipts/restore-receipt.json (complete: true)"
+      "summary": "skip - the restore receipt reads complete:true - the sheets landed, the leg is done"
     },
     {
       "name": "night",
       "target": "scripts/night222-v4aikeyframe.ts",
-      "startedAt": "2026-10-17T22:01:57.677Z",
-      "endedAt": "2026-10-17T22:18:30.524Z",
+      "startedAt": "-",
+      "endedAt": "-",
       "exitCode": 0,
       "timedOut": false,
-      "summary": "exit 0 -   blocking: close - BELOW, median 57, p10 57 (worst at E7 Sc12 S003) |   blocking: locked - HOLD, median 86, p10 57 (worst at E7 Sc12 S003) |   blocking: shadow - BELOW, median 64, p10 57 (worst at E7 Sc12 S003)"
+      "summary": "skip - the durable night report carries all 6 shots ok - the second kf-v4 night is complete"
     },
     {
       "name": "arms",
       "target": "scripts/probe222-swordprior.ts",
-      "startedAt": "2026-10-17T22:18:30.524Z",
-      "endedAt": "2026-10-17T22:22:11.665Z",
+      "startedAt": "2026-10-18T09:07:25.372Z",
+      "endedAt": "2026-10-18T09:07:26.038Z",
       "exitCode": 0,
       "timedOut": false,
-      "summary": "exit 0 -     note: Face structure is highly accurate; hair silhouette matches but lacks the high bun's volume seen in the sheet; wardrobe cut and gold embroidery placement are correct; palette shifts to deep crimson under scene lighting; s |   >>> S004-arm-weaponless worst 90 | receipt -> /home/z/my-project/"
+      "summary": "exit 0 - PENDING-WINDOW: no sheeted cast (the DB's own truth) - the paired arms ride when the window opens"
     }
   ],
   "complete": true,
   "windowBound": [],
   "verdictReason": "the receipts carry the answer - restore complete:true, all 6 shots ok, the chain stops on its own answer",
-  "writtenAt": "2026-10-17T22:22:11.665Z",
+  "writtenAt": "2026-10-18T09:07:26.038Z",
   "reportPath": "/home/z/my-project/AnimeOS/receipts/watch223-report.json"
 }

@@ -1,7 +1,12 @@
-// PROBE 222 - the window's shape after the wipe: all four channels in
-// ONE run (the 220 wall measured them separately; this probe reads the
-// whole account at once - the rebuild's restore law and the second
-// kf-v4 night both wait on this answer). No production write.
+// PROBE 222 - the window's shape: all four channels in ONE run.
+// (THE 231 GRADUATION - THE PROBE'S SHADOW: the 222 probe measured the
+// wall with its OWN wrong doors and read "partial 2/4" for five rides;
+// probe231-shapes.ts opened both doors live - EDIT rides the images
+// OBJECT array `[{url: dataUrl}]` (the 215 anchor pass's shape,
+// keyframe.ts's own), VISION rides the dedicated createVision door (no
+// model field - production's exact shape). The probe now knocks the
+// production doors, so the window's read is the ACCOUNT's shape, not
+// the probe's shadow.) No production write.
 // Run: npx tsx scripts/probe222-window.ts
 import fs from "fs";
 import path from "path";
@@ -22,6 +27,10 @@ async function main() {
   const zai = await ZAI.create();
 
   // 1. THE EDIT CHANNEL (the sheets' door - night122-restore's need)
+  //    THE 231 DOOR LAW: the runtime parses the images OBJECT array
+  //    `[{url: dataUrl}]` (the published dts' singular `image` string is
+  //    the shadow that read as a 400 wall since 220). probe231-shapes
+  //    E3 opened this door live (13.2s, 76,100 chars of real pixels).
   const t0e = Date.now();
   try {
     // a tiny 1x1 transparent png as the base image
@@ -31,9 +40,9 @@ async function main() {
     );
     const res = (await zai.images.generations.edit({
       prompt: "a single green tea cup on a wooden table, anime cel-shading style",
-      image: `data:image/png;base64,${tiny.toString("base64")}`,
+      images: [{ url: `data:image/png;base64,${tiny.toString("base64")}` }],
       size: "1024x1024",
-    })) as { data?: Array<{ base64?: string }> };
+    } as never)) as { data?: Array<{ base64?: string }> };
     const ms = Date.now() - t0e;
     const b64 = res.data?.[0]?.base64 ?? "";
     console.log(`EDIT CHANNEL: OPEN (${ms}ms, base64 ${b64.length} chars)`);
@@ -64,23 +73,28 @@ async function main() {
   }
 
   // 3. THE VISION CHANNEL (the judge + the count + the anchors' door)
+  //    THE 231 DOOR LAW: the vision door is createVision - the dedicated
+  //    POST /chat/completions/vision endpoint - NOT completions.create
+  //    (the text-only door whose 400 "content.type 取值范围 ['text']" was
+  //    the shadow). Production rides createVision with NO model field;
+  //    probe231-shapes V1 opened this door live (450ms, READY).
   const t0v = Date.now();
   try {
     const tiny = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
       "base64",
     );
-    const completion = await zai.chat.completions.create({
-      messages: [
+    const completion = await zai.chat.completions.createVision({
+      messages: ([
         {
           role: "user",
-          content: ([
+          content: [
             { type: "text", text: "Reply with exactly one word: READY" },
             { type: "image_url", image_url: { url: `data:image/png;base64,${tiny.toString("base64")}` } },
-          ]) as never,
+          ],
         },
-      ],
-    });
+      ]) as never,
+    } as never);
     const ms = Date.now() - t0v;
     const text = ((completion as never) as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? "";
     console.log(`VISION CHANNEL: OPEN (${ms}ms) - read: ${text.slice(0, 40).replace(/\n/g, " ")}`);
@@ -114,10 +128,11 @@ async function main() {
   const shape = blocked === 0 ? "open" : blocked === reads.length ? "account-total" : "partial";
   const receipt = {
     probe: "probe222-window",
+    edition: "231",
     readAt: new Date().toISOString(),
     shape,
     channels: reads,
-    note: "the four-channel read after the twelfth-drift wipe - the wall's state survives the box's death",
+    note: "the four-channel read through the production doors (the 231 probe's-shadow graduation) - the wall's state survives the box's death",
   };
   fs.writeFileSync(path.join(OUT, "window-report.json"), JSON.stringify(receipt, null, 2));
   console.log(`WINDOW SHAPE: ${shape} (${blocked}/${reads.length} channels blocked) - receipt: ${path.join(OUT, "window-report.json")}`);
