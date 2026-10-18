@@ -33,7 +33,7 @@ import { episodeReleaseVerdict } from "../src/lib/identity-matrix";
 import { REPAIR_MAX_MEMBERS, REPAIR_MAX_SHOTS_PER_MEMBER } from "../src/lib/identity-repair";
 import { buildReleaseReview, type ReleaseReview } from "../src/lib/release-review";
 import { buildRepairWorkOrders } from "../src/lib/repair-work-order";
-import { resolveNamedShots, nightLawPlan, REGEN_LAW_VERSION } from "../src/lib/keyframe-regen";
+import { resolveNamedShots, nightLawPlan, parseWorkRef, REGEN_LAW_VERSION } from "../src/lib/keyframe-regen";
 import { closingStagingDecision, CLOSING_LAW_VERSION } from "../src/lib/release-closing";
 
 let pass = 0;
@@ -71,6 +71,7 @@ type RideRow = {
   stage?: boolean;
   line?: string;
   refusals?: string[];
+  staging?: { platform: string; ok: boolean; answer: string } | null;
 };
 
 const foldKeys = (content: string): Set<string> => {
@@ -112,15 +113,31 @@ async function main() {
   ok(!!episode, `the episode that carries the work exists (E${episode?.number} "${episode?.title ?? ""}", ${episode?.shotCount ?? 0} shots)`);
 
   // ── leg 3: the receipt's own work orders ──
+  // TWO RECEIPTS, ONE LAW: the HEAD receipt (the graduation commit)
+  // is the map the rides ANSWERED (the AI order existed there); the
+  // live receipt is the truth of NOW. THE ANSWERER'S OWN SUCCESS
+  // DISSOLVES ITS ORDER: when the tail's regen lifted AI_KEYFRAME to
+  // RELEASE, the live review earns no AI order (nothing stands
+  // between - the work order's own law). The order's law is asserted
+  // on the map that carried it; the dissolution on the map that
+  // answers it now.
   console.log("leg 3: the receipt's work orders");
+  const headReceipt = JSON.parse(execSync(`git show HEAD:${REVIEW_PATH}`, { cwd: process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString()) as ReleaseReview;
   const receipt = JSON.parse(fs.readFileSync(path.join(process.cwd(), REVIEW_PATH), "utf8")) as ReleaseReview;
   ok(receipt.episodeId === episode!.id, "the receipt reviews THIS body's episode (the deterministic pick agrees)");
-  const orders = buildRepairWorkOrders(receipt);
-  const aiOrder = orders.find((o) => o.source === "AI_KEYFRAME")!;
-  const renderOrder = orders.find((o) => o.source === "RENDER")!;
-  ok(!!aiOrder && aiOrder.answeredBy === "night-law", "the AI_KEYFRAME order names the night law (the answerer, never implied)");
-  ok(aiOrder.namedRefs.length > 0, `the AI order names its worst refs (${aiOrder.namedRefs.join(", ")})`);
+  const headOrders = buildRepairWorkOrders(headReceipt);
+  const aiOrder = headOrders.find((o) => o.source === "AI_KEYFRAME")!;
+  const renderOrder = headOrders.find((o) => o.source === "RENDER")!;
+  ok(!!aiOrder && aiOrder.answeredBy === "night-law", "the AI_KEYFRAME order named the night law (the answerer, never implied - the map the rides answered)");
+  ok(aiOrder.namedRefs.length > 0, `the AI order named its worst refs (${aiOrder.namedRefs.join(", ")})`);
   ok(!!renderOrder && renderOrder.answeredBy === "repair-pass", "RENDER's order still names the repair pass (the 233 answerer stands)");
+  const liveOrders = buildRepairWorkOrders(receipt);
+  const liveAi = receipt.sources.find((s) => s.source === "AI_KEYFRAME");
+  const aiDissolved = !liveOrders.some((o) => o.source === "AI_KEYFRAME");
+  ok(
+    (liveAi?.verdict === "RELEASE") === aiDissolved,
+    `the live order law holds (${liveAi?.verdict ?? "?"}: ${aiDissolved ? "no AI order stands - nothing stands between; the tail's law answered" : "the AI order stands - the source still owes work"})`,
+  );
 
   // ── leg 4: the resolver live (the pure law against the real chain) ──
   console.log("leg 4: the resolver live");
@@ -151,7 +168,7 @@ async function main() {
   }
   const tailRows = rideRows.filter((r) => r.kind === "tail");
   ok(tailRows.length >= 1, `the tail's ride receipt stands (${tailRows.length} row(s))`);
-  const tail = tailRows[tailRows.length - 1];
+  const tail = tailRows.filter((r) => (r.onlyShotIds ?? []).length > 0)[0] ?? tailRows[tailRows.length - 1];
   const plan = nightLawPlan(aiOrder, shots);
   ok(tail.night === aiOrder.night && tail.source === "AI_KEYFRAME", `the tail rode the order's own night and source (${tail.night})`);
   ok((tail.resolvedRefs ?? []).join("|") === plan.resolvedRefs.join("|"), `the ride carried the plan's resolved refs (${(tail.resolvedRefs ?? []).join(", ")})`);
@@ -161,7 +178,8 @@ async function main() {
   ok(typeof tail.cohort === "string" && tail.cohort.startsWith("kf-"), `the appends ride the keyframe law's own cohort (${tail.cohort})`);
 
   // the arc carries the regen night, both halves
-  const regenKey = `AI_KEYFRAME|${aiOrder.namedRefs[0]?.replace(/^E(\d+) Sc(\d+) S(\d+)$/, "$1/$2/$3")}|${aiOrder.night}`;
+  const parsedRef = aiOrder.namedRefs[0] ? parseWorkRef(aiOrder.namedRefs[0]) : null;
+  const regenKey = parsedRef ? `AI_KEYFRAME|${parsedRef.episode}/${parsedRef.scene}/${parsedRef.shot}|${aiOrder.night}` : "";
   const keysAfterRide = foldKeys(fs.readFileSync(path.join(process.cwd(), ARC_RECEIPT), "utf8"));
   const dbRegenRows = await db.identityArcReading.count({ where: { source: "AI_KEYFRAME", night: aiOrder.night } });
   ok(keysAfterRide.has(regenKey), `the committed half carries the regen's key (${regenKey})`);
@@ -208,14 +226,14 @@ async function main() {
   ok(closing.stage === (closing.standing === "RELEASE"), `the staging decision IS the review's own standing law (${closing.standing} -> stage ${closing.stage})`);
   ok(closing.stage === false || typeof closing.staging === "object", "a refusal rides no staging (the teeth stay in the door)");
   const severity: Record<string, number> = { BELOW: 3, HOLD: 2, UNSCORED: 1, RELEASE: 0 };
-  ok(severity[liveReview.standing.verdict] <= severity[receipt.standing.verdict] || severity[liveReview.standing.verdict] >= severity[receipt.standing.verdict], `the standing reads lawful against the receipt (${receipt.standing.verdict} -> ${liveReview.standing.verdict} - the rides' own honest answer)`);
+  ok(severity[liveReview.standing.verdict] <= severity[headReceipt.standing.verdict], `the standing moves only upward or holds (${headReceipt.standing.verdict} -> ${liveReview.standing.verdict} - the rides' own honest answer, the gate keeps its teeth)`);
 
   // ── leg 8: the gate re-reads (the medians moved only as the nights did) ──
   console.log("leg 8: the gate re-reads");
-  const receiptAiNights = receipt.sources.find((s) => s.source === "AI_KEYFRAME")?.nights ?? 2;
-  const receiptReNights = receipt.sources.find((s) => s.source === "RENDER")?.nights ?? 2;
-  ok(readAI.arc && readAI.nights >= receiptAiNights, `AI_KEYFRAME's span carries the regen night (${readAI.nights} night(s) >= the receipt's ${receiptAiNights} - the tail's own law moved it, nothing else)`);
-  ok(readRE.arc && readRE.nights >= receiptReNights, `RENDER's span carries what the rides appended (${readRE.nights} night(s) >= the receipt's ${receiptReNights})`);
+  const receiptAiNights = headReceipt.sources.find((s) => s.source === "AI_KEYFRAME")?.nights ?? 2;
+  const receiptReNights = headReceipt.sources.find((s) => s.source === "RENDER")?.nights ?? 2;
+  ok(readAI.arc && readAI.nights >= receiptAiNights, `AI_KEYFRAME's span carries the regen night (${readAI.nights} night(s) >= the pre-ride map's ${receiptAiNights} - the tail's own law moved it, nothing else)`);
+  ok(readRE.arc && readRE.nights >= receiptReNights, `RENDER's span carries what the rides appended (${readRE.nights} night(s) >= the pre-ride map's ${receiptReNights})`);
   if (tail.gate) {
     ok(tail.gate.nights >= 3, `the tail's own gate read spanned the nights (${tail.gate.nights})`);
   }

@@ -1,0 +1,65 @@
+{
+  "night": "repair-2026-10-18",
+  "cohort": "kf-v4",
+  "lawVersion": 4,
+  "source": "AI_KEYFRAME",
+  "results": [
+    {
+      "ref": "E7 Sc12 S003",
+      "shotId": "cmvdlb9kd001hmuzgco3g9539",
+      "ok": true,
+      "worst": 0.75,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 0.75,
+          "aspects": {
+            "face": 0.8,
+            "hair": 0.9,
+            "wardrobe": 0.8,
+            "weapon": 0.9,
+            "palette": 0.4,
+            "style": 0.7
+          },
+          "note": "Face shape and features match well; hair style (topknot and length) is accurate; wardrobe details like the robe cut, belt, and embroidery are consistent; weapon design is a close match; however, the color palette has shifted from green to blue/teal due to atmospheric lighting, and the art style is m"
+        }
+      ],
+      "mode": "anchored",
+      "anchoredSheets": [
+        "Lin Yue"
+      ],
+      "anchorViews": [
+        "Lin Yue:close"
+      ],
+      "sampleCount": 3,
+      "pngPath": "receipts/ride234/E7Sc12S003-keyframe.png"
+    }
+  ],
+  "appended": 1,
+  "gate": {
+    "episodeId": "cmvdlb9jo0004muzg5x5gsb3w",
+    "source": "AI_KEYFRAME",
+    "floor": 0.7,
+    "readings": 7,
+    "verdict": "RELEASE",
+    "overall": {
+      "key": "overall",
+      "n": 7,
+      "mean": 0.8239285714285715,
+      "median": 0.85,
+      "p10": 0.71,
+      "worst": 0.71,
+      "best": 0.875,
+      "belowFloor": 0,
+      "belowFraction": 0,
+      "verdict": "RELEASE",
+      "worstRef": "E7 Sc12 S002"
+    },
+    "blocking": [],
+    "arc": true,
+    "nights": 3,
+    "provisional": false
+  },
+  "writtenAt": "2026-10-18T14:34:41.353Z",
+  "reportPath": "receipts/ride234/night-report-repair-2026-10-18.json"
+}

@@ -22,6 +22,7 @@ import { db } from "../src/lib/db";
 import { episodeReleaseVerdict } from "../src/lib/identity-matrix";
 import { REPAIR_MAX_MEMBERS, REPAIR_MAX_SHOTS_PER_MEMBER } from "../src/lib/identity-repair";
 import { buildReleaseReview, type ReleaseReview } from "../src/lib/release-review";
+import type { EpisodeReleaseRead } from "../src/lib/identity-matrix";
 import { closingStagingDecision } from "../src/lib/release-closing";
 import { stagePublishPackage } from "../src/lib/comic/publish";
 
@@ -58,7 +59,7 @@ async function main() {
   const episodeTag = `E${episode.number}`;
 
   // the gate's own reads, LIVE - the truth of NOW
-  const reads = [];
+  const reads: EpisodeReleaseRead[] = [];
   for (const source of ["AI_KEYFRAME", "RENDER"] as const) {
     reads.push(await episodeReleaseVerdict(projectId, episode.id, source));
   }
@@ -84,7 +85,7 @@ async function main() {
     staging = {
       platform: "YOUTUBE",
       ok: staged.ok,
-      answer: staged.ok ? `package staged (${staged.pkg.id ?? "idless"})` : `the spine's own gate refused: ${staged.error}`,
+      answer: staged.ok ? `package staged (${staged.pkg.platform}, ready ${staged.pkg.ready}, cut ${staged.pkg.cut.file ? "on disk" : "absent"})` : `the spine's own gate refused: ${staged.error}`,
     };
     console.log(`  staging: ${staging.answer}`);
   } else {

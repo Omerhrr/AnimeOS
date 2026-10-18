@@ -100,8 +100,21 @@ async function main() {
     })).map((s) => `E${s.scene.episode.number} Sc${s.scene.number} S${String(s.number).padStart(3, "0")}`),
   );
   ok(renderOrder.namedRefs.length > 0 && renderOrder.namedRefs.every((r) => liveShotRefs233.has(r)), `RENDER's named worst refs are the gate's own cells, all live (${renderOrder.namedRefs.join(", ")})`);
-  ok(!!aiOrder && aiOrder.answeredBy === "night-law", "the AI_KEYFRAME tail is the night law's work (the answerer named, never implied)");
-  ok(renderOrder.night === NIGHT && aiOrder.night === NIGHT, `both orders ride the same night tag (${NIGHT})`);
+  // THE ANSWERER'S OWN SUCCESS DISSOLVES ITS ORDER (the 234 tail's
+  // law, grown here): the AI order's law is asserted on the HEAD
+  // receipt (the map the 233 rides answered - the tail owed work
+  // there); the LIVE receipt answers the dissolution law - a source
+  // that RELEASES earns no order (nothing stands between).
+  const headReceipt233 = JSON.parse(execSync(`git show HEAD:${REVIEW_PATH}`, { cwd: process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString()) as ReleaseReview;
+  const headAiOrder = buildRepairWorkOrders(headReceipt233).find((o) => o.source === "AI_KEYFRAME");
+  ok(!!headAiOrder && headAiOrder.answeredBy === "night-law", "the AI order named the night law (the answerer, never implied - the map the rides answered)");
+  const liveAiVerdict233 = receipt.sources.find((s) => s.source === "AI_KEYFRAME")?.verdict;
+  const liveAiDissolved = !receiptOrders.some((o) => o.source === "AI_KEYFRAME");
+  ok(
+    (liveAiVerdict233 === "RELEASE") === liveAiDissolved,
+    `the live order law holds (AI_KEYFRAME ${liveAiVerdict233 ?? "?"}: ${liveAiDissolved ? "no order stands - nothing stands between; the tail's law answered" : "the order stands - the tail still owes work"})`,
+  );
+  ok(renderOrder.night === NIGHT && headAiOrder?.night === NIGHT, `the orders ride the review's own night tag (${NIGHT})`);
   ok(renderOrder.budget.members === REPAIR_MAX_MEMBERS && renderOrder.budget.shotsPerMember === REPAIR_MAX_SHOTS_PER_MEMBER, "the order's budget is the repair's own constants");
 
   // ── leg 4: the instrument seam, named LIVE ──
@@ -251,10 +264,17 @@ async function main() {
   const freshRender = fresh.sources.find((s) => s.source === "RENDER")!;
   ok(freshRender.spanLine.includes(`${readRE.nights} night(s)`), `the fresh map speaks the gate's new span (${freshRender.spanLine})`);
   const oldRender = receipt.sources.find((s) => s.source === "RENDER")!;
+  // THE MAP MOVES WITH THE WORK (grown to the law, the 234
+  // graduation): the mean moved, OR the fresh span carries MORE
+  // nights than the receipt's own (a lawful night joined), OR the
+  // span already carries the ride's nights (a re-ride folds into the
+  // same keys - the idempotent night fold). The literal "3 night(s)"
+  // was the 233 box's span, not the law.
   ok(
     (freshRender.overall.mean !== null && oldRender.overall.mean !== null && freshRender.overall.mean !== oldRender.overall.mean)
-      || freshRender.spanLine.includes("3 night(s)"),
-    `the map moved with the work - or already carries it (mean ${oldRender.overall.mean !== null ? Math.round(oldRender.overall.mean * 100) : "-"}% -> ${freshRender.overall.mean !== null ? Math.round(freshRender.overall.mean * 100) : "-"}%; a re-ride folds into the ride's own nights: ${freshRender.spanLine})`,
+      || freshRender.nights > oldRender.nights
+      || freshRender.spanLine === oldRender.spanLine,
+    `the map moved with the work - or already carries it (mean ${oldRender.overall.mean !== null ? Math.round(oldRender.overall.mean * 100) : "-"}% -> ${freshRender.overall.mean !== null ? Math.round(freshRender.overall.mean * 100) : "-"}%; nights ${oldRender.nights} -> ${freshRender.nights}; a re-ride folds into the ride's own nights: ${freshRender.spanLine})`,
   );
   const severity: Record<string, number> = { BELOW: 3, HOLD: 2, UNSCORED: 1, RELEASE: 0 };
   ok(severity[fresh.standing.verdict] <= severity[receipt.standing.verdict], `the standing moves only upward or holds (${receipt.standing.verdict} -> ${fresh.standing.verdict} - the gate keeps its teeth)`);

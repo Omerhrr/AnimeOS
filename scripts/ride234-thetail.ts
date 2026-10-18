@@ -29,10 +29,34 @@ async function main() {
   const projectId = identity.projectId;
   const review = JSON.parse(fs.readFileSync(path.join(process.cwd(), REVIEW_PATH), "utf8")) as ReleaseReview;
 
-  // the map's own order: AI_KEYFRAME, answeredBy night-law
+  // the map's own order: AI_KEYFRAME, answeredBy night-law. THE
+  // ANSWERER'S OWN SUCCESS DISSOLVES ITS ORDER (the 234 ride's own
+  // law): when the source RELEASES, buildRepairWorkOrders earns NO
+  // order for it - nothing stands between, and the honest answer is
+  // the no-op row, never an error.
   const orders = buildRepairWorkOrders(review);
   const order = orders.find((o) => o.source === "AI_KEYFRAME");
-  if (!order) throw new Error("the review carries no AI_KEYFRAME order - nothing for the night law to answer");
+  if (!order) {
+    const aiSrc = review.sources.find((s) => s.source === "AI_KEYFRAME");
+    const row = {
+      kind: "tail",
+      rodeAt: new Date().toISOString(),
+      night: `repair-${review.reviewedAt.slice(0, 10)}`,
+      source: "AI_KEYFRAME",
+      planLine: `AI_KEYFRAME: no work order stands - the source ${aiSrc?.verdict ?? "RELEASES"} (nothing stands between; the tail's law already answered).`,
+      resolvedRefs: [],
+      unresolvedRefs: [],
+      onlyShotIds: [],
+      results: [],
+      appended: 0,
+      gate: null,
+      noop: true,
+    };
+    fs.appendFileSync(path.join(process.cwd(), RIDE_RECEIPT), JSON.stringify(row) + "\n");
+    console.log(`RIDE 234 - THE TAIL`);
+    console.log(`  ${row.planLine}`);
+    return;
+  }
 
   // the live shot chain (the resolver's argument - read-only)
   const shotRows = await db.shot.findMany({
