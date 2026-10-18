@@ -1886,7 +1886,9 @@ export function castMemberStanding(input: {
   };
 }
 
-function castStandingOrder(s: CastMemberStanding): number {
+/** The standing sort order (exported for the arc instrument's twin
+ *  loader - the 233 repair rides the SAME standing law both doors). */
+export function castStandingOrder(s: CastMemberStanding): number {
   return s.standing === "BELOW" ? 0 : s.standing === "UNTESTED" ? 1 : s.standing === "UNANCHORED" ? 2 : 3;
 }
 

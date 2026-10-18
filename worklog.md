@@ -4179,3 +4179,19 @@ Work Log:
 Stage Summary:
 - E7 has its map: the release review names the work per source, the repair's own numbers answer each step, and the receipt carries it for every arrival to read. The studio's auth survives the preview's iframe (Chrome/Edge/Firefox; Safari's door is the top-level tab).
 - The 233 frontier: the repair pass rides the review (the named cells' worst shots enter the repair budget, re-scores append night-tagged, the gate re-reads the medians); the Releases panel learns to read the review so the OWNER sees the map, not just the door.
+---
+Task ID: 233-map-rides
+Agent: main (Z.ai CLI)
+Task: "proceed" — Iteration 233 (the 232 frontier's own sentence: the repair pass rides the map; the Releases panel learns to read it).
+
+Work Log:
+- Verified the box: HEAD 3c624cb (232 closed, remote == local), the review receipt live (E7 SITS BELOW; AI_KEYFRAME HOLD tail @ S003, RENDER BELOW body mean 66%), IdentityScore sweep DEAD (0 rows), arc db half 0 — the readings live in the committed receipt alone (213 lines).
+- THE WORK ORDER (src/lib/repair-work-order.ts, pure): buildRepairWorkOrders (per non-RELEASE source: named worst refs worst-p10-first deduped, budget carried, night tag, the answerer named — repair-pass for RENDER, night-law for a non-RENDER tail, measure-first for UNSCORED, no order on RELEASE) + targetsNamedFirst (named refs first in the map's own order, the member's queue fills, dedupe, cap, unnamed rides out NAMED).
+- THE INSTRUMENT DOOR (src/lib/identity-repair.ts): castArcMeasurement (the cast standing off the gate's own board — readIdentityArcEpisode union + arcMedianRows medians + castMemberStanding), belowArcShotsForCharacter (the member queue off the gate's medians), runIdentityRepairPass opts episodeId/namedRefs, arc appends moved ahead of the after-snapshot, instrument named in result/event, honest unnamed aggregation (carried-union). identity.ts exported castStandingOrder.
+- THE PANEL READS: /api/release-review (read-only; review + workOrders + episodes), api.releaseReview + types, CalendarView's ReleaseReviewSection (standing chip, per-source gap/span/blockers/budget, orders with answerers, THE PATH).
+- Gates: smoke233 36/36 NEW; e2e-iter233 10 legs NEW (the ride); e2e-iter232 pins grown to the law (byte-exact OR lawful drift, the gap dialect, the union both-halves) 33/33; smoke222-232 ALL PASS; src tsc 0.
+- README item 146 + this worklog. Graduation committed BEFORE the ride (the commit law); the ride + evidence commit after.
+
+Stage Summary:
+- Iteration 233 graduation ready for its ride: the map is executable, the pass reads what the gate reads, the panel reads the map.
+- 234 frontier: the AI_KEYFRAME tail's own answerer (the regen re-rides S003 through the night law) and the first RELEASE staging when the closing law turns.

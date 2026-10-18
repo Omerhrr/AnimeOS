@@ -886,6 +886,54 @@ export interface ReleaseCalendar {
   unscheduled: ReleaseEpisode[];
 }
 
+// THE RELEASE REVIEW + WORK ORDERS (iteration 233) - the panel reads
+// the map. Shapes mirror the server's own laws (release-review.ts /
+// repair-work-order.ts), kept structural so the client never imports
+// the server's db-adjacent modules.
+export interface ReleaseReviewSource {
+  source: string;
+  verdict: "RELEASE" | "HOLD" | "BELOW" | "UNSCORED";
+  floor: number;
+  readings: number;
+  arc: boolean;
+  nights: number;
+  provisional: boolean;
+  overall: { n: number; mean: number | null; median: number | null; p10: number | null; worst: number | null; best: number | null; belowFloor: number };
+  blocking: Array<{ key: string; verdict: "HOLD" | "BELOW"; p10: number | null; n: number; belowFloor: number; worstRef: string | null }>;
+  repairBudget: { members: number; shotsPerMember: number; shotsPerPass: number };
+  spanLine: string;
+  gapLine: string;
+}
+
+export interface ReleaseReview {
+  projectId: string;
+  episodeId: string;
+  episodeTag: string;
+  episodeTitle: string;
+  reviewedAt: string;
+  law: { name: string; version: number };
+  sources: ReleaseReviewSource[];
+  standing: { verdict: "RELEASE" | "HOLD" | "BELOW" | "UNSCORED"; arcNights: number | null; provisionalExited: boolean };
+  path: string[];
+  headline: string;
+}
+
+export interface RepairWorkOrder {
+  source: string;
+  verdict: "RELEASE" | "HOLD" | "BELOW" | "UNSCORED";
+  night: string;
+  budget: { members: number; shotsPerMember: number; shotsPerPass: number };
+  namedRefs: string[];
+  answeredBy: "repair-pass" | "night-law" | "measure-first";
+  orderLine: string;
+}
+
+export interface ReleaseReviewPayload {
+  review: ReleaseReview;
+  workOrders: RepairWorkOrder[];
+  episodes: Array<{ id: string; number: number; title: string; shotCount: number }>;
+}
+
 export const api = {
   // queries
   projects: () => j<ProjectSummary[]>("/api/projects"),
@@ -899,6 +947,8 @@ export const api = {
   patchNotifications: (body: { notifyWebhook?: string | null; notifyEmail?: boolean; notifyOnDigest?: boolean; notifyOnRelease?: boolean }) =>
     j<{ ok: boolean; config: { webhookRedacted: string | null; notifyEmail: boolean; notifyOnDigest: boolean; notifyOnRelease: boolean } }>("/api/notifications", { method: "PATCH", body: JSON.stringify(body) }),
   releases: (projectId: string) => j<ReleaseCalendar>(`/api/releases?projectId=${projectId}`),
+  releaseReview: (projectId: string, episodeId?: string) =>
+    j<ReleaseReviewPayload>(`/api/release-review?projectId=${projectId}${episodeId ? `&episodeId=${episodeId}` : ""}`),
   setRelease: (body: { episodeId: string; releaseAt?: string; releasePlatform?: string | null }) =>
     j<{ id: string; releaseAt: string | null; releasePlatform: string | null }>("/api/releases", { method: "PATCH", body: JSON.stringify(body) }),
   addCrewMember: (projectId: string, body: { userId: string; craft?: string }) =>

@@ -27,9 +27,27 @@
 
 import { db } from "@/lib/db";
 import { recordCharacterAssetReadings } from "@/lib/character-assets";
-import { castIdentityMeasurement, scoreRenderIdentity, type CastIdentityMeasurement, type IdentitySource } from "@/lib/identity";
-import { appendIdentityArcReading, bridgeLawCohort } from "@/lib/identity-arc";
-import { episodeReleaseVerdict, type EpisodeReleaseRead } from "@/lib/identity-matrix";
+import {
+  castIdentityMeasurement,
+  castMemberStanding,
+  castStandingOrder,
+  identityThresholdFor,
+  scoreRenderIdentity,
+  type CastIdentityMeasurement,
+  type CastReading,
+  type IdentitySource,
+} from "@/lib/identity";
+import { appendIdentityArcReading, arcMedianRows, bridgeLawCohort, readIdentityArcEpisode } from "@/lib/identity-arc";
+import {
+  episodeReleaseVerdict,
+  identityExpressionBucket,
+  identityFramingBucket,
+  identityLightingBucket,
+  identityStateBucket,
+  identityYawBucket,
+  type EpisodeReleaseRead,
+} from "@/lib/identity-matrix";
+import { targetsNamedFirst } from "@/lib/repair-work-order";
 import type { IdentityScoreEntry } from "@/lib/identity";
 import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
 import { parseGroomProfile, groomProfileLine } from "@/lib/blender/groom";
@@ -123,6 +141,18 @@ export interface RepairPassResult {
    * the SAME instrument that refused, off the SAME receipt. */
   night: string;
   arcAfter: Array<EpisodeReleaseRead & { episodeNumber: number | null }>;
+  /** THE INSTRUMENT DOOR (iteration 233): which board the pass read
+   * its standing from - "sweep" (the pre-arc world, byte-exact) or
+   * "arc" (the gate's own union: db rows + the committed receipt,
+   * per-entry medians across the cohort's nights). The instrument
+   * is NAMED in the ledger, never implied. */
+  instrument: "sweep" | "arc";
+  /** When the pass rode the map: the episode the work order names. */
+  episodeId?: string;
+  /** THE MAP RODE (iteration 233): the named refs the pass was
+   * given, and the named refs no below-bar reading carried - both
+   * honest, both in the ledger. */
+  workOrder: { namedRefs: string[]; unnamedRefs: string[] };
 }
 
 // ── the pure verdict law (the E2E asserts it) ──
@@ -199,6 +229,107 @@ export async function belowRenderShotsForCharacter(
       similarity: mine.similarity,
     });
   }
+  return out.sort((a, b) => a.similarity - b.similarity).slice(0, Math.max(1, limit));
+}
+
+// ── THE INSTRUMENT DOOR (iteration 233): the pass reads what the
+//    gate reads ──
+
+/** The gate's own bucketOf, shared byte-exact with the release read. */
+function arcBucketOf(shot: {
+  shotType: string | null;
+  movement: string | null;
+  description: string | null;
+  poseStart: string | null;
+  poseEnd: string | null;
+  lighting: string | null;
+}) {
+  return {
+    framing: identityFramingBucket(shot.shotType),
+    yaw: identityYawBucket(shot.movement),
+    expression: identityExpressionBucket(shot.description, shot.poseStart, shot.poseEnd),
+    lighting: identityLightingBucket(shot.lighting),
+    state: identityStateBucket(shot.poseStart),
+  };
+}
+
+/**
+ * THE ARC INSTRUMENT: the cast's standing read the way the release
+ * gate reads it - readIdentityArcEpisode's union (the db's live rows
+ * + the committed receipt's lines), rolled through arcMedianRows
+ * (per-entry medians across the newest cohort's nights), judged by
+ * the SAME castMemberStanding law the sweep loader obeys. An episode
+ * whose arc carries no rows falls back to the sweep (the pre-arc
+ * world, byte-exact) - the pair names which door answered, so the
+ * ledger never implies an instrument it did not ride. The sixth
+ * death's own seam, healed: a body whose sweep died with a sandbox
+ * still carries its readings in the committed half, and the repair
+ * pass answers THAT truth instead of riding an empty queue.
+ */
+export async function castArcMeasurement(
+  projectId: string,
+  episodeId: string,
+  opts?: { receiptPath?: string | null },
+): Promise<{ instrument: "arc" | "sweep"; measurement: CastIdentityMeasurement }> {
+  const [project, arcRows] = await Promise.all([
+    db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true, role: true, modelSheetUrl: true } } } }),
+    readIdentityArcEpisode(projectId, episodeId, "RENDER", opts),
+  ]);
+  const cast = project?.characters ?? [];
+  if (arcRows.length === 0 || cast.length === 0) {
+    return { instrument: "sweep", measurement: await castIdentityMeasurement(projectId, "RENDER") };
+  }
+  const idByName = new Map(cast.map((c) => [c.name, c.id] as const));
+  const rolled = arcMedianRows({ arcRows, idByName, bucketOf: arcBucketOf });
+  const bar = identityThresholdFor("RENDER");
+  const members = cast
+    .map((c) => {
+      const readings: CastReading[] = rolled.rows
+        .filter((r) => r.characterId === c.id)
+        .map((r) => ({ worst: r.similarity, ref: r.ref }));
+      return castMemberStanding({ characterId: c.id, name: c.name, role: c.role, anchored: Boolean(c.modelSheetUrl), readings, bar });
+    })
+    .sort((a, b) => castStandingOrder(a) - castStandingOrder(b) || (a.standing === "BELOW" ? (a.worst ?? 1) - (b.worst ?? 1) : a.name.localeCompare(b.name)));
+  return {
+    instrument: "arc",
+    measurement: {
+      source: "RENDER",
+      bar,
+      members,
+      cast: members.length,
+      anchored: members.filter((m) => m.anchored).length,
+      measured: members.filter((m) => m.readings > 0).length,
+      clearing: members.filter((m) => m.standing === "CLEARING").length,
+      below: members.filter((m) => m.standing === "BELOW").length,
+      untested: members.filter((m) => m.standing === "UNTESTED").length,
+      unanchored: members.filter((m) => m.standing === "UNANCHORED").length,
+    },
+  };
+}
+
+/**
+ * The member's below-bar shots off the GATE's own number (the arc's
+ * per-entry medians, the same rows the release read rolled) - the
+ * twin of belowRenderShotsForCharacter, one instrument lower.
+ */
+export async function belowArcShotsForCharacter(
+  projectId: string,
+  episodeId: string,
+  characterName: string,
+  bar: number,
+  limit: number,
+  opts?: { receiptPath?: string | null },
+): Promise<BelowShot[]> {
+  const [project, arcRows] = await Promise.all([
+    db.project.findUnique({ where: { id: projectId }, select: { characters: { select: { id: true, name: true } } } }),
+    readIdentityArcEpisode(projectId, episodeId, "RENDER", opts),
+  ]);
+  if (arcRows.length === 0) return [];
+  const idByName = new Map((project?.characters ?? []).map((c) => [c.name, c.id] as const));
+  const rolled = arcMedianRows({ arcRows, idByName, bucketOf: arcBucketOf });
+  const out: BelowShot[] = rolled.rows
+    .filter((r) => r.characterName === characterName && r.similarity < bar)
+    .map((r) => ({ shotId: r.shotId, ref: r.ref, similarity: r.similarity }));
   return out.sort((a, b) => a.similarity - b.similarity).slice(0, Math.max(1, limit));
 }
 
@@ -295,7 +426,7 @@ function memberSnapshot(m: CastIdentityMeasurement, characterId: string) {
  */
 export async function runIdentityRepairPass(
   projectId: string,
-  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string; night?: string; receiptPath?: string | null },
+  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string; night?: string; receiptPath?: string | null; episodeId?: string; namedRefs?: string[] },
 ): Promise<RepairPassResult> {
   const memberLimit = Math.max(1, Math.min(REPAIR_MAX_MEMBERS, Math.round(Number(opts?.members ?? 2) || 2)));
   const shotLimit = Math.max(1, Math.min(REPAIR_MAX_SHOTS_PER_MEMBER, Math.round(Number(opts?.shotsPerMember ?? 1) || 1)));
@@ -309,7 +440,23 @@ export async function runIdentityRepairPass(
   // rescore appends
   const verdicts = new Map<string, { worst: number; entries: IdentityScoreEntry[] }>();
 
-  const before = await castIdentityMeasurement(projectId, "RENDER");
+  // THE INSTRUMENT DOOR (iteration 233): ride the map (opts.episodeId)
+  // and the pass reads the gate's own board - the arc's union, the
+  // per-entry medians across the cohort's nights, the SAME rows the
+  // release read rolled. No map and the pre-arc world stands
+  // byte-exact (the sweep). The instrument is NAMED, never implied.
+  const mapEpisodeId = (opts?.episodeId ?? "").trim();
+  const ridingTheMap = mapEpisodeId.length > 0;
+  const beforeDoor = ridingTheMap
+    ? await castArcMeasurement(projectId, mapEpisodeId, { receiptPath: opts?.receiptPath })
+    : { instrument: "sweep" as const, measurement: await castIdentityMeasurement(projectId, "RENDER") };
+  const instrument = beforeDoor.instrument;
+  const before = beforeDoor.measurement;
+  const namedRefs = [...new Set((opts?.namedRefs ?? []).map((r) => r.trim()).filter(Boolean))];
+  // the honest aggregate: a named ref rides out "unnamed" only when
+  // NO member's own below-bar queue carried it (per-member queues
+  // differ - the whole pass is the honesty unit)
+  const carriedRefs = new Set<string>();
   const belowMembers = before.members
     .filter((m) => m.standing === "BELOW")
     .filter((m) => !nameFilter || m.name.toLowerCase().includes(nameFilter))
@@ -332,7 +479,16 @@ export async function runIdentityRepairPass(
     }
 
     // (a-2) RE-RENDER the named worst shots with the adherent DNA riding
-    const targets = await belowRenderShotsForCharacter(projectId, member.name, before.bar, shotLimit);
+    // THE MAP RIDES (iteration 233): riding the arc instrument the
+    // queue reads the gate's own medians; the named refs (the work
+    // order's worst cells) ride FIRST, the member's own queue fills
+    // the rest; a named ref no below-bar reading carries is NAMED.
+    const belowShots = ridingTheMap
+      ? await belowArcShotsForCharacter(projectId, mapEpisodeId, member.name, before.bar, shotLimit, { receiptPath: opts?.receiptPath })
+      : await belowRenderShotsForCharacter(projectId, member.name, before.bar, shotLimit);
+    for (const b of belowShots) carriedRefs.add(b.ref);
+    const order = targetsNamedFirst(belowShots, namedRefs, shotLimit);
+    const targets = order.targets;
     const shotRows: RepairShotRow[] = [];
     for (const t of targets) {
       const rendered = await renderAndWait(projectId, t.shotId);
@@ -395,8 +551,38 @@ export async function runIdentityRepairPass(
       // sheet would be variance double-dipping, not repair
     }
 
-    // the standing after this member's shots were re-judged
-    const afterSnap = memberSnapshot(await castIdentityMeasurement(projectId, "RENDER"), member.characterId);
+    // THE REPAIR JOINS THE ARC (iteration 146; the append now rides
+    // BEFORE the after-snapshot, 233): this member's worked shots
+    // append to the identity arc - real production readings of the
+    // work, the same shape the night rescore appends (the shot's
+    // whole cast verdict, worst included), ref-chained to the work by
+    // the append itself. A shot worked by several members appends
+    // once per freshest verdict - the fold keeps the last. Riding
+    // the arc instrument the append must land before the after read
+    // or the after would answer without the repair night in the roll.
+    for (const t of targets) {
+      const v = verdicts.get(t.shotId);
+      if (!v) continue; // no score, no arc row - the miss is named in the ledger
+      await appendIdentityArcReading(
+        {
+          projectId,
+          shotId: t.shotId,
+          source: "RENDER",
+          night,
+          cohort,
+          worst: v.worst,
+          scores: v.entries,
+        },
+        { receiptPath },
+      );
+    }
+
+    // the standing after this member's shots were re-judged - off the
+    // SAME instrument the before rode (the door is one door)
+    const afterDoor = ridingTheMap
+      ? await castArcMeasurement(projectId, mapEpisodeId, { receiptPath: opts?.receiptPath })
+      : { instrument: "sweep" as const, measurement: await castIdentityMeasurement(projectId, "RENDER") };
+    const afterSnap = memberSnapshot(afterDoor.measurement, member.characterId);
     rows.push({
       characterId: member.characterId,
       name: member.name,
@@ -432,31 +618,11 @@ export async function runIdentityRepairPass(
       console.log(`[character-asset] ${member.name}: the validation write failed - ${err instanceof Error ? err.message : "unknown"}`);
     }
 
-    // THE REPAIR JOINS THE ARC (iteration 146): this member's worked
-    // shots append to the identity arc - real production readings of
-    // the work, the same shape the night rescore appends (the shot's
-    // whole cast verdict, worst included), ref-chained to the work by
-    // the append itself. A shot worked by several members appends
-    // once per freshest verdict - the fold keeps the last.
-    for (const t of targets) {
-      const v = verdicts.get(t.shotId);
-      if (!v) continue; // no score, no arc row - the miss is named in the ledger
-      await appendIdentityArcReading(
-        {
-          projectId,
-          shotId: t.shotId,
-          source: "RENDER",
-          night,
-          cohort,
-          worst: v.worst,
-          scores: v.entries,
-        },
-        { receiptPath },
-      );
-    }
   }
 
-  const after = await castIdentityMeasurement(projectId, "RENDER");
+  const after = ridingTheMap
+    ? (await castArcMeasurement(projectId, mapEpisodeId, { receiptPath: opts?.receiptPath })).measurement
+    : await castIdentityMeasurement(projectId, "RENDER");
 
   // THE AFTER-STANDING ANSWERS THE GATE'S OWN INSTRUMENT: the worked
   // shots' distinct episodes, read through episodeReleaseVerdict off
@@ -484,6 +650,9 @@ export async function runIdentityRepairPass(
     after: standingSnapshot(after),
     night,
     arcAfter,
+    instrument,
+    ...(ridingTheMap ? { episodeId: mapEpisodeId } : {}),
+    workOrder: { namedRefs, unnamedRefs: namedRefs.filter((r) => !carriedRefs.has(r)) },
   };
 
   // the loop's landing: one production event carrying the ledger
@@ -493,9 +662,12 @@ export async function runIdentityRepairPass(
         projectId,
         actor: "DSH",
         type: "IDENTITY_REPAIR",
-        summary: `Identity repair pass: ${rows.length} below member(s) worked - ${rows.filter((r) => r.verdict === "REPAIRED").length} repaired, ${rows.filter((r) => r.verdict === "IMPROVED").length} improved, ${rows.filter((r) => r.verdict === "STILL_BELOW").length} still below; standing ${standingSnapshot(before).below} below -> ${standingSnapshot(after).below} below at bar ${Math.round(before.bar * 100)}%`,
+        summary: `Identity repair pass (${instrument === "arc" ? "the arc's union - the gate's own instrument" : "the sweep"}${ridingTheMap ? ", riding the release review's map" : ""}): ${rows.length} below member(s) worked - ${rows.filter((r) => r.verdict === "REPAIRED").length} repaired, ${rows.filter((r) => r.verdict === "IMPROVED").length} improved, ${rows.filter((r) => r.verdict === "STILL_BELOW").length} still below; standing ${standingSnapshot(before).below} below -> ${standingSnapshot(after).below} below at bar ${Math.round(before.bar * 100)}%`,
         payload: JSON.stringify({
           bar: before.bar,
+          instrument,
+          ...(ridingTheMap ? { episodeId: mapEpisodeId } : {}),
+          workOrder: result.workOrder,
           before: standingSnapshot(before),
           after: standingSnapshot(after),
           members: rows.map((r) => ({

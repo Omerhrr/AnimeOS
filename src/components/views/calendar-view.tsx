@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2, CalendarClock, CalendarX2, CheckCircle2 } from "lucide-react";
-import { api, type ReleaseEpisode } from "@/lib/api-client";
+import { CalendarDays, ChevronLeft, ChevronRight, Loader2, CalendarClock, CalendarX2, CheckCircle2, ClipboardList, Map as MapIcon, Ban } from "lucide-react";
+import { api, type ReleaseEpisode, type ReleaseReviewPayload } from "@/lib/api-client";
 import { SectionHeader, StatusBadge } from "@/components/views/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,13 @@ import { cn } from "@/lib/utils";
 // computed at read time from the release date (no state to drift);
 // the unscheduled tray lists what has no date yet. EDITOR+ slate
 // and unschedule (calendar dialog or the DSH tool); the crew reads.
+//
+// THE RELEASE REVIEW, READ (iteration 233): the panel also reads
+// the map - the gate's own refusal turned into the path between the
+// episode and its first RELEASE verdict, plus the work orders the
+// 233 law derives (the named worst refs, the answerer named). The
+// review is a map, not a lever: read-only for everyone - the gate
+// keeps its teeth.
 // ─────────────────────────────────────────────────────────────
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -45,6 +52,84 @@ function StateChip({ ep }: { ep: ReleaseEpisode }) {
     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border border-white/15 bg-white/5 text-muted-foreground">
       <CalendarX2 className="h-2.5 w-2.5" /> unscheduled
     </span>
+  );
+}
+
+// THE VERDICT CHIP (the gate's own word, colored) + the review
+// section (iteration 233): headline, per-source map, work orders,
+// THE PATH. Read-only - the map rides, the gate keeps its teeth.
+const VERDICT_CHIP: Record<string, string> = {
+  RELEASE: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
+  HOLD: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  BELOW: "border-red-400/40 bg-red-400/10 text-red-300",
+  UNSCORED: "border-white/15 bg-white/5 text-muted-foreground",
+};
+
+const ANSWERER_WORD: Record<string, string> = {
+  "repair-pass": "the repair pass answers",
+  "night-law": "the night law answers",
+  "measure-first": "measure first",
+};
+
+function ReleaseReviewSection({ payload }: { payload: ReleaseReviewPayload }) {
+  const { review, workOrders } = payload;
+  return (
+    <div className="studio-panel p-4 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <MapIcon className="h-4 w-4 text-primary" /> The release review
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border", VERDICT_CHIP[review.standing.verdict])}>
+            {review.standing.verdict}
+          </span>
+          <span className="text-[9px] uppercase tracking-widest text-muted-foreground">law v{review.law.version}</span>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        {review.headline} · reviewed {review.reviewedAt.slice(0, 10)} · {review.episodeTag} “{review.episodeTitle}”
+      </p>
+      <div className="grid md:grid-cols-2 gap-2 mb-3">
+        {review.sources.map((s) => {
+          const order = workOrders.find((o) => o.source === s.source);
+          return (
+            <div key={s.source} className="rounded border border-white/8 bg-white/[0.02] p-2.5">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-xs font-semibold">{s.source}</span>
+                <span className={cn("px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider border", VERDICT_CHIP[s.verdict])}>{s.verdict}</span>
+              </div>
+              <p className="text-[11px] leading-relaxed mb-1.5">{s.gapLine}</p>
+              <p className="text-[10px] text-muted-foreground mb-1">{s.spanLine} · floor {Math.round(s.floor * 100)}%</p>
+              {s.blocking.length > 0 && (
+                <p className="text-[10px] text-muted-foreground mb-1">
+                  blockers: {s.blocking.map((b) => `${b.key} ${b.verdict} p10 ${b.p10 === null ? "-" : `${Math.round(b.p10 * 100)}%`}${b.worstRef ? ` @ ${b.worstRef}` : ""}`).join(" · ")}
+                </p>
+              )}
+              {order && (
+                <p className="text-[10px] text-amber-200/90 flex items-start gap-1 mt-1">
+                  <ClipboardList className="h-3 w-3 mt-0.5 shrink-0" />
+                  <span><span className="font-medium">{ANSWERER_WORD[order.answeredBy]}</span> ({order.budget.members}×{order.budget.shotsPerMember} per pass, night {order.night}) — {order.orderLine}</span>
+                </p>
+ )}
+            </div>
+          );
+        })}
+      </div>
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">the path · {review.path.length} step(s)</p>
+        <ol className="space-y-1">
+          {review.path.map((step, i) => (
+            <li key={i} className="text-[11px] leading-relaxed flex items-start gap-1.5">
+              <span className="text-primary font-semibold shrink-0">{i + 1}.</span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-3 flex items-center gap-1">
+        <Ban className="h-3 w-3" /> the review is a map, not a lever - the gate keeps its teeth (an episode publishes on RELEASE only).
+      </p>
+    </div>
   );
 }
 
@@ -81,6 +166,14 @@ export function CalendarView({ project }: { project: { id: string } }) {
     queryKey: ["releases", project.id],
     queryFn: () => api.releases(project.id),
     refetchInterval: 30_000,
+  });
+
+  // THE MAP, READ (iteration 233): the review rides the same read
+  // cadence - the numbers are the gate's own, re-read as the arc does.
+  const reviewQ = useQuery({
+    queryKey: ["release-review", project.id],
+    queryFn: () => api.releaseReview(project.id),
+    refetchInterval: 60_000,
   });
 
   const byDay = useMemo(() => {
@@ -155,6 +248,11 @@ export function CalendarView({ project }: { project: { id: string } }) {
         </div>
       ) : (
         <>
+          {/* THE RELEASE REVIEW (iteration 233) - the map above the calendar */}
+          {reviewQ.data ? (
+            <ReleaseReviewSection payload={reviewQ.data} />
+          ) : reviewQ.isLoading ? null : null}
+
           {/* month grid */}
           <div className="studio-panel p-4">
             <div className="flex items-center justify-between mb-3">
