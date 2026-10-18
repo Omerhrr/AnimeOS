@@ -4212,3 +4212,22 @@ Work Log:
 Stage Summary:
 - Iteration 233 CLOSED: the map is executable, the pass reads what the gate reads, the panel reads the map, and the ride's evidence is on the receipts.
 - 234 frontier: the AI_KEYFRAME tail's own answerer (the regen re-rides S003 through the night law); the sheet acceptance's own night; the closing law's first staging.
+---
+Task ID: 235-body-answer-graduation
+Agent: main (Z.ai CLI)
+Task: "proceed" — Iteration 235 (the 234 frontier's own sentence: the repair pass's next nights ride the named cells with the acceptance's verdict in hand; the closing law waits for p10 AND mean).
+
+Work Log:
+- Disk check first (the drift law): HEAD 6f70272 (234 closed, remote == local) — the stale summary's "draft 232" was long closed; the live frontier is the 235 sentence.
+- Forensics (read-only): the live RENDER standing — 7 rolled entries, 4 nights, mean 66%, p10 37.5% (p10 IS the worst at n=7); the two below-floor cells E7 Sc12 S002 Lin Yue 38% (med/traveling/shadow) and E7 Sc12 S004 Wei 55% (wide/yawing/storm); both members BELOW. The DNA chain proven complete (sheet DNA angular + designSpec male/angular 0.6 + worker face_anatomy consumes it; asset library EMPTY — every render crafts fresh); the toon paint rung already framing-runged (TOON 133); the proportion lever spent (probe-140's own verdict). The honest answer: the medians move only as the nights do.
+- THE GRADUATION (commit d557d36, BEFORE the ride — the commit law), two pure laws:
+  - src/lib/acceptance-carry.ts (v235): carriedAcceptanceVerdicts — per member the NEWEST acceptance night's verdict rides forward named (ISO days, newest wins, tie keeps later), the 149 lever sentence verbatim, honest NONE; carryEntriesFromRideReceipts — the classifier (accepted sheet = REGEN_OWED; the honest receipt's own words = STAND_DOWN_HONEST; else NONE). THE CARRY NEVER SKIPS THE GATE.
+  - src/lib/render-night-plan.ts (v235): renderNightPlan — the ANSWERER GUARD's twin (non-repair-pass refused), targetsNamedFirst reused byte-exact, ONE SHOT PER MEMBER PER CALL (the cap's shape grown into law), the plan's OWN night tag (the fold law: the medians move only as the nights do), the carry on every call, the exact words pinned.
+  - The pass names what it knew: runIdentityRepairPass carryEntries -> member row carriedAcceptance (+ the production event).
+  - scripts/ride235-nights.ts: --plan / --prerender --call N (the 233 resume door) / --call N / --closing (the gate re-reads LIVE).
+- Gates: smoke235 34/34 NEW; e2e-iter235 NEW (two lawful doors); THE PINS GREW TO THE LAW where the rides had moved states: e2e-iter222 (the verdict reads the distribution's own numbers — the 234 tail's HOLD->RELEASE; the dissolved cell leaves the blocking tray), e2e-iter228/229 (the union's own invariant: 0 or the rides' own rows, every db night key carried by the committed half), e2e-iter230 (append-only BY KEY; the clock's own law nights>=2, provisional===nights<2), e2e-iter233/234 (the TWO LAWFUL STATES on the HEAD receipt: the order's law pre-answer, the dissolution post-answer; the resolver's legs rebuild the ANSWERED ORDER from the tail's own ride row). Board re-run ALL PASS; src tsc 0. README item 148.
+- THE BOX'S OWN LAW PAID during the graduation, named honestly: the 233 live door (run without the verify env during a board sweep) rode a partial pass under the executor's cap — S002's fresh pixels re-scored 25% WORSE (the fold-replace writer kept the night key's line lawful), S004's re-render rode on across the boundary, and the 232 verify door's own re-ride refreshed the map's instant (standings byte-identical). All lawful machinery state; carried into the graduation commit.
+
+Stage Summary:
+- Iteration 235 graduation landed (d557d36): the carry is executable, the nights are a plan, the pass names what it knew, the closing law keeps its teeth.
+- The rides land next under repair-2026-10-18-ii: call 1 (Lin Yue S002) rode 38% -> 25% WORSE with the carry verbatim and the acceptance honest a second time (build #1f4d3a, dLum 0.115 dHue 0.042 — the reference does not move); the arc grew to 5 nights. Call 2 (Wei S004) prerendered (5h3v3m queued; vkzjqe's heartbeat silent — corpse by the heartbeat law, the door re-queued). The gate re-read and the evidence commit close the iteration.
