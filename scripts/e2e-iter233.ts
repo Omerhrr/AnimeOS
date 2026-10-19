@@ -35,7 +35,9 @@ function ok(cond: boolean, label: string) {
 const REVIEW_PATH = "receipts/release-review.json";
 const IDENTITY_PATH = "receipts/box-identity.json";
 const ARC_RECEIPT = "receipts/identity-arc.jsonl";
-const NIGHT = "repair-2026-10-18";
+// THE NIGHT IS THE REVIEW'S OWN INSTANT (the 233 law, the literal
+// grown out - the fifth death's review re-rode and the orders ride
+// its OWN day, never a frozen tag): derived where the receipt loads.
 
 const foldKeys = (content: string): Set<string> => {
   const keys = new Set<string>();
@@ -83,6 +85,7 @@ async function main() {
   // ── leg 3: the receipt's own work orders (the map, made executable) ──
   console.log("leg 3: the receipt's work orders");
   const receipt = JSON.parse(fs.readFileSync(path.join(process.cwd(), REVIEW_PATH), "utf8")) as ReleaseReview;
+  const NIGHT = `repair-${receipt.reviewedAt.slice(0, 10)}`; // the orders ride the review's own night tag - the law, not a literal
   ok(receipt.episodeId === episode!.id, "the receipt reviews THIS body's episode (the deterministic pick agrees)");
   const receiptOrders = buildRepairWorkOrders(receipt);
   const renderOrder = receiptOrders.find((o) => o.source === "RENDER")!;

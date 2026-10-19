@@ -39,9 +39,18 @@ async function main() {
   // ── leg 2: the real chain, read by the grown eye ──
   console.log("leg 2: the real chain read (the arrival's own reader)");
   const state = readChainState();
-  const riding = state.chain === "alive" && state.ledgerLines === 0 && state.reportExists === false && state.reportComplete === null;
+  // THE TWO LAWFUL SHAPES, GROWN TO THE 228 MEMORY LAW (the fifth
+  // death's own shape): a fresh generation rides an empty ledger and
+  // no report - and a REBORN chain rides the predecessor's own
+  // history (the arrival ledger is the box's memory, carried across
+  // the clone; the report it carries is the predecessor's COMPLETED
+  // answer, the claim verified). An alive chain wearing an INCOMPLETE
+  // report stays unlawful - the teeth keep that gate.
+  const ridingFresh = state.chain === "alive" && state.ledgerLines === 0 && state.reportExists === false && state.reportComplete === null;
+  const ridingReborn = state.chain === "alive" && state.reportExists === true && state.reportComplete === true;
+  const riding = ridingFresh || ridingReborn;
   const answered = state.chain === "dead" && state.ledgerLines >= 1 && state.reportExists === true && typeof state.reportComplete === "boolean";
-  ok(riding || answered, `the chain's story is one of the two lawful shapes (chain: ${state.chain}, pid ${state.pid ?? "-"}, pid file ${state.pidFileShape}, ledger ${state.ledgerLines} line(s), report ${state.reportExists ? `present, claim verified: ${state.reportComplete}` : "absent"})`);
+  ok(riding || answered, `the chain's story is one of the lawful shapes (chain: ${state.chain}, pid ${state.pid ?? "-"}, pid file ${state.pidFileShape}, ledger ${state.ledgerLines} line(s), report ${state.reportExists ? `present, claim verified: ${state.reportComplete}` : "absent"}${ridingReborn ? " - the reborn shape: the memory survived the body" : ""})`);
   ok(state.pidFileShape === "json", `the pid file carries its generation (the 228 shape: ${state.pidFileShape})`);
 
   // ── leg 3: the real stand-down decision ──

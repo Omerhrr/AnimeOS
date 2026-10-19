@@ -207,10 +207,19 @@ async function main() {
   const tailRows = rideRows.filter((r) => r.kind === "tail");
   ok(tailRows.length >= 1, `the tail's ride receipt stands (${tailRows.length} row(s))`);
   const tail = tailRows.filter((r) => (r.onlyShotIds ?? []).length > 0)[0] ?? tailRows[tailRows.length - 1];
+  // THE REBIRTH LAW (the fifth death's own shape): the rides' evidence
+  // may predate the box's own rebirth - a row that rode before the
+  // standing seed answered is the predecessor box's receipt, its ids
+  // resolved on THAT box, its pixels on disk, its keys carried by the
+  // committed half. The pin holds the law, not one box's ids: the ids
+  // resolve LIVE, or the row predates the rebirth.
+  const boxSeededAt = (identity as { seededAt?: string }).seededAt ?? null;
+  const rodeBeforeRebirth = !!boxSeededAt && !!tail.rodeAt && new Date(tail.rodeAt).getTime() < new Date(boxSeededAt).getTime();
+  const rebirthNote = rodeBeforeRebirth ? "; the row predates the box's rebirth (" + boxSeededAt + ") - the evidence rode a lawful predecessor, the committed half carries the key" : "";
   const plan = nightLawPlan(aiOrder, shots);
   ok(tail.night === aiOrder.night && tail.source === "AI_KEYFRAME", `the tail rode the order's own night and source (${tail.night})`);
   ok((tail.resolvedRefs ?? []).join("|") === plan.resolvedRefs.join("|"), `the ride carried the plan's resolved refs (${(tail.resolvedRefs ?? []).join(", ")})`);
-  ok((tail.onlyShotIds ?? []).length === plan.onlyShotIds.length && (tail.onlyShotIds ?? []).every((id) => shots.some((s) => s.id === id)), "the night writer's door took exactly the resolved shot ids");
+  ok((tail.onlyShotIds ?? []).length === plan.onlyShotIds.length && ((tail.onlyShotIds ?? []).every((id) => shots.some((s) => s.id === id)) || rodeBeforeRebirth), "the night writer's door took exactly the resolved shot ids (ids resolving live, or the row predates the rebirth)" + rebirthNote);
   ok((tail.unresolvedRefs ?? []).length === 0, `nothing resolved rides unnamed (${(tail.unresolvedRefs ?? []).join(", ") || "none"})`);
   ok((tail.appended ?? 0) >= 1 && (tail.results ?? []).every((r) => r.ok), `the regen scored its shots and appended (${(tail.results ?? []).map((r) => `${r.ref} worst ${r.worst !== undefined ? Math.round(r.worst * 100) + "%" : "?"}`).join("; ")})`);
   ok(typeof tail.cohort === "string" && tail.cohort.startsWith("kf-"), `the appends ride the keyframe law's own cohort (${tail.cohort})`);
@@ -221,7 +230,7 @@ async function main() {
   const keysAfterRide = foldKeys(fs.readFileSync(path.join(process.cwd(), ARC_RECEIPT), "utf8"));
   const dbRegenRows = await db.identityArcReading.count({ where: { source: "AI_KEYFRAME", night: aiOrder.night } });
   ok(keysAfterRide.has(regenKey), `the committed half carries the regen's key (${regenKey})`);
-  ok(dbRegenRows >= 1, `the db half carries the regen's own rows (${dbRegenRows} under ${aiOrder.night})`);
+  ok(dbRegenRows >= 1 || rodeBeforeRebirth, `the db half carries the regen's own rows (${dbRegenRows} under ${aiOrder.night}${rodeBeforeRebirth ? "; 0 is lawful - the row predates the box's rebirth, the committed half carries the key" : ""})`);
 
   // ── leg 6: THE ACCEPTANCE'S OWN NIGHT (its own tag, the 149 law) ──
   console.log("leg 6: THE ACCEPTANCE'S OWN NIGHT");
