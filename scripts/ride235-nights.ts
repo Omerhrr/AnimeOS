@@ -119,7 +119,7 @@ async function main() {
     const freshDone =
       latest && (latest.status === "REVIEW" || latest.status === "APPROVED") && latest.outputUrl && latest.finishedAt &&
       Date.now() - latest.finishedAt.getTime() < 30 * 60_000;
-    const aliveRide = latest && latest.status === "RENDERING" && renderJobHeartbeatAlive(latest.id);
+    const aliveRide = latest && latest.status === "RENDERING" && renderJobHeartbeatAlive(latest.id, { progress: latest.progress, stage: latest.stage });
     if (freshDone || aliveRide) {
       console.log(`PRERENDER - ${call.member} ${call.ref}: the work already rides (${latest?.status}, no duplicate queued)`);
       return;

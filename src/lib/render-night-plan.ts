@@ -39,17 +39,29 @@
 //       verbatim; a member with no answer carries the honest NONE
 //       line. The ledger names what the next night knew.
 //
-// PURE: no db, no fs - the order, the queues, and the carry arrive
-// as the arguments (the caller built them from the review and the
-// gate's own reads). The smoke pins the exact words; the ride
-// executes the plan line by line.
+//   (e) THE LEVER AIMS EVERY CALL (iteration 236). The carry arms
+//       the craft lever (craft-lever.ts - the honest receipt is the
+//       precondition) and the cell's own framing names the rung:
+//       the judge reads the build's FACE at close/med framings, the
+//       PAINT at wide framings; the proportion rung is refused
+//       (spent - probe-140's own verdict). The caller carries the
+//       framings map (shotId -> bucket, the matrix's own read off
+//       the live shots); a shot the map lacks rides lever null -
+//       named, never guessed (the 232 purity law). The aim line
+//       rides the plan's own lines.
+//
+// PURE: no db, no fs - the order, the queues, the carry, and the
+// framings arrive as the arguments (the caller built them from the
+// review, the gate's own reads, and the live shots). The smoke pins
+// the exact words; the ride executes the plan line by line.
 // ─────────────────────────────────────────────────────────────
 
 import type { RepairWorkOrder } from "./repair-work-order";
 import { targetsNamedFirst, type NamedFirstShot } from "./repair-work-order";
 import type { CarriedAcceptance } from "./acceptance-carry";
+import { craftLeverForCell } from "./craft-lever";
 
-export const RENDER_NIGHT_PLAN_LAW_VERSION = 235;
+export const RENDER_NIGHT_PLAN_LAW_VERSION = 236;
 
 /** One member's below-bar queue, worst first (the gate's own order). */
 export interface PlanMemberQueue {
@@ -71,6 +83,10 @@ export interface NightCall {
   named: boolean;
   /** The carried acceptance line (in hand), verbatim; null when none. */
   carried: string | null;
+  /** The craft lever's aim line (the rung the judge reads at this
+   *  framing); null when the caller carries no framing for the shot
+   *  or the carry does not arm the lever - named, never guessed. */
+  lever: string | null;
   /** The call's prerender line (exact words - the smoke pins them). */
   prerenderLine: string;
   /** The call's ride line (exact words - the smoke pins them). */
@@ -85,7 +101,8 @@ export type NightPlan =
 /**
  * THE NIGHT PLAN (pure): the RENDER order's named cells, spread
  * across the executor's cap as prerender+ride calls, the acceptance's
- * verdict in hand on every call. One shot per member per call
+ * verdict in hand on every call, the craft lever aiming every call
+ * the carry arms and the framings name. One shot per member per call
  * (callsPerMember, floored at 1, capped at the member's queue); the
  * members run in the queue order given (the gate's own standing
  * order); a below member with an empty queue rides an honest line,
@@ -97,6 +114,9 @@ export function renderNightPlan(args: {
   carry: CarriedAcceptance[];
   night: string;
   callsPerMember?: number;
+  /** shotId -> the matrix's own framing bucket, gathered from the
+   *  live shots; absent shots ride lever null (never guessed). */
+  framings?: Record<string, "close" | "med" | "wide">;
 }): NightPlan {
   const { order, queues, carry, night } = args;
   if (order.answeredBy !== "repair-pass") {
@@ -107,6 +127,7 @@ export function renderNightPlan(args: {
   }
   const per = Math.max(1, Math.round(Number(args.callsPerMember ?? 1) || 1));
   const carryByName = new Map(carry.map((c) => [c.characterName, c] as const));
+  const framings = args.framings ?? {};
   const calls: NightCall[] = [];
   const lines: string[] = [];
   for (const q of queues) {
@@ -119,7 +140,18 @@ export function renderNightPlan(args: {
     const order2 = targetsNamedFirst(q.below, order.namedRefs, Math.min(per, q.below.length));
     for (const t of order2.targets) {
       const index = calls.length + 1;
-      const carried = carryByName.get(q.member)?.line ?? null;
+      const carriedAnswer = carryByName.get(q.member);
+      const carried = carriedAnswer?.line ?? null;
+      const framing = framings[t.shotId];
+      // the lever arms only under the honest receipt (the carry's
+      // own verdict) and only when the caller carries the shot's
+      // framing - a lever aimed without either is a guess, and the
+      // plan does not guess (the 232 purity law)
+      const leverAnswer =
+        framing && carriedAnswer
+          ? craftLeverForCell({ ref: t.ref, framing, carry: carriedAnswer.verdict })
+          : null;
+      const lever = leverAnswer && leverAnswer.ok ? leverAnswer.lever.line : null;
       const beforePct = Math.round(t.similarity * 100);
       calls.push({
         index,
@@ -130,6 +162,7 @@ export function renderNightPlan(args: {
         beforePct,
         named: order.namedRefs.includes(t.ref),
         carried,
+        lever,
         prerenderLine: `night ${night} call ${index}: prerender ${q.member} ${t.ref} (${beforePct}%) - the bridge renders across the boundary; the 233 resume law carries the work.`,
         rideLine: `night ${night} call ${index}: ride ${q.member} ${t.ref} - the pass resumes the wait and the re-score appends night-tagged; the medians move only as the nights do.`,
       });
@@ -139,6 +172,7 @@ export function renderNightPlan(args: {
     lines.push(c.prerenderLine);
     lines.push(c.rideLine);
     if (c.carried) lines.push(`night ${night} call ${c.index} carries: ${c.carried}`);
+    if (c.lever) lines.push(`night ${night} call ${c.index} aims: ${c.lever}`);
   }
   const namedCells = order.namedRefs.length > 0 ? order.namedRefs.join(", ") : "none named";
   const headline = `THE BODY'S OWN ANSWER: ${calls.length} call(s) for ${order.source} under ${night} - the named cells first (${namedCells}), the acceptance's verdict in hand where the arc carries it.`;

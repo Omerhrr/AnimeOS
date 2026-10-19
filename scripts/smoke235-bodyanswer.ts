@@ -187,7 +187,7 @@ ok(guarded.ok === false && guarded.line === "the night plan refuses: the AI_KEYF
 
 // ── shape 3: the wiring source law ──
 console.log("shape: the wiring source law");
-ok(ACCEPTANCE_CARRY_LAW_VERSION === 235 && RENDER_NIGHT_PLAN_LAW_VERSION === 235 && REPAIR_WORK_ORDER_LAW_VERSION === 233, `the laws stand as numbered (carry v${ACCEPTANCE_CARRY_LAW_VERSION}, plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, work order v${REPAIR_WORK_ORDER_LAW_VERSION})`);
+ok(ACCEPTANCE_CARRY_LAW_VERSION === 235 && RENDER_NIGHT_PLAN_LAW_VERSION === 236 && REPAIR_WORK_ORDER_LAW_VERSION === 233, `the laws stand as numbered (carry v${ACCEPTANCE_CARRY_LAW_VERSION}, plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, work order v${REPAIR_WORK_ORDER_LAW_VERSION})`);
 const carrySrc = fs.readFileSync(path.join(process.cwd(), "src/lib/acceptance-carry.ts"), "utf8");
 ok(!/\bfrom "\.\/db"|from "@\/lib\/db"|from "fs"|require\(/.test(carrySrc), "the carry law stays pure (no db, no fs)");
 const planSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/render-night-plan.ts"), "utf8");

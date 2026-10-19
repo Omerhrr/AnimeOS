@@ -371,26 +371,66 @@ function frameOf(stage: string | null | undefined): number | null {
 //     a clip) within RENDER_RESUME_FRESH_MS -> the wait answers ok
 //     (those pixels ARE the repair's own fresh render - the
 //     re-score judges them the same), never stale ones;
-//   - the latest job is RENDERING and ALIVE (the bridge's job-file
-//     heartbeat beat RENDER_RESUME_HEARTBEAT_MS ago) -> the wait
-//     RESUMES it (the same tick loop, the same stall/ceiling law);
-//   - a corpse (RENDERING, heartbeat silent) rides the fresh queue -
-//     the stale job keeps its own honest failure path.
+//   - the latest job is RENDERING and ALIVE (the corpse question
+//     reads the stall law - RENDER_RESUME_STALL_MS of no advance,
+//     the file's own content answering before the clock, the 236
+//     law below) -> the wait RESUMES it (the same tick loop, the
+//     same stall/ceiling law);
+//   - a corpse (RENDERING, no advance within the stall window) rides
+//     the fresh queue - the stale job keeps its own honest failure
+//     path.
 //
 // Resume is bounded to the pass's own render shape (mode PREVIEW,
 // this shot) and never resurrects a FAILED row.
 export const RENDER_RESUME_FRESH_MS = 30 * 60_000;
-export const RENDER_RESUME_HEARTBEAT_MS = 15_000;
 
-function renderJobHeartbeatAlive(jobId: string): boolean {
+// THE CORPSE QUESTION READS THE STALL LAW (iteration 236): the old
+// 15s quiet-mtime window false-negatived a LIVE render under memory
+// thrash - the 235 ride's own seam, named honestly: the OOM scar
+// starved the worker's heartbeat writes while Cycles crunched a
+// heavy frame, the door declared a corpse and queued a DUPLICATE,
+// and the duplicate's own thrash took the second pool worker. The
+// window grows to the stall law's own arithmetic - REPAIR_STALL_TICKS
+// x REPAIR_TICK_MS = 120s of NO ADVANCE, the same bar the wait's own
+// stall law speaks ("Blender can spend minutes on one heavy frame,
+// the window clears that bar") - and the question reads the file's
+// own truth before the clock (the 107 precedent: the finalize never
+// lies): a job file whose own progress or stage has advanced past
+// the caller's last-known row is ALIVE - the writeback may be dead,
+// the work is not. A quiet mtime is not death; only the stall
+// arithmetic kills. DERIVED, never a second literal: the resume
+// window and the stall law cannot drift apart.
+export const RENDER_RESUME_STALL_MS = REPAIR_STALL_TICKS * REPAIR_TICK_MS;
+
+/** The caller's last-known row state (the db's own tick - what the
+ *  file's content is compared against). */
+export interface RenderJobLastKnown {
+  progress: number;
+  stage: string | null;
+}
+
+export function renderJobHeartbeatAlive(jobId: string, lastKnown?: RenderJobLastKnown): boolean {
   try {
     const file = path.join(process.cwd(), "public", "renders", `.job-${jobId}.json`);
-    return Date.now() - fs.statSync(file).mtimeMs < RENDER_RESUME_HEARTBEAT_MS;
+    const st = fs.statSync(file);
+    if (lastKnown) {
+      // (a) the file's own truth first (the 107 precedent): content
+      //     advanced past the last-known row -> the worker is alive
+      //     and crunching, whatever the writeback did
+      const raw = JSON.parse(fs.readFileSync(file, "utf-8")) as { progress?: unknown; stage?: unknown };
+      const p = typeof raw.progress === "number" ? raw.progress : null;
+      const s = typeof raw.stage === "string" ? raw.stage : null;
+      if (p !== null && p > lastKnown.progress) return true;
+      if (s !== null && s !== lastKnown.stage) return true;
+    }
+    // (b) the stall window: the mtime within 120s is life - 120s of
+    //     quiet under a heavy frame is a frame being crunched, not a
+    //     corpse
+    return Date.now() - st.mtimeMs < RENDER_RESUME_STALL_MS;
   } catch {
     return false;
   }
 }
-export { renderJobHeartbeatAlive };
 
 export async function renderAndWait(projectId: string, shotId: string): Promise<{ ok: boolean; status: string }> {
   // the resume door (see THE WAIT RESUMES THE WORK above)
@@ -412,7 +452,7 @@ export async function renderAndWait(projectId: string, shotId: string): Promise<
     const ticked = await tickRenderJob(latest.id);
     const advanced =
       !!ticked &&
-      (ticked.progress > latest.progress || (ticked.stage ?? "") !== (latest.stage ?? "") || renderJobHeartbeatAlive(latest.id));
+      (ticked.progress > latest.progress || (ticked.stage ?? "") !== (latest.stage ?? "") || renderJobHeartbeatAlive(latest.id, { progress: latest.progress, stage: latest.stage }));
     if (advanced && ticked) {
       job = ticked; // the wait resumes a render that is still alive
       console.log(`[repair] ${shotId}: resuming the live render ${latest.id.slice(-6)} at ${ticked.progress}% (the work survived its waiter)`);
