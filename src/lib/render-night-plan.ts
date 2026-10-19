@@ -50,6 +50,15 @@
 //       named, never guessed (the 232 purity law). The aim line
 //       rides the plan's own lines.
 //
+//   (f) THE AIM CARRIES ITS RUNG (iteration 237). The 236 plan named
+//       the aim as a line of prose - and prose renders nothing: the
+//       pass re-rendered the aimed cells and the payload never heard
+//       the rung, so the judge scored the same craft a third time.
+//       The call now carries the RUNG beside the line (face | paint),
+//       and the render grows the rung's own arm (the face framings'
+//       texels, the paint's own quality) - the aim becomes the
+//       render's craft, the pull is executable end to end.
+//
 // PURE: no db, no fs - the order, the queues, the carry, and the
 // framings arrive as the arguments (the caller built them from the
 // review, the gate's own reads, and the live shots). The smoke pins
@@ -61,7 +70,7 @@ import { targetsNamedFirst, type NamedFirstShot } from "./repair-work-order";
 import type { CarriedAcceptance } from "./acceptance-carry";
 import { craftLeverForCell } from "./craft-lever";
 
-export const RENDER_NIGHT_PLAN_LAW_VERSION = 236;
+export const RENDER_NIGHT_PLAN_LAW_VERSION = 237;
 
 /** One member's below-bar queue, worst first (the gate's own order). */
 export interface PlanMemberQueue {
@@ -87,6 +96,11 @@ export interface NightCall {
    *  framing); null when the caller carries no framing for the shot
    *  or the carry does not arm the lever - named, never guessed. */
   lever: string | null;
+  /** The aim's own rung (face | paint) - the render's craft arm the
+   *  call pulls; null with the lever (an unarmed call renders the
+   *  standing craft, byte-exact). The 237 law: the aim carries its
+   *  rung, not just its line. */
+  rung: "face" | "paint" | null;
   /** The call's prerender line (exact words - the smoke pins them). */
   prerenderLine: string;
   /** The call's ride line (exact words - the smoke pins them). */
@@ -152,6 +166,9 @@ export function renderNightPlan(args: {
           ? craftLeverForCell({ ref: t.ref, framing, carry: carriedAnswer.verdict })
           : null;
       const lever = leverAnswer && leverAnswer.ok ? leverAnswer.lever.line : null;
+      // THE AIM CARRIES ITS RUNG (237): the rung rides beside the
+      // line - the caller aims the render with it (the pull's wire).
+      const rung = leverAnswer && leverAnswer.ok ? leverAnswer.lever.rung : null;
       const beforePct = Math.round(t.similarity * 100);
       calls.push({
         index,
@@ -163,6 +180,7 @@ export function renderNightPlan(args: {
         named: order.namedRefs.includes(t.ref),
         carried,
         lever,
+        rung,
         prerenderLine: `night ${night} call ${index}: prerender ${q.member} ${t.ref} (${beforePct}%) - the bridge renders across the boundary; the 233 resume law carries the work.`,
         rideLine: `night ${night} call ${index}: ride ${q.member} ${t.ref} - the pass resumes the wait and the re-score appends night-tagged; the medians move only as the nights do.`,
       });

@@ -55,7 +55,7 @@ import type { IdentityScoreEntry } from "@/lib/identity";
 import { readSheetDna, parseSilhouetteShape, silhouetteShapeLine, parseFaceProfile, faceProfileLine, parseMaterialProfile, materialProfileLine } from "@/lib/blender/adherence";
 import { parseGroomProfile, groomProfileLine } from "@/lib/blender/groom";
 import { reanchorWithSheetAcceptance } from "@/lib/reanchor";
-import { createRenderJob, tickRenderJob } from "@/lib/engine/render";
+import { createRenderJob, tickRenderJob, type CraftAim } from "@/lib/engine/render";
 
 // ── the loop's knobs (bounded: a repair pass is a pass, not a night) ──
 export const REPAIR_MAX_MEMBERS = 4;
@@ -111,6 +111,10 @@ export interface RepairShotRow {
   after: number | null;
   verdict: ShotRepairVerdict;
   error?: string;
+  /** THE CRAFT AIM (iteration 237): the rung this shot's render
+   *  pulled, named on the row - the ledger honest at the seam
+   *  (an unaimed render rides no aim, byte-exact). */
+  craftAim?: { rung: "face" | "paint"; line: string };
 }
 
 export interface RepairMemberRow {
@@ -432,7 +436,11 @@ export function renderJobHeartbeatAlive(jobId: string, lastKnown?: RenderJobLast
   }
 }
 
-export async function renderAndWait(projectId: string, shotId: string): Promise<{ ok: boolean; status: string }> {
+export async function renderAndWait(
+  projectId: string,
+  shotId: string,
+  craft?: CraftAim | null,
+): Promise<{ ok: boolean; status: string }> {
   // the resume door (see THE WAIT RESUMES THE WORK above)
   const latest = await db.renderJob.findFirst({
     where: { projectId, shotId, mode: "PREVIEW", status: { in: ["RENDERING", "REVIEW", "APPROVED"] } },
@@ -459,7 +467,7 @@ export async function renderAndWait(projectId: string, shotId: string): Promise<
     }
   }
   if (!job) {
-    const created = await createRenderJob(projectId, shotId, "PREVIEW");
+    const created = await createRenderJob(projectId, shotId, "PREVIEW", craft ?? null);
     if (!created) return { ok: false, status: "no-job" };
     job = created;
   }
@@ -533,7 +541,7 @@ function memberSnapshot(m: CastIdentityMeasurement, characterId: string) {
  */
 export async function runIdentityRepairPass(
   projectId: string,
-  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string; night?: string; receiptPath?: string | null; episodeId?: string; namedRefs?: string[]; carryEntries?: CarryEntry[] },
+  opts?: { members?: number; shotsPerMember?: number; reanchor?: boolean; nameFilter?: string; night?: string; receiptPath?: string | null; episodeId?: string; namedRefs?: string[]; carryEntries?: CarryEntry[]; craftAims?: Array<CraftAim & { ref: string }> },
 ): Promise<RepairPassResult> {
   const memberLimit = Math.max(1, Math.min(REPAIR_MAX_MEMBERS, Math.round(Number(opts?.members ?? 2) || 2)));
   const shotLimit = Math.max(1, Math.min(REPAIR_MAX_SHOTS_PER_MEMBER, Math.round(Number(opts?.shotsPerMember ?? 1) || 1)));
@@ -605,7 +613,11 @@ export async function runIdentityRepairPass(
     const targets = order.targets;
     const shotRows: RepairShotRow[] = [];
     for (const t of targets) {
-      const rendered = await renderAndWait(projectId, t.shotId);
+      // THE CRAFT AIM (iteration 237): the plan's lever, matched by
+      // ref, rides the render - the aimed cell pulls its rung's own
+      // craft arm; an unaimed target renders the standing craft.
+      const aim = opts?.craftAims?.find((a) => a.ref === t.ref) ?? null;
+      const rendered = await renderAndWait(projectId, t.shotId, aim);
       if (!rendered.ok) {
         shotRows.push({ ref: t.ref, shotId: t.shotId, before: t.similarity, after: null, verdict: "UNSCORED", error: `re-render did not finish (${rendered.status})` });
         continue;
@@ -623,6 +635,7 @@ export async function runIdentityRepairPass(
         before: t.similarity,
         after,
         verdict: shotRepairVerdict(t.similarity, after, before.bar),
+        ...(aim ? { craftAim: { rung: aim.rung, line: aim.line } } : {}),
         ...(rescored.ok ? {} : { error: rescored.error }),
       });
     }
@@ -793,7 +806,7 @@ export async function runIdentityRepairPass(
             ...(r.reanchorAttempts !== undefined ? { reanchorAttempts: r.reanchorAttempts } : {}),
             ...(r.reanchorNote !== undefined ? { reanchorNote: r.reanchorNote } : {}),
             verdict: r.verdict,
-            shots: r.shots.map((s) => ({ ref: s.ref, before: s.before, after: s.after, verdict: s.verdict, error: s.error })),
+            shots: r.shots.map((s) => ({ ref: s.ref, before: s.before, after: s.after, verdict: s.verdict, error: s.error, ...(s.craftAim ? { craftAim: s.craftAim } : {}) })),
           })),
         }),
       },

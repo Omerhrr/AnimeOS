@@ -181,7 +181,7 @@ ok(renderJobHeartbeatAlive("smoke236-missing") === false, "an absent job file is
 
 // ── shape 4: the wiring source law ──
 console.log("shape: the wiring source law");
-ok(CRAFT_LEVER_LAW_VERSION === 236 && RENDER_NIGHT_PLAN_LAW_VERSION === 236, `the laws stand as numbered (lever v${CRAFT_LEVER_LAW_VERSION}, plan v${RENDER_NIGHT_PLAN_LAW_VERSION})`);
+ok(CRAFT_LEVER_LAW_VERSION === 236 && RENDER_NIGHT_PLAN_LAW_VERSION === 237, `the laws stand as numbered (lever v${CRAFT_LEVER_LAW_VERSION}, plan v${RENDER_NIGHT_PLAN_LAW_VERSION})`);
 const leverSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/craft-lever.ts"), "utf8");
 ok(!/\bfrom "\.\/db"|from "@\/lib\/db"|from "fs"|require\(/.test(leverSrc), "the lever law stays pure (no db, no fs)");
 const planSrc2 = fs.readFileSync(path.join(process.cwd(), "src/lib/render-night-plan.ts"), "utf8");

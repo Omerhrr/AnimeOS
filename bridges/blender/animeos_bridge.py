@@ -4109,6 +4109,43 @@ COMP_LUTS = {
     "neutral": {"lift": (0.98, 0.985, 1.02, 1.0), "gain": (1.03, 1.0, 0.965, 1.0), "sat": 1.06, "mistTint": (0.36, 0.4, 0.46, 1.0)},
 }
 
+# ── THE CRAFT AIM (iteration 237) - the lever's pull, wired ──
+# The 236 plan aimed every call with a line of prose - and prose
+# renders nothing: the judge scored the same craft a third time. The
+# aimed night's payload now carries shot.craftAim = {rung, line}, and
+# the worker grows the rung's own craft arm:
+#   FACE  - the framings the judge reads the face on ride the 1024
+#           rung (the 138/164 precedent: the crops feed the judge real
+#           texels; the 164 law's own arithmetic - the eyes at the 640
+#           rung are smudges the upscaler invents). The arm reads the
+#           MATRIX's own buckets (the mirror of identityFramingBucket:
+#           close/med = not in WIDE/WS/ESTABLISHING/OTS), one law two
+#           runtimes; the wide-end framings keep their own rung (the
+#           judge reads the paint there); FINAL stays 1280.
+#   PAINT - the aimed preview rides the paint's own quality rung: 24
+#           samples + denoising (a 10-sample undenoised storm cell
+#           reads flat and noisy - the judge's own 'simplified flat
+#           cel-shading' over a build the acceptance stood down
+#           honest). The 140 statement's language stays byte-exact -
+#           this is the render's quality, never the goalpost.
+# An absent or corrupt aim degrades to the standing craft, byte-exact.
+CRAFT_AIM_LAW_VERSION = "craft-v1"
+CRAFT_RUNGS = ("face", "paint")
+
+
+def craft_aim_for(shot):
+    """The payload's craft aim, validated. None when absent, corrupt,
+    or a rung the law does not name - the standing craft answers."""
+    raw = shot.get("craftAim") if isinstance(shot, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    rung = str(raw.get("rung") or "").strip().lower()
+    if rung not in CRAFT_RUNGS:
+        return None
+    line = str(raw.get("line") or "")[:300]
+    return {"rung": rung, "line": line, "lawVersion": CRAFT_AIM_LAW_VERSION}
+
+
 # ── THE RESOLUTION RUNG LADDER (iterations 123 + 126 + 138) ───
 # 512 was the 122 night's floor (a WIDE face at ~10px); 640 is the
 # 123 preview rung every framing rides; 1024 is the 126 ESTABLISHING
@@ -6303,6 +6340,17 @@ def worker_run(job_file):
         # LOW_ANGLE's own cells read - the 137 night's one per-shot
         # clear); FINAL stays 1280.
         cap = preview_cap_for(shot.get("shotType"), mode)
+        # THE FACE RUNG (iteration 237): the aimed face framings lift to
+        # the 1024 rung - the texels the face is read on (the 164 law's
+        # own verify arm: 2.09x the area, and the eye reads the
+        # difference). The matrix's own buckets name the face framings
+        # (close/med = NOT in the wide list - the identityFramingBucket
+        # mirror); the wide-end framings keep their own rung (the judge
+        # reads the paint there); FINAL keeps the 1280.
+        _aim = craft_aim_for(shot)
+        if _aim and _aim["rung"] == "face" and str(mode or "PREVIEW").upper() != "FINAL":
+            if str(shot.get("shotType") or "").upper() not in ("WIDE", "WS", "ESTABLISHING", "OTS"):
+                cap = ESTABLISHING_CAP
         scale = min(1.0, cap / max(res_w, res_h))
         out_w = max(16, round(res_w * scale / 2) * 2)
         out_h = max(16, round(res_h * scale / 2) * 2)
@@ -7444,8 +7492,15 @@ def worker_run(job_file):
         # land a clean blur, so a tight PREVIEW renders 24 (the wide
         # framings keep the 10-sample fast path; FINAL keeps 48).
         _tight_preview = str(shot.get("shotType") or "MEDIUM").upper() in ("CLOSEUP", "EXTREME_CLOSEUP", "MCU")
-        scn.cycles.samples = 48 if mode == "FINAL" else (24 if _tight_preview else 10)
-        scn.cycles.use_denoising = mode == "FINAL"
+        # THE PAINT RUNG (iteration 237): the aimed paint cell rides the
+        # paint's own quality rung - 24 samples + denoising (the 10-
+        # sample undenoised fast path reads flat and noisy at a storm
+        # wide; the judge's own words named it). The 140 statement's
+        # language stays byte-exact - the quality is the craft, never
+        # the goalpost. FINAL keeps the 48-sample law.
+        _paint_aim = bool(_aim and _aim["rung"] == "paint" and str(mode or "PREVIEW").upper() != "FINAL")
+        scn.cycles.samples = 48 if mode == "FINAL" else (24 if (_tight_preview or _paint_aim) else 10)
+        scn.cycles.use_denoising = (mode == "FINAL") or _paint_aim
         # v10.1: the FINAL frame reads like a room - real interreflection
         # (the zero-bounce look flattened every material into plastic);
         # PREVIEW keeps the fast flat path unchanged
@@ -7462,6 +7517,10 @@ def worker_run(job_file):
             scn.cycles.transmission_bounces = 0
             scn.cycles.transparent_max_bounces = 0
         state["render"] = {"samples": scn.cycles.samples, "bounces": 4 if mode == "FINAL" else 0}
+        # THE CRAFT AIM'S OWN EVIDENCE (237): the aimed render names the
+        # rung it pulled - the receipts honest at the seam.
+        if _aim:
+            state["craftAim"] = _aim
 
         # ── THE FRAME IS FINISHED IN COMP (iteration 86): every mode
         #    leaves the compositor finished - the shot's own drama

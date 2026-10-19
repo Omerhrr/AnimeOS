@@ -122,7 +122,21 @@ async function shotSpeechProgram(shot: {
   return { program, note };
 }
 
-export async function createRenderJob(projectId: string, shotId: string | null, mode: "PREVIEW" | "FINAL") {
+/** THE CRAFT AIM (iteration 237): the night plan's lever, wired - the
+ *  rung the render's craft arm pulls (the face framings' texels, the
+ *  paint's own quality). Absent = the standing craft, byte-exact. */
+export interface CraftAim {
+  rung: "face" | "paint";
+  /** The lever's own line (the plan's aim line, verbatim). */
+  line: string;
+}
+
+export async function createRenderJob(
+  projectId: string,
+  shotId: string | null,
+  mode: "PREVIEW" | "FINAL",
+  craft?: CraftAim | null,
+) {
   const lastAttempt = await db.renderJob.findFirst({
     where: { projectId, shotId, mode },
     orderBy: { attempt: "desc" },
@@ -446,6 +460,11 @@ export async function createRenderJob(projectId: string, shotId: string | null, 
             }
           : {}),
         ...(cast.length > 0 ? { cast } : {}),
+        // THE CRAFT AIM (iteration 237): the aimed night's lever rides
+        // the payload - the worker grows the rung's own craft arm (the
+        // face framings' texels, the paint's own quality); an unaimed
+        // render never carries one (the standing craft, byte-exact).
+        ...(craft ? { craftAim: { rung: craft.rung, line: craft.line } } : {}),
       },
       scene: {
         number: shot.scene.number,
