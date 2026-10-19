@@ -42,7 +42,7 @@
 // them into the receipts.
 // ─────────────────────────────────────────────────────────────
 
-export const ACCEPTANCE_CARRY_LAW_VERSION = 235;
+export const ACCEPTANCE_CARRY_LAW_VERSION = 237;
 
 /** The beat's own verdict vocabulary (reanchor.ts's gate answers). */
 export type CarriedVerdict = "STAND_DOWN_HONEST" | "REGEN_OWED" | "NONE";
@@ -121,6 +121,15 @@ export function carriedAcceptanceVerdicts(entries: CarryEntry[], memberNames: st
  * the owed regeneration landed (REGEN_OWED); the honest receipt
  * stands named in the beat's own words (STAND_DOWN_HONEST); anything
  * else is honestly NONE.
+ *
+ * THE ACCEPTANCE'S OWN SHAPES (the classifier grew in 237): the
+ * dedicated acceptance row (the 234 shape) AND the night-call row
+ * whose pass ran the acceptance beat inside the call (the 235-ii
+ * shape - reanchor rides the night call). The 235-ii receipts' honest
+ * answers rode in night-call rows and the old classifier never read
+ * them - Wei's honest receipt stood on the receipt while the carry
+ * still answered NONE. A row that carries members with reanchor
+ * answers IS an acceptance answer, whatever wrapper it rode in.
  */
 export function carryEntriesFromRideReceipts(
   rows: Array<{
@@ -136,7 +145,7 @@ export function carryEntriesFromRideReceipts(
 ): CarryEntry[] {
   const out: CarryEntry[] = [];
   for (const row of rows) {
-    if (row.kind !== "acceptance" || !row.night) continue;
+    if ((row.kind !== "acceptance" && row.kind !== "night-call") || !row.night) continue;
     for (const m of row.members ?? []) {
       const name = (m.name ?? "").trim();
       if (!name) continue;
