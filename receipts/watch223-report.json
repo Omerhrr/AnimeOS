@@ -1,12 +1,12 @@
 {
   "watch": "window-watch223",
   "generation": 1,
-  "startedAt": "2026-10-19T13:45:45.888Z",
-  "endedAt": "2026-10-19T13:49:31.027Z",
+  "startedAt": "2026-10-19T20:52:24.186Z",
+  "endedAt": "2026-10-19T20:55:49.310Z",
   "deadlineHours": 12,
   "waitMs": 600000,
   "probeCycles": 1,
-  "windowOpenedAt": "2026-10-19T13:46:18.374Z",
+  "windowOpenedAt": "2026-10-19T20:53:24.344Z",
   "wallVerbatim": null,
   "legs": [
     {
@@ -30,16 +30,16 @@
     {
       "name": "arms",
       "target": "scripts/probe222-swordprior.ts",
-      "startedAt": "2026-10-19T13:46:31.463Z",
-      "endedAt": "2026-10-19T13:49:31.027Z",
+      "startedAt": "2026-10-19T20:53:37.560Z",
+      "endedAt": "2026-10-19T20:55:49.310Z",
       "exitCode": 0,
       "timedOut": false,
-      "summary": "exit 0 -     note: The character's silhouette, pose, and wardrobe cut (including the wide shoulders, long robe, and gold trim placement) are highly consistent with the canonical sheet; the face structure and hair mass are accurate, while t |   >>> S004-arm-weaponless worst 90 | receipt -> /home/z/my-project/"
+      "summary": "exit 0 -     note: The character's silhouette, long dark hair in a topknot, and deep maroon robe with gold trim are accurately represented at this scale; the face structure and wardrobe cut align well with the reference, though the ambient |   >>> S004-arm-weaponless worst 85 | receipt -> /home/z/my-project/"
     }
   ],
   "complete": true,
   "windowBound": [],
   "verdictReason": "the receipts carry the answer - restore complete:true, all 6 shots ok, the chain stops on its own answer",
-  "writtenAt": "2026-10-19T13:49:31.027Z",
+  "writtenAt": "2026-10-19T20:55:49.310Z",
   "reportPath": "/home/z/my-project/AnimeOS/receipts/watch223-report.json"
 }

@@ -4292,3 +4292,24 @@ Work Log:
 Stage Summary:
 - Iteration 237 graduation landed: the lever's aim is executable - the rung rides the wire, the worker pulls the aimed craft, and the standing craft answers byte-exact wherever the aim is absent.
 - The 237 ride: the aimed night under repair-2026-10-20 - call 1 the FACE rung at S002, call 2 the PAINT rung at S004, the re-scores appending night-tagged, the gate re-reading the medians, the closing law answering.
+
+---
+Task ID: 237-evidence-aimed-night
+Agent: main (Z.ai CLI, zai-web, trace 1a155b09330b9e39)
+Task: the aimed night rides - the FACE rung at S002, the PAINT rung at S004, under the honest receipts the acceptance already answered; the receipts land.
+
+Work Log:
+- THE REBUILD LAW'S REMAINING LEGS: the restore leg re-rode on the seventh box (night122-restore: four sheets anchored through the image channel, the committed r3 designs wired byte-exact - Lin 514, Wei 517, the 213 law's own numbers, the sheet DNA vision-read for the whole cast, restore-receipt.json complete:true); the doors' cast answer flipped UNANCHORED -> BELOW (Lin worst 30%, Wei worst 45%) and the aimed plan built with BOTH named cells.
+- THE CARRY READ ITS OWN SECOND SHAPE (the graduation's plan-build named the seam before any render): the classifier read only kind === "acceptance" rows - the 235-ii night's honest answers rode in kind === "night-call" rows, Wei's honest receipt stood on the receipt while the carry answered NONE. THE GROWTH (acceptance-carry v237, committed BEFORE the ride at fb10ca0): the classifier reads the acceptance's own shapes; the plan rebuilt with both rungs armed (call 1 FACE under the newest honest carry, call 2 PAINT under Wei's own receipt verbatim).
+- THE CHAIN RELAUNCHED (the frontier's own named step): generation 1 on the seventh box (pid 6429, json pid file), the window opened in 60s, the legs rode restore:skip -> night:skip -> arms:ride, the report complete:true, the eternal stand-down - the arrival eye re-read the answer (stopped: rode, claim verified) and the chain pins answered whole.
+- THE AIMED NIGHT RODE (the split protocol, the plan's own night repair-2026-10-20):
+  - Call 1 (Lin Yue E7 Sc12 S002, the FACE aim): job meifoh queued WITH the aim; the worker's own evidence carried craftAim {rung: face, lawVersion: craft-v1}; the render rode the 1024 texel rung (the 138/164 precedent's own arithmetic); the pass resumed the wait, the fresh pixels re-scored 30% -> 85% REPAIRED - THE BAR CLEARED. The judge's own wall (the smudge inventing twin-tails) answered by the texels: the face read at last.
+  - Call 2 (Demon Lord Wei E7 Sc12 S004, the PAINT aim): job a8enil queued WITH the aim; the worker's evidence: craftAim paint, samples 24 (was 10), denoised true, the 140 statement byte-exact beside it (styleRamp WIDE 0.42/0.78/0.015, the painterly rung painted 8, the trim's boldness rung stitch 7.0); the fresh pixels re-scored 45% -> 35% WORSE, and the sheet acceptance stood down honest a THIRD time (build #5c152b wears the design's class, dLum 0.010 dHue 0.046 - the reference does not move). The quality was never the wall's whole answer - the honest lever names that too.
+  - The arc grew 221 -> 223 append-only by key (the night's own 2 keys, 7 nights now); the db half carries the rows, the committed half grew by the same keys.
+- THE GATE RE-READ: the closing law refused LIVE (RENDER sits BELOW, mean 64%, median 75% vs floor 70%) - the teeth stay in the door, the medians move only as the nights do.
+- Gates: e2e-iter237 NEW 19/19 (the aimed receipts audited: the rungs, the aim lines verbatim, the carries verbatim - the 149 sentence and Wei's own receipt - the answers on the rows with the rungs named, the arc's both halves, the review resolving on the living box, the closing refusal verbatim); e2e-iter233's verify pins grown to the rebirth law (the ids resolve live OR the committed half carries the key - the union's own invariant; the rows' shared night joins the committed half while the review's own instant names its own order night) -> 45/45; the whole board re-run ALL PASS on the seventh box (smoke222-237 with smoke237 at 35/35; e2e-iter222/223/226/227/228/229/230/232/233/234/235/237); src tsc 0.
+- README item 150's answer appended; this worklog.
+
+Stage Summary:
+- Iteration 237 CLOSED: the lever pulls for real - one rung cleared the bar (the FACE texels at S002: 30 -> 85 REPAIRED), one rung named the wall honestly (the PAINT quality at S004: 45 -> 35 WORSE, the acceptance's third honest stand-down), and the closing law keeps its teeth.
+- The 238 frontier: the aimed night's own arithmetic - S002's cell left the blocking tray, the medians moved only as the night did, and the RENDER body's next lever waits for its own honest night (the wide cell's wall is the render craft's own face at the small figure - deeper than quality, deeper than proportion: the next lever names itself from the judge's own words, one lawful night at a time).

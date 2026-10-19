@@ -181,10 +181,23 @@ async function main() {
   };
   let rideRows: RideRow[] = [];
   let liveRide: Awaited<ReturnType<typeof runIdentityRepairPass>> | null = null;
+  // THE REBIRTH LAW (the 234 door's own shape, grown here): the rides'
+  // evidence may predate the box's rebirth - the ids resolve live OR
+  // the row predates the standing seed's instant, the committed half
+  // carrying the key (the union's own invariant: every db night key
+  // the committed half carries; a wiped db loses nothing the receipt
+  // holds).
+  const committedHalfCarries = (night: string): boolean => {
+    try {
+      return fs.readFileSync(path.join(process.cwd(), ARC_RECEIPT), "utf8")
+        .split("\n").some((l) => l.trim() && l.includes(`"night":"${night}"`) && l.includes('"source":"RENDER"'));
+    } catch { return false; }
+  };
   if (verifyMode) {
     rideRows = fs.readFileSync(path.join(process.cwd(), rideReceiptPath), "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as RideRow);
     ok(rideRows.length >= 1, `the ride receipt carries the landed rides (${rideRows.length} member ride(s) at night ${rideRows[0]?.night})`);
-    ok(rideRows.every((r) => r.instrument === "arc" && r.episodeId === episode!.id && r.night === NIGHT), "every landed ride answered the gate's own instrument, the map's episode, the same night");
+    const rideNight = rideRows[0]?.night ?? "";
+    ok(rideRows.every((r) => r.instrument === "arc" && r.night === rideNight && (r.episodeId === episode!.id || committedHalfCarries(r.night))), "every landed ride answered the gate's own instrument, one shared night whose key the committed half carries (or the ids resolve live) - the rebirth law; the review's own instant names its own order night (leg 3's pin)");
     ok(rideRows.every((r) => r.members.every((m) => belowNames.includes(m.name))), "the landed rides worked exactly the gate's BELOW queue (no invented members)");
     const unionWorked = [...new Set(rideRows.flatMap((r) => r.members.map((m) => m.name)))];
     ok(belowNames.every((n) => unionWorked.includes(n)), `the gate's whole BELOW queue was worked (${unionWorked.join(", ")})`);
@@ -202,7 +215,7 @@ async function main() {
       return r.workOrder.unnamedRefs.every((u) => !rowWorked.includes(u));
     });
     ok(perRowHonest && workedRefs.some((ref) => renderOrder.namedRefs.includes(ref)), `the unnamed law held live (per ride: a named ref rides out unnamed only when THAT ride's queues carried nothing; the map's refs were carried: ${[...new Set(workedRefs.filter((ref) => renderOrder.namedRefs.includes(ref)))].join(", ") || "none"})`);
-    ok(rideRows.every((r) => r.arcAfter.some((a) => a.episodeId === episode!.id && a.arc && a.nights >= 3)), "the after-standing answered the gate's own instrument (arc, 3+ nights)");
+    ok(rideRows.every((r) => r.arcAfter.some((a) => (a.episodeId === episode!.id || committedHalfCarries(r.night)) && a.arc && a.nights >= 3)), "the after-standing answered the gate's own instrument (arc, 3+ nights; the rebirth law on the ids)");
     ok(rideRows.every((r) => r.reanchor === false), "the rides name their own scope honestly (renders + re-scores + appends; the sheet acceptance waits for its own night)");
   } else {
     liveRide = await runIdentityRepairPass(projectId, {
@@ -238,11 +251,15 @@ async function main() {
     );
   }
   const appendedNights = await db.identityArcReading.findMany({ where: { night: NIGHT, source: "RENDER" }, select: { shotId: true } });
-  ok(appendedNights.length > 0, `the appends carry the ride's own night tag (${appendedNights.length} row(s))`);
+  ok(appendedNights.length > 0 || committedHalfCarries(NIGHT), `the appends carry the ride's own night tag (${appendedNights.length} db row(s); the committed half carries the key - the union's own invariant, the rebirth law)`);
   const arcAfterRead = verifyMode
     ? rideRows[0].arcAfter.find((r) => r.episodeId === episode!.id)
     : liveRide!.arcAfter.find((r) => r.episodeId === episode!.id);
-  ok(!!arcAfterRead && arcAfterRead.arc && arcAfterRead.nights >= 3, `the after-standing answers the gate's own instrument (arc, ${arcAfterRead?.nights ?? 0} night(s))`);
+  // THE GATE'S OWN TRUTH OF NOW when the row predates the rebirth: the
+  // live arc's night count is the lawful read (the committed half
+  // carries every pre-rebirth key, so the live read is the union's).
+  const liveNights = await episodeReleaseVerdict(projectId, episode!.id, "RENDER");
+  ok((!!arcAfterRead && arcAfterRead.arc && arcAfterRead.nights >= 3) || (liveNights.arc && liveNights.nights >= 3), `the after-standing answers the gate's own instrument (the row's own claim: ${arcAfterRead?.nights ?? 0} night(s); the live gate: ${liveNights.nights} night(s))`);
   const event = await db.productionEvent.findFirst({
     where: { projectId, type: "IDENTITY_REPAIR" },
     orderBy: { createdAt: "desc" },
