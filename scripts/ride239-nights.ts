@@ -173,27 +173,40 @@ async function buildPlan(): Promise<{ review: ReleaseReview; plan: NightPlan }> 
   const castRows = await db.character.findMany({ where: { projectId: identity.projectId }, select: { name: true } });
   const castNames = new Set(castRows.map((c) => c.name));
   const unionRows = await readIdentityArcEpisode(identity.projectId, review.episodeId, "RENDER");
-  const memberOfRef: Record<string, string> = {};
+  const riddenByQueues = new Set(queues.flatMap((q) => q.below.map((b) => b.ref)));
+  // THE COHORT'S OWN DOOR (the 239-ii law's own caller): the member's
+  // OWN below-bar history cells name the measurement the night owes -
+  // the cells the member's queue would answer if the present tense
+  // carried them (any cohort: the history is the truth; the freshest
+  // rows first; one shot per member per call, the cap's own shape).
+  const untestedAnchored = new Set(
+    door.measurement.members.filter((m) => m.standing === "UNTESTED" && m.anchored).map((m) => m.name),
+  );
+  const historyCells: Array<{ member: string; shotId: string; ref: string }> = [];
   for (const row of unionRows) {
-    if (row.worst >= door.measurement.bar) continue;
     let entries: Array<{ characterName?: string; similarity?: number }> = [];
     try { entries = JSON.parse(row.scores) as Array<{ characterName?: string; similarity?: number }>; } catch { continue; }
-    let worstName: string | null = null;
-    let worstSim = 2;
+    const ref = refOf(row.shot);
+    if (!shotIdOfRef.has(ref) || riddenByQueues.has(ref)) continue;
     for (const e of entries) {
       const name = String(e.characterName ?? "").trim();
-      if (!name || !castNames.has(name)) continue;
-      const sim = typeof e.similarity === "number" && Number.isFinite(e.similarity) ? e.similarity : 2;
-      if (sim < worstSim) { worstSim = sim; worstName = name; }
+      if (!name || !castNames.has(name) || !untestedAnchored.has(name)) continue;
+      if (typeof e.similarity === "number" && Number.isFinite(e.similarity) && e.similarity < door.measurement.bar) {
+        if (!historyCells.some((c) => c.member === name && c.ref === ref)) {
+          historyCells.push({ member: name, shotId: shotIdOfRef.get(ref)!, ref });
+        }
+      }
     }
-    const ref = refOf(row.shot);
-    if (worstName && row.worst < door.measurement.bar && order.namedRefs.includes(ref)) memberOfRef[ref] = worstName;
   }
-  const riddenByQueues = new Set(queues.flatMap((q) => q.below.map((b) => b.ref)));
-  const openQueues = [...new Set(order.namedRefs.filter((ref) => memberOfRef[ref] && shotIdOfRef.has(ref) && !riddenByQueues.has(ref)))].map((ref) => ({
-    member: memberOfRef[ref],
-    namedShots: [{ shotId: shotIdOfRef.get(ref)!, ref }],
-  }));
+  // one shot per member per call (the cap's own shape): the freshest
+  // below-bar history cell per member rides the door's call
+  const seenMembers = new Set<string>();
+  const openQueues: Array<{ member: string; namedShots: Array<{ shotId: string; ref: string }> }> = [];
+  for (const c of historyCells) {
+    if (seenMembers.has(c.member)) continue;
+    seenMembers.add(c.member);
+    openQueues.push({ member: c.member, namedShots: [{ shotId: c.shotId, ref: c.ref }] });
+  }
   const carry = carriedAcceptanceVerdicts(loadCarryEntries(), [...queues.map((q) => q.member), ...openQueues.map((q) => q.member)]);
   const plan = renderNightPlan({ order, queues, carry, night: NIGHT, callsPerMember: 1, framings, openQueues });
   return { review, plan };

@@ -3,7 +3,7 @@
   "episodeId": "cmvh51lxc0004qngknxo62t57",
   "episodeTag": "E7",
   "episodeTitle": "The Storm Over Azure Mountain",
-  "reviewedAt": "2026-10-20T20:53:49.519Z",
+  "reviewedAt": "2026-10-20T21:44:50.884Z",
   "law": {
     "name": "release-review",
     "version": 232
@@ -39,51 +39,51 @@
       "source": "RENDER",
       "verdict": "BELOW",
       "floor": 0.7,
-      "readings": 7,
+      "readings": 2,
       "arc": true,
-      "nights": 8,
-      "provisional": false,
+      "nights": 1,
+      "provisional": true,
       "overall": {
-        "n": 7,
-        "mean": 0.6464285714285715,
-        "median": 0.75,
-        "p10": 0.375,
-        "worst": 0.375,
-        "best": 0.75,
+        "n": 2,
+        "mean": 0.5,
+        "median": 0.5,
+        "p10": 0.35,
+        "worst": 0.35,
+        "best": 0.65,
         "belowFloor": 2
       },
       "blocking": [
         {
           "key": "calm",
           "verdict": "BELOW",
-          "p10": 0.375,
-          "n": 7,
+          "p10": 0.35,
+          "n": 2,
           "belowFloor": 2,
-          "worstRef": "E7 Sc12 S002"
+          "worstRef": "E7 Sc12 S004"
         },
         {
-          "key": "med",
+          "key": "storm",
           "verdict": "BELOW",
-          "p10": 0.375,
-          "n": 2,
+          "p10": 0.35,
+          "n": 1,
           "belowFloor": 1,
-          "worstRef": "E7 Sc12 S002"
+          "worstRef": "E7 Sc12 S004"
         },
         {
-          "key": "shadow",
+          "key": "unset",
           "verdict": "BELOW",
-          "p10": 0.375,
+          "p10": 0.35,
           "n": 2,
-          "belowFloor": 1,
-          "worstRef": "E7 Sc12 S002"
+          "belowFloor": 2,
+          "worstRef": "E7 Sc12 S004"
         },
         {
-          "key": "traveling",
+          "key": "wide",
           "verdict": "BELOW",
-          "p10": 0.375,
-          "n": 2,
+          "p10": 0.35,
+          "n": 1,
           "belowFloor": 1,
-          "worstRef": "E7 Sc12 S002"
+          "worstRef": "E7 Sc12 S004"
         }
       ],
       "repairBudget": {
@@ -91,18 +91,19 @@
         "shotsPerMember": 3,
         "shotsPerPass": 12
       },
-      "spanLine": "7 arc reading(s) across 8 night(s)",
-      "gapLine": "RENDER sits BELOW - the body itself is under the floor (mean 65%, median 75% vs floor 70%): lift the body before the tail matters."
+      "spanLine": "2 arc reading(s) across 1 night(s) (PROVISIONAL - single-night read)",
+      "gapLine": "RENDER sits BELOW - the body itself is under the floor (mean 50%, median 50% vs floor 70%): lift the body before the tail matters."
     }
   ],
   "standing": {
     "verdict": "BELOW",
-    "arcNights": 8,
-    "provisionalExited": true
+    "arcNights": 3,
+    "provisionalExited": false
   },
   "path": [
     "RENDER: lift the body - the repair pass answers (up to 4 members x 3 shots = 12 shots per pass, the worst refs first), its re-scores append to the arc night-tagged, and the gate re-reads the medians.",
+    "the arc is young - one night cannot carry a build decision (the 141 band measured identical craft swinging mean 38..60 between drains): give the re-scores their second night and PROVISIONAL exits.",
     "when every scored source reads p10 >= floor AND mean >= floor, the verdict turns RELEASE and the episode stages for publish - the gate keeps its teeth."
   ],
-  "headline": "E7 SITS BELOW - AI_KEYFRAME RELEASES (arc, 3 night(s)); RENDER SITS BELOW (arc, 8 night(s)); the path names 2 step(s)"
+  "headline": "E7 SITS BELOW - AI_KEYFRAME RELEASES (arc, 3 night(s)); RENDER SITS BELOW (arc, 1 night(s)); the path names 2 step(s)"
 }

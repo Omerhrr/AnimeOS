@@ -205,14 +205,16 @@ export function renderNightPlan(args: {
   // THE COHORT'S OWN DOOR (iteration 239): the craft moved, the
   // cohort opened, and the cells the move leaves unmeasured owe the
   // present tense their first reading. The door's calls ride the
-  // work order's named cells only (deduped against the below queues'
-  // own refs - a cell the repair already carries rides once), the
-  // same lever law arms them (the carry + the framing), and the
-  // before reads null (the first reading IS the night's answer).
+  // caller's own named cells (the member's own below-bar history -
+  // the cells the member's queue would answer if the present tense
+  // carried them), deduped against the below queues' own refs - a
+  // cell the repair already carries rides once. The same lever law
+  // arms them (the carry + the framing), and the before reads null
+  // (the first reading IS the night's answer).
   const riddenRefs = new Set(calls.map((c) => c.ref));
   for (const q of args.openQueues ?? []) {
     for (const t of q.namedShots) {
-      if (!order.namedRefs.includes(t.ref) || riddenRefs.has(t.ref)) continue;
+      if (riddenRefs.has(t.ref)) continue;
       riddenRefs.add(t.ref);
       const index = calls.length + 1;
       const carriedAnswer = carryByName.get(q.member);

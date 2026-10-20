@@ -154,7 +154,7 @@ ok(rnp.includes("export interface PlanOpenQueue {"), "the plan law carries the d
 ok(rnp.includes("beforePct: null,"), "the door's call reads beforePct null (the first reading IS the night's answer)");
 ok(rnp.includes("prerenderLine: `night ${night} call ${index}: prerender ${q.member} ${t.ref} (untested in the present cohort) - the cohort's own door: the craft moved, the cell owes its first reading; the bridge renders across the boundary.`"), "the door's prerender line rides its exact words");
 ok(rnp.includes("rideLine: `night ${night} call ${index}: ride ${q.member} ${t.ref} - the pass measures the cohort's own cell and the re-score appends night-tagged; the medians move only as the nights do.`"), "the door's ride line rides its exact words");
-ok(rnp.includes("if (!order.namedRefs.includes(t.ref) || riddenRefs.has(t.ref)) continue;"), "the door rides the work order's named cells only, deduped against the repair's own");
+ok(rnp.includes("if (riddenRefs.has(t.ref)) continue;"), "the door rides the member's own named cells, deduped against the repair's own");
 
 // ── shape 5: the door's REAL behavior (the pure law, exec'd) ──
 console.log("shape: the door's real behavior (the verdict + the plan)");
