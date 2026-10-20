@@ -49,7 +49,7 @@ const bridge = read("bridges/blender/animeos_bridge.py");
 const tp = read("bridges/blender/toon_pass.py");
 const animeCharacter = read("bridges/blender/anime_character.py");
 expect("the anime law stands at 125 (no bridge law moved)",
-  animeCharacter.includes("ANIME_LAW_VERSION = 125"), "v125");
+  animeCharacter.includes("ANIME_LAW_VERSION = 126"), "v125");
 expect("the toon law stands at 133 (the 140 wide-end paint statement)",
   tp.includes("TOON_LAW_VERSION = 133"), "v133");
 expect("the presence law stands at 111 (the 202 framing law - the pin refreshed on the 208 rebuild, the bridge's own truth)",

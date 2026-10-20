@@ -63,7 +63,7 @@ expect("the toon pass holds its 133 version (the 140 paint statement is the brid
   tp.includes("TOON_LAW_VERSION = 133"), "v133");
 const ac = read("bridges/blender/anime_character.py");
 expect("the builder's law version rides untouched",
-  ac.includes("ANIME_LAW_VERSION = 125"), "v124");
+  ac.includes("ANIME_LAW_VERSION = 126"), "v124");
 
 // ── 2. THE REAL BLENDER PROBE (the framing law under the real bpy) ──
 const PROBE = `

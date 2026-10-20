@@ -51,7 +51,7 @@ const BLENDER = process.env.ANIMEOS_BLENDER_BIN || "/home/z/blender-5.2.2-linux-
 // ── 1. THE SOURCE LAWS ──
 const ac = read("bridges/blender/anime_character.py");
 expect("the character law advances to 125 (the drawn face's gender law + the sideburn tuck)",
-  ac.includes("ANIME_LAW_VERSION = 125"), "v125");
+  ac.includes("ANIME_LAW_VERSION = 126"), "v125");
 expect("the eye paint reads the spec's own gender",
   ac.includes('male = str((spec.get("body") or {}).get("gender")) == "male"'), "the gender read");
 expect("the male iris is narrower and shorter (0.44 / 0.58)",

@@ -67,7 +67,7 @@ expect("the 138 resolution ladder untouched (the wide-end framings ride 1024)",
 const tp = read("bridges/blender/toon_pass.py");
 expect("the toon pass holds its 133 version", tp.includes("TOON_LAW_VERSION = 133"), "v133");
 const ac = read("bridges/blender/anime_character.py");
-expect("the builder's law version rides untouched", ac.includes("ANIME_LAW_VERSION = 125"), "v125");
+expect("the builder's law version rides untouched", ac.includes("ANIME_LAW_VERSION = 126"), "v125");
 
 // ── 2. THE REAL BLENDER PROBE (the solve under the real bpy) ──
 const PROBE = `

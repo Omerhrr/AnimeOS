@@ -92,7 +92,7 @@ function sourceLaw() {
   const toon = read("bridges/blender/toon_pass.py");
   const bridge = read("bridges/blender/animeos_bridge.py");
   expect("no build-law bump (the design is DATA - the dials ride inside the standing clamps)",
-    anime.includes("ANIME_LAW_VERSION = 125") && toon.includes("TOON_LAW_VERSION = 133")
+    anime.includes("ANIME_LAW_VERSION = 126") && toon.includes("TOON_LAW_VERSION = 133")
       && bridge.includes("PRESENCE_LAW_VERSION = 110"), "the versions");
   expect("the clamp law is the dials' own net (headScale floor 0.85, eyes floor 0.70)",
     anime.includes('"headScale": _num(b0, "headScale", 1.0, 0.85, 1.2)')

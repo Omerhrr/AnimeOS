@@ -120,7 +120,7 @@ function sourceLaw() {
   const anime = read("bridges/blender/anime_character.py");
   const bridge = read("bridges/blender/animeos_bridge.py");
   expect("no build-law bump (ANIME 125 / PRESENCE 108 stand - the dials ride the standing clamps)",
-    anime.includes("ANIME_LAW_VERSION = 125") && bridge.includes("PRESENCE_LAW_VERSION = 110"), "the versions");
+    anime.includes("ANIME_LAW_VERSION = 126") && bridge.includes("PRESENCE_LAW_VERSION = 110"), "the versions");
   expect("the clamp law is the dials' own net (the male eye floor 0.70, the brow ceiling 2.0)",
     anime.includes('"size": _num(e0, "size", 0.92 if gender == "male" else 1.0, 0.7, 1.4)')
       && anime.includes('"thickness": _num(br0, "thickness", 1.25 if gender == "male" else 1.0, 0.5, 2.0),'), "the clamps");

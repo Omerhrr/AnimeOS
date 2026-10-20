@@ -55,7 +55,7 @@ function sourceLaw() {
   expect("the versions stand (the ladder rides source law as 123/126 left it)",
     br.includes("PRESENCE_LAW_VERSION = 110"), "presence 110");
   const anime = read("bridges/blender/anime_character.py");
-  expect("ANIME 125 stands", anime.includes("ANIME_LAW_VERSION = 125"), "anime 125");
+  expect("ANIME 125 stands", anime.includes("ANIME_LAW_VERSION = 126"), "anime 125");
   const toon = read("bridges/blender/toon_pass.py");
   expect("TOON 132 stands", toon.includes("TOON_LAW_VERSION = 133"), "toon 133");
   expect("the night wall rises with the rung's honest cost (the drain never expires mid-night)",
