@@ -1,6 +1,6 @@
 {
   "probe": "swordprior-222",
-  "rodeAt": "2026-10-20T10:32:52.711Z",
+  "rodeAt": "2026-10-20T20:50:17.159Z",
   "rides": [
     {
       "cell": "S001-control",
@@ -13,21 +13,38 @@
           "characterName": "Lin Yue",
           "similarity": 85,
           "aspects": {
-            "face": 90,
-            "hair": 95,
-            "wardrobe": 85,
-            "weapon": 100,
-            "palette": 80,
-            "style": 75
+            "face": 20,
+            "hair": 90,
+            "wardrobe": 95,
+            "weapon": 80,
+            "palette": 95,
+            "style": 80
           },
-          "note": "Face structure, hair silhouette (topknot and long ponytail), and wardrobe cut match the canonical sheet well; the style is a clean cel-shaded render that reads clearly at this scale, though it lacks the sheet's painterly texture, and the palette is shifted cooler by the scene's moonlight."
+          "note": "Wardrobe silhouette, color blocking, and hair style are highly accurate to the sheet; the face is obscured by a mask which is a deviation from the canonical unmasked design; the sword's blade is glowing cyan in the panel versus the dark blade on the sheet."
         }
       ]
     },
     {
       "cell": "S001-arm-sheath-object-state",
       "arm": "sheath-object-state",
-      "error": "no standing weapon clause"
+      "promptPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S001-arm-sheath-object-state-prompt.txt",
+      "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S001-arm-sheath-object-state-keyframe.png",
+      "featuredWorst": 85,
+      "entries": [
+        {
+          "characterName": "Lin Yue",
+          "similarity": 85,
+          "aspects": {
+            "face": 90,
+            "hair": 90,
+            "wardrobe": 85,
+            "weapon": 90,
+            "palette": 80,
+            "style": 80
+          },
+          "note": "Face and hair structure are highly consistent with the sheet; wardrobe cut and sword design match well, though the palette is shifted by the scene's dark ambient lighting and the render style is more atmospheric than the neutral studio sheet."
+        }
+      ]
     },
     {
       "cell": "S004-control",
@@ -40,14 +57,14 @@
           "characterName": "Demon Lord Wei",
           "similarity": 85,
           "aspects": {
-            "face": 80,
+            "face": 90,
             "hair": 90,
             "wardrobe": 85,
             "weapon": 0,
-            "palette": 90,
+            "palette": 80,
             "style": 80
           },
-          "note": "Face structure and hair mass are accurate; wardrobe cut, color blocking, and gold trim placement match the sheet well; the giant sword behind him is a prop/environmental element rather than his personal weapon; style is consistent with the detailed model sheet read at this scale."
+          "note": "Face structure and hair mass match the sheet well; the dark blue robe with gold embroidery, wide sleeves, and crown are accurately represented at this scale; palette is shifted by the storm's ambient blue light but color blocking remains correct; style is a realistic render rather than the sheet's c"
         }
       ]
     },
@@ -56,20 +73,20 @@
       "arm": "weaponless",
       "promptPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S004-arm-weaponless-prompt.txt",
       "pngPath": "/home/z/my-project/AnimeOS/inspect/aiart222/S004-arm-weaponless-keyframe.png",
-      "featuredWorst": 90,
+      "featuredWorst": 85,
       "entries": [
         {
           "characterName": "Demon Lord Wei",
-          "similarity": 90,
+          "similarity": 85,
           "aspects": {
-            "face": 95,
-            "hair": 90,
-            "wardrobe": 92,
+            "face": 90,
+            "hair": 85,
+            "wardrobe": 90,
             "weapon": 100,
-            "palette": 85,
-            "style": 85
+            "palette": 80,
+            "style": 80
           },
-          "note": "Face structure and hair mass are highly accurate; wardrobe cut, embroidery placement, and accessories match the sheet perfectly; palette is consistent though shifted by the scene's cool ambient light; style is a high-fidelity render that captures the rich detail of the model sheet at this scale."
+          "note": "Face structure and feature placement are highly accurate; hair mass and crown match the sheet; the dark blue robe with gold trim and central dragon motif is correctly represented; no weapon is visible in either image so it is omitted; palette is consistent though shifted by the scene's cool ambient "
         }
       ]
     }

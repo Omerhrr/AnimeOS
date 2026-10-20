@@ -1,19 +1,19 @@
 {
   "watch": "window-watch223",
-  "generation": 2,
-  "startedAt": "2026-10-20T10:30:10.642Z",
-  "endedAt": "2026-10-20T10:32:52.735Z",
-  "deadlineHours": 8,
+  "generation": 1,
+  "startedAt": "2026-10-20T20:42:21.494Z",
+  "endedAt": "2026-10-20T20:50:17.188Z",
+  "deadlineHours": 12,
   "waitMs": 600000,
   "probeCycles": 1,
-  "windowOpenedAt": "2026-10-20T10:30:39.308Z",
+  "windowOpenedAt": "2026-10-20T20:42:46.901Z",
   "wallVerbatim": null,
   "legs": [
     {
       "name": "restore",
       "target": "scripts/night122-restore.ts",
-      "startedAt": "2026-10-20T10:31:07.370Z",
-      "endedAt": "2026-10-20T10:31:18.555Z",
+      "startedAt": "2026-10-20T20:43:24.600Z",
+      "endedAt": "2026-10-20T20:48:09.865Z",
       "exitCode": 0,
       "timedOut": false,
       "summary": "exit 0 - Demon Lord Wei: sheet DNA READ (vision) | Lin Yue - Clone 001: no sheet - DNA absent | RESTORE RECEIPT: receipts/restore-receipt.json (complete: true)"
@@ -30,16 +30,16 @@
     {
       "name": "arms",
       "target": "scripts/probe222-swordprior.ts",
-      "startedAt": "2026-10-20T10:31:18.555Z",
-      "endedAt": "2026-10-20T10:32:52.734Z",
+      "startedAt": "2026-10-20T20:48:09.866Z",
+      "endedAt": "2026-10-20T20:50:17.187Z",
       "exitCode": 0,
       "timedOut": false,
-      "summary": "exit 0 -     note: Face structure and hair mass are highly accurate; wardrobe cut, embroidery placement, and accessories match the sheet perfectly; palette is consistent though shifted by the scene's cool ambient light; style is a high-fid |   >>> S004-arm-weaponless worst 90 | receipt -> /home/z/my-project/"
+      "summary": "exit 0 -     note: Face structure and feature placement are highly accurate; hair mass and crown match the sheet; the dark blue robe with gold trim and central dragon motif is correctly represented; no weapon is visible in either image so  |   >>> S004-arm-weaponless worst 85 | receipt -> /home/z/my-project/"
     }
   ],
   "complete": true,
   "windowBound": [],
   "verdictReason": "the receipts carry the answer - restore complete:true, all 6 shots ok, the chain stops on its own answer",
-  "writtenAt": "2026-10-20T10:32:52.735Z",
+  "writtenAt": "2026-10-20T20:50:17.188Z",
   "reportPath": "/home/z/my-project/AnimeOS/receipts/watch223-report.json"
 }

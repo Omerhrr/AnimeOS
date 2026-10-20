@@ -70,12 +70,20 @@ import { targetsNamedFirst, type NamedFirstShot } from "./repair-work-order";
 import type { CarriedAcceptance } from "./acceptance-carry";
 import { craftLeverForCell } from "./craft-lever";
 
-export const RENDER_NIGHT_PLAN_LAW_VERSION = 237;
+export const RENDER_NIGHT_PLAN_LAW_VERSION = 238;
 
 /** One member's below-bar queue, worst first (the gate's own order). */
 export interface PlanMemberQueue {
   member: string;
   below: NamedFirstShot[];
+}
+
+/** THE COHORT'S OWN DOOR (iteration 239): the members the craft move
+ *  leaves UNTESTED, their named cells in hand - the measurement the
+ *  night owes (the repair stays BELOW-only; the door is named). */
+export interface PlanOpenQueue {
+  member: string;
+  namedShots: Array<{ shotId: string; ref: string }>;
 }
 
 /** One executable call: prerender + ride, the cap's own shape. */
@@ -86,8 +94,11 @@ export interface NightCall {
   ref: string;
   shotId: string;
   night: string;
-  /** The entry's own median reading before the call (pct, whole numbers). */
-  beforePct: number;
+  /** The entry's own median reading before the call (pct, whole
+   *  numbers); null when the call rides the cohort's own door (the
+   *  239 law: the cell's first reading in the present tense -
+   *  nothing moved FROM). */
+  beforePct: number | null;
   /** true when the call rides a named ref (the map's own order). */
   named: boolean;
   /** The carried acceptance line (in hand), verbatim; null when none. */
@@ -131,6 +142,11 @@ export function renderNightPlan(args: {
   /** shotId -> the matrix's own framing bucket, gathered from the
    *  live shots; absent shots ride lever null (never guessed). */
   framings?: Record<string, "close" | "med" | "wide">;
+  /** THE COHORT'S OWN DOOR (iteration 239): the members the craft
+   *  move leaves UNTESTED with their named cells - the measurement
+   *  calls the night owes (deduped against the below queues' own
+   *  refs; the door rides the work order's named cells only). */
+  openQueues?: PlanOpenQueue[];
 }): NightPlan {
   const { order, queues, carry, night } = args;
   if (order.answeredBy !== "repair-pass") {
@@ -183,6 +199,44 @@ export function renderNightPlan(args: {
         rung,
         prerenderLine: `night ${night} call ${index}: prerender ${q.member} ${t.ref} (${beforePct}%) - the bridge renders across the boundary; the 233 resume law carries the work.`,
         rideLine: `night ${night} call ${index}: ride ${q.member} ${t.ref} - the pass resumes the wait and the re-score appends night-tagged; the medians move only as the nights do.`,
+      });
+    }
+  }
+  // THE COHORT'S OWN DOOR (iteration 239): the craft moved, the
+  // cohort opened, and the cells the move leaves unmeasured owe the
+  // present tense their first reading. The door's calls ride the
+  // work order's named cells only (deduped against the below queues'
+  // own refs - a cell the repair already carries rides once), the
+  // same lever law arms them (the carry + the framing), and the
+  // before reads null (the first reading IS the night's answer).
+  const riddenRefs = new Set(calls.map((c) => c.ref));
+  for (const q of args.openQueues ?? []) {
+    for (const t of q.namedShots) {
+      if (!order.namedRefs.includes(t.ref) || riddenRefs.has(t.ref)) continue;
+      riddenRefs.add(t.ref);
+      const index = calls.length + 1;
+      const carriedAnswer = carryByName.get(q.member);
+      const carried = carriedAnswer?.line ?? null;
+      const framing = framings[t.shotId];
+      const leverAnswer =
+        framing && carriedAnswer
+          ? craftLeverForCell({ ref: t.ref, framing, carry: carriedAnswer.verdict })
+          : null;
+      const lever = leverAnswer && leverAnswer.ok ? leverAnswer.lever.line : null;
+      const rung = leverAnswer && leverAnswer.ok ? leverAnswer.lever.rung : null;
+      calls.push({
+        index,
+        member: q.member,
+        ref: t.ref,
+        shotId: t.shotId,
+        night,
+        beforePct: null,
+        named: true,
+        carried,
+        lever,
+        rung,
+        prerenderLine: `night ${night} call ${index}: prerender ${q.member} ${t.ref} (untested in the present cohort) - the cohort's own door: the craft moved, the cell owes its first reading; the bridge renders across the boundary.`,
+        rideLine: `night ${night} call ${index}: ride ${q.member} ${t.ref} - the pass measures the cohort's own cell and the re-score appends night-tagged; the medians move only as the nights do.`,
       });
     }
   }

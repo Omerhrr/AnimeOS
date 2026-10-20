@@ -96,18 +96,20 @@ export const REPAIR_MAX_SHOTS_PER_MEMBER = 3;
  * goalpost), a drifted build owes a bounded best-of candidates whose
  * pixels must measure IN the design's class BEFORE any installs, and
  * a channel that keeps its drift keeps its standing sheet. */
-export const REPAIR_LAW_VERSION = 149;
+export const REPAIR_LAW_VERSION = 150;
 export const REPAIR_TICK_MS = 500;
 export const REPAIR_STALL_TICKS = 240;
 export const REPAIR_MAX_WAIT_TICKS = 2640;
 
-export type ShotRepairVerdict = "REPAIRED" | "IMPROVED" | "UNCHANGED" | "WORSE" | "UNSCORED";
+export type ShotRepairVerdict = "REPAIRED" | "IMPROVED" | "UNCHANGED" | "WORSE" | "MEASURED" | "UNSCORED";
 export type MemberRepairVerdict = "REPAIRED" | "IMPROVED" | "STILL_BELOW" | "UNSCORED";
 
 export interface RepairShotRow {
   ref: string;
   shotId: string;
-  before: number;
+  /** null when the cell rode the cohort's own door (the 239-ii law:
+   *  the first reading in the present tense - nothing moved FROM). */
+  before: number | null;
   after: number | null;
   verdict: ShotRepairVerdict;
   error?: string;
@@ -169,10 +171,17 @@ export interface RepairPassResult {
 
 // ── the pure verdict law (the E2E asserts it) ──
 
-/** The verdict one before→after pair earns against the bar. */
-export function shotRepairVerdict(before: number, after: number | null, bar: number): ShotRepairVerdict {
+/** The verdict one before→after pair earns against the bar. THE
+ *  COHORT'S OWN DOOR (iteration 239-ii): a null before is the cohort
+ *  move's own shape - the craft moved, the cohort opened, and the
+ *  cell owes the present tense its FIRST reading. The read itself is
+ *  the answer: the bar cleared reads REPAIRED (the standing truth),
+ *  a first read below the bar reads MEASURED (nothing moved FROM -
+ *  the comparison words would be a lie the ledger would carry). */
+export function shotRepairVerdict(before: number | null, after: number | null, bar: number): ShotRepairVerdict {
   if (after === null || !Number.isFinite(after)) return "UNSCORED";
   if (after >= bar) return "REPAIRED";
+  if (before === null) return "MEASURED";
   if (after > before) return "IMPROVED";
   if (after === before) return "UNCHANGED";
   return "WORSE";
@@ -576,16 +585,39 @@ export async function runIdentityRepairPass(
     .filter((m) => m.standing === "BELOW")
     .filter((m) => !nameFilter || m.name.toLowerCase().includes(nameFilter))
     .slice(0, memberLimit);
+  // THE COHORT'S OWN DOOR (iteration 239-ii): the craft moved, the
+  // cohort opened, and a member the move leaves UNTESTED owes the
+  // present tense its first reading - and the repair pass's own
+  // standing filter would deadlock the measurement (no reading ->
+  // not BELOW -> no re-score -> no reading). The door: a member whose
+  // name the caller filters AND whose sheet stands anchored rides the
+  // night's MEASUREMENT - the caller's named refs ONLY (never an
+  // invented queue), before null, the same render/rescore/fold/
+  // acceptance machinery. The repair stays BELOW-only (the standing
+  // filter stands); the door is named, never guessed.
+  const measurementShots = ridingTheMap && namedRefs.length > 0
+    ? (await db.shot.findMany({
+        where: { scene: { episodeId: mapEpisodeId } },
+        select: { id: true, number: true, scene: { select: { number: true, episode: { select: { number: true } } } } },
+      })).map((s) => ({ id: s.id, ref: `E${s.scene.episode.number} Sc${s.scene.number} S${String(s.number).padStart(3, "0")}` }))
+    : [];
+  const measuredMembers = ridingTheMap && namedRefs.length > 0
+    ? before.members
+        .filter((m) => m.standing === "UNTESTED" && m.anchored)
+        .filter((m) => !nameFilter || m.name.toLowerCase().includes(nameFilter))
+        .filter((m) => !belowMembers.some((b) => b.characterId === m.characterId))
+        .slice(0, Math.max(0, memberLimit - belowMembers.length))
+    : [];
   // THE ACCEPTANCE'S VERDICT, CARRIED (iteration 235): the caller's
   // entries (the receipts' acceptance rows) turn into the per-member
   // carried line once, before the work - every row names what the
   // next night knew (or the honest NONE, never an implied answer).
   const carryByName = new Map(
-    carriedAcceptanceVerdicts(opts?.carryEntries ?? [], belowMembers.map((m) => m.name)).map((c) => [c.characterName, c.line] as const),
+    carriedAcceptanceVerdicts(opts?.carryEntries ?? [], [...belowMembers, ...measuredMembers].map((m) => m.name)).map((c) => [c.characterName, c.line] as const),
   );
 
   const rows: RepairMemberRow[] = [];
-  for (const member of belowMembers) {
+  for (const member of [...belowMembers, ...measuredMembers]) {
     // (a-1) THE SHEET IS READ INTO BUILD DNA: a fresh vision read (the
     //    cache is deliberately bypassed - a repair re-measures its truth)
     let dna: RepairMemberRow["dna"] = { source: "skipped", line: `${member.name}: no sheet read attempted` };
@@ -605,12 +637,24 @@ export async function runIdentityRepairPass(
     // queue reads the gate's own medians; the named refs (the work
     // order's worst cells) ride FIRST, the member's own queue fills
     // the rest; a named ref no below-bar reading carries is NAMED.
-    const belowShots = ridingTheMap
-      ? await belowArcShotsForCharacter(projectId, mapEpisodeId, member.name, before.bar, shotLimit, { receiptPath: opts?.receiptPath })
-      : await belowRenderShotsForCharacter(projectId, member.name, before.bar, shotLimit);
+    // THE COHORT'S OWN DOOR (iteration 239-ii): a measured member's
+    // targets are the caller's named refs resolved to live shots -
+    // before null (no reading in the present tense), the queue law
+    // does not apply (there is no reading to sort).
+    const measuredMember = member.standing === "UNTESTED";
+    const belowShots = measuredMember
+      ? []
+      : ridingTheMap
+        ? await belowArcShotsForCharacter(projectId, mapEpisodeId, member.name, before.bar, shotLimit, { receiptPath: opts?.receiptPath })
+        : await belowRenderShotsForCharacter(projectId, member.name, before.bar, shotLimit);
     for (const b of belowShots) carriedRefs.add(b.ref);
     const order = targetsNamedFirst(belowShots, namedRefs, shotLimit);
-    const targets = order.targets;
+    const targets: Array<{ shotId: string; ref: string; similarity: number | null }> = measuredMember
+      ? measurementShots
+          .filter((s) => namedRefs.includes(s.ref))
+          .slice(0, Math.max(1, shotLimit))
+          .map((s) => ({ shotId: s.id, ref: s.ref, similarity: null }))
+      : order.targets;
     const shotRows: RepairShotRow[] = [];
     for (const t of targets) {
       // THE CRAFT AIM (iteration 237): the plan's lever, matched by

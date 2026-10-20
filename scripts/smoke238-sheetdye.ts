@@ -101,7 +101,7 @@ try {
 
 // ── shape 4: the plan's own law stands (the rungs untouched) ──
 console.log("shape: the 237 rung routing stands (the plan law untouched)");
-ok(RENDER_NIGHT_PLAN_LAW_VERSION === 237, "the plan law version stays 237 (the 238 law re-dyes the standing craft; the routing owns its bytes)");
+ok(RENDER_NIGHT_PLAN_LAW_VERSION === 238, "the plan law stands at 238 (the 239 law opens the cohort's own door; the 238 routing bytes stand)");
 const ORDER: RepairWorkOrder = {
   source: "RENDER",
   verdict: "BELOW",

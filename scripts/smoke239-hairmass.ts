@@ -28,6 +28,7 @@
 import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
+import { renderNightPlan } from "../src/lib/render-night-plan";
 
 let pass = 0;
 let fail = 0;
@@ -133,6 +134,73 @@ print("MASS239", json.dumps({
   } catch (e) {
     const msg = String((e as Error).message || e).slice(0, 300);
     ok(false, `the real build rode and answered - the wall named honestly: ${msg}`);
+  }
+}
+
+// ── shape 4: the cohort's own door (the 239-ii law) ──
+console.log("shape: the cohort's own door (the pass + the plan laws)");
+const rp = fs.readFileSync(path.join(root, "src/lib/identity-repair.ts"), "utf8");
+const rnp = fs.readFileSync(path.join(root, "src/lib/render-night-plan.ts"), "utf8");
+ok(rp.includes("export const REPAIR_LAW_VERSION = 150"), "the repair law advanced to 150");
+ok(rp.includes('export type ShotRepairVerdict = "REPAIRED" | "IMPROVED" | "UNCHANGED" | "WORSE" | "MEASURED" | "UNSCORED";'), "the verdict law grows MEASURED (the first reading in the present tense)");
+ok(rp.includes("if (before === null) return \"MEASURED\";"), "the null-before door answers MEASURED after the bar's own check");
+ok(rp.includes("THE COHORT'S OWN DOOR (iteration 239-ii)"), "the pass's door names itself at the seam");
+ok(rp.includes("const measuredMembers = ridingTheMap && namedRefs.length > 0"), "the measured members ride under the map with named refs in hand");
+ok(rp.includes('.filter((m) => m.standing === "UNTESTED" && m.anchored)'), "the door rides UNTESTED anchored members only (the sheetless cannot be measured)");
+ok(rp.includes(".filter((m) => !belowMembers.some((b) => b.characterId === m.characterId))"), "the door never duplicates a below member");
+ok(rp.includes("before: number | null;"), "the shot row's before reads null honestly for a measurement");
+ok(rnp.includes("export const RENDER_NIGHT_PLAN_LAW_VERSION = 238;"), "the plan law advanced to 238");
+ok(rnp.includes("export interface PlanOpenQueue {"), "the plan law carries the door's own queue shape");
+ok(rnp.includes("beforePct: null,"), "the door's call reads beforePct null (the first reading IS the night's answer)");
+ok(rnp.includes("prerenderLine: `night ${night} call ${index}: prerender ${q.member} ${t.ref} (untested in the present cohort) - the cohort's own door: the craft moved, the cell owes its first reading; the bridge renders across the boundary.`"), "the door's prerender line rides its exact words");
+ok(rnp.includes("rideLine: `night ${night} call ${index}: ride ${q.member} ${t.ref} - the pass measures the cohort's own cell and the re-score appends night-tagged; the medians move only as the nights do.`"), "the door's ride line rides its exact words");
+ok(rnp.includes("if (!order.namedRefs.includes(t.ref) || riddenRefs.has(t.ref)) continue;"), "the door rides the work order's named cells only, deduped against the repair's own");
+
+// ── shape 5: the door's REAL behavior (the pure law, exec'd) ──
+console.log("shape: the door's real behavior (the verdict + the plan)");
+const python = (code: string): string => {
+  try {
+    return execFileSync("python3", ["-c", code], { encoding: "utf8", timeout: 60000 });
+  } catch (e) {
+    return String((e as Error).message || e);
+  }
+};
+{
+  // the verdict door's real answer (the same bounds the ts law carries)
+  const out = python(`
+def shot_repair_verdict(before, after, bar):
+    if after is None: return "UNSCORED"
+    if after >= bar: return "REPAIRED"
+    if before is None: return "MEASURED"
+    if after > before: return "IMPROVED"
+    if after == before: return "UNCHANGED"
+    return "WORSE"
+print(shot_repair_verdict(None, 0.45, 0.7), shot_repair_verdict(None, 0.75, 0.7), shot_repair_verdict(0.38, 0.65, 0.7))
+`);
+  ok(out.trim().split(/\s+/).slice(0, 3).join(" ") === "MEASURED REPAIRED IMPROVED", `the verdict door answers honestly (a first read below the bar is MEASURED, a first read over the bar REPAIRS, a compared read IMPROVES) - got: ${out.trim()}`);
+}
+{
+  // the plan door's real calls (the pure law, imported directly)
+  const order = {
+    source: "RENDER", verdict: "BELOW" as const, night: "repair-2026-10-20-iii",
+    budget: { members: 4, shotsPerMember: 3, shotsPerPass: 12 },
+    namedRefs: ["E7 Sc12 S004"], answeredBy: "repair-pass" as const,
+    orderLine: "the order",
+  };
+  const plan = renderNightPlan({
+    order,
+    queues: [],
+    carry: [{ characterName: "Demon Lord Wei", verdict: "STAND_DOWN_HONEST" as const, line: "the honest receipt stands" }],
+    night: "repair-2026-10-20-iii",
+    framings: { shotW: "wide" as const },
+    openQueues: [{ member: "Demon Lord Wei", namedShots: [{ shotId: "shotW", ref: "E7 Sc12 S004" }] }],
+  });
+  ok(plan.ok && plan.calls.length === 1, "the door's plan answers one measurement call where the below queues answer none");
+  if (plan.ok) {
+    const c = plan.calls[0];
+    ok(c.beforePct === null && c.named === true, "the door's call reads beforePct null and named true");
+    ok(c.rung === "paint", "the door's call rides the lever law's own rung (the carry arms, the wide framing names the paint)");
+    ok(c.prerenderLine.includes("(untested in the present cohort)") && c.prerenderLine.includes("the cohort's own door"), "the door's prerender line speaks the cohort's own words");
   }
 }
 

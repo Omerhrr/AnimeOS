@@ -127,7 +127,7 @@ export interface CharacterAssetReadings {
   before: { average: number | null; worst: number | null };
   after: { standing: string; average: number | null; worst: number | null; worstRef: string | null };
   verdict: string; // the member verdict the honest set named
-  shots: Array<{ ref: string; before: number; after: number | null; verdict: string }>;
+  shots: Array<{ ref: string; before: number | null; after: number | null; verdict: string }>;
 }
 
 /**

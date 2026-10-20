@@ -87,7 +87,7 @@ ok(carryEntriesFromRideReceipts([closingRow as never]).length === 0, "a row with
 
 // ── shape 2: the wire's every seam (the TS source law) ──
 console.log("shape: the wire's every seam (the TS source law)");
-ok(RENDER_NIGHT_PLAN_LAW_VERSION === 237 && ACCEPTANCE_CARRY_LAW_VERSION === 237, `the laws stand as numbered (plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, carry v${ACCEPTANCE_CARRY_LAW_VERSION})`);
+ok(RENDER_NIGHT_PLAN_LAW_VERSION === 238 && ACCEPTANCE_CARRY_LAW_VERSION === 237, `the laws stand as numbered (plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, carry v${ACCEPTANCE_CARRY_LAW_VERSION})`);
 const renderSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/engine/render.ts"), "utf8");
 ok(renderSrc.includes("export interface CraftAim") && renderSrc.includes('rung: "face" | "paint"'), "the render engine names the CraftAim (rung + line)");
 ok(renderSrc.includes("craft?: CraftAim | null,") || renderSrc.includes("craft?: CraftAim | null"), "createRenderJob grows the craft aim (optional - the standing callers byte-exact)");
