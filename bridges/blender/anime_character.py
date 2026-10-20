@@ -423,7 +423,7 @@ def paint_eye(spec, size=256):
     return rgba
 
 
-def paint_brow(spec, w=256, h=64):
+def paint_brow(spec, w=256, h=64, dye_hex=None):
     import numpy as np
     y, x = np.mgrid[0:h, 0:w].astype(np.float32)
     u = (x / (w - 1)) * 2 - 1
@@ -444,7 +444,20 @@ def paint_brow(spec, w=256, h=64):
     d = np.abs(v - center) - thick
     d = np.where(np.abs(u) < 0.92, d, 1.0)
     rgba = np.zeros((h, w, 4), np.float32)
-    col = np.array(_hex_srgb(spec["hair"]["color"]), np.float32) * 0.8
+    # ── THE BROW'S OWN DYE (iteration 238, the sheet-decided dye law's
+    #    first surface): the brows dye from the sheet's own hair
+    #    answer - the same dye the hair mesh grades from (the merged
+    #    DNA's hairColor, passed by the build) - never from a
+    #    design-spec hex the sheet never decided. The record: Wei's
+    #    spec rode #5f9ea0 teal over the sheet's own #0a0a0a answer,
+    #    and the judge's face crop at the wide cell read the drift
+    #    verbatim ("the hair color has drifted from black to purple")
+    #    while the acceptance stood down honest - the reference does
+    #    not move. The spec's own color stays the fallback when the
+    #    DNA carries none: byte-exact wherever the two already agree
+    #    (Lin's #0d0d0d neighborhood, the strongest hair cell on
+    #    record keeps its bytes). ──
+    col = np.array(_hex_srgb(dye_hex or spec["hair"]["color"]), np.float32) * 0.8
     a = np.clip(0.5 - d / 0.08, 0, 1)
     rgba[..., :3] = col
     rgba[..., 3] = a
@@ -1630,7 +1643,12 @@ def build_anime_character(bpy, scn, dna, mats, br=None, strand_f=1.0):
 
     # ── the painted face ──
     eye_img = _new_image(bpy, "AnimeEye", paint_eye(spec))
-    brow_img = _new_image(bpy, "AnimeBrow", paint_brow(spec))
+    # THE BROW'S OWN DYE (iteration 238): the brow decal dyes from the
+    # merged DNA's own hairColor - the sheet's decided answer, the same
+    # dye the hair mesh grades from - falling back to the spec's own
+    # color only when the DNA carries none (the sheet-decided dye law,
+    # first surface).
+    brow_img = _new_image(bpy, "AnimeBrow", paint_brow(spec, dye_hex=(dna.get("hairColor") or None)))
     mouth_img = _new_image(bpy, "AnimeMouth", paint_mouth(spec))
     nose_img = _new_image(bpy, "AnimeNose", paint_nose())
     eye_m = decal_material(bpy, "EyeDecal", eye_img)

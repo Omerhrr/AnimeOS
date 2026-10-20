@@ -4146,6 +4146,56 @@ def craft_aim_for(shot):
     return {"rung": rung, "line": line, "lawVersion": CRAFT_AIM_LAW_VERSION}
 
 
+# ── THE ENERGY DYE ANSWERS TO THE SHEET (iteration 238) ──
+# The 141 conviction (proven, never cured, six eye nights): the
+# additive hue on the hero's dark masses is the scene's own fx LIGHT
+# TRANSPORT - the azure energy, the lightning, the violet aura - "the
+# lever is LIGHT-SIDE or it is nothing." The 149 law bounded the flood
+# into one transport light of the program's own hue at the program's
+# anchor. The 238 trace names the HUE'S OWN AUTHOR: a colorless fx
+# program rides "the hero's energy color", and that hex rode
+# bladeColor or the CODE DEFAULT (#5eead4 teal-mint) - for a
+# weaponless member whose sheet paints no energy dye at all (Demon
+# Lord Wei: weaponType none, the sheet DNA carries no blade field;
+# the S004 text directs only "the Demon Lord's aura crawls across the
+# floor"), a hue the sheet never decided bathed the near-black hair
+# under the storm's own lightning - and the judge read the drift
+# verbatim ("the hair color has drifted from black to purple") while
+# the sheet acceptance stood down honest a third time. The 141
+# sentence completes:
+#
+#   the moon decides WHERE the glint sits, the sheet decides WHAT
+#   COLOR it is - the AURA INCLUDED.
+#
+# The law: a weaponed member's energy is the blade's own dye
+# (byte-exact); a weaponless member's energy hue derives from the
+# design's own painted accent (the robe accent - the trim the sheet
+# decided); the code default rides only when the sheet answers
+# neither (the honest fallback, named). The fx transport light and
+# every emissive surface the colorless program drives read the
+# sheet's answer; a colored program keeps its own hue byte-exact.
+SHEET_DYE_LAW_VERSION = "dye-v1"
+
+
+def sheet_energy_hex(cast_row):
+    """The sheet's own energy answer for a cast row (the law above).
+    Pure: the row's fields in, one hex out - the weaponed member's
+    blade dye, the weaponless member's robe accent, the default only
+    when the sheet answers neither."""
+    if not isinstance(cast_row, dict):
+        return "#5eead4"
+    weapon = str(cast_row.get("weaponType") or "").strip().lower()
+    blade = cast_row.get("bladeColor")
+    if weapon and weapon != "none" and isinstance(blade, str) and blade.strip():
+        return blade.strip()
+    accent = cast_row.get("robeAccent")
+    if isinstance(accent, str) and accent.strip():
+        return accent.strip()
+    if isinstance(blade, str) and blade.strip():
+        return blade.strip()
+    return "#5eead4"
+
+
 # ── THE RESOLUTION RUNG LADDER (iterations 123 + 126 + 138) ───
 # 512 was the 122 night's floor (a WIDE face at ~10px); 640 is the
 # 123 preview rung every framing rides; 1024 is the 126 ESTABLISHING
@@ -7152,8 +7202,14 @@ def worker_run(job_file):
             import fx_pass
             fx_programs, fx_notes = fx_pass.normalize_fx(fx_raw, len(grammar) if grammar else 1)
             if fx_programs:
+                # THE ENERGY DYE ANSWERS TO THE SHEET (iteration 238):
+                # the colorless program's hue rides the sheet's own
+                # answer (dye-v1) - the weaponed member's blade dye, the
+                # weaponless member's painted accent, the default only
+                # when the sheet answers neither. The 141 sentence
+                # completes: the sheet decides WHAT COLOR the aura is.
                 fx_rig = fx_pass.build_fx_rig(bpy, scn, fx_programs, figure,
-                                              (hero or {}).get("bladeColor") or "#5eead4", job_id)
+                                              sheet_energy_hex(hero), job_id)
                 state["fx"] = {
                     "programs": len(fx_programs),
                     "kinds": fx_rig["kinds"],
