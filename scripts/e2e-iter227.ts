@@ -40,7 +40,10 @@ async function main() {
   // ── leg 3: the real decision (the alive branch UNREMOVED on the real box) ──
   console.log("leg 3: the real decision");
   const decision = decideSessionAction({ chain: state.chain, expected: state.expected });
-  ok(decision.action === "stand-down" && decision.generation === 1, `the hand stands down: ${decision.reason.slice(0, 70)}`);
+  // THE 238 PIN GROWTH: the assert holds the law, not one generation
+  // number (the 227/228 precedent) - the hand stands down at whatever
+  // generation the ledger's own accounting names.
+  ok(decision.action === "stand-down" && decision.generation >= 1, `the hand stands down: ${decision.reason.slice(0, 70)}`);
 
   // ── leg 4: the bound replay (the third silence, closed) ──
   console.log("leg 4: the bound replay");

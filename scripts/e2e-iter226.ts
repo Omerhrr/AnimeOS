@@ -40,8 +40,13 @@ async function main() {
   // ── leg 3: the arrival's decision against the real state ──
   console.log("leg 3: the arrival's decision (the pure law on the real box)");
   const decision = decideSessionAction({ chain: state.chain, expected: state.expected });
-  ok(decision.action === "stand-down" && decision.generation === 1 && (decision.reason.includes("the chain rides") || decision.reason.includes("stopped by its own law")), `the hand stands down: ${decision.reason.slice(0, 80)}`);
-  ok(state.expected.generation === 1 && ((state.expected.stopped === false && state.expected.lastOutcome === null) || (state.expected.stopped === true && state.expected.lastOutcome === "rode")), `the ledger's accounting on the real box is lawful (gen 1 ${state.expected.stopped ? `stopped: ${state.expected.lastOutcome} - the answer` : "promised, nothing stopped"})`);
+  // THE 238 PIN GROWTH: the asserts hold the law, not one generation
+  // number (the 227/228 precedent) - the hand stands down at whatever
+  // generation the ledger's own accounting names (this box's watch
+  // rode generation 2 and stopped; generation 1's flicker is the 231
+  // custody law's own honest answer on the uncertified claim).
+  ok(decision.action === "stand-down" && decision.generation >= 1 && (decision.reason.includes("the chain rides") || decision.reason.includes("stopped by its own law")), `the hand stands down: ${decision.reason.slice(0, 80)}`);
+  ok(state.expected.generation >= 1 && ((state.expected.stopped === false && state.expected.lastOutcome === null) || (state.expected.stopped === true && state.expected.lastOutcome === "rode")), `the ledger's accounting on the real box is lawful (gen ${state.expected.generation} ${state.expected.stopped ? `stopped: ${state.expected.lastOutcome} - the answer` : "promised, nothing stopped"})`);
 
   // ── leg 4: the plan law against the REAL receipts ──
   console.log("leg 4: the plan law against the real receipts");

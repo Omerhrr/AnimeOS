@@ -109,7 +109,10 @@ async function main() {
   const weiRow = rr.members.find((m: { name: string }) => m.name === "Demon Lord Wei");
   const memberLawful = (m: { dnaSource?: string; sheet?: string; sheetError?: string }) =>
     (m.dnaSource === "committed-seed" || m.dnaSource === "vision-read") &&
-    (m.sheet === "window-bound" ? (m.sheetError ?? "").includes("429") : m.sheet === "landed");
+    // THE 238 PIN GROWTH: the idempotent re-ride's own honest shape
+    // joins the law - a restore that re-rides a CERTIFIED claim names
+    // the sheets "already-anchored" (named, never hidden).
+    (m.sheet === "window-bound" ? (m.sheetError ?? "").includes("429") : m.sheet === "landed" || m.sheet === "already-anchored");
   assert(memberLawful(linRow), "Lin: the receipt's member law (seeded+429 while window-bound, vision-read+landed when the sheet lands)");
   assert(memberLawful(weiRow), "Wei: the receipt's member law (seeded+429 while window-bound, vision-read+landed when the sheet lands)");
   const linDb = await db.character.findFirst({ where: { projectId: project.id, name: "Lin Yue" } });

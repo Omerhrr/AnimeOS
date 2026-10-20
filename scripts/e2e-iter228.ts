@@ -90,7 +90,10 @@ async function main() {
   const lockReading = (() => { try { return JSON.parse(fs.readFileSync(LOCK_PATH, "utf8")) as { pid: number }; } catch { return null; } })();
   const lockAbsent = lockReading == null;
   ok(pidReading != null && (lockAbsent || pidReading.pid === lockReading.pid), `the pid file names the watch's own write (${pidReading?.pid}; the lock ${lockAbsent ? "released at the honest exit" : `agrees: ${lockReading?.pid}`}) - the rider, not the vehicle`);
-  ok(pidReading?.generation === 1, `the riding generation is named in the pid file (${pidReading?.generation})`);
+  // THE 238 PIN GROWTH: the pid file names whatever generation rides
+  // (the 227/228 precedent) - this box's watch rode generation 2 and
+  // stopped; the pin holds the law, not one number.
+  ok(typeof pidReading?.generation === "number" && pidReading.generation >= 1, `the riding generation is named in the pid file (${pidReading?.generation})`);
   const alive = pidReading ? fs.existsSync(`/proc/${pidReading.pid}`) : false;
   const rodeLine = (() => { try { const lines = fs.readFileSync(path.join(process.cwd(), "receipts", "watch223-generations.jsonl"), "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as { outcome?: string }); return lines[lines.length - 1]?.outcome ?? null; } catch { return null; } })();
   ok(alive || rodeLine === "rode", `the rider's end is honest (${alive ? `/proc/${pidReading?.pid} alive - still riding` : `the process exited and the ledger carries it: ${rodeLine}`})`);
@@ -114,7 +117,10 @@ async function main() {
   const weiRow = (rr.members ?? []).find((m) => m.name === "Demon Lord Wei");
   const memberLawful = (m?: { dnaSource: string; sheet: string; sheetError?: string }) =>
     !!m && (m.dnaSource === "committed-seed" || m.dnaSource === "vision-read") &&
-    (m.sheet === "window-bound" ? (m.sheetError ?? "").includes("429") : m.sheet === "landed");
+    // THE 238 PIN GROWTH: the idempotent re-ride's own honest shape
+    // joins the law - a restore that re-rides a CERTIFIED claim names
+    // the sheets "already-anchored" (named, never hidden).
+    (m.sheet === "window-bound" ? (m.sheetError ?? "").includes("429") : m.sheet === "landed" || m.sheet === "already-anchored");
   ok(memberLawful(linRow), "Lin: the receipt's member law (seeded+429 while window-bound, vision-read+landed when the sheet lands)");
   ok(memberLawful(weiRow), "Wei: the receipt's member law (the same law)");
   ok(typeof rr.complete === "boolean" && Array.isArray(rr.windowBound) && rr.complete === ((rr.windowBound ?? []).length === 0), "the receipt is honest to its own remainder (complete means nothing window-bound - either state)");

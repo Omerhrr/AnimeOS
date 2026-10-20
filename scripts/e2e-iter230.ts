@@ -45,7 +45,9 @@ async function main() {
   // ── leg 3: the arrival's accounting (the 227 law, live) ──
   console.log("leg 3: the arrival's accounting");
   const expected = expectedGenerationFromLedger(ledger);
-  ok(expected.generation === 1 && expected.stopped === true && expected.stoppedReason === "rode", `the accounting reads the stop: gen ${expected.generation}, stopped: ${expected.stoppedReason}`);
+  // THE 238 PIN GROWTH: the accounting reads the stop at whatever
+  // generation the ledger names (the 227/228 precedent).
+  ok(expected.generation >= 1 && expected.stopped === true && expected.stoppedReason === "rode", `the accounting reads the stop: gen ${expected.generation}, stopped: ${expected.stoppedReason}`);
 
   // ── leg 4: the eternal stand-down (the rode branch, live) ──
   console.log("leg 4: the eternal stand-down");
@@ -71,7 +73,7 @@ async function main() {
   ok(report.complete === true && (report.windowBound ?? []).length === 0, `the report carries the answer (complete: ${report.complete}, window-bound: ${(report.windowBound ?? []).join(", ") || "none"})`);
   ok((report.verdictReason ?? "").includes("the receipts carry the answer"), "the verdictReason rides beside the what (the WHY is in the report)");
   ok((report.legs ?? []).every((l) => l.exitCode === 0 && !l.timedOut), `every leg exit 0, none timed out (${(report.legs ?? []).map((l) => `${l.name}:${l.exitCode}`).join(", ")})`);
-  ok(report.generation === 1 && typeof report.windowOpenedAt === "string", "generation 1 rode the window it opened (cycle 1)");
+  ok(typeof report.generation === "number" && report.generation >= 1 && typeof report.windowOpenedAt === "string", `generation ${report.generation} rode the window it opened (the pin holds the law, not one number)`);
 
   // ── leg 8: the arc's both halves (the night's own append) ──
   console.log("leg 8: the arc's both halves");
