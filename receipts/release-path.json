@@ -1,0 +1,109 @@
+{
+  "episodeTag": "E7",
+  "law": {
+    "name": "release-path",
+    "version": 240
+  },
+  "arcMinNights": 2,
+  "sources": [
+    {
+      "source": "AI_KEYFRAME",
+      "verdict": "RELEASE",
+      "floor": 0.7,
+      "readings": 7,
+      "arc": true,
+      "nights": 3,
+      "provisional": false,
+      "releasesNow": true,
+      "counts": {
+        "readingsBelowFloor": 0,
+        "readingsAtOrAboveFloor": 7,
+        "blockingCells": 0
+      },
+      "gaps": {
+        "p10ToFloor": 0,
+        "meanToFloor": 0,
+        "worstToFloor": 0,
+        "bestShortfall": 0
+      },
+      "nightsOwed": 0,
+      "blocking": [],
+      "leverLine": null,
+      "conditions": [
+        "AI_KEYFRAME releases now - no condition rides this source (7 arc reading(s) across 3 night(s))."
+      ]
+    },
+    {
+      "source": "RENDER",
+      "verdict": "BELOW",
+      "floor": 0.7,
+      "readings": 2,
+      "arc": true,
+      "nights": 1,
+      "provisional": true,
+      "releasesNow": false,
+      "counts": {
+        "readingsBelowFloor": 2,
+        "readingsAtOrAboveFloor": 0,
+        "blockingCells": 4
+      },
+      "gaps": {
+        "p10ToFloor": 35,
+        "meanToFloor": 20,
+        "worstToFloor": 35,
+        "bestShortfall": 5
+      },
+      "nightsOwed": 1,
+      "blocking": [
+        {
+          "key": "calm",
+          "verdict": "BELOW",
+          "p10": 0.35,
+          "n": 2,
+          "belowFloor": 2,
+          "worstRef": "E7 Sc12 S004"
+        },
+        {
+          "key": "storm",
+          "verdict": "BELOW",
+          "p10": 0.35,
+          "n": 1,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S004"
+        },
+        {
+          "key": "unset",
+          "verdict": "BELOW",
+          "p10": 0.35,
+          "n": 2,
+          "belowFloor": 2,
+          "worstRef": "E7 Sc12 S004"
+        },
+        {
+          "key": "wide",
+          "verdict": "BELOW",
+          "p10": 0.35,
+          "n": 1,
+          "belowFloor": 1,
+          "worstRef": "E7 Sc12 S004"
+        }
+      ],
+      "leverLine": "the texels at the small figure - the 133 smear zone's own arithmetic at the wide end (the judge's own words at S004: \"the face structure is heavily drifted to a rounder, more feminine shape with larger eyes\"; hair: \"the hair lacks the long flowing strands\")",
+      "conditions": [
+        "RENDER: the body crosses the floor - mean 50% -> 70% (20 point(s) short), p10 35% -> 70% (35 point(s) short); 2 of 2 reading(s) sit under the floor (the best read 65% is 5 point(s) short).",
+        "RENDER: 4 blocking cell(s) clear - calm p10 35% (n 2), storm p10 35% (n 1), unset p10 35% (n 2), wide p10 35% (n 1); the worst ref E7 Sc12 S004.",
+        "RENDER: the cohort owes 1 more night(s) - the read is PROVISIONAL (1 of 2 night(s); one night cannot carry a build decision)."
+      ]
+    }
+  ],
+  "conditions": [
+    "RENDER: the body crosses the floor - mean 50% -> 70% (20 point(s) short), p10 35% -> 70% (35 point(s) short); 2 of 2 reading(s) sit under the floor (the best read 65% is 5 point(s) short).",
+    "RENDER: 4 blocking cell(s) clear - calm p10 35% (n 2), storm p10 35% (n 1), unset p10 35% (n 2), wide p10 35% (n 1); the worst ref E7 Sc12 S004.",
+    "RENDER: the cohort owes 1 more night(s) - the read is PROVISIONAL (1 of 2 night(s); one night cannot carry a build decision).",
+    "AI_KEYFRAME releases now - no condition rides this source (7 arc reading(s) across 3 night(s)).",
+    "the lever names itself from the judge's own words (RENDER): the texels at the small figure - the 133 smear zone's own arithmetic at the wide end (the judge's own words at S004: \"the face structure is heavily drifted to a rounder, more feminine shape with larger eyes\"; hair: \"the hair lacks the long flowing strands\")",
+    "when every scored source reads p10 >= floor AND mean >= floor, the verdict turns RELEASE and the episode stages for publish - the gate keeps its teeth."
+  ],
+  "nightsOwed": 1,
+  "headline": "E7's remainder: 6 condition(s) across 2 source(s) (1 refused, 1 releasing) - the arc owes 1 more night(s) before PROVISIONAL exits; the closing law keeps its teeth."
+}
