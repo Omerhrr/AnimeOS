@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-// THE ACCEPTANCE'S VERDICT, CARRIED (iteration 235) - the answer
-// rides with the next night.
+// THE ACCEPTANCE'S VERDICT, CARRIED (iteration 235; the carry reads
+// its own third shape at 241) - the answer rides with the next night.
 //
 // The 234 acceptance night answered the night130 gate for Lin Yue:
 // the honest receipt stands (the build wears the design's dye class),
@@ -36,13 +36,28 @@
 //       stands named in the beat's own words, and a row that names
 //       neither carries NONE (named, never guessed).
 //
+//   (d) THE ANSWER'S OWN MEASUREMENT RIDES (iteration 241). The 239
+//       mass night grew the acceptance's own answer another shape:
+//       the accepted candidate LANDED AND INSTALLED ("candidate 2/3
+//       measured IN the design's class and installed") and the
+//       answer's own night MEASURED the moved reference (the a126
+//       cohort's first reading rode the same receipt row). A REGEN
+//       answer that carries its own reading is a debt ANSWERED, not
+//       a debt owed - the carry names it (measured: true, the
+//       reading's own pct in the line), and the craft-lever's guard
+//       answers the difference: the lever waits for a reference that
+//       has not landed; a reference that landed and was measured is
+//       the state the craft aims at. The 237 second shape's own
+//       precedent: the carry reads the acceptance's shapes as they
+//       grow, and the guard follows the shape, not the name.
+//
 // PURE: no db, no fs - the entries arrive as the argument (the
 // caller gathered them from the receipts and the arc), the words are
 // the law's own. The smoke pins the exact words; the rides carry
 // them into the receipts.
 // ─────────────────────────────────────────────────────────────
 
-export const ACCEPTANCE_CARRY_LAW_VERSION = 237;
+export const ACCEPTANCE_CARRY_LAW_VERSION = 241;
 
 /** The beat's own verdict vocabulary (reanchor.ts's gate answers). */
 export type CarriedVerdict = "STAND_DOWN_HONEST" | "REGEN_OWED" | "NONE";
@@ -66,6 +81,10 @@ export interface CarriedAcceptance {
   /** The night the answer rode; null when no answer exists. */
   night: string | null;
   verdict: CarriedVerdict;
+  /** THE 241 SHAPE: true when the answer's own night MEASURED the
+   *  state it answers (the regen's own reading rode the receipt row) -
+   *  a debt answered, not owed; null when no answer exists. */
+  measured: boolean | null;
   /** The carried line (exact words - the smoke pins them). */
   line: string;
 }
@@ -73,6 +92,9 @@ export interface CarriedAcceptance {
 const STAND_DOWN_WORDS =
   "the honest receipt stands - the reference does not move, and the craft lever for a score is the craft, never a moved goalpost";
 const REGEN_WORDS = "the build owed its candidates and the sheet's answer landed - the reference moved as the acceptance accepted it";
+/** THE 241 SHAPE: the measured regen's own suffix (the reading's own
+ *  pct rides the line - the debt named ANSWERED, never implied). */
+const REGEN_MEASURED_WORDS = "the moved reference's own reading landed on the answer's own night";
 const NONE_WORDS = "carries no acceptance answer yet - the acceptance waits for its own night, and the beat answers when it runs.";
 
 /**
@@ -92,26 +114,30 @@ export function carriedAcceptanceVerdicts(entries: CarryEntry[], memberNames: st
   return memberNames.map((name) => {
     const e = newest.get(name);
     if (!e) {
-      return { characterName: name, night: null, verdict: "NONE" as const, line: `${name} ${NONE_WORDS}` };
+      return { characterName: name, night: null, verdict: "NONE" as const, measured: null, line: `${name} ${NONE_WORDS}` };
     }
     const note = e.note ? ` (${e.note})` : "";
+    const measured = typeof e.similarity === "number" && Number.isFinite(e.similarity);
     if (e.verdict === "STAND_DOWN_HONEST") {
       return {
         characterName: name,
         night: e.night,
         verdict: e.verdict,
+        measured,
         line: `${name} rides the acceptance's own answer (${e.night}): ${STAND_DOWN_WORDS}${note}`,
       };
     }
     if (e.verdict === "REGEN_OWED") {
+      const measuredNote = measured ? ` - ${REGEN_MEASURED_WORDS} (${Math.round((e.similarity as number) * 100)}%).` : "";
       return {
         characterName: name,
         night: e.night,
         verdict: e.verdict,
-        line: `${name} rides the acceptance's own answer (${e.night}): ${REGEN_WORDS}${note}`,
+        measured,
+        line: `${name} rides the acceptance's own answer (${e.night}): ${REGEN_WORDS}${note}${measuredNote}`,
       };
     }
-    return { characterName: name, night: e.night, verdict: "NONE" as const, line: `${name} ${NONE_WORDS}` };
+    return { characterName: name, night: e.night, verdict: "NONE" as const, measured: null, line: `${name} ${NONE_WORDS}` };
   });
 }
 

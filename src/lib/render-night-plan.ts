@@ -59,6 +59,16 @@
 //       texels, the paint's own quality) - the aim becomes the
 //       render's craft, the pull is executable end to end.
 //
+//   (g) THE SOURCE'S OWN LEVER RIDES (iteration 241). The 240
+//       remainder named the lever from the judge's own words (the
+//       counted answer's leverLine, per source). The plan takes the
+//       source's own lever line as the caller's argument (the
+//       injection law: the caller read it off the remainder) and the
+//       craft-lever's wide end answers it - the wide cells ride the
+//       WIDE-END FACE RUNG (the texels at the small figure) where
+//       the lever names the structure, the 236 paint answer keeping
+//       its teeth where no lever rides.
+//
 // PURE: no db, no fs - the order, the queues, the carry, and the
 // framings arrive as the arguments (the caller built them from the
 // review, the gate's own reads, and the live shots). The smoke pins
@@ -70,7 +80,7 @@ import { targetsNamedFirst, type NamedFirstShot } from "./repair-work-order";
 import type { CarriedAcceptance } from "./acceptance-carry";
 import { craftLeverForCell } from "./craft-lever";
 
-export const RENDER_NIGHT_PLAN_LAW_VERSION = 238;
+export const RENDER_NIGHT_PLAN_LAW_VERSION = 241;
 
 /** One member's below-bar queue, worst first (the gate's own order). */
 export interface PlanMemberQueue {
@@ -147,6 +157,11 @@ export function renderNightPlan(args: {
    *  calls the night owes (deduped against the below queues' own
    *  refs; the door rides the work order's named cells only). */
   openQueues?: PlanOpenQueue[];
+  /** THE 241 INJECTION: the source's own lever line (the judge's own
+   *  words verbatim, read off the remainder by the caller) - the
+   *  craft-lever's wide end answers it (the wide-end face rung).
+   *  Absent = the 236 routing keeps its teeth. */
+  sourceLeverLine?: string | null;
 }): NightPlan {
   const { order, queues, carry, night } = args;
   if (order.answeredBy !== "repair-pass") {
@@ -179,7 +194,13 @@ export function renderNightPlan(args: {
       // plan does not guess (the 232 purity law)
       const leverAnswer =
         framing && carriedAnswer
-          ? craftLeverForCell({ ref: t.ref, framing, carry: carriedAnswer.verdict })
+          ? craftLeverForCell({
+              ref: t.ref,
+              framing,
+              carry: carriedAnswer.verdict,
+              sourceLeverLine: args.sourceLeverLine ?? null,
+              carryMeasured: carriedAnswer.measured,
+            })
           : null;
       const lever = leverAnswer && leverAnswer.ok ? leverAnswer.lever.line : null;
       // THE AIM CARRIES ITS RUNG (237): the rung rides beside the
@@ -222,7 +243,13 @@ export function renderNightPlan(args: {
       const framing = framings[t.shotId];
       const leverAnswer =
         framing && carriedAnswer
-          ? craftLeverForCell({ ref: t.ref, framing, carry: carriedAnswer.verdict })
+          ? craftLeverForCell({
+              ref: t.ref,
+              framing,
+              carry: carriedAnswer.verdict,
+              sourceLeverLine: args.sourceLeverLine ?? null,
+              carryMeasured: carriedAnswer.measured,
+            })
           : null;
       const lever = leverAnswer && leverAnswer.ok ? leverAnswer.lever.line : null;
       const rung = leverAnswer && leverAnswer.ok ? leverAnswer.lever.rung : null;

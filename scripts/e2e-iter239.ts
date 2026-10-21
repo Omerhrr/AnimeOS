@@ -121,7 +121,7 @@ async function main() {
   // ── shape 7: the laws stand as numbered ──
   console.log("shape: the laws stand as numbered");
   const ac = fs.readFileSync(path.join(process.cwd(), "bridges/blender/anime_character.py"), "utf8");
-  ok(ACCEPTANCE_CARRY_LAW_VERSION === 237 && RENDER_NIGHT_PLAN_LAW_VERSION === 238 && CLOSING_LAW_VERSION === 234 && REPAIR_WORK_ORDER_LAW_VERSION === 233, "the law chain carries its versions (carry 237, plan 238, closing 234, work order 233)");
+  ok(ACCEPTANCE_CARRY_LAW_VERSION >= 237 && RENDER_NIGHT_PLAN_LAW_VERSION >= 238 && CLOSING_LAW_VERSION >= 234 && REPAIR_WORK_ORDER_LAW_VERSION >= 233, `the law chain carries its versions (carry v${ACCEPTANCE_CARRY_LAW_VERSION}, plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, closing v${CLOSING_LAW_VERSION}, work order v${REPAIR_WORK_ORDER_LAW_VERSION} - the asserts hold the law, not one version number)`);
   ok(ac.includes("ANIME_LAW_VERSION = 126"), "the mass law stands at 126 (the sheet's own falling mass rides every render the style builds)");
   ok(ac.includes("drop = 0.25 + 0.75 * length"), "the long arithmetic stands byte-exact where the mass shares it");
 

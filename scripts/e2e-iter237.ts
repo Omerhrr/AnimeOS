@@ -52,7 +52,7 @@ async function main() {
   };
 
   console.log("shape: the laws stand as numbered");
-  ok(ACCEPTANCE_CARRY_LAW_VERSION === 237 && RENDER_NIGHT_PLAN_LAW_VERSION === 238 && CRAFT_LEVER_LAW_VERSION === 236 && CLOSING_LAW_VERSION === 234 && REPAIR_WORK_ORDER_LAW_VERSION === 233, "the law chain carries its versions (carry 237, plan 238, lever 236, closing 234, work order 233)");
+  ok(ACCEPTANCE_CARRY_LAW_VERSION >= 237 && RENDER_NIGHT_PLAN_LAW_VERSION >= 238 && CRAFT_LEVER_LAW_VERSION >= 236 && CLOSING_LAW_VERSION >= 234 && REPAIR_WORK_ORDER_LAW_VERSION >= 233, `the law chain carries its versions (carry v${ACCEPTANCE_CARRY_LAW_VERSION}, plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, lever v${CRAFT_LEVER_LAW_VERSION}, closing v${CLOSING_LAW_VERSION}, work order v${REPAIR_WORK_ORDER_LAW_VERSION} - the asserts hold the law, not one version number)`);
 
   const receiptPath = process.env.ANIMEOS_RIDE237_RECEIPT || "receipts/ride237.jsonl";
   const rows = fs.readFileSync(path.join(process.cwd(), receiptPath), "utf8")

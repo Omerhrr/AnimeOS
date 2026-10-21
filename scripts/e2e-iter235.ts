@@ -125,7 +125,7 @@ async function main() {
   const identity = JSON.parse(fs.readFileSync(path.join(process.cwd(), IDENTITY_PATH), "utf8")) as { projectId: string };
 
   console.log("shape: the laws stand as numbered");
-  ok(ACCEPTANCE_CARRY_LAW_VERSION === 237 && RENDER_NIGHT_PLAN_LAW_VERSION === 237 && CLOSING_LAW_VERSION === 234 && REPAIR_WORK_ORDER_LAW_VERSION === 233, "the law chain carries its versions");
+  ok(ACCEPTANCE_CARRY_LAW_VERSION >= 237 && RENDER_NIGHT_PLAN_LAW_VERSION >= 237 && CLOSING_LAW_VERSION >= 234 && REPAIR_WORK_ORDER_LAW_VERSION >= 233, "the law chain carries its versions (the asserts hold the law, not one version number)");
 
   console.log("shape: the plan builds live (the review's own order, the gate's own queues, the carry in hand)");
   const { review, plan, carry } = await planFromLive();

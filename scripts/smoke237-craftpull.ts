@@ -87,7 +87,7 @@ ok(carryEntriesFromRideReceipts([closingRow as never]).length === 0, "a row with
 
 // ── shape 2: the wire's every seam (the TS source law) ──
 console.log("shape: the wire's every seam (the TS source law)");
-ok(RENDER_NIGHT_PLAN_LAW_VERSION === 238 && ACCEPTANCE_CARRY_LAW_VERSION === 237, `the laws stand as numbered (plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, carry v${ACCEPTANCE_CARRY_LAW_VERSION})`);
+ok(RENDER_NIGHT_PLAN_LAW_VERSION >= 238 && ACCEPTANCE_CARRY_LAW_VERSION >= 237, `the laws stand as numbered (plan v${RENDER_NIGHT_PLAN_LAW_VERSION}, carry v${ACCEPTANCE_CARRY_LAW_VERSION} - the asserts hold the law, not one version number)`);
 const renderSrc = fs.readFileSync(path.join(process.cwd(), "src/lib/engine/render.ts"), "utf8");
 ok(renderSrc.includes("export interface CraftAim") && renderSrc.includes('rung: "face" | "paint"'), "the render engine names the CraftAim (rung + line)");
 ok(renderSrc.includes("craft?: CraftAim | null,") || renderSrc.includes("craft?: CraftAim | null"), "createRenderJob grows the craft aim (optional - the standing callers byte-exact)");
@@ -107,7 +107,7 @@ ok(rideSrc.includes("identityFramingBucket(s.shotType)"), "the framings map ride
 // ── shape 3: the bridge's additive arms (the pull's own runtime) ──
 console.log("shape: the bridge's additive arms (the pull's own runtime)");
 const br = fs.readFileSync(path.join(process.cwd(), "bridges/blender/animeos_bridge.py"), "utf8");
-ok(br.includes('CRAFT_AIM_LAW_VERSION = "craft-v1"') && br.includes('CRAFT_RUNGS = ("face", "paint")'), "the craft aim law stands as named (craft-v1, the two rungs)");
+ok(/CRAFT_AIM_LAW_VERSION = "craft-v\d+"/.test(br) && br.includes('CRAFT_RUNGS = ("face", "paint")'), "the craft aim law stands as named (the versioned craft law, the two rungs - the asserts hold the law, not one version string)");
 ok(br.includes('if rung not in CRAFT_RUNGS:') && br.includes('rung = str(raw.get("rung") or "").strip().lower()'), "a corrupt or unknown aim degrades honestly to None (the standing craft answers)");
 ok(br.includes('cap = preview_cap_for(shot.get("shotType"), mode)'), "the ladder's own call site stands byte-exact (the 138/164 pins keep answering)");
 ok(br.includes('if str(shot.get("shotType") or "").upper() not in ("WIDE", "WS", "ESTABLISHING", "OTS"):') && br.includes("cap = ESTABLISHING_CAP"), "the FACE arm lifts the matrix's close/med framings to the 1024 rung (the identityFramingBucket mirror - one law, two runtimes)");

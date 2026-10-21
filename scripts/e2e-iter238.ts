@@ -120,7 +120,7 @@ async function main() {
   // ── shape 8: the law versions stand ──
   console.log("shape: the law versions stand");
   ok(ACCEPTANCE_CARRY_LAW_VERSION === 237, "the carry law stands at 237");
-  ok(RENDER_NIGHT_PLAN_LAW_VERSION === 238, "the plan law stands at 238 (the 239 law opens the cohort's own door)");
+  ok(RENDER_NIGHT_PLAN_LAW_VERSION >= 238, `the plan law stands numbered (v${RENDER_NIGHT_PLAN_LAW_VERSION} - the asserts hold the law, not one version number)`);
   ok(REPAIR_WORK_ORDER_LAW_VERSION >= 233, "the work order law stands");
   ok(CLOSING_LAW_VERSION >= 233, "the closing law stands");
   const bridgeSrc = fs.readFileSync(path.join(process.cwd(), "bridges/blender/animeos_bridge.py"), "utf8");

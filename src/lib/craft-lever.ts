@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────
-// THE CRAFT LEVER, ROUTED (iteration 236) - the next night's craft
-// pull is aimed, not blind.
+// THE CRAFT LEVER, ROUTED (iteration 236; the wide end answers the
+// lever's own words at 241) - the next night's craft pull is aimed,
+// not blind.
 //
 // The 235 rides answered the named cells twice and the wall did not
 // move: S002's fresh pixels re-scored 38% -> 25% WORSE (the
@@ -49,8 +50,9 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { CarriedVerdict } from "./acceptance-carry";
+import { wideTexelAimLine } from "./wide-texels";
 
-export const CRAFT_LEVER_LAW_VERSION = 236;
+export const CRAFT_LEVER_LAW_VERSION = 241;
 
 /** The rung the next night pulls (the proportion rung is refused,
  *  never named). */
@@ -80,25 +82,58 @@ export const PROPORTION_REFUSAL = "the proportion lever is spent (probe-140's ow
  * THE CRAFT LEVER (pure): the cell's framing names the rung, the
  * carry's verdict arms it. Unknown framings ride an honest refusal -
  * named, never guessed.
+ *
+ * THE 241 AMENDMENT (the wide end answers the lever's own words):
+ * the caller may pass the source's own lever line (the remainder's
+ * verbatim words - the 240 receipt rides it; the pure law never
+ * paraphrases the judge, it rides the judge). At the WIDE end, a
+ * lever line in hand turns the rung to the WIDE-END FACE RUNG - the
+ * texels at the small figure (the 133 smear zone's own arithmetic,
+ * wide-texels.ts) - because the line's own words name the structure
+ * the paint's walls cannot answer. Without a lever line the 236
+ * paint answer keeps its teeth byte-exact (the dye and the mass
+ * answered there); the close/med face rung is untouched.
  */
 export function craftLeverForCell(args: {
   ref: string;
   framing: "close" | "med" | "wide";
   carry: CarriedVerdict;
+  /** THE 241 INJECTION: the source's own lever line (the judge's
+   *  own words, verbatim - the caller read it off the remainder).
+   *  Absent/null = no lever names this source's cells. */
+  sourceLeverLine?: string | null;
+  /** THE 241 SHAPE: the carried answer's own measurement rides (the
+   *  regen's reading landed on the answer's own night) - a debt
+   *  ANSWERED, not owed; the guard answers the difference. */
+  carryMeasured?: boolean | null;
 }): CraftLeverAnswer {
-  if (args.carry === "REGEN_OWED") {
+  if (args.carry === "REGEN_OWED" && !args.carryMeasured) {
     return {
       ok: false,
       line: `${args.ref}: the cell owes the reference work first (the sheet acceptance answered REGEN_OWED) - the craft lever waits for the reference it must honor.`,
     };
   }
-  if (args.carry !== "STAND_DOWN_HONEST") {
+  if (args.carry !== "STAND_DOWN_HONEST" && !(args.carry === "REGEN_OWED" && args.carryMeasured)) {
     return {
       ok: false,
       line: `${args.ref}: the acceptance waits for its own night - the lever speaks only under the honest receipt (${CRAFT_LEVER_SENTENCE}).`,
     };
   }
   if (args.framing === "wide") {
+    const leverLine = (args.sourceLeverLine ?? "").trim();
+    if (leverLine) {
+      // THE 241 WIDE-END FACE RUNG: the lever's own words name the
+      // small figure - the texels answer, the judge rides verbatim.
+      return {
+        ok: true,
+        lever: {
+          ref: args.ref,
+          framing: args.framing,
+          rung: "face",
+          line: wideTexelAimLine({ ref: args.ref, leverLine }),
+        },
+      };
+    }
     return {
       ok: true,
       lever: {
@@ -115,7 +150,10 @@ export function craftLeverForCell(args: {
       ref: args.ref,
       framing: args.framing,
       rung: "face",
-      line: `${args.ref}: the judge reads the build's face at this framing - the face craft's own answer is the lever; ${PROPORTION_REFUSAL}.`,
+      line:
+        args.carry === "REGEN_OWED"
+          ? `${args.ref}: the moved reference's own reading landed on the answer's own night - the face craft's own answer is the lever; ${PROPORTION_REFUSAL}.`
+          : `${args.ref}: the judge reads the build's face at this framing - the face craft's own answer is the lever; ${PROPORTION_REFUSAL}.`,
     },
   };
 }

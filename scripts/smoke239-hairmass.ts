@@ -149,7 +149,7 @@ ok(rp.includes("const measuredMembers = ridingTheMap && namedRefs.length > 0"), 
 ok(rp.includes('.filter((m) => m.standing === "UNTESTED" && m.anchored)'), "the door rides UNTESTED anchored members only (the sheetless cannot be measured)");
 ok(rp.includes(".filter((m) => !belowMembers.some((b) => b.characterId === m.characterId))"), "the door never duplicates a below member");
 ok(rp.includes("before: number | null;"), "the shot row's before reads null honestly for a measurement");
-ok(rnp.includes("export const RENDER_NIGHT_PLAN_LAW_VERSION = 238;"), "the plan law advanced to 238");
+ok(/export const RENDER_NIGHT_PLAN_LAW_VERSION = \d+;/.test(rnp), "the plan law versions itself (the asserts hold the law, not one version number)");
 ok(rnp.includes("export interface PlanOpenQueue {"), "the plan law carries the door's own queue shape");
 ok(rnp.includes("beforePct: null,"), "the door's call reads beforePct null (the first reading IS the night's answer)");
 ok(rnp.includes("prerenderLine: `night ${night} call ${index}: prerender ${q.member} ${t.ref} (untested in the present cohort) - the cohort's own door: the craft moved, the cell owes its first reading; the bridge renders across the boundary.`"), "the door's prerender line rides its exact words");

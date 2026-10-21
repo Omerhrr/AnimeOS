@@ -62,7 +62,7 @@ ok(br.includes("return \"#5eead4\""), "the default rides only when the sheet ans
 ok(br.includes("sheet_energy_hex(hero), job_id)"), "the fx rig's transport hue reads the sheet's answer (the 149 law's own call site)");
 ok(!br.includes('(hero or {}).get("bladeColor") or "#5eead4", job_id)'), "the old default-first line is gone from the fx rig call site");
 ok(br.includes('energy_hex = hero.get("bladeColor") or "#5eead4"'), "the BladeMat's own line stays byte-exact (the law's scope names the fx transport hue; a weaponless member builds no blade mesh)");
-ok(br.includes('CRAFT_AIM_LAW_VERSION = "craft-v1"') && br.includes('CRAFT_RUNGS = ("face", "paint")'), "the 237 craft aim law stands byte-exact (the rungs untouched)");
+ok(/CRAFT_AIM_LAW_VERSION = "craft-v\d+"/.test(br) && br.includes('CRAFT_RUNGS = ("face", "paint")'), "the craft aim law stands versioned (the rungs untouched - the asserts hold the law, not one version string)");
 const fxp = fs.readFileSync(path.join(process.cwd(), "bridges/blender/fx_pass.py"), "utf8");
 ok(fxp.includes('ob.visible_diffuse = False  # THE FX TRANSPORT GUARD (149): the dye keeps its class') && fxp.includes("def _transport_light"), "the 149 transport guard stands byte-exact in the fx pass (the bound keeps its teeth)");
 
@@ -101,7 +101,7 @@ try {
 
 // ── shape 4: the plan's own law stands (the rungs untouched) ──
 console.log("shape: the 237 rung routing stands (the plan law untouched)");
-ok(RENDER_NIGHT_PLAN_LAW_VERSION === 238, "the plan law stands at 238 (the 239 law opens the cohort's own door; the 238 routing bytes stand)");
+ok(RENDER_NIGHT_PLAN_LAW_VERSION >= 238, `the plan law stands numbered (v${RENDER_NIGHT_PLAN_LAW_VERSION} - the asserts hold the law, not one version number)`);
 const ORDER: RepairWorkOrder = {
   source: "RENDER",
   verdict: "BELOW",

@@ -4109,7 +4109,8 @@ COMP_LUTS = {
     "neutral": {"lift": (0.98, 0.985, 1.02, 1.0), "gain": (1.03, 1.0, 0.965, 1.0), "sat": 1.06, "mistTint": (0.36, 0.4, 0.46, 1.0)},
 }
 
-# ── THE CRAFT AIM (iteration 237) - the lever's pull, wired ──
+# ── THE CRAFT AIM (iteration 237; the wide end answers the lever's
+# own words at 241) - the lever's pull, wired ──
 # The 236 plan aimed every call with a line of prose - and prose
 # renders nothing: the judge scored the same craft a third time. The
 # aimed night's payload now carries shot.craftAim = {rung, line}, and
@@ -4120,8 +4121,16 @@ COMP_LUTS = {
 #           rung are smudges the upscaler invents). The arm reads the
 #           MATRIX's own buckets (the mirror of identityFramingBucket:
 #           close/med = not in WIDE/WS/ESTABLISHING/OTS), one law two
-#           runtimes; the wide-end framings keep their own rung (the
-#           judge reads the paint there); FINAL stays 1280.
+#           runtimes. THE 241 WIDE-END FACE RUNG: an aimed face cell
+#           at the WIDE-end framings rides the FINAL rung in preview
+#           - the lever's own words name the small figure (the 240
+#           remainder: "the texels at the small figure - the 133
+#           smear zone's own arithmetic at the wide end"), and the
+#           arithmetic answers: the head 48px at the 1024 wide rung,
+#           60px at the 1280 (1.25x linear), the crop's source 72x64
+#           -> 90x80 (1.5625x the area) - the structure the judge
+#           reads rides the crops (the 157 scale law), and the crops
+#           resolve what their source carries. FINAL stays 1280.
 #   PAINT - the aimed preview rides the paint's own quality rung: 24
 #           samples + denoising (a 10-sample undenoised storm cell
 #           reads flat and noisy - the judge's own 'simplified flat
@@ -4129,7 +4138,7 @@ COMP_LUTS = {
 #           honest). The 140 statement's language stays byte-exact -
 #           this is the render's quality, never the goalpost.
 # An absent or corrupt aim degrades to the standing craft, byte-exact.
-CRAFT_AIM_LAW_VERSION = "craft-v1"
+CRAFT_AIM_LAW_VERSION = "craft-v2"
 CRAFT_RUNGS = ("face", "paint")
 
 
@@ -6395,12 +6404,18 @@ def worker_run(job_file):
         # own verify arm: 2.09x the area, and the eye reads the
         # difference). The matrix's own buckets name the face framings
         # (close/med = NOT in the wide list - the identityFramingBucket
-        # mirror); the wide-end framings keep their own rung (the judge
-        # reads the paint there); FINAL keeps the 1280.
+        # mirror). THE 241 WIDE-END FACE RUNG: an aimed face cell at the
+        # wide-end framings rides the FINAL rung in preview - the lever's
+        # own words name the small figure (the 240 remainder), and the
+        # arithmetic answers (the head 48px at the 1024 wide rung, 60px
+        # at the 1280; the crop's source 90x80); the paint rung keeps its
+        # own walls where no lever names the texels. FINAL keeps 1280.
         _aim = craft_aim_for(shot)
         if _aim and _aim["rung"] == "face" and str(mode or "PREVIEW").upper() != "FINAL":
             if str(shot.get("shotType") or "").upper() not in ("WIDE", "WS", "ESTABLISHING", "OTS"):
                 cap = ESTABLISHING_CAP
+            else:
+                cap = FINAL_CAP
         scale = min(1.0, cap / max(res_w, res_h))
         out_w = max(16, round(res_w * scale / 2) * 2)
         out_h = max(16, round(res_h * scale / 2) * 2)
