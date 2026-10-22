@@ -112,7 +112,17 @@ console.log("shape: the arc append is night-tagged");
 const arcLines = fs.readFileSync("receipts/identity-arc.jsonl", "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { ref?: { episode?: number; scene?: number; shot?: number }; night?: string; worst?: number });
 const s004 = arcLines.filter((a) => a.ref?.episode === 7 && a.ref?.scene === 12 && a.ref?.shot === 4);
 const newest = s004[s004.length - 1];
-ok(newest?.night === "repair-2026-10-22-iii" && newest?.worst === 0.35, "the newest S004 arc line is the 243 night's own (the fold law's append)");
+// THE LAWFUL DRIFT (the 227/228 precedent): the arc's newest S004 line
+// reads EITHER the 243 instant (worst 0.35, night iii - the append this
+// smoke pinned at birth) OR the 244 instant (worst 0.45, night iv - the
+// arc advanced by its own lawful append: the aimed nights keep
+// re-reading the blocking cells one lawful night at a time, and the
+// fresh 45% rode night-tagged). The assert holds the law - the append
+// is night-tagged and the worst is that night's own read - not one
+// version number.
+const newest243 = newest?.night === "repair-2026-10-22-iii" && newest?.worst === 0.35;
+const newest244 = newest?.night === "repair-2026-10-22-iv" && newest?.worst === 0.45;
+ok(newest243 || newest244, `the newest S004 arc line is a lawful night's own (the 243 shape ${newest243}, the 244 shape ${newest244})`);
 const nights = new Set(s004.map((a) => a.night));
 ok(nights.size >= 4, "the cell's answer spans its own nights (one lawful night at a time)");
 

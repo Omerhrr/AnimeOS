@@ -159,12 +159,19 @@ ok(kf?.verdict === "RELEASE" && kf?.overall.p10 === 0.71 && kf?.nights === 3, "A
 // (the aimed nights re-read the blocking cells one lawful night at a
 // time - the fourteenth box's own night landed: 4 nights, settled, the
 // fresh pixels answered 35% UNCHANGED honestly, the body mean 55%, p10
-// 35% - the medians move only as the nights do).
+// 35% - the medians move only as the nights do) OR the 244 instant
+// (the fold law's own arithmetic named its shape - the wide cell's own
+// read moved 35% -> 45% IMPROVED under the face aim, but the cohort's
+// five readings sort [0, 0.35, 0.35, 0.45, 0.65] and the entry's
+// median still reads 0.35: the 45% sits at rank 4 of 5 and cannot
+// carry the middle - 5 nights, settled, the body mean 55%, p10 35%,
+// the medians held).
 const rn239 = rn?.verdict === "BELOW" && rn?.overall.mean === 0.5 && rn?.overall.p10 === 0.35 && rn?.nights === 1 && rn?.provisional === true;
 const rn241 = rn?.verdict === "BELOW" && rn?.nights === 2 && rn?.provisional === false;
 const rn242 = rn?.verdict === "BELOW" && rn?.nights === 3 && rn?.provisional === false && rn?.overall.mean === 0.55 && rn?.overall.p10 === 0.35;
 const rn243 = rn?.verdict === "BELOW" && rn?.nights === 4 && rn?.provisional === false && rn?.overall.mean === 0.55 && rn?.overall.p10 === 0.35;
-ok(rn239 || rn241 || rn242 || rn243, `RENDER sits BELOW on a lawful instant (the 239 shape ${rn239}, the 241 shape ${rn241}, the 242 shape ${rn242}, the 243 shape ${rn243})`);
+const rn244 = rn?.verdict === "BELOW" && rn?.nights === 5 && rn?.provisional === false && rn?.overall.mean === 0.55 && rn?.overall.p10 === 0.35;
+ok(rn239 || rn241 || rn242 || rn243 || rn244, `RENDER sits BELOW on a lawful instant (the 239 shape ${rn239}, the 241 shape ${rn241}, the 242 shape ${rn242}, the 243 shape ${rn243}, the 244 shape ${rn244})`);
 ok(rn?.blocking.length === 4 && rn?.blocking.every((c) => c.worstRef === "E7 Sc12 S004"), "the 4 blocking cells name the same worst ref (E7 Sc12 S004)");
 
 // ── shape 4: the REAL remainder over the REAL receipt ──

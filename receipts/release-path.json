@@ -39,7 +39,7 @@
       "floor": 0.7,
       "readings": 2,
       "arc": true,
-      "nights": 4,
+      "nights": 5,
       "provisional": false,
       "releasesNow": false,
       "counts": {
