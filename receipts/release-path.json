@@ -39,7 +39,7 @@
       "floor": 0.7,
       "readings": 2,
       "arc": true,
-      "nights": 2,
+      "nights": 3,
       "provisional": false,
       "releasesNow": false,
       "counts": {
@@ -48,9 +48,9 @@
         "blockingCells": 4
       },
       "gaps": {
-        "p10ToFloor": 52,
-        "meanToFloor": 24,
-        "worstToFloor": 52,
+        "p10ToFloor": 35,
+        "meanToFloor": 15,
+        "worstToFloor": 35,
         "bestShortfall": 0
       },
       "nightsOwed": 0,
@@ -58,7 +58,7 @@
         {
           "key": "calm",
           "verdict": "BELOW",
-          "p10": 0.175,
+          "p10": 0.35,
           "n": 2,
           "belowFloor": 1,
           "worstRef": "E7 Sc12 S004"
@@ -66,7 +66,7 @@
         {
           "key": "storm",
           "verdict": "BELOW",
-          "p10": 0.175,
+          "p10": 0.35,
           "n": 1,
           "belowFloor": 1,
           "worstRef": "E7 Sc12 S004"
@@ -74,7 +74,7 @@
         {
           "key": "unset",
           "verdict": "BELOW",
-          "p10": 0.175,
+          "p10": 0.35,
           "n": 2,
           "belowFloor": 1,
           "worstRef": "E7 Sc12 S004"
@@ -82,7 +82,7 @@
         {
           "key": "wide",
           "verdict": "BELOW",
-          "p10": 0.175,
+          "p10": 0.35,
           "n": 1,
           "belowFloor": 1,
           "worstRef": "E7 Sc12 S004"
@@ -90,14 +90,14 @@
       ],
       "leverLine": "the texels at the small figure - the 133 smear zone's own arithmetic at the wide end (the judge's own words at S004: \"the face structure is heavily drifted to a rounder, more feminine shape with larger eyes\"; hair: \"the hair lacks the long flowing strands\")",
       "conditions": [
-        "RENDER: the body crosses the floor - mean 46% -> 70% (24 point(s) short), p10 18% -> 70% (52 point(s) short); 1 of 2 reading(s) sit under the floor.",
-        "RENDER: 4 blocking cell(s) clear - calm p10 18% (n 2), storm p10 18% (n 1), unset p10 18% (n 2), wide p10 18% (n 1); the worst ref E7 Sc12 S004."
+        "RENDER: the body crosses the floor - mean 55% -> 70% (15 point(s) short), p10 35% -> 70% (35 point(s) short); 1 of 2 reading(s) sit under the floor.",
+        "RENDER: 4 blocking cell(s) clear - calm p10 35% (n 2), storm p10 35% (n 1), unset p10 35% (n 2), wide p10 35% (n 1); the worst ref E7 Sc12 S004."
       ]
     }
   ],
   "conditions": [
-    "RENDER: the body crosses the floor - mean 46% -> 70% (24 point(s) short), p10 18% -> 70% (52 point(s) short); 1 of 2 reading(s) sit under the floor.",
-    "RENDER: 4 blocking cell(s) clear - calm p10 18% (n 2), storm p10 18% (n 1), unset p10 18% (n 2), wide p10 18% (n 1); the worst ref E7 Sc12 S004.",
+    "RENDER: the body crosses the floor - mean 55% -> 70% (15 point(s) short), p10 35% -> 70% (35 point(s) short); 1 of 2 reading(s) sit under the floor.",
+    "RENDER: 4 blocking cell(s) clear - calm p10 35% (n 2), storm p10 35% (n 1), unset p10 35% (n 2), wide p10 35% (n 1); the worst ref E7 Sc12 S004.",
     "AI_KEYFRAME releases now - no condition rides this source (7 arc reading(s) across 3 night(s)).",
     "the lever names itself from the judge's own words (RENDER): the texels at the small figure - the 133 smear zone's own arithmetic at the wide end (the judge's own words at S004: \"the face structure is heavily drifted to a rounder, more feminine shape with larger eyes\"; hair: \"the hair lacks the long flowing strands\")",
     "when every scored source reads p10 >= floor AND mean >= floor, the verdict turns RELEASE and the episode stages for publish - the gate keeps its teeth."

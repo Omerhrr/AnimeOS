@@ -152,10 +152,14 @@ ok(kf?.verdict === "RELEASE" && kf?.overall.p10 === 0.71 && kf?.nights === 3, "A
 // THE LAWFUL DRIFT (the 227/228 precedent): the committed review reads
 // EITHER the 239 instant (1 night, PROVISIONAL) OR the 241 instant (the
 // a126 cohort's second night landed - 2 nights, settled, the fresh
-// arithmetic the 241 night's own honest reads answered).
+// arithmetic the 241 night's own honest reads answered) OR the 242
+// instant (the box's own night landed - 3 nights, the REAL engine's
+// designed-build pixels under the judge: the wide cell 18% -> 65%, the
+// body mean 46% -> 55%, p10 18% -> 35%, settled).
 const rn239 = rn?.verdict === "BELOW" && rn?.overall.mean === 0.5 && rn?.overall.p10 === 0.35 && rn?.nights === 1 && rn?.provisional === true;
 const rn241 = rn?.verdict === "BELOW" && rn?.nights === 2 && rn?.provisional === false;
-ok(rn239 || rn241, `RENDER sits BELOW on a lawful instant (the 239 shape ${rn239}, the 241 shape ${rn241})`);
+const rn242 = rn?.verdict === "BELOW" && rn?.nights === 3 && rn?.provisional === false && rn?.overall.mean === 0.55 && rn?.overall.p10 === 0.35;
+ok(rn239 || rn241 || rn242, `RENDER sits BELOW on a lawful instant (the 239 shape ${rn239}, the 241 shape ${rn241}, the 242 shape ${rn242})`);
 ok(rn?.blocking.length === 4 && rn?.blocking.every((c) => c.worstRef === "E7 Sc12 S004"), "the 4 blocking cells name the same worst ref (E7 Sc12 S004)");
 
 // ── shape 4: the REAL remainder over the REAL receipt ──
