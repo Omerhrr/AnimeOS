@@ -1,9 +1,9 @@
 {
-  "projectId": "cmvj6vv7r0000ri5k6hc3speo",
-  "episodeId": "cmvj6vv7t0004ri5kou8cc56h",
+  "projectId": "cmvjnoqww0000nc2azc2xyzvi",
+  "episodeId": "cmvjnoqwy0004nc2a4yuaetcn",
   "episodeTag": "E7",
   "episodeTitle": "The Storm Over Azure Mountain",
-  "reviewedAt": "2026-10-22T07:39:32.634Z",
+  "reviewedAt": "2026-10-22T15:25:22.828Z",
   "law": {
     "name": "release-review",
     "version": 232
@@ -41,7 +41,7 @@
       "floor": 0.7,
       "readings": 2,
       "arc": true,
-      "nights": 3,
+      "nights": 4,
       "provisional": false,
       "overall": {
         "n": 2,
@@ -91,18 +91,18 @@
         "shotsPerMember": 3,
         "shotsPerPass": 12
       },
-      "spanLine": "2 arc reading(s) across 3 night(s)",
+      "spanLine": "2 arc reading(s) across 4 night(s)",
       "gapLine": "RENDER sits BELOW - the body itself is under the floor (mean 55%, median 55% vs floor 70%): lift the body before the tail matters."
     }
   ],
   "standing": {
     "verdict": "BELOW",
-    "arcNights": 3,
+    "arcNights": 4,
     "provisionalExited": true
   },
   "path": [
     "RENDER: lift the body - the repair pass answers (up to 4 members x 3 shots = 12 shots per pass, the worst refs first), its re-scores append to the arc night-tagged, and the gate re-reads the medians.",
     "when every scored source reads p10 >= floor AND mean >= floor, the verdict turns RELEASE and the episode stages for publish - the gate keeps its teeth."
   ],
-  "headline": "E7 SITS BELOW - AI_KEYFRAME RELEASES (arc, 3 night(s)); RENDER SITS BELOW (arc, 3 night(s)); the path names 2 step(s)"
+  "headline": "E7 SITS BELOW - AI_KEYFRAME RELEASES (arc, 3 night(s)); RENDER SITS BELOW (arc, 4 night(s)); the path names 2 step(s)"
 }
