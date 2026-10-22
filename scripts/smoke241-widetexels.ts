@@ -103,7 +103,7 @@ ok(aim.includes("the head rides 60px at the 1280 rung (1.25x linear over the wid
 // ── shape 5: the craft-lever amendment ──
 console.log("shape: the craft lever's wide end answers the lever");
 ok(CRAFT_LEVER_LAW_VERSION === 241, "the lever versions itself 241");
-ok(ACCEPTANCE_CARRY_LAW_VERSION === 241, "the carry versions itself 241 (the third shape rides)");
+ok(ACCEPTANCE_CARRY_LAW_VERSION >= 241, `the carry versions itself at the law (v${ACCEPTANCE_CARRY_LAW_VERSION} - the asserts hold the law, not one version number, the 227/228 precedent)`);
 const wideAimed = craftLeverForCell({ ref: "E7 Sc12 S004", framing: "wide", carry: "STAND_DOWN_HONEST", sourceLeverLine: REAL_LEVER });
 ok(wideAimed.ok && wideAimed.lever.rung === "face", "wide + the lever's words: the rung is the wide-end face rung");
 ok(wideAimed.ok && wideAimed.lever.line === aim, "the lever's line IS the aim line (byte-exact over the REAL words)");

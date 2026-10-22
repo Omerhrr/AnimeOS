@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────
 // THE ACCEPTANCE'S VERDICT, CARRIED (iteration 235; the carry reads
-// its own third shape at 241) - the answer rides with the next night.
+// its own third shape at 241, its fourth at 242) - the answer rides
+// with the next night.
 //
 // The 234 acceptance night answered the night130 gate for Lin Yue:
 // the honest receipt stands (the build wears the design's dye class),
@@ -51,13 +52,29 @@
 //       precedent: the carry reads the acceptance's shapes as they
 //       grow, and the guard follows the shape, not the name.
 //
+//   (e) THE FOURTH SHAPE - THE CHANNEL-DRIFT STAND-DOWN (iteration
+//       242). The 241 wide-end night's own receipt taught it: Wei's
+//       sheet acceptance stood down honest with the beat's OWN WORDS
+//       - "the channel kept its drift - 3 candidates, none IN the
+//       design's class (...); the standing sheet remains the
+//       reference" - a shape the dye-class needle ("honest receipt
+//       stands") never wrote. The classifier read the newest answer
+//       NONE, the NONE shadowed the 239 measured regen, and the
+//       box's own night rode its prerender UNAIMED (the standing
+//       craft's pixels, the aim a label no pixels carried). The
+//       seam, named at the 237 precedent's own bar (graduated BEFORE
+//       the affected ride step): the reference standing is the
+//       honest receipt's own answer - the needle grows to read the
+//       standing sheet's own words, and the newest stand-down arms
+//       the lever exactly as the dye-class stand-down always has.
+//
 // PURE: no db, no fs - the entries arrive as the argument (the
 // caller gathered them from the receipts and the arc), the words are
 // the law's own. The smoke pins the exact words; the rides carry
 // them into the receipts.
 // ─────────────────────────────────────────────────────────────
 
-export const ACCEPTANCE_CARRY_LAW_VERSION = 241;
+export const ACCEPTANCE_CARRY_LAW_VERSION = 242;
 
 /** The beat's own verdict vocabulary (reanchor.ts's gate answers). */
 export type CarriedVerdict = "STAND_DOWN_HONEST" | "REGEN_OWED" | "NONE";
@@ -178,7 +195,10 @@ export function carryEntriesFromRideReceipts(
       const note = (m.reanchorNote ?? "").trim();
       let verdict: CarriedVerdict = "NONE";
       if (m.reanchored) verdict = "REGEN_OWED";
-      else if (note.includes("honest receipt stands")) verdict = "STAND_DOWN_HONEST";
+      // THE FOURTH SHAPE (242): the channel-drift stand-down's own
+      // words - the standing sheet remaining IS the reference not
+      // moving (the dye-class needle keeps its shape beside it).
+      else if (note.includes("honest receipt stands") || note.includes("the standing sheet remains the reference")) verdict = "STAND_DOWN_HONEST";
       // the night's own reading rides when the row carries one (the
       // member's freshest after reading on the acceptance night)
       const afters = (m.shots ?? []).map((s) => s.after).filter((a): a is number => typeof a === "number" && Number.isFinite(a));
