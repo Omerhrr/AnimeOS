@@ -108,22 +108,37 @@ ok(closing?.night === "repair-2026-10-22-v" && closing?.stage === false, "the cl
 ok(Boolean(closing?.refusals?.[0]?.includes("RENDER sits BELOW")), "the refusal is the work order (named on the receipt)");
 
 // ── shape 7: THE MEDIAN MOVED - the fold's own arithmetic on the committed review ──
-console.log("shape: the fold's own arithmetic (THE MEDIAN MOVED - the middle answered)");
+console.log("shape: the fold's own arithmetic (the lawful instant - the middle answers)");
 const review = JSON.parse(fs.readFileSync("receipts/release-review.json", "utf8")) as {
   episodeTag?: string;
   sources?: Array<{ source?: string; verdict?: string; nights?: number; provisional?: boolean; overall?: { mean?: number; p10?: number; worst?: number; best?: number; n?: number }; blocking?: Array<{ key?: string; p10?: number; worstRef?: string | null }> }>;
 };
 const rn = review.sources?.find((s) => s.source === "RENDER");
-ok(review.episodeTag === "E7" && rn?.verdict === "BELOW" && rn?.nights === 6 && rn?.provisional === false, "the fresh review reads the 245 instant (6 nights, settled)");
-ok(rn?.overall?.mean === 0.5625 && rn?.overall?.p10 === 0.375 && rn?.overall?.worst === 0.375 && rn?.overall?.best === 0.75, "the body's medians MOVED (mean 56%, p10 38%, worst 38%, best 75%) - the cohort's six readings sort [0, 0.35, 0.35, 0.40, 0.45, 0.65] and the entry's median reads 0.375 (the even count's median is the average of the two middles)");
-ok(rn?.blocking?.length === 4 && rn?.blocking?.every((c) => c.p10 === 0.375 && c.worstRef === "E7 Sc12 S004"), "the 4 blocking cells re-count at p10 38% (was 35% - the middle's own move), the worst ref still E7 Sc12 S004");
+// THE LAWFUL DRIFT (the 227/228 precedent): the committed review reads
+// EITHER the 245 instant (THE MEDIAN MOVED - six readings, the even
+// count's median the average of the two middles: mean 56%, p10 38%,
+// the cells at p10 38%) OR the 246 instant (THE MIDDLE MOVED BACK -
+// the aimed night's fresh pixels answered 35% WORSE, the cohort's
+// seven readings sort [0, 0.35, 0.35, 0.35, 0.40, 0.45, 0.65] and the
+// middle of seven is the fourth smallest: mean 55%, p10 35%, the cells
+// at p10 35% - the fold law's honest risk, named). The asserts hold
+// the law - not one version number.
+const instant245 = review.episodeTag === "E7" && rn?.verdict === "BELOW" && rn?.nights === 6 && rn?.provisional === false;
+const instant246 = review.episodeTag === "E7" && rn?.verdict === "BELOW" && rn?.nights === 7 && rn?.provisional === false;
+ok(instant245 || instant246, `the fresh review reads a lawful instant (the 245 shape ${instant245} - 6 nights settled; the 246 shape ${instant246} - 7 nights settled)`);
+ok((instant245 && rn?.overall?.mean === 0.5625 && rn?.overall?.p10 === 0.375 && rn?.overall?.worst === 0.375 && rn?.overall?.best === 0.75) || (instant246 && rn?.overall?.mean === 0.55 && rn?.overall?.p10 === 0.35 && rn?.overall?.worst === 0.35 && rn?.overall?.best === 0.75), "the body's medians ride the instant's own arithmetic (the 245 shape: mean 56%, p10 38% - the even count's median the average of the two middles; the 246 shape: mean 55%, p10 35% - the middle of seven is the fourth smallest, and the 35% read joined the middle block)");
+ok((instant245 && rn?.blocking?.length === 4 && rn?.blocking?.every((c) => c.p10 === 0.375 && c.worstRef === "E7 Sc12 S004")) || (instant246 && rn?.blocking?.length === 4 && rn?.blocking?.every((c) => c.p10 === 0.35 && c.worstRef === "E7 Sc12 S004")), "the 4 blocking cells re-count at the instant's own p10 (the 245 shape 38% - the middle's own move; the 246 shape 35% - the middle's own move back), the worst ref still E7 Sc12 S004");
 
 // ── shape 8: the arc append rode night-tagged ──
 console.log("shape: the arc append is night-tagged");
 const arcLines = fs.readFileSync("receipts/identity-arc.jsonl", "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { ref?: { episode?: number; scene?: number; shot?: number }; night?: string; worst?: number });
 const s004 = arcLines.filter((a) => a.ref?.episode === 7 && a.ref?.scene === 12 && a.ref?.shot === 4);
 const newest = s004[s004.length - 1];
-ok(newest?.night === "repair-2026-10-22-v" && newest?.worst === 0.4, "the newest S004 arc line is the 245 night's own (the fold law's append)");
+// THE LAWFUL NIGHT (the 227/228 precedent): the asserts hold the law,
+// not one version number - the newest line is the newest LAWFUL
+// night's own read (the 245 v 0.40 instant, or the 246 vi 0.35
+// instant once the aimed night's own append advanced the arc).
+ok(newest?.night === "repair-2026-10-22-v" && newest?.worst === 0.4 || newest?.night === "repair-2026-10-22-vi" && newest?.worst === 0.35, "the newest S004 arc line is a lawful night's own read (the v 0.40 instant or the vi 0.35 instant - the judge's read is the truth of each night)");
 ok(newest?.night !== undefined && s004.filter((a) => a.night?.startsWith("repair-2026-10-22")).length >= 5, "the cell's answer spans its own nights (one lawful night at a time)");
 
 console.log(`\nsmoke245: ${pass} pass, ${fail} fail`);

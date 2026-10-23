@@ -135,7 +135,10 @@ const instant244 = review.episodeTag === "E7" && rn?.verdict === "BELOW" && rn?.
 const instant245 = review.episodeTag === "E7" && rn?.verdict === "BELOW" && rn?.nights === 6 && rn?.provisional === false
   && rn?.overall?.mean === 0.5625 && rn?.overall?.p10 === 0.375 && rn?.overall?.worst === 0.375 && rn?.overall?.best === 0.75
   && rn?.blocking?.length === 4 && rn?.blocking?.every((c) => c.p10 === 0.375 && c.worstRef === "E7 Sc12 S004");
-ok(instant244 || instant245, `the fresh review reads a lawful instant (the 244 shape ${instant244} - the medians held; the 245 shape ${instant245} - THE MEDIAN MOVED: the even count's median is the average of the two middles)`);
+const instant246 = review.episodeTag === "E7" && rn?.verdict === "BELOW" && rn?.nights === 7 && rn?.provisional === false
+  && rn?.overall?.mean === 0.55 && rn?.overall?.p10 === 0.35 && rn?.overall?.worst === 0.35 && rn?.overall?.best === 0.75
+  && rn?.blocking?.length === 4 && rn?.blocking?.every((c) => c.p10 === 0.35 && c.worstRef === "E7 Sc12 S004");
+ok(instant244 || instant245 || instant246, `the fresh review reads a lawful instant (the 244 shape ${instant244} - the medians held; the 245 shape ${instant245} - THE MEDIAN MOVED: the even count's median is the average of the two middles; the 246 shape ${instant246} - THE MIDDLE MOVED BACK: the 35% read joined the middle block)`);
 
 // ── shape 8: the arc append rode night-tagged ──
 console.log("shape: the arc append is night-tagged");
@@ -151,7 +154,8 @@ const newest = s004[s004.length - 1];
 // that night's own read - not one version number.
 const newest244 = newest?.night === "repair-2026-10-22-iv" && newest?.worst === 0.45;
 const newest245 = newest?.night === "repair-2026-10-22-v" && newest?.worst === 0.4;
-ok(newest244 || newest245, `the newest S004 arc line is a lawful night's own (the 244 shape ${newest244}, the 245 shape ${newest245})`);
+const newest246 = newest?.night === "repair-2026-10-22-vi" && newest?.worst === 0.35;
+ok(newest244 || newest245 || newest246, `the newest S004 arc line is a lawful night's own (the 244 shape ${newest244}, the 245 shape ${newest245}, the 246 shape ${newest246})`);
 ok(newest?.night !== undefined && s004.filter((a) => a.night?.startsWith("repair-2026-10-22")).length >= 4, "the cell's answer spans its own nights (one lawful night at a time)");
 
 console.log(`\nsmoke244: ${pass} pass, ${fail} fail`);

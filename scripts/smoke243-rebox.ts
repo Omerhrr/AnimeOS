@@ -120,13 +120,17 @@ const newest = s004[s004.length - 1];
 // fresh 45% rode night-tagged) OR the 245 instant (worst 0.40, night v
 // - the arc advanced again: the aimed night's fresh pixels answered
 // 40% IMPROVED and the read rode night-tagged, and THE MEDIAN MOVED -
-// the even count's median is the average of the two middles). The
-// assert holds the law - the append is night-tagged and the worst is
-// that night's own read - not one version number.
+// the even count's median is the average of the two middles) OR the
+// 246 instant (worst 0.35, night vi - the arc advanced again: the
+// aimed night's fresh pixels answered 35% WORSE and the read rode
+// night-tagged, and THE MIDDLE MOVED BACK - the 35% read joined the
+// middle block). The assert holds the law - the append is night-tagged
+// and the worst is that night's own read - not one version number.
 const newest243 = newest?.night === "repair-2026-10-22-iii" && newest?.worst === 0.35;
 const newest244 = newest?.night === "repair-2026-10-22-iv" && newest?.worst === 0.45;
 const newest245 = newest?.night === "repair-2026-10-22-v" && newest?.worst === 0.4;
-ok(newest243 || newest244 || newest245, `the newest S004 arc line is a lawful night's own (the 243 shape ${newest243}, the 244 shape ${newest244}, the 245 shape ${newest245})`);
+const newest246 = newest?.night === "repair-2026-10-22-vi" && newest?.worst === 0.35;
+ok(newest243 || newest244 || newest245 || newest246, `the newest S004 arc line is a lawful night's own (the 243 shape ${newest243}, the 244 shape ${newest244}, the 245 shape ${newest245}, the 246 shape ${newest246})`);
 const nights = new Set(s004.map((a) => a.night));
 ok(nights.size >= 4, "the cell's answer spans its own nights (one lawful night at a time)");
 
